@@ -13,17 +13,24 @@ use super::{CmdResult, CommandError};
 #[tauri::command]
 pub fn read_history(limit: Option<usize>) -> CmdResult<Vec<ActivationLogEntry>> {
     let mut out = Vec::new();
+    let cap = limit.unwrap_or(usize::MAX);
 
     // Primary: per-file entries under cc-switch/history/.
+    // Filenames begin with an ISO-8601 timestamp + uuid suffix, so lexical
+    // sort = chronological sort. We sort filenames first and only read up to
+    // `limit` of the newest, avoiding O(N) reads when N >> limit.
     let dir = history_dir()?;
     if dir.exists() {
-        for entry in std::fs::read_dir(&dir)? {
-            let entry = entry?;
-            let p = entry.path();
-            if p.extension().and_then(|s| s.to_str()) != Some("json") {
-                continue;
-            }
-            match std::fs::read(&p).and_then(|bytes| {
+        let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("json"))
+            .collect();
+        files.sort();
+        files.reverse(); // newest first by filename
+
+        for p in files.iter().take(cap) {
+            match std::fs::read(p).and_then(|bytes| {
                 serde_json::from_slice::<ActivationLogEntry>(&bytes)
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
             }) {
@@ -35,27 +42,33 @@ pub fn read_history(limit: Option<usize>) -> CmdResult<Vec<ActivationLogEntry>> 
         }
     }
 
-    // Backward compat: read legacy line-delimited file if present.
-    let legacy = history_path()?;
-    if legacy.exists() {
-        let text = std::fs::read_to_string(&legacy)?;
-        for line in text.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            match serde_json::from_str::<ActivationLogEntry>(line) {
-                Ok(e) => out.push(e),
-                Err(e) => tracing::warn!(error = %e, "skipping malformed legacy history line"),
+    // Backward compat: read legacy line-delimited file if it exists. New
+    // installs never write to it.
+    if out.len() < cap {
+        let legacy = history_path()?;
+        if legacy.exists() {
+            let text = std::fs::read_to_string(&legacy)?;
+            for line in text.lines().rev() {
+                if out.len() >= cap {
+                    break;
+                }
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                match serde_json::from_str::<ActivationLogEntry>(line) {
+                    Ok(e) => out.push(e),
+                    Err(e) => tracing::warn!(error = %e, "skipping malformed legacy history line"),
+                }
             }
         }
     }
 
+    // Final sort by timestamp — primary path is already newest-first by
+    // filename, but legacy entries may interleave.
     out.sort_by_key(|e| e.ts);
-    out.reverse(); // newest first
-    if let Some(n) = limit {
-        out.truncate(n);
-    }
+    out.reverse();
+    out.truncate(cap);
     Ok(out)
 }
 

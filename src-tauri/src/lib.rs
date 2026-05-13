@@ -22,7 +22,6 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // First-run migration of legacy profile files.
             if let Err(err) = migration::migrate_legacy_profiles() {

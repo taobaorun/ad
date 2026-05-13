@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; worker-src 'self' blob:"
     },
     "macOSPrivateApi": false
   },
@@ -47,7 +47,6 @@
   "plugins": {
     "notification": { "all": true },
     "dialog": { "all": true },
-    "clipboard-manager": { "all": true },
-    "process": { "all": true }
+    "clipboard-manager": { "all": true }
   }
 }

@@ -52,9 +52,19 @@ pub fn migrate_legacy_profiles() -> Result<usize> {
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
         }
-        if needs_migration(&path)? {
-            migrate_one(&path)?;
-            migrated += 1;
+        // Per-file: a single corrupt legacy JSON must not block migration of
+        // its siblings. Log and continue.
+        match needs_migration(&path) {
+            Ok(true) => match migrate_one(&path) {
+                Ok(()) => migrated += 1,
+                Err(e) => {
+                    tracing::warn!(path = %path.display(), error = %e, "migration of one file failed; skipping")
+                }
+            },
+            Ok(false) => {}
+            Err(e) => {
+                tracing::warn!(path = %path.display(), error = %e, "could not probe profile; skipping")
+            }
         }
     }
 

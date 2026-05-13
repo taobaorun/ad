@@ -1,5 +1,12 @@
 //! Atomic file writes: write to a temp sibling, fsync, then rename. A crash
 //! between `write` and `rename` leaves the original target untouched.
+//!
+//! **Caveat — parent directory fsync.** We do not fsync the parent directory
+//! after rename. On macOS APFS this is fine: rename() metadata is journaled
+//! and survives sudden power loss. On other filesystems (e.g. ext4 with
+//! data=writeback) the rename could be lost. Since cc-switch is macOS-only
+//! and APFS is the default, we accept this. If we ever ship to Linux, add
+//! `File::open(parent)?.sync_all()?` after the rename.
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;

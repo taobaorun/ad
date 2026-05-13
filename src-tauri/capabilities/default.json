@@ -14,8 +14,6 @@
     "core:image:default",
     "notification:default",
     "dialog:default",
-    "clipboard-manager:allow-write-text",
-    "clipboard-manager:allow-read-text",
-    "process:default"
+    "clipboard-manager:allow-write-text"
   ]
 }
