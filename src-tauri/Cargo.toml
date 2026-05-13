@@ -1,0 +1,59 @@
+[package]
+name = "cc-switch"
+version = "0.1.0"
+description = "SwitchHosts-style desktop app for managing Claude Code settings.json profiles"
+authors = ["yuanxuan"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "cc_switch_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# Helper binary used by tests to simulate a crash mid-write_atomic.
+[[bin]]
+name = "crash_helper"
+path = "tests/bin/crash_helper.rs"
+test = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-process = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+dirs = "5"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+sysinfo = "0.33"
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
+tokio = { version = "1", features = ["fs", "rt-multi-thread", "macros", "net"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+url = "2"
+image = { version = "0.25", default-features = false, features = ["png"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3"
+wiremock = "0.6"
+tokio = { version = "1", features = ["full", "test-util"] }
+serial_test = "3"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

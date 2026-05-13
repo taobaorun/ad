@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+pnpm-debug.log
+
+# Build outputs
+dist
+dist-ssr
+*.local
+coverage
+.vite
+
+# Tauri
+src-tauri/target
+src-tauri/gen
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.swp
+*.swo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Apple notarization keys
+AuthKey_*.p8
+*.cer
+*.p12
+
+# Logs
+*.log
