@@ -142,11 +142,17 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     }
 }
 
-/// The actual brand artwork (scope + `</>` on dark navy), embedded at compile
-/// time so the menubar tray reads as cc-switch and stays consistent across
-/// dev and bundled builds. macOS downscales this to ~22pt logical (44px @2x).
-const BRAND_ICON_PNG: &[u8] = include_bytes!("../../icons/32x32.png");
-
 fn current_icon_bytes() -> Result<Vec<u8>> {
-    Ok(BRAND_ICON_PNG.to_vec())
+    let active = get_active_profile_id().ok().flatten();
+    // Ring color tracks the active profile. Brand purple #7C3AED is the
+    // fallback when no profile is selected so the tray is never colorless.
+    let ring_color = match active.as_deref() {
+        Some(id) => list_profiles()
+            .ok()
+            .and_then(|ps| ps.into_iter().find(|p| p.id == id))
+            .map(|p| p.color)
+            .unwrap_or_else(|| "#7C3AED".to_string()),
+        None => "#7C3AED".to_string(),
+    };
+    icon::for_brand_with_ring(&ring_color)
 }
