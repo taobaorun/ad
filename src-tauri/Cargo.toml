@@ -5,6 +5,7 @@ description = "SwitchHosts-style desktop app for managing Claude Code settings.j
 authors = ["yuanxuan"]
 edition = "2021"
 rust-version = "1.77"
+default-run = "cc-switch"
 
 [lib]
 name = "cc_switch_lib"
