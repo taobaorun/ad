@@ -142,20 +142,11 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     }
 }
 
+/// The actual brand artwork (scope + `</>` on dark navy), embedded at compile
+/// time so the menubar tray reads as cc-switch and stays consistent across
+/// dev and bundled builds. macOS downscales this to ~22pt logical (44px @2x).
+const BRAND_ICON_PNG: &[u8] = include_bytes!("../../icons/32x32.png");
+
 fn current_icon_bytes() -> Result<Vec<u8>> {
-    let active = get_active_profile_id().ok().flatten();
-    // When no profile is active, fall back to the brand purple so the tray
-    // icon is clearly visible on the macOS menubar from first launch (the
-    // previous gray #9CA3AF was nearly invisible on a dark menubar).
-    let color = match active.as_deref() {
-        Some(id) => list_profiles()
-            .ok()
-            .and_then(|ps| ps.into_iter().find(|p| p.id == id))
-            .map(|p| p.color)
-            .unwrap_or_else(|| "#7C3AED".to_string()),
-        None => "#7C3AED".to_string(),
-    };
-    // Brand scope mark (ring + crosshair) so it reads as cc-switch in the
-    // menubar, not just a generic colored dot.
-    icon::for_scope(&color, 22)
+    Ok(BRAND_ICON_PNG.to_vec())
 }
