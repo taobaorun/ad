@@ -8,9 +8,10 @@ use anyhow::Result;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, Runtime,
+    AppHandle, Listener, Manager, Runtime,
 };
 
+use crate::commands::activate::PROFILE_ACTIVATED_EVENT;
 use crate::commands::profiles::{get_active_profile_id, list_profiles};
 
 pub fn install<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
@@ -39,7 +40,31 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
         })
         .build(app)?;
 
+    // Listen for `profile-activated` events from anywhere (UI-driven activation,
+    // tray menu activation, or a future programmatic source) and refresh the
+    // tray icon + menu. Without this, activations from the main window leave
+    // the tray showing the previous active profile.
+    let app_handle = app.clone();
+    app.listen(PROFILE_ACTIVATED_EVENT, move |_event| {
+        refresh(&app_handle);
+    });
+
     Ok(())
+}
+
+/// Rebuild the tray's menu + icon from the current on-disk state.
+pub fn refresh<R: Runtime>(app: &AppHandle<R>) {
+    let Some(tray) = app.tray_by_id("cc-switch-tray") else {
+        return;
+    };
+    if let Ok(menu) = build_menu(app) {
+        let _ = tray.set_menu(Some(menu));
+    }
+    if let Ok(bytes) = current_icon_bytes() {
+        if let Ok(image) = tauri::image::Image::from_bytes(&bytes) {
+            let _ = tray.set_icon(Some(image));
+        }
+    }
 }
 
 fn build_menu<R: Runtime>(app: &AppHandle<R>) -> Result<Menu<R>> {
@@ -85,33 +110,31 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     if let Some(profile_id) = id.strip_prefix("activate:") {
         let pid = profile_id.to_string();
         let app_clone = app.clone();
-        std::thread::spawn(move || {
-            if let Err(err) = crate::commands::activate::activate_profile(pid) {
-                tracing::warn!(?err, "tray-driven activation failed");
-            }
-            // Rebuild the menu so the active marker moves.
-            if let Ok(menu) = build_menu(&app_clone) {
-                if let Some(tray) = app_clone.tray_by_id("cc-switch-tray") {
-                    let _ = tray.set_menu(Some(menu));
-                    if let Ok(bytes) = current_icon_bytes() {
-                        let _ =
-                            tray.set_icon(Some(tauri::image::Image::from_bytes(&bytes).unwrap()));
-                    }
-                }
-            }
-        });
+        // Spawn so the menu callback returns quickly. The activation itself
+        // is sync; the `profile-activated` event we emit afterward fans out
+        // to the tray listener (which rebuilds icon+menu) and the frontend
+        // listener (which refreshes the store).
+        std::thread::spawn(
+            move || match crate::commands::activate::activate_profile_inner(pid) {
+                Ok(result) => crate::commands::activate::emit_activated(&app_clone, &result),
+                Err(err) => tracing::warn!(?err, "tray-driven activation failed"),
+            },
+        );
     }
 }
 
 fn current_icon_bytes() -> Result<Vec<u8>> {
     let active = get_active_profile_id().ok().flatten();
+    // When no profile is active, fall back to the brand purple so the tray
+    // icon is clearly visible on the macOS menubar from first launch (the
+    // previous gray #9CA3AF was nearly invisible on a dark menubar).
     let color = match active.as_deref() {
         Some(id) => list_profiles()
             .ok()
             .and_then(|ps| ps.into_iter().find(|p| p.id == id))
             .map(|p| p.color)
             .unwrap_or_else(|| "#7C3AED".to_string()),
-        None => "#9CA3AF".to_string(),
+        None => "#7C3AED".to_string(),
     };
     icon::for_color(&color)
 }

@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use anyhow::Context;
 use chrono::Utc;
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
+use tauri::{AppHandle, Emitter, Runtime};
 
 use crate::fs::atomic::write_atomic;
 use crate::fs::paths::{backups_dir, claude_settings_path, ensure_dir, history_dir};
@@ -18,10 +19,31 @@ use crate::models::{ActivationLogEntry, ActivationResult, ClaudeProcess};
 use super::profiles::{get_active_profile_id, get_profile, write_active_profile_id};
 use super::CmdResult;
 
+/// Event name emitted on every successful activation. Frontend listens to
+/// refresh `useProfiles.activeId`; tray listens to rebuild its menu+icon.
+pub const PROFILE_ACTIVATED_EVENT: &str = "profile-activated";
+
 static ACTIVATE_LOCK: Mutex<()> = Mutex::new(());
 
 #[tauri::command]
-pub fn activate_profile(id: String) -> CmdResult<ActivationResult> {
+pub fn activate_profile(app: AppHandle, id: String) -> CmdResult<ActivationResult> {
+    let result = activate_profile_inner(id)?;
+    emit_activated(&app, &result);
+    Ok(result)
+}
+
+/// Best-effort emit. The activation has already succeeded on disk, so a
+/// missing event channel is logged but not surfaced.
+pub fn emit_activated<R: Runtime>(app: &AppHandle<R>, result: &ActivationResult) {
+    if let Err(err) = app.emit(PROFILE_ACTIVATED_EVENT, result) {
+        tracing::warn!(?err, "failed to emit profile-activated event");
+    }
+}
+
+/// Same as `activate_profile` but without the event emit. Useful for callers
+/// that have no `AppHandle` (e.g. integration tests, tray handler that emits
+/// via `emit_activated` afterward).
+pub fn activate_profile_inner(id: String) -> CmdResult<ActivationResult> {
     // Serialize all activations: prevents the active-pointer / settings.json
     // mismatch that two rapid tray clicks can produce.
     let _guard = ACTIVATE_LOCK
@@ -167,7 +189,7 @@ mod tests {
         std::fs::create_dir_all(target.parent().unwrap()).unwrap();
         std::fs::write(&target, br#"{"env":{"OLD":"1"}}"#).unwrap();
 
-        let res = activate_profile("sample".into()).unwrap();
+        let res = activate_profile_inner("sample".into()).unwrap();
         assert_eq!(res.activated_id, "sample");
 
         // settings.json now contains new content
@@ -189,7 +211,7 @@ mod tests {
     fn activate_with_no_prior_settings_skips_backup() {
         let _t = setup();
         save_profile(ProfileFile::sample()).unwrap();
-        let res = activate_profile("sample".into()).unwrap();
+        let res = activate_profile_inner("sample".into()).unwrap();
         assert!(res.backup_path.is_none());
     }
 

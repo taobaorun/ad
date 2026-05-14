@@ -158,7 +158,7 @@ fn path_starts_with_case_insensitive(needle: &Path, haystack: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::activate::activate_profile;
+    use crate::commands::activate::activate_profile_inner;
     use crate::commands::profiles::save_profile;
     use crate::fs::paths::claude_settings_path;
     use crate::models::ProfileFile;
@@ -184,10 +184,10 @@ mod tests {
         save_profile(b).unwrap();
 
         // Activate A → activate B → restore the backup that B created
-        activate_profile("a".into()).unwrap();
+        activate_profile_inner("a".into()).unwrap();
         let snapshot_a = std::fs::read(claude_settings_path().unwrap()).unwrap();
 
-        let res_b = activate_profile("b".into()).unwrap();
+        let res_b = activate_profile_inner("b".into()).unwrap();
         let backup_of_a = res_b.backup_path.unwrap();
 
         restore_backup(backup_of_a).unwrap();

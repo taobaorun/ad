@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { ProfileList } from './components/ProfileList';
 import { ProfileEditor } from './components/ProfileEditor';
 import { HistoryPanel } from './components/HistoryPanel';
@@ -13,6 +14,19 @@ export function App() {
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  // Listen for activations triggered from anywhere (tray menu, future CLI, etc.)
+  // and refresh the store so the titlebar + sidebar stay in sync. UI-driven
+  // activations also fire this — the state is already correct so loadAll is
+  // a fast no-op refresh from disk.
+  useEffect(() => {
+    const unlisten = listen('profile-activated', () => {
+      void useProfiles.getState().loadAll();
+    });
+    return () => {
+      void unlisten.then((f) => f());
+    };
+  }, []);
 
   return (
     <div className="flex h-full w-full flex-col">
