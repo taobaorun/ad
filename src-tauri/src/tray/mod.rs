@@ -155,5 +155,7 @@ fn current_icon_bytes() -> Result<Vec<u8>> {
             .unwrap_or_else(|| "#7C3AED".to_string()),
         None => "#7C3AED".to_string(),
     };
-    icon::for_color(&color)
+    // Brand scope mark (ring + crosshair) so it reads as cc-switch in the
+    // menubar, not just a generic colored dot.
+    icon::for_scope(&color, 22)
 }

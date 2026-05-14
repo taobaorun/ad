@@ -8,12 +8,56 @@
 use anyhow::Result;
 use image::{ImageBuffer, Rgba, RgbaImage};
 
-const TRAY_SIZE: u32 = 22;
 /// Default size for menu-item icons. macOS menu items render best around 16pt.
 pub const MENU_ITEM_SIZE: u32 = 18;
 
-pub fn for_color(hex: &str) -> Result<Vec<u8>> {
-    for_color_filled(hex, TRAY_SIZE)
+/// The menubar tray icon. Renders the brand scope mark — outer ring +
+/// 4-point crosshair extensions — in the given color. Recognizable at 22×22
+/// and recolors per active profile.
+pub fn for_scope(hex: &str, size: u32) -> Result<Vec<u8>> {
+    let (r, g, b) = parse_hex(hex)?;
+    let mut img: RgbaImage = ImageBuffer::from_pixel(size, size, Rgba([0, 0, 0, 0]));
+    let cx = (size as f32 - 1.0) / 2.0;
+    let cy = cx;
+
+    let outer = (size as f32) / 2.0 - 1.5;
+    let stroke = ((size as f32) / 9.0).max(2.0);
+    let inner = (outer - stroke).max(0.0);
+
+    // Crosshair extensions span from just inside the ring stroke to the outer
+    // edge, in N/S/E/W directions. They visually echo the brand's "scope"
+    // metaphor and disambiguate the tray icon from a plain dot.
+    let cross_half_thickness = stroke / 2.0;
+    let cross_inner = (inner - stroke * 0.5).max(0.0);
+    let cross_outer = outer + 0.5;
+
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f32 - cx;
+            let dy = y as f32 - cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+
+            // Ring (outer - inner = stroke).
+            let outer_a = circle_alpha(dist, outer);
+            let inner_a = circle_alpha(dist, inner);
+            let mut alpha = outer_a.saturating_sub(inner_a);
+
+            // Crosshair: vertical (|dx| small, |dy| in stroke range).
+            let abs_dx = dx.abs();
+            let abs_dy = dy.abs();
+            let in_cross_band = |across: f32, along: f32| -> bool {
+                across <= cross_half_thickness && along >= cross_inner && along <= cross_outer
+            };
+            if in_cross_band(abs_dx, abs_dy) || in_cross_band(abs_dy, abs_dx) {
+                alpha = 255;
+            }
+
+            if alpha > 0 {
+                img.put_pixel(x, y, Rgba([r, g, b, alpha]));
+            }
+        }
+    }
+    encode_png(&img)
 }
 
 pub fn for_color_filled(hex: &str, size: u32) -> Result<Vec<u8>> {
@@ -97,8 +141,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn produces_png_bytes() {
-        let bytes = for_color("#7C3AED").unwrap();
+    fn filled_produces_png_bytes() {
+        let bytes = for_color_filled("#7C3AED", MENU_ITEM_SIZE).unwrap();
         assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
     }
 
@@ -109,10 +153,30 @@ mod tests {
     }
 
     #[test]
+    fn scope_produces_png_bytes() {
+        let bytes = for_scope("#7C3AED", 22).unwrap();
+        assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    /// Writes a 132×132 (6× the menubar size) preview to /tmp so the design
+    /// can be eyeballed without launching the app. Run with:
+    ///   cargo test --lib tray::icon::tests::dump_scope_preview -- --include-ignored
+    #[test]
+    #[ignore]
+    fn dump_scope_preview() {
+        for (name, hex) in [("purple", "#7C3AED"), ("blue", "#3B82F6"), ("orange", "#F97316")] {
+            let bytes = for_scope(hex, 132).unwrap();
+            let path = format!("/tmp/scope-preview-{name}.png");
+            std::fs::write(&path, bytes).unwrap();
+            println!("wrote {path}");
+        }
+    }
+
+    #[test]
     fn rejects_bad_hex() {
-        assert!(for_color("nope").is_err());
-        assert!(for_color("#12345").is_err());
-        assert!(for_color_filled("oops", 16).is_err());
+        assert!(for_color_filled("nope", 16).is_err());
+        assert!(for_color_filled("#12345", 16).is_err());
         assert!(for_color_ring("oops", 16).is_err());
+        assert!(for_scope("oops", 22).is_err());
     }
 }
