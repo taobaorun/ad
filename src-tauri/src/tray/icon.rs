@@ -17,17 +17,18 @@ const BRAND_ICON_PNG: &[u8] = include_bytes!("../../icons/32x32.png");
 /// Default size for menu-item icons. macOS menu items render best around 16pt.
 pub const MENU_ITEM_SIZE: u32 = 18;
 
-/// Composes a 22×22 PNG: the brand artwork (masked to a circle so its
-/// rectangular dark-navy background doesn't poke out at the corners), with
-/// a 2px ring of the given color around the outside. The ring is what
-/// conveys "this is the active profile" — it changes color as profiles
-/// activate.
+/// Composes a 44×44 PNG (= 22pt @2x for crisp retina rendering): the brand
+/// artwork masked to a circle, plus a 2-pixel ring of `ring_hex` on the
+/// outside. At @2x display that 2-pixel stroke reads as a 1-point stroke,
+/// which is what the user asked for.
 pub fn for_brand_with_ring(ring_hex: &str) -> Result<Vec<u8>> {
-    const SIZE: u32 = 22;
+    /// 22pt @ 2x retina. Anything smaller and the ring loses antialiasing.
+    const SIZE: u32 = 44;
+    /// 2 actual pixels = 1 logical point on a retina menubar.
     const STROKE: f32 = 2.0;
     /// Brand fills nearly to the ring; masked to circle so corners are
     /// clipped cleanly.
-    const INNER: u32 = 18;
+    const INNER: u32 = 38;
 
     let (r, g, b) = parse_hex(ring_hex)?;
     let mut canvas: RgbaImage = ImageBuffer::from_pixel(SIZE, SIZE, Rgba([0, 0, 0, 0]));

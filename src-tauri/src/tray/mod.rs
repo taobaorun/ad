@@ -49,6 +49,15 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
         refresh(&app_handle);
     });
 
+    // Also refresh on `profiles-changed`: emitted by the frontend whenever a
+    // profile is created, saved (e.g. user picks a new color), or deleted.
+    // Otherwise editing the active profile's color in the editor wouldn't
+    // update the menubar ring until re-activation.
+    let app_handle = app.clone();
+    app.listen("profiles-changed", move |_event| {
+        refresh(&app_handle);
+    });
+
     Ok(())
 }
 

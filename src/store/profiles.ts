@@ -1,6 +1,20 @@
 import { create } from 'zustand';
+import { emit } from '@tauri-apps/api/event';
 import { tauri, type ActivationResult, type ClaudeProcess } from '@/lib/tauri';
 import { type ProfileFile, blankProfile } from '@/lib/profileSchema';
+
+/// Frontend → backend event fired after any profile mutation. Tray subscribes
+/// to it so the menubar ring color updates live when a user edits the active
+/// profile's color in the editor — no re-activation required.
+const PROFILES_CHANGED_EVENT = 'profiles-changed';
+
+async function notifyProfilesChanged(): Promise<void> {
+  try {
+    await emit(PROFILES_CHANGED_EVENT);
+  } catch {
+    // Backend may not be listening yet during initial mount; that's fine.
+  }
+}
 
 export type View = 'editor' | 'history';
 
@@ -83,12 +97,14 @@ export const useProfiles = create<State>((set, get) => ({
     const created = await tauri.saveProfile(blankProfile(id));
     await get().loadAll();
     set({ selectedId: created.id });
+    await notifyProfilesChanged();
     return created;
   },
 
   save: async (profile) => {
     await tauri.saveProfile({ ...profile, updatedAt: new Date().toISOString() });
     await get().loadAll();
+    await notifyProfilesChanged();
   },
 
   remove: async (id) => {
@@ -98,6 +114,7 @@ export const useProfiles = create<State>((set, get) => ({
       profiles: remaining,
       selectedId: remaining[0]?.id ?? null,
     });
+    await notifyProfilesChanged();
   },
 
   activate: async (id) => {

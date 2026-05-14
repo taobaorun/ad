@@ -7,6 +7,7 @@ mod tray;
 
 pub mod commands;
 
+use tauri::WindowEvent;
 use tracing::info;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -33,6 +34,15 @@ pub fn run() {
 
             info!("cc-switch ready");
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the window button hides instead of quitting — cc-switch
+            // is a menubar app, the user expects it to stay running. Quit
+            // happens explicitly via the tray "Quit" menu item.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::profiles::list_profiles,
