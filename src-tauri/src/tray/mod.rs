@@ -6,7 +6,7 @@ mod icon;
 
 use anyhow::Result;
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{IconMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Listener, Manager, Runtime,
 };
@@ -73,13 +73,32 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> Result<Menu<R>> {
 
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<R>>> = Vec::new();
     for p in &profiles {
-        let mark = if Some(&p.id) == active.as_ref() {
-            "● "
+        let is_active = Some(&p.id) == active.as_ref();
+        // Active profile: filled colored circle. Inactive: outlined ring of
+        // the same color. Both render as a real icon in the menu so it's
+        // immediately obvious which one is current and what color each is.
+        let icon_bytes = if is_active {
+            icon::for_color_filled(&p.color, icon::MENU_ITEM_SIZE)
         } else {
-            "○ "
+            icon::for_color_ring(&p.color, icon::MENU_ITEM_SIZE)
+        }?;
+        let icon_image = tauri::image::Image::from_bytes(&icon_bytes)?;
+        // Append a checkmark to the active label as a redundant accessibility
+        // cue; the icon already carries the color, but VoiceOver users get the
+        // text affordance.
+        let label = if is_active {
+            format!("{}  ✓", p.display_name)
+        } else {
+            p.display_name.clone()
         };
-        let label = format!("{mark}{}", p.display_name);
-        let item = MenuItem::with_id(app, format!("activate:{}", p.id), label, true, None::<&str>)?;
+        let item = IconMenuItem::with_id(
+            app,
+            format!("activate:{}", p.id),
+            label,
+            true,
+            Some(icon_image),
+            None::<&str>,
+        )?;
         items.push(Box::new(item));
     }
 
