@@ -174,7 +174,7 @@ mod tests {
 
     fn setup() -> TempDir {
         let tmp = TempDir::new().unwrap();
-        std::env::set_var("CC_SWITCH_HOME", tmp.path());
+        std::env::set_var("AD_HOME", tmp.path());
         tmp
     }
 
@@ -220,7 +220,7 @@ mod tests {
         assert!(matches_claude("claude"));
         assert!(matches_claude("claude-code"));
         assert!(matches_claude("Claude"));
-        assert!(!matches_claude("cc-switch"));
+        assert!(!matches_claude("ad"));
         assert!(!matches_claude("claude.app"));
     }
 }

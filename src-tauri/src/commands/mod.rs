@@ -1,7 +1,12 @@
 pub mod activate;
+pub mod apply;
+pub mod discover;
 pub mod history;
 pub mod importers;
+pub mod path_complete;
 pub mod profiles;
+pub mod projects;
+pub mod scan_roots;
 pub mod settings;
 
 use thiserror::Error;

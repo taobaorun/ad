@@ -1,4 +1,5 @@
 pub mod atomic;
+pub mod merge;
 pub mod paths;
 
 #[doc(hidden)]

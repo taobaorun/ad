@@ -36,6 +36,7 @@ describe('<ProfileList />', () => {
           color: '#FF0000',
           createdAt: '2026-05-13T22:55:00Z',
           updatedAt: '2026-05-13T22:55:00Z',
+          layers: { env: {} },
           settings: { env: {} },
         },
         {
@@ -45,6 +46,7 @@ describe('<ProfileList />', () => {
           color: '#00FF00',
           createdAt: '2026-05-13T22:55:00Z',
           updatedAt: '2026-05-13T22:55:00Z',
+          layers: { env: {} },
           settings: { env: {} },
         },
       ],

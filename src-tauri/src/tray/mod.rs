@@ -18,7 +18,7 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
     let menu = build_menu(app)?;
     let icon_bytes = current_icon_bytes()?;
 
-    let _ = TrayIconBuilder::with_id("cc-switch-tray")
+    let _ = TrayIconBuilder::with_id("ad-tray")
         .icon(tauri::image::Image::from_bytes(&icon_bytes)?)
         .menu(&menu)
         .show_menu_on_left_click(true)
@@ -63,7 +63,7 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
 
 /// Rebuild the tray's menu + icon from the current on-disk state.
 pub fn refresh<R: Runtime>(app: &AppHandle<R>) {
-    let Some(tray) = app.tray_by_id("cc-switch-tray") else {
+    let Some(tray) = app.tray_by_id("ad-tray") else {
         return;
     };
     if let Ok(menu) = build_menu(app) {
@@ -114,7 +114,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> Result<Menu<R>> {
     if !profiles.is_empty() {
         items.push(Box::new(PredefinedMenuItem::separator(app)?));
     }
-    let show = MenuItem::with_id(app, "show-main", "Show cc-switch", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show-main", "Show AD", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     items.push(Box::new(show));
     items.push(Box::new(quit));

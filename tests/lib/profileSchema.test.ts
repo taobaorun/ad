@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ProfileFileSchema, parseProfileFile, blankProfile } from '@/lib/profileSchema';
+import {
+  ProfileFileSchema,
+  parseProfileFile,
+  blankProfile,
+  settingsFromLayers,
+  type ProfileLayers,
+} from '@/lib/profileSchema';
 
 describe('ProfileFileSchema', () => {
   it('accepts a fresh blank profile', () => {
@@ -56,5 +62,83 @@ describe('ProfileFileSchema', () => {
         nested: true,
       });
     }
+  });
+
+  it('parses v0.1 profiles without layers (backward compat)', () => {
+    const v1 = {
+      id: 'old',
+      displayName: 'Old',
+      color: '#7C3AED',
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      settings: { env: { K: 'V' } },
+      // No `layers` field — should default to { env: {} }.
+    };
+    const r = ProfileFileSchema.safeParse(v1);
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.layers).toEqual({ env: {} });
+    }
+  });
+
+  it('parses v0.2 profiles with layers populated', () => {
+    const v2 = {
+      ...blankProfile('layered'),
+      layers: {
+        shared: { permissions: { allow: ['fs:read'] } },
+        local: { model: 'claude-opus-4-7' },
+        env: { ANTHROPIC_API_KEY: 'sk-test' },
+      },
+    };
+    const r = ProfileFileSchema.safeParse(v2);
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.layers.local).toEqual({ model: 'claude-opus-4-7' });
+      expect(r.data.layers.env).toEqual({ ANTHROPIC_API_KEY: 'sk-test' });
+    }
+  });
+});
+
+describe('settingsFromLayers', () => {
+  it('returns empty env-only settings for empty layers', () => {
+    const layers: ProfileLayers = { env: {} };
+    expect(settingsFromLayers(layers)).toEqual({ env: {} });
+  });
+
+  it('local overrides shared on shared keys', () => {
+    const layers: ProfileLayers = {
+      shared: { model: 'sonnet', theme: 'dark' },
+      local: { model: 'opus' },
+      env: {},
+    };
+    const result = settingsFromLayers(layers);
+    expect(result.model).toBe('opus');
+    expect((result as { theme?: string }).theme).toBe('dark');
+  });
+
+  it('env layer is folded into the env field, layer wins on key conflict', () => {
+    const layers: ProfileLayers = {
+      local: { env: { A: 'from-local', B: 'from-local' } },
+      env: { A: 'from-env-layer', C: 'from-env-layer' },
+    };
+    const result = settingsFromLayers(layers);
+    expect(result.env).toEqual({
+      A: 'from-env-layer',
+      B: 'from-local',
+      C: 'from-env-layer',
+    });
+  });
+
+  it('preserves unknown keys (enabledPlugins, statusLine, etc.)', () => {
+    const layers: ProfileLayers = {
+      local: {
+        enabledPlugins: { 'a@b': true },
+        statusLine: { command: '~/x.sh' },
+      },
+      env: {},
+    };
+    const result = settingsFromLayers(layers);
+    expect((result as Record<string, unknown>).enabledPlugins).toEqual({ 'a@b': true });
+    expect((result as Record<string, unknown>).statusLine).toEqual({ command: '~/x.sh' });
   });
 });

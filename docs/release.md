@@ -1,6 +1,6 @@
 # Release procedure
 
-cc-switch ships as a notarized macOS `.dmg`. CI handles the build automatically when you push a `v*` tag; locally you can run `pnpm release:mac`. This doc covers the one-time credential setup and the rotation playbook.
+ad ships as a notarized macOS `.dmg`. CI handles the build automatically when you push a `v*` tag; locally you can run `pnpm release:mac`. This doc covers the one-time credential setup and the rotation playbook.
 
 ---
 
@@ -68,10 +68,10 @@ pnpm release:mac
 
 ## Smoke test (after every release)
 
-On a Mac that has never seen cc-switch:
+On a Mac that has never seen ad:
 
 ```bash
-spctl -a -vvv /Applications/cc-switch.app
+spctl -a -vvv /Applications/ad.app
 # Expected: accepted, source=Notarized Developer ID
 ```
 

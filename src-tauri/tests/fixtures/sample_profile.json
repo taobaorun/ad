@@ -5,6 +5,7 @@
   "color": "#7C3AED",
   "createdAt": "2026-05-13T22:55:00Z",
   "updatedAt": "2026-05-13T22:55:00Z",
+  "layers": {},
   "settings": {
     "env": {
       "ANTHROPIC_BASE_URL": "https://api.anthropic.com",

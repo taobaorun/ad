@@ -4,7 +4,7 @@
 //! **Caveat — parent directory fsync.** We do not fsync the parent directory
 //! after rename. On macOS APFS this is fine: rename() metadata is journaled
 //! and survives sudden power loss. On other filesystems (e.g. ext4 with
-//! data=writeback) the rename could be lost. Since cc-switch is macOS-only
+//! data=writeback) the rename could be lost. Since ad is macOS-only
 //! and APFS is the default, we accept this. If we ever ship to Linux, add
 //! `File::open(parent)?.sync_all()?` after the rename.
 
@@ -57,7 +57,7 @@ fn temp_sibling(target: &Path) -> PathBuf {
     let stem = target
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "cc-switch".into());
+        .unwrap_or_else(|| "ad".into());
     target.with_file_name(format!(".{stem}.tmp.{suffix}"))
 }
 

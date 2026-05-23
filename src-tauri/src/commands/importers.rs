@@ -20,7 +20,7 @@ use super::{CmdResult, CommandError};
 
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
-const USER_AGENT: &str = concat!("cc-switch/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("ad/", env!("CARGO_PKG_VERSION"));
 
 #[tauri::command]
 pub fn import_from_file(path: String) -> CmdResult<ProfileFile> {

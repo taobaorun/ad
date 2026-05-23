@@ -11,6 +11,7 @@ vi.mock('@tauri-apps/api/core', () => ({
       color: '#7C3AED',
       createdAt: '2026-05-13T22:55:00Z',
       updatedAt: '2026-05-13T22:55:00Z',
+      layers: { env: {} },
       settings: { env: { ANTHROPIC_MODEL: 'GLM-5.1' } },
     };
     switch (cmd) {

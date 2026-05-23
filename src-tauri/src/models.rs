@@ -7,7 +7,14 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// A profile saved at `~/.claude/profiles/<id>.json`.
+/// A profile saved at `~/.ad/profiles/<id>.json`.
+///
+/// v0.2 introduces the `layers` field for the layered profile recipe model
+/// (shared / local / env). The legacy `settings` field is retained for
+/// backward-compat reads and for the legacy global-overwrite activation path.
+/// Newly-edited profiles populate `layers`; the migration in
+/// `migrate_v1_profiles_to_layered` copies old `settings` content into
+/// `layers.local`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileFile {
@@ -19,7 +26,38 @@ pub struct ProfileFile {
     pub color: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+
+    /// Layered settings recipe. New in v0.2.
+    #[serde(default)]
+    pub layers: ProfileLayers,
+
+    /// Legacy v0.1 flat settings block. Still read for backward-compat and used
+    /// by the legacy global-overwrite activation path. New flow uses `layers`.
+    #[serde(default)]
     pub settings: ClaudeSettings,
+}
+
+/// Layered profile recipe (v0.2).
+///
+/// - `shared` is applied to `<project>/.claude/settings.json` (committed to git).
+/// - `local` is applied to `<project>/.claude/settings.local.json` (gitignored).
+/// - `env` is presented to the user as `export KEY=VALUE` snippets — never written to a file.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileLayers {
+    /// Goes to `<project>/.claude/settings.json`. None means the profile does
+    /// not contribute to the shared layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared: Option<Value>,
+
+    /// Goes to `<project>/.claude/settings.local.json`. None means the profile
+    /// does not contribute to the local layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local: Option<Value>,
+
+    /// Environment variables presented as `export` snippets. Empty by default.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
 }
 
 /// Mirrors the relevant subset of `~/.claude/settings.json`.
@@ -68,8 +106,121 @@ pub struct ActivationLogEntry {
     pub backup_path: Option<String>,
 }
 
+/// A project AD tracks. Stored as an entry in `~/.ad/state/projects.json`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    /// Canonical absolute path; primary key.
+    pub path: String,
+    /// Default = path basename; mutable via rename.
+    pub display_name: String,
+    pub added_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_applied: Option<LastApplied>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LastApplied {
+    pub profile_id: String,
+    pub timestamp: DateTime<Utc>,
+    /// Which layers were written this round, e.g. `["local", "env"]`.
+    pub layers: Vec<String>,
+    /// Backup file paths produced (under `~/.ad/backups/`).
+    #[serde(default)]
+    pub backup_paths: Vec<String>,
+    /// Number of conflicts the user resolved during this apply (audit only).
+    #[serde(default)]
+    pub conflicts_resolved: usize,
+}
+
+/// One root directory to scan for project candidates. Stored at
+/// `~/.ad/state/scan_roots.json`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanRoot {
+    /// Absolute path to the root.
+    pub path: String,
+    pub kind: ScanRootKind,
+    /// Builtin roots (e.g. `~/.claude/projects`) cannot be removed; only
+    /// toggled via `enabled`.
+    #[serde(default)]
+    pub builtin: bool,
+    /// Whether this root is currently scanned. Allows users to keep a builtin
+    /// root in the list but skip it in detection.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ScanRootKind {
+    /// `~/.claude/projects/<encoded-path>/` — CC's per-project metadata.
+    /// AD reverse-decodes the encoded path to recover the original project
+    /// directory.
+    CcProjectsMeta,
+    /// Arbitrary directory. AD walks one level deep, treating any subdir
+    /// containing `.git/` or `.claude/` as a project candidate.
+    Generic,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Live filesystem snapshot of a project (returned by `get_project_status`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectStatus {
+    pub exists: bool,
+    pub is_git_repo: bool,
+    pub git_dirty: bool,
+    pub claude_dir_exists: bool,
+    pub has_settings_json: bool,
+    pub has_settings_local_json: bool,
+    /// `Some(true)` if `.gitignore` excludes `.claude/settings.local.json`,
+    /// `Some(false)` if it doesn't, `None` if not a git repo or no `.gitignore`.
+    pub gitignore_excludes_settings_local: Option<bool>,
+}
+
+/// A project candidate surfaced by `commands::discover::scan_for_projects`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectedProject {
+    /// Canonical absolute path to the candidate project.
+    pub path: String,
+    /// The scan root this candidate came from (matches a `ScanRoot.path`).
+    pub source_root: String,
+    /// The kind of root that produced it (passes through to UI for labeling).
+    pub source_kind: ScanRootKind,
+    /// What signal(s) marked this as a project. e.g. `["cc-history"]`,
+    /// `["git", "claude"]`. Lowercased lowercase ASCII tags.
+    pub signals: Vec<String>,
+    /// Whether AD already tracks this path in its projects.json.
+    pub already_added: bool,
+}
+
 fn default_color() -> String {
     "#7C3AED".into()
+}
+
+impl ProfileLayers {
+    pub fn is_empty(&self) -> bool {
+        self.shared.is_none() && self.local.is_none() && self.env.is_empty()
+    }
+}
+
+impl ClaudeSettings {
+    pub fn is_empty(&self) -> bool {
+        self.env.is_empty()
+            && self.permissions.is_none()
+            && self.hooks.is_none()
+            && self.model.is_none()
+            && self.theme.is_none()
+            && self.extra.is_empty()
+    }
 }
 
 impl ProfileFile {
@@ -91,6 +242,7 @@ impl ProfileFile {
             color: default_color(),
             created_at: now,
             updated_at: now,
+            layers: ProfileLayers::default(),
             settings: ClaudeSettings {
                 env,
                 permissions: None,
@@ -151,5 +303,81 @@ mod tests {
         }
         let json = serde_json::to_string_pretty(&s).unwrap() + "\n";
         std::fs::write(path, json).unwrap();
+    }
+
+    #[test]
+    fn v1_profile_without_layers_field_still_parses() {
+        // A v0.1 profile saved before the `layers` field existed must still
+        // deserialize — `layers` defaults to empty.
+        let v1 = serde_json::json!({
+            "id": "old",
+            "displayName": "Old",
+            "color": "#7C3AED",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "settings": { "env": { "K": "V" } }
+        });
+        let p: ProfileFile = serde_json::from_value(v1).unwrap();
+        assert_eq!(p.id, "old");
+        assert_eq!(p.settings.env.get("K").map(String::as_str), Some("V"));
+        assert!(p.layers.shared.is_none());
+        assert!(p.layers.local.is_none());
+        assert!(p.layers.env.is_empty());
+    }
+
+    #[test]
+    fn v2_profile_with_layers_round_trips() {
+        let mut env = BTreeMap::new();
+        env.insert("ANTHROPIC_API_KEY".into(), "sk-test".into());
+        let layers = ProfileLayers {
+            shared: Some(serde_json::json!({
+                "permissions": { "allow": ["fs:read"] }
+            })),
+            local: Some(serde_json::json!({
+                "model": "claude-opus-4-7",
+                "statusLine": { "command": "~/.claude/statusline.sh" }
+            })),
+            env,
+        };
+        let now = chrono::Utc.with_ymd_and_hms(2026, 5, 24, 0, 0, 0).unwrap();
+        let p = ProfileFile {
+            id: "layered".into(),
+            display_name: "Layered".into(),
+            description: None,
+            color: "#7C3AED".into(),
+            created_at: now,
+            updated_at: now,
+            layers,
+            settings: ClaudeSettings::default(),
+        };
+
+        let json = serde_json::to_string(&p).unwrap();
+        let back: ProfileFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, p);
+
+        // Layers serialize at the camelCase boundary.
+        let v = serde_json::to_value(&p).unwrap();
+        assert!(v.get("layers").is_some());
+        let layers_v = v.get("layers").unwrap();
+        assert!(layers_v.get("shared").is_some());
+        assert!(layers_v.get("local").is_some());
+        assert_eq!(
+            layers_v.get("env").and_then(|e| e.get("ANTHROPIC_API_KEY")),
+            Some(&Value::String("sk-test".into()))
+        );
+    }
+
+    #[test]
+    fn empty_layers_omitted_from_serialized_output() {
+        // A profile with default-empty layers should not bloat the JSON with
+        // explicit nulls / empty maps.
+        let p = ProfileFile::sample();
+        let v = serde_json::to_value(&p).unwrap();
+        let layers = v.get("layers").expect("layers field present");
+        // shared and local are None → skip_serializing_if removes them.
+        assert!(layers.get("shared").is_none());
+        assert!(layers.get("local").is_none());
+        // env BTreeMap is empty → skip_serializing_if removes it.
+        assert!(layers.get("env").is_none());
     }
 }

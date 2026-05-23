@@ -7,6 +7,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Anthropic palette — used by M4 panels for attention / warning /
+        // success accents. Matches the ExecPlan HTML's design tokens so the
+        // UI prototype and implementation stay visually consistent.
+        clay: '#D97757',
+        rust: '#B04A3F',
+        olive: '#788C5D',
+        oat: '#E3DACC',
+
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',

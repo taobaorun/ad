@@ -179,7 +179,7 @@ mod tests {
 
     fn setup_home() -> TempDir {
         let tmp = TempDir::new().unwrap();
-        std::env::set_var("CC_SWITCH_HOME", tmp.path());
+        std::env::set_var("AD_HOME", tmp.path());
         tmp
     }
 
@@ -233,6 +233,45 @@ mod tests {
                 "expected rejection for id: {bad:?}"
             );
         }
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn layered_profile_roundtrip_persists_layers() {
+        use crate::models::ProfileLayers;
+        use std::collections::BTreeMap;
+
+        let _g = setup_home();
+        let mut env = BTreeMap::new();
+        env.insert("ANTHROPIC_API_KEY".into(), "sk-test".into());
+
+        let mut p = ProfileFile::sample();
+        p.id = "layered".into();
+        p.layers = ProfileLayers {
+            shared: Some(serde_json::json!({
+                "permissions": { "allow": ["fs:read"] }
+            })),
+            local: Some(serde_json::json!({ "model": "claude-opus-4-7" })),
+            env,
+        };
+
+        save_profile(p.clone()).unwrap();
+        let back = get_profile("layered".into()).unwrap();
+
+        assert!(back.layers.shared.is_some());
+        assert_eq!(
+            back.layers.shared.unwrap()["permissions"]["allow"][0],
+            "fs:read"
+        );
+        assert_eq!(back.layers.local.unwrap()["model"], "claude-opus-4-7");
+        assert_eq!(
+            back.layers.env.get("ANTHROPIC_API_KEY").map(String::as_str),
+            Some("sk-test")
+        );
+
+        // Profiles persist under ~/.ad/profiles/ (the new location).
+        let p_path = profiles_dir().unwrap().join("layered.json");
+        assert!(p_path.exists());
     }
 
     #[test]

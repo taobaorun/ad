@@ -27,7 +27,7 @@ mod tests {
     #[serial(home_env)]
     fn returns_none_when_missing() {
         let tmp = TempDir::new().unwrap();
-        std::env::set_var("CC_SWITCH_HOME", tmp.path());
+        std::env::set_var("AD_HOME", tmp.path());
         assert!(read_current_settings().unwrap().is_none());
     }
 
@@ -35,7 +35,7 @@ mod tests {
     #[serial(home_env)]
     fn parses_existing_file() {
         let tmp = TempDir::new().unwrap();
-        std::env::set_var("CC_SWITCH_HOME", tmp.path());
+        std::env::set_var("AD_HOME", tmp.path());
         let p = claude_settings_path().unwrap();
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(&p, br#"{"env":{"K":"V"}}"#).unwrap();

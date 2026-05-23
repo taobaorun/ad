@@ -15,7 +15,7 @@ pub fn read_history(limit: Option<usize>) -> CmdResult<Vec<ActivationLogEntry>> 
     let mut out = Vec::new();
     let cap = limit.unwrap_or(usize::MAX);
 
-    // Primary: per-file entries under cc-switch/history/.
+    // Primary: per-file entries under ad/history/.
     // Filenames begin with an ISO-8601 timestamp + uuid suffix, so lexical
     // sort = chronological sort. We sort filenames first and only read up to
     // `limit` of the newest, avoiding O(N) reads when N >> limit.
@@ -169,7 +169,7 @@ mod tests {
     #[serial(home_env)]
     fn rollback_restores_byte_identical() {
         let tmp = TempDir::new().unwrap();
-        std::env::set_var("CC_SWITCH_HOME", tmp.path());
+        std::env::set_var("AD_HOME", tmp.path());
 
         // Profile A
         let mut a = ProfileFile::sample();
@@ -200,7 +200,7 @@ mod tests {
     #[serial(home_env)]
     fn rejects_path_outside_backups_dir() {
         let tmp = TempDir::new().unwrap();
-        std::env::set_var("CC_SWITCH_HOME", tmp.path());
+        std::env::set_var("AD_HOME", tmp.path());
 
         // Make a file outside backups_dir
         let evil = tmp.path().join("evil.json");
@@ -217,12 +217,12 @@ mod tests {
     #[test]
     fn case_insensitive_starts_with() {
         assert!(path_starts_with_case_insensitive(
-            Path::new("/Users/x/.claude/cc-switch/backups/file.json"),
-            Path::new("/Users/X/.Claude/CC-Switch/Backups"),
+            Path::new("/Users/x/.claude/ad/backups/file.json"),
+            Path::new("/Users/X/.Claude/Ad/Backups"),
         ));
         assert!(!path_starts_with_case_insensitive(
-            Path::new("/Users/x/.claude/cc-switch/backups2/file.json"),
-            Path::new("/Users/x/.claude/cc-switch/backups"),
+            Path::new("/Users/x/.claude/ad/backups2/file.json"),
+            Path::new("/Users/x/.claude/ad/backups"),
         ));
     }
 }

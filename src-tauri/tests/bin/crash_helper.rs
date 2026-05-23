@@ -1,5 +1,5 @@
 //! Crash-safety helper: writes `bytes` to a temp sibling of `target` via
-//! `cc_switch_lib::fs::atomic::write_temp_only`, fsyncs, then `abort()`s
+//! `ad_lib::fs::atomic::write_temp_only`, fsyncs, then `abort()`s
 //! before the rename can happen.
 //!
 //! Usage: `crash_helper <target> <payload>`
@@ -15,8 +15,7 @@ fn main() {
     let target = PathBuf::from(args.next().expect("arg1: target"));
     let payload = args.next().expect("arg2: payload");
 
-    cc_switch_lib::fs::atomic::write_temp_only(&target, payload.as_bytes())
-        .expect("write_temp_only");
+    ad_lib::fs::atomic::write_temp_only(&target, payload.as_bytes()).expect("write_temp_only");
 
     // Real crash. SIGKILL-equivalent: abort() bypasses unwinding and any
     // destructors that might attempt cleanup.

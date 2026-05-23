@@ -1,4 +1,4 @@
-# cc-switch
+# AD
 
 A SwitchHosts-style desktop app for managing Claude Code `~/.claude/settings.json` profiles.
 
@@ -22,11 +22,11 @@ See [`docs/release.md`](./docs/release.md) for credential setup.
 
 ## Profile location
 
-cc-switch stores profiles at `~/.claude/profiles/*.json`. Activating a profile:
+AD stores profiles at `~/.claude/profiles/*.json`. Activating a profile:
 
-1. Backs up the current `~/.claude/settings.json` to `~/.claude/cc-switch/backups/<ISO8601>.json`.
+1. Backs up the current `~/.claude/settings.json` to `~/.claude/ad/backups/<ISO8601>.json`.
 2. Atomically writes the profile's `settings` block to `~/.claude/settings.json`.
-3. Appends an entry to `~/.claude/cc-switch/history.jsonl`.
+3. Appends an entry to `~/.claude/ad/history.jsonl`.
 4. Sends a native macOS notification and lists running `claude` processes (you must restart them to pick up env vars).
 
 ## Migration
