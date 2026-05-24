@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ExecPlan — Project Local Overrides</title>
+  <style>
+    :root {
+      --ivory:    #FAF9F5;
+      --paper:    #FFFFFF;
+      --slate:    #141413;
+      --clay:     #D97757;
+      --oat:      #E3DACC;
+      --olive:    #788C5D;
+      --rust:     #B04A3F;
+      --gray-150: #F0EEE6;
+      --gray-300: #D1CFC5;
+      --gray-500: #87867F;
+      --gray-700: #3D3D3A;
+      --serif: ui-serif, Georgia, 'Times New Roman', serif;
+      --sans:  system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --mono:  ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: var(--sans);
+      background: var(--ivory);
+      color: var(--gray-700);
+      line-height: 1.55;
+      padding: 56px 32px 120px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .page { max-width: 1040px; margin: 0 auto; }
+
+    /* header */
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--gray-500);
+      font-family: var(--mono);
+      margin-bottom: 10px;
+    }
+    h1 {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 36px;
+      line-height: 1.15;
+      color: var(--slate);
+      margin-bottom: 14px;
+      letter-spacing: -0.01em;
+    }
+    .goal-box {
+      background: var(--gray-150);
+      border: 1.5px solid var(--gray-300);
+      border-left: 4px solid var(--clay);
+      border-radius: 10px;
+      padding: 16px 20px;
+      font-size: 14.5px;
+      color: var(--gray-700);
+      max-width: 760px;
+      margin-bottom: 48px;
+    }
+
+    /* summary strip */
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 56px;
+    }
+    .summary .cell {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 10px;
+      padding: 16px 18px;
+    }
+    .summary .k {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--gray-500);
+      margin-bottom: 5px;
+    }
+    .summary .v {
+      font-size: 16px;
+      color: var(--slate);
+      font-weight: 600;
+    }
+    .summary .v.accent { color: var(--clay); }
+
+    /* section headers */
+    section { margin-bottom: 60px; }
+    .sec-label {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--gray-500);
+      margin-bottom: 6px;
+    }
+    h2 {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 24px;
+      color: var(--slate);
+      letter-spacing: -0.01em;
+      margin-bottom: 20px;
+    }
+    .sec-intro {
+      font-size: 14px;
+      color: var(--gray-500);
+      max-width: 680px;
+      margin-bottom: 24px;
+    }
+
+    /* formula card */
+    .formula-card {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      padding: 28px 32px;
+      margin-bottom: 24px;
+    }
+    .formula-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .formula-box {
+      font-family: var(--mono);
+      font-size: 13px;
+      background: var(--gray-150);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 8px;
+      padding: 10px 16px;
+      color: var(--slate);
+      white-space: nowrap;
+    }
+    .formula-box .hl { color: var(--clay); font-weight: 600; }
+    .arrow {
+      font-size: 20px;
+      color: var(--gray-300);
+      flex-shrink: 0;
+    }
+    .formula-caption {
+      font-size: 13px;
+      color: var(--gray-500);
+      margin-top: 14px;
+    }
+
+    /* SVG file tree */
+    .filetree-wrap {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      padding: 28px;
+      overflow-x: auto;
+    }
+    .filetree-wrap svg { display: block; }
+
+    /* decision cards */
+    .decisions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    @media (max-width: 760px) { .decisions { grid-template-columns: 1fr; } }
+    .decision {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      padding: 20px 22px;
+    }
+    .decision .d-num {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--oat);
+      color: var(--slate);
+      padding: 2px 8px;
+      border-radius: 6px;
+      display: inline-block;
+      margin-bottom: 10px;
+    }
+    .decision h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--slate);
+      margin-bottom: 8px;
+    }
+    .decision .rationale {
+      font-size: 13.5px;
+      color: var(--gray-500);
+      margin-bottom: 12px;
+    }
+    .decision .tags { display: flex; gap: 6px; flex-wrap: wrap; }
+    .decision .tag {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--gray-150);
+      border: 1px solid var(--gray-300);
+      border-radius: 6px;
+      padding: 2px 7px;
+      color: var(--gray-700);
+    }
+    .decision .tag.warn { background: #FEF3EE; border-color: #F4C4A8; color: var(--clay); }
+    .decision .tag.ok   { background: #EEF3E8; border-color: #BDD0A1; color: var(--olive); }
+
+    /* stepper */
+    .stepper { display: flex; flex-direction: column; gap: 0; }
+    .step {
+      display: grid;
+      grid-template-columns: 52px 28px 1fr;
+      gap: 0 16px;
+    }
+    .step .s-num {
+      text-align: right;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--gray-500);
+      padding-top: 5px;
+    }
+    .step .s-dot-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .step .s-dot {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--paper);
+      border: 2.5px solid var(--clay);
+      margin-top: 5px;
+      flex-shrink: 0;
+    }
+    .step .s-line {
+      width: 2px;
+      flex: 1;
+      background: var(--gray-300);
+      margin: 4px 0;
+    }
+    .step:last-child .s-line { display: none; }
+    .step .s-body {
+      padding-bottom: 28px;
+    }
+    .step .s-body h3 {
+      font-size: 15.5px;
+      font-weight: 600;
+      color: var(--slate);
+      margin-bottom: 4px;
+    }
+    .step .s-body .s-layer {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+    .s-layer.backend { background: #EEF3E8; color: var(--olive); }
+    .s-layer.frontend { background: #EEF0F8; color: #4A5A8C; }
+    .s-layer.i18n { background: #FEF3EE; color: var(--clay); }
+    .step .s-body p {
+      font-size: 13.5px;
+      color: var(--gray-500);
+      max-width: 560px;
+      margin-bottom: 8px;
+    }
+    .step .verify {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--gray-700);
+      background: var(--gray-150);
+      border: 1px solid var(--gray-300);
+      border-radius: 6px;
+      padding: 6px 10px;
+      display: inline-block;
+    }
+    .step .verify::before { content: '✓ '; color: var(--olive); }
+
+    /* checklist */
+    .checklist { display: flex; flex-direction: column; gap: 10px; max-width: 680px; }
+    .check-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 9px;
+      padding: 13px 16px;
+    }
+    .check-box {
+      width: 18px; height: 18px;
+      border-radius: 4px;
+      border: 2px solid var(--gray-300);
+      background: var(--paper);
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .check-item .c-text {
+      font-size: 14px;
+      color: var(--gray-700);
+    }
+    .check-item .c-note {
+      font-size: 12px;
+      color: var(--gray-500);
+      margin-top: 2px;
+      font-family: var(--mono);
+    }
+
+    /* assumptions */
+    .assumption-list { display: flex; flex-direction: column; gap: 10px; max-width: 720px; }
+    .assumption {
+      display: flex;
+      gap: 12px;
+      font-size: 14px;
+      color: var(--gray-700);
+    }
+    .assumption .a-num {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--oat);
+      color: var(--slate);
+      padding: 2px 7px;
+      border-radius: 5px;
+      height: fit-content;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="eyebrow">ExecPlan · AD · 2025-05-24</div>
+  <h1>Project Local Overrides</h1>
+  <div class="goal-box">
+    让 Profile 成为真正的"模板"——各 project 可在 profile 基础上添加自己的本地配置，切换或重新 apply profile 时这些配置不会被覆盖。
+  </div>
+
+  <!-- Summary strip -->
+  <div class="summary">
+    <div class="cell">
+      <div class="k">涉及文件</div>
+      <div class="v accent">8</div>
+    </div>
+    <div class="cell">
+      <div class="k">步骤数</div>
+      <div class="v">7</div>
+    </div>
+    <div class="cell">
+      <div class="k">模块</div>
+      <div class="v">Backend + Frontend + i18n</div>
+    </div>
+    <div class="cell">
+      <div class="k">关键变更</div>
+      <div class="v">Apply 公式</div>
+    </div>
+  </div>
+
+  <!-- Apply formula -->
+  <section>
+    <div class="sec-label">核心逻辑</div>
+    <h2>新 Apply 公式</h2>
+    <p class="sec-intro">local 层不再 merge 已有的 settings.local.json，而是由 profile.local 和 project.local_overrides 完整重建。</p>
+    <div class="formula-card">
+      <div class="formula-row">
+        <div class="formula-box"><span class="hl">settings.local.json</span></div>
+        <div class="arrow">←</div>
+        <div class="formula-box">merge(<span class="hl">profile.local</span>, <span class="hl">project.local_overrides</span>)</div>
+      </div>
+      <div class="formula-caption">
+        overrides 文件存储位置：<code style="font-family:var(--mono);font-size:12px;color:var(--slate)">~/.ad/state/local-overrides/&lt;path-hash&gt;.json</code>
+        &nbsp;·&nbsp; 如果 project 没有 overrides 文件，等价于旧行为（只写 profile.local）
+      </div>
+    </div>
+  </section>
+
+  <!-- File tree -->
+  <section>
+    <div class="sec-label">影响范围</div>
+    <h2>修改的文件</h2>
+    <p class="sec-intro">8 个文件（i18n 两份算一组），Backend 4 个 + Frontend 3 个 + i18n 1组。</p>
+    <div class="filetree-wrap">
+      <svg width="780" height="320" viewBox="0 0 780 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- styles -->
+        <style>
+          .tree-mono { font-family: ui-monospace,'SF Mono',Menlo,Monaco,monospace; }
+          .tree-path { fill: #141413; font-size: 13px; }
+          .tree-dim  { fill: #87867F; font-size: 12px; }
+          .tree-tag  { font-size: 11px; font-weight: 600; }
+          .tag-m     { fill: #788C5D; }
+          .tag-n     { fill: #4A5A8C; }
+          .tag-bg-m  { fill: #EEF3E8; stroke: #BDD0A1; stroke-width: 1; rx: 4; }
+          .tag-bg-n  { fill: #EEF0F8; stroke: #B8BEEF; stroke-width: 1; }
+        </style>
+
+        <!-- src-tauri group -->
+        <rect x="0" y="0" width="380" height="152" rx="10" fill="#F0EEE6" stroke="#D1CFC5" stroke-width="1.5"/>
+        <text x="14" y="22" class="tree-mono tree-dim">src-tauri/src/</text>
+
+        <!-- paths.rs -->
+        <text x="28" y="48" class="tree-mono tree-path">├── fs/paths.rs</text>
+        <rect x="210" y="36" width="22" height="16" rx="4" fill="#EEF3E8" stroke="#BDD0A1" stroke-width="1"/>
+        <text x="215" y="48" class="tree-mono tree-tag tag-m">M</text>
+        <text x="238" y="48" class="tree-mono tree-dim">+local_overrides_dir(), local_override_path()</text>
+
+        <!-- apply.rs -->
+        <text x="28" y="74" class="tree-mono tree-path">├── commands/apply.rs</text>
+        <rect x="210" y="62" width="22" height="16" rx="4" fill="#EEF3E8" stroke="#BDD0A1" stroke-width="1"/>
+        <text x="215" y="74" class="tree-mono tree-tag tag-m">M</text>
+        <text x="238" y="74" class="tree-mono tree-dim">local 层改用 overrides 文件</text>
+
+        <!-- projects.rs -->
+        <text x="28" y="100" class="tree-mono tree-path">├── commands/projects.rs</text>
+        <rect x="210" y="88" width="22" height="16" rx="4" fill="#EEF3E8" stroke="#BDD0A1" stroke-width="1"/>
+        <text x="215" y="100" class="tree-mono tree-tag tag-m">M</text>
+        <text x="238" y="100" class="tree-mono tree-dim">+get/save_project_local_overrides</text>
+
+        <!-- lib.rs -->
+        <text x="28" y="126" class="tree-mono tree-path">└── lib.rs</text>
+        <rect x="210" y="114" width="22" height="16" rx="4" fill="#EEF3E8" stroke="#BDD0A1" stroke-width="1"/>
+        <text x="215" y="126" class="tree-mono tree-tag tag-m">M</text>
+        <text x="238" y="126" class="tree-mono tree-dim">注册 2 个新 Tauri 命令</text>
+
+        <!-- backend label -->
+        <text x="14" y="148" class="tree-mono" fill="#87867F" font-size="11">BACKEND · Rust</text>
+
+        <!-- src group -->
+        <rect x="400" y="0" width="380" height="318" rx="10" fill="#F0EEE6" stroke="#D1CFC5" stroke-width="1.5"/>
+        <text x="414" y="22" class="tree-mono tree-dim">src/</text>
+
+        <!-- projectTypes.ts -->
+        <text x="428" y="48" class="tree-mono tree-path">├── lib/projectTypes.ts</text>
+        <rect x="600" y="36" width="22" height="16" rx="4" fill="#EEF3E8" stroke="#BDD0A1" stroke-width="1"/>
+        <text x="605" y="48" class="tree-mono tree-tag tag-m">M</text>
+        <text x="628" y="48" class="tree-mono tree-dim">+ProjectLocalOverrides type</text>
+
+        <!-- tauri.ts -->
+        <text x="428" y="74" class="tree-mono tree-path">├── lib/tauri.ts</text>
+        <rect x="600" y="62" width="22" height="16" rx="4" fill="#EEF3E8" stroke="#BDD0A1" stroke-width="1"/>
+        <text x="605" y="74" class="tree-mono tree-tag tag-m">M</text>
+        <text x="628" y="74" class="tree-mono tree-dim">+2 IPC 方法</text>
+
+        <!-- ProjectDetail.tsx -->
+        <text x="428" y="100" class="tree-mono tree-path">├── components/ProjectDetail.tsx</text>
+        <rect x="600" y="88" width="22" height="16" rx="4" fill="#EEF3E8" stroke="#BDD0A1" stroke-width="1"/>
+        <text x="605" y="100" class="tree-mono tree-tag tag-m">M</text>
+        <text x="628" y="100" class="tree-mono tree-dim">PROJECT LOCAL 区块 + Monaco</text>
+
+        <!-- i18n divider -->
+        <line x1="428" y1="118" x2="770" y2="118" stroke="#D1CFC5" stroke-width="1" stroke-dasharray="4,3"/>
+
+        <!-- zh.json -->
+        <text x="428" y="142" class="tree-mono tree-path">├── i18n/locales/zh.json</text>
+        <rect x="600" y="130" width="22" height="16" rx="4" fill="#EEF3E8" stroke="#BDD0A1" stroke-width="1"/>
+        <text x="605" y="142" class="tree-mono tree-tag tag-m">M</text>
+        <text x="628" y="142" class="tree-mono tree-dim">projectLocal.* 键（中文）</text>
+
+        <!-- en.json -->
+        <text x="428" y="168" class="tree-mono tree-path">└── i18n/locales/en.json</text>
+        <rect x="600" y="156" width="22" height="16" rx="4" fill="#EEF3E8" stroke="#BDD0A1" stroke-width="1"/>
+        <text x="605" y="168" class="tree-mono tree-tag tag-m">M</text>
+        <text x="628" y="168" class="tree-mono tree-dim">projectLocal.* 键（英文）</text>
+
+        <!-- new file badge -->
+        <text x="628" y="195" class="tree-mono tree-dim">（新增覆盖文件）</text>
+        <text x="428" y="220" class="tree-mono tree-path">state/ (runtime)</text>
+        <text x="428" y="244" class="tree-mono tree-dim">~/.ad/state/local-overrides/</text>
+        <text x="428" y="266" class="tree-mono tree-dim">  └── &lt;path-hash&gt;.json  ← per-project</text>
+
+        <!-- frontend label -->
+        <text x="414" y="314" class="tree-mono" fill="#87867F" font-size="11">FRONTEND · TypeScript · i18n</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- Decisions -->
+  <section>
+    <div class="sec-label">关键决策</div>
+    <h2>设计取舍</h2>
+    <div class="decisions">
+      <div class="decision">
+        <div class="d-num">D1</div>
+        <h3>Overrides 存独立文件</h3>
+        <p class="rationale">不放入 <code style="font-family:var(--mono);font-size:12px">projects.json</code>。JSON 内容可能较大，注入注册文件会让它无限膨胀，且独立文件便于调试和备份。路径哈希与现有 backup slug 策略保持一致。</p>
+        <div class="tags">
+          <span class="tag ok">简洁</span>
+          <span class="tag ok">可调试</span>
+        </div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D2</div>
+        <h3>Apply 时不 merge 已有 settings.local.json</h3>
+        <p class="rationale">新公式 <code style="font-family:var(--mono);font-size:12px">merge(profile.local, overrides)</code> 让 apply 结果幂等、可预期。手动编辑 settings.local.json 的内容在下次 apply 后丢失——这是预期行为，因为该文件是 AD 的输出文件。</p>
+        <div class="tags">
+          <span class="tag ok">幂等</span>
+          <span class="tag warn">手动编辑会丢失</span>
+        </div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D3</div>
+        <h3>不做向前迁移</h3>
+        <p class="rationale">不将已有 settings.local.json 里的"额外内容"自动迁移为 overrides。实现复杂且容易出错，用户可在 UI 里手动补回需要的内容。行为变更会在 UI 里有文字提示。</p>
+        <div class="tags">
+          <span class="tag warn">一次性丢失风险</span>
+          <span class="tag ok">低实现风险</span>
+        </div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D4</div>
+        <h3>UI 放 ProjectDetail 新 section</h3>
+        <p class="rationale">不新建独立 tab。ProjectDetail 已有 CURRENT / APPLY DIFFERENT / RECENT 三区，新增 PROJECT LOCAL 区块展开时显示 Monaco 编辑器，折叠时显示 override key 数量摘要。与 ProfileEditor 的编辑体验保持一致。</p>
+        <div class="tags">
+          <span class="tag ok">复用现有 UX</span>
+          <span class="tag ok">Monaco 一致性</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Assumptions -->
+  <section>
+    <div class="sec-label">前提假设</div>
+    <h2>隐含条件</h2>
+    <div class="assumption-list">
+      <div class="assumption">
+        <span class="a-num">A1</span>
+        <span>Overrides 仅作用于 <code style="font-family:var(--mono);font-size:12px">settings.local.json</code>（local 层），不影响 <code style="font-family:var(--mono);font-size:12px">settings.json</code>（shared 层）</span>
+      </div>
+      <div class="assumption">
+        <span class="a-num">A2</span>
+        <span>Overrides 存在 <code style="font-family:var(--mono);font-size:12px">~/.ad/state/local-overrides/</code>，不在项目目录内（对 git 透明）</span>
+      </div>
+      <div class="assumption">
+        <span class="a-num">A3</span>
+        <span>向后兼容：project 没有 overrides 文件时，行为与当前一致（等价于只写 profile.local）</span>
+      </div>
+      <div class="assumption">
+        <span class="a-num">A4</span>
+        <span>不支持 env 层 overrides——env 层已有独立机制（export 片段），不在本次范围内</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Steps -->
+  <section>
+    <div class="sec-label">执行计划</div>
+    <h2>实施步骤</h2>
+    <div class="stepper">
+
+      <div class="step">
+        <div class="s-num">Step 1</div>
+        <div class="s-dot-col">
+          <div class="s-dot"></div>
+          <div class="s-line"></div>
+        </div>
+        <div class="s-body">
+          <div class="s-layer backend">BACKEND</div>
+          <h3>paths.rs — 新增路径函数</h3>
+          <p>新增 <code style="font-family:var(--mono);font-size:12px">local_overrides_dir()</code> 返回 <code style="font-family:var(--mono);font-size:12px">~/.ad/state/local-overrides/</code>，以及 <code style="font-family:var(--mono);font-size:12px">local_override_path(project_path)</code> 用项目路径哈希生成对应文件路径。</p>
+          <div class="verify">cargo check 通过；单测路径格式正确</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="s-num">Step 2</div>
+        <div class="s-dot-col">
+          <div class="s-dot"></div>
+          <div class="s-line"></div>
+        </div>
+        <div class="s-body">
+          <div class="s-layer backend">BACKEND</div>
+          <h3>projects.rs — 新增 get/save 命令</h3>
+          <p>新增 <code style="font-family:var(--mono);font-size:12px">get_project_local_overrides(project_path)</code> 读取 overrides 文件（文件不存在时返回空对象），以及 <code style="font-family:var(--mono);font-size:12px">save_project_local_overrides(project_path, content)</code> 原子写入。</p>
+          <div class="verify">手动 invoke 返回正确 JSON；不存在时返回 {}</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="s-num">Step 3</div>
+        <div class="s-dot-col">
+          <div class="s-dot"></div>
+          <div class="s-line"></div>
+        </div>
+        <div class="s-body">
+          <div class="s-layer backend">BACKEND</div>
+          <h3>apply.rs — 修改 local 层逻辑</h3>
+          <p><code style="font-family:var(--mono);font-size:12px">write_layer()</code> 的 local 分支：从 <code style="font-family:var(--mono);font-size:12px">local_override_path()</code> 加载 overrides，执行 <code style="font-family:var(--mono);font-size:12px">merge(profile.layers.local, overrides)</code> 后原子写入目标项目，不再读取已有的 settings.local.json。</p>
+          <div class="verify">apply 后内容 = merge(profile.local, overrides)；空 overrides 等价于旧行为</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="s-num">Step 4</div>
+        <div class="s-dot-col">
+          <div class="s-dot"></div>
+          <div class="s-line"></div>
+        </div>
+        <div class="s-body">
+          <div class="s-layer backend">BACKEND</div>
+          <h3>lib.rs — 注册新命令</h3>
+          <p>在 <code style="font-family:var(--mono);font-size:12px">tauri::Builder</code> 的 <code style="font-family:var(--mono);font-size:12px">invoke_handler</code> 中注册 <code style="font-family:var(--mono);font-size:12px">get_project_local_overrides</code> 和 <code style="font-family:var(--mono);font-size:12px">save_project_local_overrides</code>。</p>
+          <div class="verify">cargo check 通过</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="s-num">Step 5</div>
+        <div class="s-dot-col">
+          <div class="s-dot"></div>
+          <div class="s-line"></div>
+        </div>
+        <div class="s-body">
+          <div class="s-layer frontend">FRONTEND</div>
+          <h3>类型 + IPC</h3>
+          <p><code style="font-family:var(--mono);font-size:12px">projectTypes.ts</code> 新增 <code style="font-family:var(--mono);font-size:12px">ProjectLocalOverrides</code> 类型（即 <code style="font-family:var(--mono);font-size:12px">Record&lt;string, unknown&gt;</code>）；<code style="font-family:var(--mono);font-size:12px">tauri.ts</code> 新增 <code style="font-family:var(--mono);font-size:12px">getProjectLocalOverrides()</code> 和 <code style="font-family:var(--mono);font-size:12px">saveProjectLocalOverrides()</code> 封装。</p>
+          <div class="verify">pnpm typecheck 通过</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="s-num">Step 6</div>
+        <div class="s-dot-col">
+          <div class="s-dot"></div>
+          <div class="s-line"></div>
+        </div>
+        <div class="s-body">
+          <div class="s-layer frontend">FRONTEND</div>
+          <h3>ProjectDetail — PROJECT LOCAL 区块</h3>
+          <p>在 ProjectDetail 底部新增可折叠的 PROJECT LOCAL 区块。折叠态显示 key 数量摘要；展开后显示 Monaco JSON 编辑器（与 ProfileEditor 一致），底部有 Save 按钮。保存后触发 <code style="font-family:var(--mono);font-size:12px">saveProjectLocalOverrides()</code>，并提示用户重新 apply 生效。</p>
+          <div class="verify">能保存 override；切换 profile 后 overrides 仍存在；重新 apply 后 settings.local.json 包含 overrides</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="s-num">Step 7</div>
+        <div class="s-dot-col">
+          <div class="s-dot"></div>
+          <div class="s-line"></div>
+        </div>
+        <div class="s-body">
+          <div class="s-layer i18n">i18n</div>
+          <h3>补全 zh.json / en.json</h3>
+          <p>新增 <code style="font-family:var(--mono);font-size:12px">projectLocal.*</code> 命名空间：区块标题、key 数量摘要、Save 按钮、行为变更提示（"手动编辑 settings.local.json 的内容在下次 apply 后将被覆盖"）。</p>
+          <div class="verify">无 raw key 展示；zh/en 全覆盖</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Verification checklist -->
+  <section>
+    <div class="sec-label">验收标准</div>
+    <h2>完成检查清单</h2>
+    <div class="checklist">
+      <div class="check-item">
+        <div class="check-box"></div>
+        <div>
+          <div class="c-text">apply 后 settings.local.json 内容 = merge(profile.local, project.local_overrides)</div>
+          <div class="c-note">用包含冲突 key 的 override 测试，profile.local 的值应被 override 覆盖</div>
+        </div>
+      </div>
+      <div class="check-item">
+        <div class="check-box"></div>
+        <div>
+          <div class="c-text">空 overrides（或 project 无 overrides 文件）时，行为与旧版一致</div>
+          <div class="c-note">旧版行为 = settings.local.json 内容 = profile.layers.local</div>
+        </div>
+      </div>
+      <div class="check-item">
+        <div class="check-box"></div>
+        <div>
+          <div class="c-text">切换 profile 后，project overrides 文件保留（不被清空）</div>
+          <div class="c-note">overrides 文件与 profile 无关，只与 project path 绑定</div>
+        </div>
+      </div>
+      <div class="check-item">
+        <div class="check-box"></div>
+        <div>
+          <div class="c-text">UI 能显示、编辑、保存 project overrides</div>
+          <div class="c-note">折叠态 key 计数准确；Monaco 编辑器能保存合法 JSON；非法 JSON 有提示</div>
+        </div>
+      </div>
+      <div class="check-item">
+        <div class="check-box"></div>
+        <div>
+          <div class="c-text">pnpm typecheck 通过 &amp; cargo check 通过</div>
+          <div class="c-note">类型安全，无编译警告</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ExecPlan — UI 改进 Pass 1 · AD</title>
+  <style>
+    :root {
+      --ivory:    #FAF9F5;
+      --paper:    #FFFFFF;
+      --slate:    #141413;
+      --clay:     #D97757;
+      --oat:      #E3DACC;
+      --olive:    #788C5D;
+      --rust:     #B04A3F;
+      --slate2:   #6588C3;
+      --gray-150: #F0EEE6;
+      --gray-300: #D1CFC5;
+      --gray-500: #87867F;
+      --gray-700: #3D3D3A;
+
+      --serif: ui-serif, Georgia, "Times New Roman", serif;
+      --sans:  system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --mono:  ui-monospace, "SF Mono", Menlo, Monaco, monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--ivory);
+      color: var(--gray-700);
+      line-height: 1.6;
+      padding: 56px 32px 120px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page { max-width: 1080px; margin: 0 auto; }
+
+    /* ---------- header ---------- */
+    header.page-head { margin-bottom: 48px; max-width: 840px; }
+
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--gray-500);
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 40px;
+      line-height: 1.12;
+      color: var(--slate);
+      margin-bottom: 20px;
+      letter-spacing: -0.015em;
+    }
+
+    .subtitle {
+      font-size: 17px;
+      color: var(--gray-700);
+      max-width: 760px;
+      margin-bottom: 24px;
+    }
+
+    .approval-strip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--gray-150);
+      border: 1.5px solid var(--gray-300);
+      border-left: 4px solid var(--clay);
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: 14px;
+    }
+    .approval-strip .pill {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--clay);
+      color: var(--paper);
+      letter-spacing: 0.04em;
+    }
+    .approval-strip strong { color: var(--slate); }
+
+    /* ---------- summary strip ---------- */
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin: 40px 0 64px;
+    }
+    @media (max-width: 880px) { .summary { grid-template-columns: 1fr; } }
+    .summary .cell {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      padding: 18px 20px;
+    }
+    .summary .cell .num {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--clay);
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+    .summary .cell .title {
+      font-family: var(--serif);
+      font-size: 19px;
+      color: var(--slate);
+      margin-bottom: 6px;
+    }
+    .summary .cell .body {
+      font-size: 13.5px;
+      color: var(--gray-500);
+      line-height: 1.5;
+    }
+
+    /* ---------- section chrome ---------- */
+    section { margin-bottom: 72px; }
+
+    .sec-head {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+    .sec-head .num {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--oat);
+      color: var(--slate);
+      padding: 3px 10px;
+      border-radius: 8px;
+      letter-spacing: 0.05em;
+    }
+    .sec-head h2 {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 28px;
+      color: var(--slate);
+      letter-spacing: -0.01em;
+    }
+    .sec-intro {
+      font-size: 14.5px;
+      color: var(--gray-500);
+      max-width: 740px;
+      margin-bottom: 28px;
+    }
+
+    /* ---------- assumption / decision cards ---------- */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+    @media (max-width: 760px) { .cards { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 10px;
+      padding: 16px 18px;
+      position: relative;
+    }
+    .card .tag {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--olive);
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+    }
+    .card.decision .tag { color: var(--clay); }
+    .card .title {
+      font-size: 14.5px;
+      font-weight: 600;
+      color: var(--slate);
+      margin-bottom: 6px;
+      line-height: 1.45;
+    }
+    .card .body {
+      font-size: 13.5px;
+      color: var(--gray-700);
+      line-height: 1.55;
+    }
+    .card .body .why {
+      display: block;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--gray-300);
+      color: var(--gray-500);
+      font-size: 12.5px;
+    }
+    .card .body .why strong { color: var(--slate); font-weight: 600; }
+
+    /* ---------- file tree ---------- */
+    .tree-box {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      padding: 20px 24px;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--gray-700);
+      overflow-x: auto;
+    }
+    .tree-box .lbl {
+      display: inline-block;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 8px;
+      vertical-align: middle;
+      letter-spacing: 0.05em;
+    }
+    .lbl.new  { background: rgba(120, 140, 93, 0.18); color: var(--olive); }
+    .lbl.mod  { background: rgba(217, 119, 87, 0.18); color: var(--clay); }
+    .lbl.del  { background: rgba(176, 74, 63, 0.15); color: var(--rust); }
+    .tree-comment { color: var(--gray-500); }
+
+    .tree-legend {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 14px;
+      font-family: var(--sans);
+      font-size: 12px;
+      color: var(--gray-500);
+    }
+
+    /* ---------- stepper ---------- */
+    .stepper {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      position: relative;
+    }
+    .step {
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      gap: 18px;
+      padding: 18px 0 26px;
+      border-left: 2px solid var(--gray-300);
+      margin-left: 22px;
+      padding-left: 28px;
+      position: relative;
+    }
+    .step:last-child { border-left: 2px solid transparent; }
+    .step .badge {
+      position: absolute;
+      left: -19px;
+      top: 16px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--paper);
+      border: 2px solid var(--clay);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--clay);
+    }
+    .step .head {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .step .head h3 {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 19px;
+      color: var(--slate);
+    }
+    .step .head .ship {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--gray-150);
+      color: var(--gray-500);
+      letter-spacing: 0.05em;
+    }
+    .step .ship.shippable { background: rgba(120, 140, 93, 0.18); color: var(--olive); }
+
+    .step ul.check {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .step ul.check li {
+      position: relative;
+      padding-left: 26px;
+      margin-bottom: 10px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .step ul.check li::before {
+      content: '';
+      position: absolute;
+      left: 2px;
+      top: 4px;
+      width: 14px;
+      height: 14px;
+      border: 1.5px solid var(--gray-300);
+      border-radius: 3px;
+      background: var(--paper);
+    }
+    .step ul.check li .verify {
+      display: block;
+      font-size: 12px;
+      color: var(--gray-500);
+      margin-top: 3px;
+      font-style: italic;
+    }
+    .step ul.check li .verify::before { content: '验证：'; color: var(--clay); font-style: normal; font-weight: 600; }
+
+    /* ---------- before/after color swatch ---------- */
+    .color-compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-top: 18px;
+    }
+    @media (max-width: 760px) { .color-compare { grid-template-columns: 1fr; } }
+    .swatch-card {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .swatch-card .label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      color: var(--gray-500);
+      margin-bottom: 10px;
+    }
+    .swatch-card .label.before { color: var(--rust); }
+    .swatch-card .label.after  { color: var(--olive); }
+    .swatch-card .preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      padding: 18px;
+      background: var(--gray-150);
+      border-radius: 8px;
+      margin-bottom: 10px;
+    }
+    .mock-btn {
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1.5px solid;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .swatch-card .meta {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--gray-500);
+    }
+    .swatch-card .meta code {
+      background: var(--gray-150);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    /* ---------- palette mockup ---------- */
+    .palette-mock {
+      background: #1f1d1a;
+      color: #f0eee6;
+      border-radius: 12px;
+      padding: 18px 20px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.65;
+      margin-top: 18px;
+    }
+    .palette-mock .row {
+      padding: 4px 10px;
+      border-radius: 5px;
+    }
+    .palette-mock .row.active { background: rgba(217, 119, 87, 0.25); color: var(--paper); }
+    .palette-mock .row.dim    { color: #87867f; }
+    .palette-mock .row .meta  { float: right; font-size: 11px; color: #87867f; }
+    .palette-mock .row .meta.git { color: var(--olive); }
+    .palette-mock .row .meta.added { color: var(--clay); }
+    .palette-mock .caret {
+      display: inline-block;
+      width: 7px;
+      height: 13px;
+      background: var(--clay);
+      vertical-align: middle;
+      animation: blink 1s steps(2) infinite;
+    }
+    .palette-mock .input-line {
+      border-bottom: 1px solid #3d3d3a;
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+    }
+    .palette-mock .group-label {
+      font-size: 10px;
+      color: #87867f;
+      letter-spacing: 0.06em;
+      margin: 6px 0 4px;
+    }
+    .palette-mock .footer {
+      font-size: 10px;
+      color: #87867f;
+      margin-top: 10px;
+      border-top: 1px solid #3d3d3a;
+      padding-top: 6px;
+    }
+    @keyframes blink { 50% { opacity: 0 } }
+
+    /* ---------- inline misc ---------- */
+    code, kbd {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      background: var(--gray-150);
+      padding: 1px 6px;
+      border-radius: 4px;
+      color: var(--slate);
+    }
+    kbd {
+      border: 1px solid var(--gray-300);
+      box-shadow: 0 1px 0 var(--gray-300);
+    }
+    p { margin-bottom: 12px; }
+    a { color: var(--clay); }
+
+    .verify-box {
+      background: var(--gray-150);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 10px;
+      padding: 18px 22px;
+      margin-top: 16px;
+    }
+    .verify-box h4 {
+      font-family: var(--serif);
+      font-size: 16px;
+      color: var(--slate);
+      margin-bottom: 10px;
+      font-weight: 500;
+    }
+    .verify-box ol {
+      padding-left: 22px;
+      font-size: 14px;
+      line-height: 1.65;
+    }
+    .verify-box ol li { margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+
+    <!-- ============ HEADER ============ -->
+    <header class="page-head">
+      <div class="eyebrow">ExecPlan · Active · 2026-05-24</div>
+      <h1>UI 改进 Pass 1 — 路径补齐 / 配色协调 / 默认中文</h1>
+      <p class="subtitle">
+        让 AD 主路径更顺手、视觉更协调、对中文用户更友好。三件事打包成一个 ExecPlan，
+        因为它们都触及"用户进入 AD 的第一印象"，分批改容易出现风格漂移。
+      </p>
+      <div class="approval-strip">
+        <span class="pill">待确认</span>
+        <span><strong>评审中</strong> · 评审完成请在终端回复"可以"或提出修改</span>
+      </div>
+    </header>
+
+    <!-- ============ SUMMARY ============ -->
+    <div class="summary">
+      <div class="cell">
+        <div class="num">问题 ①</div>
+        <div class="title">添加项目卡在 prompt</div>
+        <div class="body">CommandPalette 的"Add project from path…"现在用 <code>window.prompt</code>。改成 shell 风格路径补齐，按 Tab/↑↓/Enter。</div>
+      </div>
+      <div class="cell">
+        <div class="num">问题 ②</div>
+        <div class="title">黑按钮撞色暖调</div>
+        <div class="body">shadcn 默认 <code>--foreground</code> 是近黑冷调，但 status ring / detected 横幅是暖橙土。改一个 CSS 变量即解。</div>
+      </div>
+      <div class="cell">
+        <div class="num">问题 ③</div>
+        <div class="title">界面没有中文</div>
+        <div class="body">全部硬编码英文，零 i18n。接 react-i18next，默认 zh，可切 en；落地 CODE_STYLE 既有约束。</div>
+      </div>
+    </div>
+
+    <!-- ============ 目的 ============ -->
+    <section>
+      <div class="sec-head">
+        <span class="num">01</span>
+        <h2>目的 / 全局视角</h2>
+      </div>
+      <p class="sec-intro">用户能直接观察到的三件事：</p>
+      <ul style="padding-left:22px;font-size:14.5px;line-height:1.7">
+        <li><kbd>⌘K</kbd> 输入 <code>add ~/code/</code> → 实时目录候选，Tab 补齐公共前缀，Enter 添加，路径错误友好提示。</li>
+        <li>选中的 profile chip / layer toggle 不再是刺眼纯黑底，与左栏色环、detected 横幅的暖色基调一致。</li>
+        <li>启动默认中文文案；AdvancedSettings 切到 English 立即生效并持久化。</li>
+      </ul>
+    </section>
+
+    <!-- ============ 假设 ============ -->
+    <section>
+      <div class="sec-head">
+        <span class="num">02</span>
+        <h2>假设</h2>
+      </div>
+      <p class="sec-intro">任何一条不认同，告知后 MD + HTML 同步修订。</p>
+      <div class="cards">
+        <div class="card">
+          <div class="tag">A1 · 入口</div>
+          <div class="title">路径补齐在 CommandPalette 内（D1）</div>
+          <div class="body">不另起独立浮层。复用 ⌘K 习惯，0 新窗口。<span class="why"><strong>用户已选定 D1。</strong></span></div>
+        </div>
+        <div class="card">
+          <div class="tag">A2 · 隐藏目录</div>
+          <div class="title">只列目录，不列文件；隐藏目录需显式 <code>.</code> 前缀</div>
+          <div class="body">跟 shell 一致，避免噪声。</div>
+        </div>
+        <div class="card">
+          <div class="tag">A3 · 路径展开</div>
+          <div class="title"><code>~</code> 展开为 <code>$HOME</code></div>
+          <div class="body">其他环境变量不支持（YAGNI）。</div>
+        </div>
+        <div class="card">
+          <div class="tag">A4 · 后端命令</div>
+          <div class="title">新增 <code>list_directory(prefix)</code></div>
+          <div class="body">返回前缀下目录条目，含 is_git_repo 元信息。</div>
+        </div>
+        <div class="card">
+          <div class="tag">A5 · 配色最小化</div>
+          <div class="title">只改 <code>--foreground</code>/<code>--primary</code>/<code>--ring</code> 三个 token</div>
+          <div class="body">改为暖深 charcoal（≈ slate <code>#141413</code>）；组件 className 不动。<span class="why"><strong>为什么不全 token 重做：</strong>问题就在这一颗冷黑嵌进了暖系，改这一处即解；最小修改原则。</span></div>
+        </div>
+        <div class="card">
+          <div class="tag">A6 · 双语</div>
+          <div class="title">默认 zh，保留 en 可切换</div>
+          <div class="body">开发者群体中英分歧大，全删 en 不可逆；可切换最小成本满足"默认中文"。</div>
+        </div>
+        <div class="card">
+          <div class="tag">A7 · i18n 框架</div>
+          <div class="title">react-i18next（~15KB）</div>
+          <div class="body">生态成熟、TS 类型完善；不选 lingui / react-intl（更重）。</div>
+        </div>
+        <div class="card">
+          <div class="tag">A8 · 资源组织</div>
+          <div class="title">按 namespace 切分 JSON</div>
+          <div class="body"><code>locales/{zh,en}.json</code>，命名空间 <code>common / palette / project / profile / apply / error</code>。</div>
+        </div>
+        <div class="card">
+          <div class="tag">A9 · 持久化</div>
+          <div class="title">locale 写入 <code>~/.ad/state/ui.json</code></div>
+          <div class="body">复用既有 UI 状态文件，不新建。</div>
+        </div>
+        <div class="card">
+          <div class="tag">A10 · 文档</div>
+          <div class="title">CODE_STYLE.md 第 68-71 行需更新</div>
+          <div class="body">原文"AD 是英文界面" → "默认中文，可切英文；所有文案必须走 i18n"。</div>
+        </div>
+        <div class="card">
+          <div class="tag">A11 · 安全</div>
+          <div class="title">list_directory 不限制路径范围</div>
+          <div class="body">add_project 本来就接受任意路径（用户自己输的），补齐不引入新攻击面；<code>..</code> 按字面解析。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 影响范围 ============ -->
+    <section>
+      <div class="sec-head">
+        <span class="num">03</span>
+        <h2>影响范围</h2>
+      </div>
+      <p class="sec-intro">新增 4 个文件，修改 ~12 个文件，无删除。</p>
+      <div class="tree-legend">
+        <span><span class="lbl new">NEW</span> 新增</span>
+        <span><span class="lbl mod">MOD</span> 修改</span>
+        <span><span class="lbl del">DEL</span> 删除</span>
+      </div>
+      <div class="tree-box">
+ad/
+├── src-tauri/src/
+│   ├── commands/
+│   │   ├── <span class="tree-comment">fs_browse.rs</span>          <span class="lbl new">NEW</span>  <span class="tree-comment"># list_directory 命令 + 单测</span>
+│   │   └── mod.rs                <span class="lbl mod">MOD</span>  <span class="tree-comment"># export</span>
+│   └── lib.rs                    <span class="lbl mod">MOD</span>  <span class="tree-comment"># invoke_handler 注册</span>
+│
+├── src/
+│   ├── i18n/                     <span class="lbl new">NEW</span>
+│   │   ├── index.ts              <span class="lbl new">NEW</span>  <span class="tree-comment"># i18next init + locale 持久化</span>
+│   │   └── locales/
+│   │       ├── zh.json           <span class="lbl new">NEW</span>  <span class="tree-comment"># 默认中文</span>
+│   │       └── en.json           <span class="lbl new">NEW</span>  <span class="tree-comment"># 英文（保留旧文案）</span>
+│   ├── lib/
+│   │   ├── pathAutocomplete.ts   <span class="lbl new">NEW</span>  <span class="tree-comment"># 前端补齐 hook</span>
+│   │   └── tauri.ts              <span class="lbl mod">MOD</span>  <span class="tree-comment"># + listDirectory wrapper</span>
+│   ├── styles/globals.css        <span class="lbl mod">MOD</span>  <span class="tree-comment"># --foreground/--primary/--ring</span>
+│   ├── App.tsx                   <span class="lbl mod">MOD</span>  <span class="tree-comment"># import './i18n'</span>
+│   ├── main.tsx                  <span class="lbl mod">MOD</span>  <span class="tree-comment"># Suspense（若需要）</span>
+│   └── components/
+│       ├── CommandPalette.tsx    <span class="lbl mod">MOD</span>  <span class="tree-comment"># add 前缀 → 补齐模式 + t()</span>
+│       ├── ProjectSidebar.tsx    <span class="lbl mod">MOD</span>  <span class="tree-comment"># t()</span>
+│       ├── ProjectDetail.tsx     <span class="lbl mod">MOD</span>  <span class="tree-comment"># t()</span>
+│       ├── ProfileEditDrawer.tsx <span class="lbl mod">MOD</span>  <span class="tree-comment"># t()</span>
+│       ├── AdvancedSettings.tsx  <span class="lbl mod">MOD</span>  <span class="tree-comment"># t() + Language 切换</span>
+│       └── (其余 ~6 个含硬编码英文的组件) <span class="lbl mod">MOD</span>
+│
+├── package.json                  <span class="lbl mod">MOD</span>  <span class="tree-comment"># + react-i18next + i18next</span>
+├── docs/CODE_STYLE.md            <span class="lbl mod">MOD</span>  <span class="tree-comment"># UI 文案章节</span>
+└── AGENTS.md                     <span class="lbl mod">MOD</span>  <span class="tree-comment"># i18n 入门提示</span>
+      </div>
+    </section>
+
+    <!-- ============ 关键决策 ============ -->
+    <section>
+      <div class="sec-head">
+        <span class="num">04</span>
+        <h2>关键决策</h2>
+      </div>
+      <p class="sec-intro">每个决策都列了备选 + 为什么不选。</p>
+      <div class="cards">
+        <div class="card decision">
+          <div class="tag">D1 · 补齐入口</div>
+          <div class="title">CommandPalette 内（用户已选）</div>
+          <div class="body">在 ⌘K 输入 <code>add &lt;path&gt;</code> 触发补齐模式。
+            <span class="why"><strong>vs. D2 独立浮层：</strong>0 新窗口、复用习惯；用户拒绝原生选择器后明确选了 D1。</span>
+          </div>
+        </div>
+        <div class="card decision">
+          <div class="tag">D2 · i18n 框架</div>
+          <div class="title">react-i18next</div>
+          <div class="body">~15KB；TS 类型完善；插件生态成熟。
+            <span class="why"><strong>vs. lingui / formatjs：</strong>更重，编译期提取虽好但 ROI 不足；本项目规模 react-i18next 够用。</span>
+          </div>
+        </div>
+        <div class="card decision">
+          <div class="tag">D3 · 双语策略</div>
+          <div class="title">默认 zh，保留 en 切换</div>
+          <div class="body">兑现 CODE_STYLE.md 既有约束"将来加中文必须走 i18n"。
+            <span class="why"><strong>vs. 仅 zh：</strong>不可逆；开发者中英偏好分歧大，可切换最小成本。</span>
+          </div>
+        </div>
+        <div class="card decision">
+          <div class="tag">D4 · 配色策略</div>
+          <div class="title">只改 3 个 CSS 变量</div>
+          <div class="body"><code>--foreground</code>/<code>--primary</code>/<code>--ring</code> 由 <code>222.2 84% 4.9%</code>（冷黑）→ <code>60 5% 8%</code>（暖深 charcoal）。
+            <span class="why"><strong>vs. 全 token 重做：</strong>问题就在这一颗冷黑嵌进了暖系，改一处即解。组件 className 全不动 — 最小修改原则。</span>
+          </div>
+        </div>
+        <div class="card decision">
+          <div class="tag">D5 · 不缓存目录</div>
+          <div class="title">list_directory 每次现读</div>
+          <div class="body">输入节流即可。
+            <span class="why"><strong>vs. 加缓存：</strong>缓存复杂度（失效、TTL）超出 MVP，本地 fs 读延迟可忽略。</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 视觉对比 ============ -->
+    <section>
+      <div class="sec-head">
+        <span class="num">05</span>
+        <h2>视觉对比 — 配色 & 路径补齐</h2>
+      </div>
+      <p class="sec-intro">两组直观对比，让 D4 与 D1 的效果可感知。</p>
+
+      <h3 style="font-family:var(--serif);font-size:18px;color:var(--slate);margin:8px 0 4px;font-weight:500">配色：黑按钮 → 暖深按钮</h3>
+      <div class="color-compare">
+        <div class="swatch-card">
+          <div class="label before">当前 — bg: hsl(222.2 84% 4.9%) 冷黑</div>
+          <div class="preview" style="background:#FAF9F5;border:1px solid var(--gray-300)">
+            <span class="mock-btn" style="background:#0B121F;color:#fff;border-color:#0B121F">+ ⌘T</span>
+            <span class="mock-btn" style="background:#0B121F;color:#fff;border-color:#0B121F">● dev-profile</span>
+            <span class="mock-btn" style="background:#0B121F;color:#fff;border-color:#0B121F;font-family:var(--mono)">shared</span>
+            <span class="mock-btn" style="background:#fff;color:var(--clay);border-color:var(--clay)">✨ 3 detected</span>
+          </div>
+          <div class="meta">突兀点：黑按钮和橙暖 detected 横幅放一起，冷暖对撞。</div>
+        </div>
+        <div class="swatch-card">
+          <div class="label after">提案 — bg: hsl(60 5% 8%) 暖深 charcoal</div>
+          <div class="preview" style="background:#FAF9F5;border:1px solid var(--gray-300)">
+            <span class="mock-btn" style="background:#141413;color:#fff;border-color:#141413">+ ⌘T</span>
+            <span class="mock-btn" style="background:#141413;color:#fff;border-color:#141413">● dev-profile</span>
+            <span class="mock-btn" style="background:#141413;color:#fff;border-color:#141413;font-family:var(--mono)">shared</span>
+            <span class="mock-btn" style="background:#fff;color:var(--clay);border-color:var(--clay)">✨ 3 detected</span>
+          </div>
+          <div class="meta">deep slate 与 clay/oat/olive 同色温，对比度仍足够。</div>
+        </div>
+      </div>
+
+      <h3 style="font-family:var(--serif);font-size:18px;color:var(--slate);margin:32px 0 4px;font-weight:500">路径补齐：CommandPalette 内 mock</h3>
+      <div class="palette-mock">
+        <div style="color:#87867f;margin-bottom:8px">⌘K · CommandPalette</div>
+        <div class="input-line">
+          <span style="color:#87867f">›</span> add ~/code/proj<span class="caret"></span>
+        </div>
+        <div class="group-label">ADD PROJECT (TYPE A PATH)</div>
+        <div class="row active">📁 ~/code/proj-ad <span class="meta added">already added</span></div>
+        <div class="row">📁 ~/code/proj-cmux <span class="meta git">git · detected</span></div>
+        <div class="row">📁 ~/code/proj-foo</div>
+        <div class="row">📁 ~/code/proj-bar</div>
+        <div class="footer">tab 补齐 · ↑↓ 选择 · ↵ 添加 · esc 关闭</div>
+      </div>
+    </section>
+
+    <!-- ============ 里程碑 ============ -->
+    <section>
+      <div class="sec-head">
+        <span class="num">06</span>
+        <h2>里程碑与验证标准</h2>
+      </div>
+      <p class="sec-intro">5 个独立可 ship 的里程碑。每步带验证标准。</p>
+
+      <div class="stepper">
+
+        <div class="step">
+          <div class="badge">M1</div>
+          <div>
+            <div class="head"><h3>路径补齐</h3><span class="ship shippable">独立可 ship</span></div>
+            <ul class="check">
+              <li>后端 <code>list_directory(prefix)</code> 命令 + 单元测试
+                <span class="verify"><code>cargo test list_directory</code> 通过，覆盖 <code>~</code> 展开、隐藏目录过滤、不存在目录的错误</span>
+              </li>
+              <li>前端 <code>lib/pathAutocomplete.ts</code> hook
+                <span class="verify">手测 <code>~/code/p</code> 立即返回候选；输 <code>.</code> 显示隐藏目录</span>
+              </li>
+              <li>CommandPalette 识别 <code>add </code> 前缀切换补齐模式
+                <span class="verify">输 <code>add ~/</code>，候选替换默认 commands；Tab 补齐；Enter 调 addProject 并关闭 palette</span>
+              </li>
+              <li>移除 <code>window.prompt</code> 旧入口
+                <span class="verify">grep 不到 <code>window.prompt</code> 在 CommandPalette 中</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="badge">M2</div>
+          <div>
+            <div class="head"><h3>配色协调</h3><span class="ship shippable">独立可 ship</span></div>
+            <ul class="check">
+              <li>改 <code>globals.css</code> 的 <code>--foreground</code> / <code>--primary</code> / <code>--ring</code>
+                <span class="verify">DevTools 取色，与 <code>#141413</code> 接近；对比度对 <code>--background</code> &gt; 7:1</span>
+              </li>
+              <li>暗色模式 token 同步调暖
+                <span class="verify">切到 dark mode 验证不变成冷蓝</span>
+              </li>
+              <li>截图对比 4 个高频组件
+                <span class="verify">sidebar +⌘T、ProfileChip 选中、LayerToggle 选中、palette 高亮 row 视觉协调</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="badge">M3</div>
+          <div>
+            <div class="head"><h3>i18n 框架接入</h3><span class="ship shippable">独立可 ship</span></div>
+            <ul class="check">
+              <li><code>pnpm add react-i18next i18next</code></li>
+              <li>创建 <code>src/i18n/index.ts</code> + <code>locales/zh.json</code> + <code>locales/en.json</code>
+                <span class="verify"><code>pnpm typecheck</code> 通过</span>
+              </li>
+              <li><code>App.tsx</code> 引入 i18n（init + Suspense）
+                <span class="verify">启动默认显示 zh 文案</span>
+              </li>
+              <li>替换 CommandPalette / ProjectSidebar / ProjectDetail 硬编码字符串
+                <span class="verify">3 个组件 grep 不到原英文字串</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="badge">M4</div>
+          <div>
+            <div class="head"><h3>剩余文案 + 语言切换</h3><span class="ship shippable">独立可 ship</span></div>
+            <ul class="check">
+              <li>替换剩余组件硬编码英文（AdvancedSettings / ProfileEditDrawer / HistoryDialog / DiffView / DetectedProjectsModal / ImportDialog / EmptyState / ActivateToast / InlineConflictResolver / StatusRing）
+                <span class="verify">grep 全部 <code>.tsx</code>，用户可见硬编码英文为 0</span>
+              </li>
+              <li>AdvancedSettings 加 Language 切换 + 持久化到 <code>~/.ad/state/ui.json</code>
+                <span class="verify">切到 en 立即生效；重启保留</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="badge">M5</div>
+          <div>
+            <div class="head"><h3>文档同步</h3><span class="ship shippable">独立可 ship</span></div>
+            <ul class="check">
+              <li>更新 <code>docs/CODE_STYLE.md</code> 第 68-71 行"UI 文案"段落
+                <span class="verify">新版本明确"默认中文，必须走 i18n"</span>
+              </li>
+              <li><code>AGENTS.md</code> 补一行 i18n 入门指引
+                <span class="verify">指明 <code>src/i18n/locales/{zh,en}.json</code> 的添加方式</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============ 验证 ============ -->
+    <section>
+      <div class="sec-head">
+        <span class="num">07</span>
+        <h2>验收</h2>
+      </div>
+      <p class="sec-intro">启动 <code>pnpm tauri dev</code>，依次走完以下 6 步即视为完成。</p>
+      <div class="verify-box">
+        <h4>行为验收</h4>
+        <ol>
+          <li><strong>默认中文：</strong>窗口标题、Sidebar 顶部"项目"、CommandPalette 占位符等全部中文</li>
+          <li><strong>路径补齐：</strong>⌘K → 输 <code>add ~/co</code> → 候选实时显示；Tab 补齐到公共前缀；↑↓ 选；Enter 添加并关闭 palette</li>
+          <li><strong>隐藏目录：</strong>输 <code>add ~/.con</code> 显示 <code>~/.config</code>；不输 <code>.</code> 时隐藏目录不混入</li>
+          <li><strong>语言切换：</strong>AdvancedSettings → Language → English → 界面立即英文；重启仍 English</li>
+          <li><strong>配色：</strong>肉眼看 sidebar <code>+⌘T</code>、选中的 profile chip / layer toggle 都不再是纯黑/白对比，与 clay 横幅放一起视觉舒适</li>
+          <li><strong>检查通过：</strong><code>pnpm typecheck</code> + <code>cargo test</code> + <code>cargo clippy --all-targets -- -D warnings</code></li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ============ APPROVAL BASELINE ============ -->
+    <div style="margin-top:80px;padding:18px 22px;background:var(--gray-150);border:1.5px dashed var(--gray-500);border-radius:10px;font-family:var(--mono);font-size:12.5px;color:var(--gray-700)">
+      <strong style="color:var(--slate)">Approved plan baseline (frozen at 2026-05-24 05:36Z).</strong><br/>
+      Live execution state: see <code>docs/exec-plans/active/ui-polish-pass1.md</code>
+    </div>
+  </div>
+</body>
+</html>

@@ -147,7 +147,6 @@ mod tests {
                 scan_roots_state_path().unwrap(),
                 home.join(".ad/state/scan_roots.json")
             );
-
             // v0.1 legacy locations (used by migration only)
             assert_eq!(legacy_v1_ad_dir().unwrap(), home.join(".claude/ad"));
             assert_eq!(

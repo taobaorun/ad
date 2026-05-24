@@ -1,0 +1,2369 @@
+<!-- AD · UI 重设计方案探索 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AD UI 重设计 · 三个方向并排</title>
+  <style>
+    :root {
+      --ivory:    #FAF9F5;
+      --paper:    #FFFFFF;
+      --slate:    #141413;
+      --clay:     #D97757;
+      --rust:     #B04A3F;
+      --oat:      #E3DACC;
+      --olive:    #788C5D;
+      --gray-150: #F0EEE6;
+      --gray-300: #D1CFC5;
+      --gray-500: #87867F;
+      --gray-700: #3D3D3A;
+
+      --serif: ui-serif, Georgia, 'Times New Roman', serif;
+      --sans:  system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --mono:  ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--ivory);
+      color: var(--gray-700);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 96px;
+    }
+
+    .container {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 32px;
+    }
+
+    /* ---------- top bar ---------- */
+    .topbar {
+      position: sticky; top: 0; z-index: 30;
+      background: rgba(250, 249, 245, 0.92);
+      backdrop-filter: saturate(140%) blur(8px);
+      border-bottom: 1px solid var(--gray-300);
+      padding: 14px 32px;
+      display: flex; align-items: center; gap: 22px;
+      font-size: 13px;
+    }
+    .topbar .crumb {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      color: var(--gray-500);
+    }
+    .topbar .crumb strong { color: var(--slate); font-weight: 600; }
+    .topbar nav { margin-left: auto; display: flex; gap: 18px; }
+    .topbar nav a {
+      color: var(--gray-700);
+      text-decoration: none;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .topbar nav a:hover { background: var(--gray-150); }
+
+    /* ---------- header ---------- */
+    header.intro {
+      padding: 56px 0 36px;
+    }
+    header.intro h1 {
+      font-family: var(--serif);
+      font-size: 34px;
+      color: var(--slate);
+      line-height: 1.2;
+      margin-bottom: 14px;
+      font-weight: 600;
+    }
+    header.intro .lede {
+      font-size: 16px;
+      max-width: 760px;
+      color: var(--gray-700);
+    }
+    header.intro .meta {
+      margin-top: 18px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--gray-500);
+    }
+    header.intro .meta span + span::before { content: " · "; }
+
+    /* ---------- section ---------- */
+    section {
+      margin-top: 64px;
+    }
+    section > h2 {
+      font-family: var(--serif);
+      font-size: 22px;
+      color: var(--slate);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    section > .subtitle {
+      font-size: 14px;
+      color: var(--gray-500);
+      margin-bottom: 28px;
+    }
+
+    /* ---------- today panel ---------- */
+    .today {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 14px;
+      padding: 28px;
+    }
+    .today h3 {
+      font-family: var(--serif);
+      font-size: 17px;
+      color: var(--slate);
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+    .today svg { width: 100%; height: auto; display: block; }
+    .pain-list { list-style: none; }
+    .pain-list li {
+      padding: 8px 0;
+      border-bottom: 1px dashed var(--gray-300);
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 10px;
+      font-size: 14px;
+    }
+    .pain-list li:last-child { border-bottom: 0; }
+    .pain-list .num {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--rust);
+      font-weight: 600;
+      padding-top: 2px;
+    }
+    .pain-list .what { color: var(--gray-700); }
+    .pain-list .what strong { color: var(--slate); }
+
+    /* ---------- direction grid ---------- */
+    .dirs {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 22px;
+    }
+    @media (max-width: 720px) {
+      .dirs { grid-template-columns: 1fr; }
+    }
+    .dir {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 14px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .dir-head {
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--gray-300);
+      background: var(--gray-150);
+    }
+    .dir-tag {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      color: var(--gray-500);
+      margin-bottom: 6px;
+    }
+    .dir-title {
+      font-family: var(--serif);
+      font-size: 19px;
+      color: var(--slate);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .dir-onelead {
+      font-size: 13px;
+      color: var(--gray-700);
+      line-height: 1.5;
+    }
+    .dir-mockup {
+      padding: 16px 16px 8px;
+    }
+    .dir-mockup svg {
+      width: 100%; height: auto; display: block;
+      border-radius: 6px;
+    }
+    .dir-body { padding: 14px 20px 18px; flex: 1; display: flex; flex-direction: column; gap: 14px; }
+    .dir-body h4 {
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      color: var(--gray-500);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .dir-body p, .dir-body li { font-size: 13.5px; color: var(--gray-700); }
+    .dir-body ol { padding-left: 18px; }
+    .dir-body ol li { margin-bottom: 2px; }
+    .dir-body ol li code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--gray-150);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .solves {
+      display: flex; flex-wrap: wrap; gap: 4px;
+    }
+    .solves .chip {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: var(--olive);
+      color: var(--paper);
+      letter-spacing: 0.02em;
+    }
+    .solves .chip.weak {
+      background: var(--oat);
+      color: var(--gray-700);
+    }
+    .trade {
+      background: var(--ivory);
+      border-left: 3px solid var(--clay);
+      padding: 10px 12px;
+      border-radius: 0 4px 4px 0;
+      font-size: 13px;
+      color: var(--gray-700);
+    }
+    .trade strong { color: var(--rust); font-weight: 600; }
+
+    /* ---------- compare matrix ---------- */
+    .matrix {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      overflow: hidden;
+      font-size: 13.5px;
+    }
+    .matrix th, .matrix td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--gray-300);
+    }
+    .matrix th {
+      background: var(--gray-150);
+      font-weight: 600;
+      color: var(--slate);
+      font-size: 12px;
+    }
+    .matrix th.dir-col {
+      text-align: center;
+      width: 14%;
+      font-family: var(--mono);
+      letter-spacing: 0.04em;
+    }
+    .matrix td.dir-col {
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 14px;
+    }
+    .matrix tbody tr:last-child td { border-bottom: 0; }
+    .mark-full { color: var(--olive); font-weight: 600; }
+    .mark-part { color: var(--clay); }
+    .mark-none { color: var(--gray-300); }
+
+    /* ---------- CTA ---------- */
+    .cta {
+      margin-top: 64px;
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 14px;
+      padding: 24px 28px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 24px;
+      align-items: center;
+    }
+    .cta h3 {
+      font-family: var(--serif);
+      font-size: 19px;
+      color: var(--slate);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .cta p { font-size: 14px; color: var(--gray-700); max-width: 720px; }
+    .cta .pick {
+      font-family: var(--mono);
+      font-size: 13px;
+      padding: 10px 16px;
+      background: var(--slate);
+      color: var(--ivory);
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    /* ---------- helpers ---------- */
+    .anchor { scroll-margin-top: 80px; }
+
+    .legend {
+      display: flex; gap: 22px;
+      margin-top: 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--gray-500);
+    }
+    .legend .swatch {
+      display: inline-block; width: 11px; height: 11px;
+      border-radius: 2px; margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    footer {
+      margin-top: 64px;
+      padding-top: 18px;
+      border-top: 1px solid var(--gray-300);
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--gray-500);
+    }
+
+    /* ============ try button on each direction card ============ */
+    .try-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px;
+      background: var(--slate);
+      color: var(--ivory);
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 0;
+      font-family: inherit;
+      width: 100%;
+      justify-content: center;
+    }
+    .try-btn:hover { background: #2a2a28; }
+    .try-btn .arr { font-family: var(--mono); }
+
+    /* ============ playground ============ */
+    :root { --gray-100: #F5F4EE; }
+    button { cursor: pointer; }
+
+    .pg-bar {
+      position: sticky; top: 51px; z-index: 20;
+      background: rgba(250,249,245,0.94);
+      backdrop-filter: blur(8px) saturate(140%);
+      padding: 12px 0;
+      display: flex; align-items: center; gap: 18px;
+      margin-bottom: 16px;
+      border-bottom: 1px dashed var(--gray-300);
+    }
+    .pg-bar .seg {
+      display: inline-flex;
+      border: 1.5px solid var(--gray-300);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--paper);
+    }
+    .pg-bar .seg button {
+      padding: 7px 14px;
+      font-size: 13px;
+      color: var(--gray-700);
+      border-right: 1px solid var(--gray-300);
+      background: none;
+      border-top: 0; border-bottom: 0;
+      border-left: 0;
+    }
+    .pg-bar .seg button:last-child { border-right: 0; }
+    .pg-bar .seg button.on {
+      background: var(--slate);
+      color: var(--ivory);
+      font-weight: 600;
+    }
+    .try-text {
+      font-size: 12.5px;
+      color: var(--gray-500);
+      padding: 8px 12px;
+      background: var(--gray-100);
+      border-radius: 6px;
+      border-left: 3px solid var(--clay);
+      margin-bottom: 14px;
+      line-height: 1.55;
+    }
+    .try-text strong { color: var(--slate); font-weight: 600; }
+    .try-text kbd {
+      font-family: var(--mono); font-size: 11px;
+      background: var(--paper);
+      border: 1px solid var(--gray-300);
+      border-radius: 3px;
+      padding: 1px 5px;
+    }
+    .try-text code {
+      font-family: var(--mono); font-size: 11px;
+      background: var(--paper); padding: 1px 5px; border-radius: 3px;
+    }
+
+    /* the mock app shell */
+    .app-frame {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      overflow: hidden;
+      height: 720px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 6px 28px rgba(20, 20, 19, 0.06);
+    }
+    .titlebar {
+      height: 36px;
+      background: var(--gray-150);
+      border-bottom: 1px solid var(--gray-300);
+      display: flex; align-items: center;
+      padding: 0 14px; gap: 12px;
+      font-size: 13px; flex-shrink: 0;
+    }
+    .titlebar .tbdot { width: 10px; height: 10px; border-radius: 50%; background: var(--gray-300); }
+    .titlebar .tbdot.r { background: #FF5F57; }
+    .titlebar .tbdot.y { background: #FEBC2E; }
+    .titlebar .tbdot.g { background: #28C840; }
+    .titlebar .nm { font-family: var(--serif); font-weight: 600; color: var(--slate); margin-left: 6px; }
+    .titlebar .right { margin-left: auto; display: flex; align-items: center; gap: 12px; color: var(--gray-500); font-size: 12px; }
+    .app-body { flex: 1; display: flex; overflow: hidden; position: relative; }
+
+    /* shared atoms */
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 13px; background: var(--slate); color: var(--ivory); font-weight: 500; transition: background 80ms; border: 0; font-family: inherit; }
+    .btn:hover { background: #2a2a28; }
+    .btn.ghost { background: transparent; color: var(--gray-700); border: 1px solid var(--gray-300); }
+    .btn.ghost:hover { background: var(--gray-100); }
+    .btn.sm { padding: 4px 8px; font-size: 12px; }
+    .btn.xs { padding: 2px 6px; font-size: 11px; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .pgchip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-family: var(--mono); background: var(--gray-150); color: var(--gray-700); border: 1px solid var(--gray-300); }
+    .pgchip.clay { background: rgba(217,119,87,0.12); color: var(--clay); border-color: rgba(217,119,87,0.4); cursor: pointer; }
+    .dot-color { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+    /* toast */
+    .toast { position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%); background: var(--slate); color: var(--ivory); padding: 10px 18px; border-radius: 8px; font-size: 13px; box-shadow: 0 8px 24px rgba(20,20,19,0.24); z-index: 200; animation: toast-in 220ms ease-out; }
+    @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+    /* A: project-centric */
+    .a-toolbar { height: 48px; border-bottom: 1px solid var(--gray-300); display: flex; align-items: center; gap: 12px; padding: 0 16px; flex-shrink: 0; }
+    .a-toolbar h1 { font-family: var(--serif); font-size: 17px; color: var(--slate); font-weight: 600; }
+    .a-search { position: relative; flex: 1; max-width: 360px; margin-left: auto; }
+    .a-search input { width: 100%; padding: 7px 12px 7px 32px; background: var(--gray-100); border: 1px solid var(--gray-300); border-radius: 6px; font-size: 13px; outline: none; font-family: inherit; color: inherit; }
+    .a-search input:focus { background: var(--paper); border-color: var(--clay); }
+    .a-search .icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--gray-500); font-family: var(--mono); font-size: 11px; }
+    .a-search .dropdown { position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; background: var(--paper); border: 1px solid var(--gray-300); border-radius: 8px; box-shadow: 0 8px 24px rgba(20,20,19,0.12); overflow: hidden; z-index: 50; }
+    .a-search .dropdown button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; font-size: 13px; font-family: var(--mono); text-align: left; border: 0; border-bottom: 1px solid var(--gray-150); background: none; color: inherit; }
+    .a-search .dropdown button:hover { background: var(--gray-100); }
+    .a-search .dropdown button:last-child { border-bottom: 0; }
+    .a-search .dropdown .label { font-family: var(--sans); font-size: 12px; color: var(--gray-500); margin-left: auto; }
+    .a-area { flex: 1; overflow-y: auto; padding: 20px 16px 24px; }
+    .a-section { margin-bottom: 24px; }
+    .a-section .h { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--gray-500); margin-bottom: 10px; text-transform: uppercase; }
+    .a-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+    .a-card { position: relative; background: var(--paper); border: 1.5px solid var(--gray-300); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; min-height: 140px; transition: border-color 120ms; cursor: pointer; }
+    .a-card:hover { border-color: var(--clay); }
+    .a-card.pinned { border-color: var(--clay); }
+    .a-card .top { display: flex; align-items: center; gap: 8px; }
+    .a-card .top .name { font-weight: 600; color: var(--slate); font-size: 14px; }
+    .a-card .path { font-family: var(--mono); font-size: 10.5px; color: var(--gray-500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .a-card .status { font-size: 11px; color: var(--gray-500); }
+    .a-card .actions { display: flex; gap: 6px; margin-top: auto; opacity: 0; transition: opacity 120ms; }
+    .a-card:hover .actions { opacity: 1; }
+    .a-card.add { border-style: dashed; align-items: center; justify-content: center; color: var(--gray-500); }
+    .a-card.add:hover { color: var(--clay); }
+    .a-chip-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .a-popover { position: absolute; top: 100%; left: 0; margin-top: 4px; background: var(--paper); border: 1px solid var(--gray-300); border-radius: 8px; padding: 10px; box-shadow: 0 8px 24px rgba(20,20,19,0.16); z-index: 30; min-width: 200px; }
+    .a-popover .row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+    .a-popover .row:hover { background: var(--gray-100); }
+    .a-popover .row.on { background: var(--gray-150); }
+    .a-popover .divider { height: 1px; background: var(--gray-300); margin: 6px 0; }
+    .a-popover label.layer { display: flex; align-items: center; gap: 6px; padding: 3px 6px; font-size: 12px; font-family: var(--mono); cursor: pointer; }
+    .a-popover label.layer input { margin: 0; }
+    .a-popover .apply-btn { width: 100%; margin-top: 6px; justify-content: center; }
+    .a-detected { background: rgba(217,119,87,0.08); border: 1px solid rgba(217,119,87,0.3); border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; font-size: 13px; }
+    .a-detected button { margin-left: auto; color: var(--clay); font-weight: 600; background: none; border: 0; font-family: inherit; }
+    .a-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: 340px; background: var(--paper); border-left: 1.5px solid var(--gray-300); box-shadow: -8px 0 24px rgba(20,20,19,0.08); z-index: 60; display: flex; flex-direction: column; transform: translateX(100%); transition: transform 200ms ease-out; }
+    .a-drawer.open { transform: translateX(0); }
+    .a-drawer .head { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--gray-300); }
+    .a-drawer .head h2 { font-family: var(--serif); font-size: 15px; color: var(--slate); }
+    .a-drawer .head .x { margin-left: auto; color: var(--gray-500); padding: 4px 8px; background: none; border: 0; font-family: inherit; }
+    .a-drawer .body-d { flex: 1; overflow-y: auto; padding: 12px 16px; }
+    .a-drawer ul.profiles { list-style: none; }
+    .a-drawer ul.profiles li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+    .a-drawer ul.profiles li:hover { background: var(--gray-100); }
+    .a-drawer ul.profiles li .count { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--gray-500); }
+
+    /* B: workspace */
+    .b-workspace-bar { height: 40px; border-bottom: 1px solid var(--gray-300); display: flex; align-items: center; padding: 0 14px; gap: 10px; flex-shrink: 0; font-size: 13px; }
+    .b-workspace-bar .ws-pick { position: relative; }
+    .b-ws-trigger { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1.5px solid var(--clay); border-radius: 6px; background: var(--paper); font-family: inherit; color: inherit; }
+    .b-ws-trigger:hover { background: rgba(217,119,87,0.06); }
+    .b-ws-menu { position: absolute; top: 100%; left: 0; margin-top: 4px; background: var(--paper); border: 1px solid var(--gray-300); border-radius: 8px; min-width: 240px; box-shadow: 0 8px 24px rgba(20,20,19,0.12); z-index: 50; overflow: hidden; }
+    .b-ws-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; font-size: 12px; text-align: left; border: 0; border-bottom: 1px solid var(--gray-150); background: none; color: inherit; font-family: inherit; }
+    .b-ws-menu button:hover { background: var(--gray-100); }
+    .b-ws-menu button:last-child { border-bottom: 0; }
+    .b-ws-menu button.on { background: var(--gray-150); }
+    .b-ws-menu .path { font-family: var(--mono); font-size: 11px; color: var(--gray-500); margin-left: auto; }
+    .b-left { width: 220px; border-right: 1px solid var(--gray-300); background: var(--gray-100); flex-shrink: 0; display: flex; flex-direction: column; }
+    .b-left .b-head { padding: 10px 14px; border-bottom: 1px solid var(--gray-300); display: flex; align-items: center; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--gray-500); }
+    .b-left .b-head .add { margin-left: auto; padding: 2px 6px; font-size: 13px; color: var(--slate); background: none; border: 0; font-family: inherit; }
+    .b-left ul { list-style: none; padding: 6px; overflow-y: auto; flex: 1; }
+    .b-left li { border-radius: 6px; margin-bottom: 2px; }
+    .b-left li > .row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; font-size: 13px; }
+    .b-left li.sel > .row { background: var(--oat); color: var(--slate); font-weight: 600; }
+    .b-left li:not(.sel) > .row:hover { background: var(--gray-150); }
+    .b-left li .layers-sub { padding: 4px 10px 6px 26px; display: none; font-family: var(--mono); font-size: 11px; color: var(--gray-500); }
+    .b-left li.sel .layers-sub { display: block; }
+    .b-left li .layers-sub label { display: flex; align-items: center; gap: 5px; padding: 2px 0; cursor: pointer; }
+    .b-left li .layers-sub label input { margin: 0; }
+    .b-left li .star { margin-left: auto; color: var(--olive); font-size: 11px; }
+    .b-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .b-project-head { padding: 16px 20px; border-bottom: 1px solid var(--gray-300); }
+    .b-project-head h1 { font-family: var(--serif); font-size: 18px; color: var(--slate); font-weight: 600; }
+    .b-project-head .meta { font-family: var(--mono); font-size: 11px; color: var(--gray-500); margin-top: 2px; }
+    .b-status-strip { padding: 10px 20px; background: rgba(120,140,93,0.08); border-bottom: 1px solid var(--gray-300); font-size: 13px; display: flex; align-items: center; gap: 10px; }
+    .b-status-strip.applied { color: var(--olive); }
+    .b-status-strip.unsaved { background: rgba(217,119,87,0.08); color: var(--clay); }
+    .b-status-strip .re { margin-left: auto; color: var(--olive); font-weight: 600; text-decoration: underline; background: none; border: 0; font-family: inherit; cursor: pointer; font-size: inherit; }
+    .b-preview { flex: 1; overflow-y: auto; padding: 16px 20px; }
+    .b-preview h3 { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; color: var(--gray-500); margin-bottom: 8px; text-transform: uppercase; }
+    .b-diff { background: var(--gray-100); border: 1px solid var(--gray-300); border-radius: 6px; padding: 10px 12px; font-family: var(--mono); font-size: 12px; line-height: 1.55; margin-bottom: 16px; }
+    .b-diff .line { padding: 1px 4px; border-radius: 2px; }
+    .b-diff .line.add { background: rgba(120,140,93,0.18); color: var(--olive); }
+    .b-diff .line.del { background: rgba(176,74,63,0.16); color: var(--rust); }
+    .b-diff .line.ctx { color: var(--gray-700); }
+    .b-conflict { background: rgba(217,119,87,0.08); border: 1px solid rgba(217,119,87,0.4); border-radius: 6px; padding: 12px; margin-bottom: 16px; }
+    .b-conflict .ch { font-size: 13px; color: var(--clay); font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+    .b-conflict .key { font-family: var(--mono); font-size: 11px; color: var(--gray-700); margin-bottom: 6px; }
+    .b-conflict .choices { display: flex; gap: 6px; flex-wrap: wrap; }
+    .b-conflict label.choice { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--gray-300); border-radius: 6px; background: var(--paper); cursor: pointer; font-size: 12px; }
+    .b-conflict label.choice:has(input:checked) { border-color: var(--slate); background: var(--slate); color: var(--ivory); }
+    .b-conflict label.choice input { display: none; }
+    .b-conflict label.choice .v { font-family: var(--mono); font-size: 11px; opacity: 0.8; }
+    .b-action-bar { padding: 12px 20px; border-top: 1px solid var(--gray-300); display: flex; align-items: center; gap: 8px; background: var(--gray-100); flex-shrink: 0; }
+    .b-layer-toggles { display: flex; gap: 4px; }
+    .b-layer-toggles label { display: flex; align-items: center; gap: 4px; padding: 5px 10px; border: 1px solid var(--gray-300); border-radius: 5px; font-size: 12px; font-family: var(--mono); cursor: pointer; background: var(--paper); }
+    .b-layer-toggles label:has(input:checked) { border-color: var(--slate); background: var(--slate); color: var(--ivory); }
+    .b-layer-toggles input { display: none; }
+    .b-action-bar .grow { flex: 1; }
+    .b-action-bar .applied-flag { color: var(--olive); font-size: 12px; display: flex; align-items: center; gap: 5px; }
+
+    /* C: connection graph */
+    .c-body { background: var(--gray-100); }
+    .c-side { width: 200px; background: var(--paper); flex-shrink: 0; display: flex; flex-direction: column; }
+    .c-side.left { border-right: 1px solid var(--gray-300); }
+    .c-side.right { border-left: 1px solid var(--gray-300); }
+    .c-side .h { padding: 10px 14px; border-bottom: 1px solid var(--gray-300); font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--gray-500); display: flex; align-items: center; }
+    .c-side .h .plus { margin-left: auto; padding: 2px 6px; font-size: 13px; color: var(--slate); background: none; border: 0; font-family: inherit; }
+    .c-side ul { list-style: none; padding: 8px; flex: 1; overflow-y: auto; }
+    .c-side ul li { padding: 8px 10px; margin-bottom: 4px; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px; border: 1.5px solid transparent; transition: opacity 120ms, border-color 120ms; }
+    .c-side ul li:hover { background: var(--gray-100); }
+    .c-side ul li.sel { background: var(--oat); border-color: var(--clay); font-weight: 600; color: var(--slate); }
+    .c-side ul li.dim { opacity: 0.35; }
+    .c-side ul li.related { background: rgba(217,119,87,0.06); }
+    .c-side ul li .count { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--gray-500); }
+    .c-side ul li .path-sub { font-family: var(--mono); font-size: 9.5px; color: var(--gray-500); display: block; }
+    .c-side ul li .name-block { flex: 1; min-width: 0; overflow: hidden; }
+    .c-side ul li .name-block .nm { font-size: 12.5px; color: var(--slate); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .c-canvas { flex: 1; display: flex; flex-direction: column; padding: 24px; overflow-y: auto; position: relative; }
+    .c-canvas .title { font-family: var(--mono); font-size: 11px; color: var(--gray-500); letter-spacing: 0.06em; margin-bottom: 8px; }
+    .c-canvas .pair { font-family: var(--serif); font-size: 17px; color: var(--slate); margin-bottom: 18px; font-weight: 600; display: flex; align-items: center; gap: 12px; }
+    .c-canvas .pair .arrow { width: 28px; height: 1.5px; background: var(--clay); position: relative; }
+    .c-canvas .pair .arrow::after { content: ""; position: absolute; right: -2px; top: -3.5px; border: 4px solid transparent; border-left-color: var(--clay); }
+    .c-diff-card { background: var(--paper); border: 1.5px solid var(--gray-300); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+    .c-diff-card h4 { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; color: var(--gray-500); margin-bottom: 8px; text-transform: uppercase; }
+    .c-layer-toggles { display: flex; gap: 6px; margin-bottom: 12px; }
+    .c-layer-toggles label { padding: 5px 12px; border: 1px solid var(--gray-300); border-radius: 6px; font-family: var(--mono); font-size: 12px; cursor: pointer; background: var(--paper); }
+    .c-layer-toggles label:has(input:checked) { background: var(--slate); color: var(--ivory); border-color: var(--slate); }
+    .c-layer-toggles input { display: none; }
+    .c-apply-bar { display: flex; align-items: center; gap: 10px; }
+    .c-apply-bar .big { flex: 1; padding: 12px 18px; background: var(--slate); color: var(--ivory); border-radius: 8px; font-size: 14px; font-weight: 600; text-align: center; border: 0; font-family: inherit; cursor: pointer; }
+    .c-apply-bar .big:hover { background: #2a2a28; }
+    .c-apply-bar .big:disabled { background: var(--gray-300); color: var(--gray-500); cursor: not-allowed; }
+    .c-empty-canvas { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--gray-500); font-size: 13px; gap: 8px; }
+    .c-empty-canvas .hint-row { display: flex; align-items: center; gap: 24px; font-family: var(--mono); font-size: 11px; }
+    .c-empty-canvas .step { display: flex; align-items: center; gap: 6px; }
+    .c-empty-canvas .step .num { width: 18px; height: 18px; border-radius: 50%; background: var(--clay); color: var(--ivory); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
+    .c-recent { background: var(--paper); border: 1.5px solid var(--gray-300); border-radius: 10px; padding: 14px 16px; margin-top: auto; }
+    .c-recent h4 { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; color: var(--gray-500); margin-bottom: 8px; text-transform: uppercase; }
+    .c-recent ul { list-style: none; }
+    .c-recent ul li { padding: 4px 0; font-family: var(--mono); font-size: 11.5px; color: var(--gray-700); display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .c-recent ul li:hover { color: var(--clay); }
+    .c-recent ul li .ago { margin-left: auto; color: var(--gray-500); }
+    .c-recent ul li .pcolor { width: 6px; height: 6px; border-radius: 50%; }
+
+    /* A′: cmux-inspired */
+    .ap-titlebar { height: 36px; background: var(--gray-150); border-bottom: 1px solid var(--gray-300); display: flex; align-items: center; padding: 0 14px; gap: 12px; font-size: 13px; flex-shrink: 0; }
+    .ap-titlebar .tbdot { width: 10px; height: 10px; border-radius: 50%; background: var(--gray-300); }
+    .ap-titlebar .tbdot.r { background: #FF5F57; } .ap-titlebar .tbdot.y { background: #FEBC2E; } .ap-titlebar .tbdot.g { background: #28C840; }
+    .ap-titlebar .brand { font-family: var(--serif); font-weight: 600; color: var(--slate); margin-left: 6px; }
+    .ap-kbar { flex: 1; max-width: 380px; margin: 0 auto; display: flex; align-items: center; gap: 8px; padding: 4px 12px; background: var(--paper); border: 1px solid var(--gray-300); border-radius: 6px; font-size: 12px; color: var(--gray-500); cursor: pointer; font-family: inherit; }
+    .ap-kbar:hover { border-color: var(--clay); color: var(--slate); }
+    .ap-kbar .ic { font-family: var(--mono); font-size: 11px; }
+    .ap-kbar kbd { font-family: var(--mono); font-size: 10px; background: var(--gray-150); border: 1px solid var(--gray-300); border-radius: 3px; padding: 1px 5px; margin-left: auto; color: var(--gray-700); }
+    .ap-titlebar .r-side { color: var(--gray-500); font-size: 12px; }
+
+    .ap-side { width: 220px; background: var(--gray-100); border-right: 1px solid var(--gray-300); flex-shrink: 0; display: flex; flex-direction: column; }
+    .ap-side .head { padding: 10px 12px 8px; display: flex; align-items: center; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--gray-500); }
+    .ap-side .head kbd { font-family: var(--mono); font-size: 9px; background: var(--paper); border: 1px solid var(--gray-300); border-radius: 3px; padding: 1px 4px; margin-left: 4px; letter-spacing: 0; }
+    .ap-side .head .add { margin-left: auto; padding: 3px 8px; background: var(--slate); color: var(--ivory); border: 0; border-radius: 4px; font-size: 11px; font-family: var(--mono); cursor: pointer; }
+    .ap-side ul { list-style: none; padding: 4px 8px; overflow-y: auto; flex: 1; }
+    .ap-row { display: block; padding: 8px 10px; margin-bottom: 4px; border-radius: 6px; cursor: pointer; background: var(--paper); border: 2px solid var(--gray-300); transition: border-color 120ms, background 120ms; position: relative; }
+    .ap-row.ring-sync   { border-color: var(--olive); }
+    .ap-row.ring-dirty  { border-color: var(--clay); }
+    .ap-row.ring-recent { border-color: #6588C3; }
+    .ap-row.ring-idle   { border-color: var(--gray-300); border-style: dashed; }
+    .ap-row.sel { background: var(--oat); }
+    .ap-row:hover:not(.sel) { background: var(--gray-150); }
+    .ap-row .head-line { display: flex; align-items: center; gap: 6px; }
+    .ap-row .shortcut { font-family: var(--mono); font-size: 9.5px; color: var(--gray-500); background: var(--gray-150); padding: 1px 4px; border-radius: 3px; }
+    .ap-row .name { font-size: 13px; color: var(--slate); font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ap-row .pdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .ap-row .meta { font-family: var(--mono); font-size: 10px; color: var(--gray-500); margin-top: 3px; line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ap-row .status { font-family: var(--mono); font-size: 10px; margin-top: 2px; line-height: 1.45; }
+    .ap-row.ring-sync .status { color: var(--olive); }
+    .ap-row.ring-dirty .status { color: var(--clay); }
+    .ap-row.ring-recent .status { color: #4A6FA8; }
+    .ap-row.ring-idle .status { color: var(--gray-500); }
+
+    .ap-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 18px 24px; gap: 16px; }
+    .ap-main .p-head h1 { font-family: var(--serif); font-size: 19px; color: var(--slate); font-weight: 600; }
+    .ap-main .p-head .meta { font-family: var(--mono); font-size: 11px; color: var(--gray-500); margin-top: 2px; }
+    .ap-block-h { font-family: var(--mono); font-size: 10px; color: var(--gray-500); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+    .ap-block-h kbd { font-family: var(--mono); font-size: 9px; background: var(--gray-150); border: 1px solid var(--gray-300); border-radius: 3px; padding: 1px 4px; margin-left: auto; letter-spacing: 0; }
+    .ap-current { padding: 12px 14px; border-radius: 8px; background: rgba(120,140,93,0.1); border: 1.5px solid rgba(120,140,93,0.5); display: flex; align-items: center; gap: 10px; }
+    .ap-current.never { background: var(--gray-100); border-color: var(--gray-300); }
+    .ap-current .pdot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+    .ap-current .text { flex: 1; }
+    .ap-current .text .top { font-size: 13px; color: var(--slate); font-weight: 600; }
+    .ap-current .text .sub { font-family: var(--mono); font-size: 11px; color: var(--olive); margin-top: 2px; }
+    .ap-current.never .text .sub { color: var(--gray-500); }
+    .ap-apply { background: var(--paper); border: 1.5px solid var(--gray-300); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+    .ap-apply .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .ap-apply .pchip { display: flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1.5px solid var(--gray-300); border-radius: 6px; font-size: 12px; background: var(--paper); cursor: pointer; font-family: inherit; color: var(--gray-700); }
+    .ap-apply .pchip:hover { border-color: var(--clay); }
+    .ap-apply .pchip.on { background: var(--slate); color: var(--ivory); border-color: var(--slate); }
+    .ap-apply .row { display: flex; align-items: center; gap: 12px; font-size: 12px; }
+    .ap-apply .row .label { color: var(--gray-500); font-family: var(--mono); font-size: 11px; min-width: 56px; }
+    .ap-apply .ltoggles { display: flex; gap: 4px; }
+    .ap-apply .ltoggles label { display: flex; align-items: center; gap: 4px; padding: 4px 9px; border: 1px solid var(--gray-300); border-radius: 5px; font-family: var(--mono); font-size: 11px; cursor: pointer; background: var(--paper); }
+    .ap-apply .ltoggles label:has(input:checked) { background: var(--slate); color: var(--ivory); border-color: var(--slate); }
+    .ap-apply .ltoggles input { display: none; }
+    .ap-apply .diff-mini { font-family: var(--mono); font-size: 11px; color: var(--gray-500); padding: 6px 10px; background: var(--gray-100); border-radius: 4px; }
+    .ap-apply .diff-mini .add { color: var(--olive); }
+    .ap-apply .diff-mini .del { color: var(--rust); }
+    .ap-apply .apply-row { display: flex; align-items: center; gap: 10px; }
+    .ap-apply button.apply-btn { padding: 7px 18px; background: var(--slate); color: var(--ivory); border: 0; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 6px; }
+    .ap-apply button.apply-btn:hover { background: #2a2a28; }
+    .ap-apply button.apply-btn:disabled { background: var(--gray-300); color: var(--gray-500); cursor: not-allowed; }
+    .ap-apply button.apply-btn kbd { font-family: var(--mono); font-size: 10px; background: rgba(255,255,255,0.18); border: 0; padding: 1px 5px; border-radius: 3px; }
+    .ap-apply .hint { font-family: var(--mono); font-size: 11px; color: var(--gray-500); margin-left: auto; }
+
+    .ap-recent { background: var(--paper); border: 1.5px solid var(--gray-300); border-radius: 8px; padding: 12px 14px; margin-top: auto; }
+    .ap-recent ul { list-style: none; }
+    .ap-recent ul li { padding: 4px 0; font-family: var(--mono); font-size: 11.5px; color: var(--gray-700); display: flex; align-items: center; gap: 8px; }
+    .ap-recent ul li .pdot { width: 6px; height: 6px; border-radius: 50%; }
+    .ap-recent ul li .ago { margin-left: auto; color: var(--gray-500); }
+
+    /* Command palette overlay */
+    .ap-palette-bg { position: absolute; inset: 0; background: rgba(20,20,19,0.32); display: flex; align-items: flex-start; justify-content: center; padding-top: 72px; z-index: 80; backdrop-filter: blur(4px); }
+    .ap-palette { width: 520px; max-width: calc(100% - 48px); background: var(--paper); border-radius: 12px; border: 1px solid var(--gray-300); box-shadow: 0 24px 60px rgba(20,20,19,0.32); overflow: hidden; display: flex; flex-direction: column; max-height: 480px; }
+    .ap-palette .search-row { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--gray-300); }
+    .ap-palette .search-row .ic { font-family: var(--mono); font-size: 13px; color: var(--gray-500); }
+    .ap-palette input { flex: 1; border: 0; outline: 0; font-size: 14px; color: var(--slate); background: transparent; font-family: inherit; }
+    .ap-palette .results { overflow-y: auto; max-height: 380px; }
+    .ap-palette .group-h { padding: 10px 16px 4px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--gray-500); text-transform: uppercase; }
+    .ap-palette button.result { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 16px; font-size: 13px; text-align: left; border: 0; background: none; font-family: inherit; color: inherit; cursor: pointer; }
+    .ap-palette button.result:hover, .ap-palette button.result.active { background: var(--gray-150); }
+    .ap-palette button.result .ic { font-family: var(--mono); font-size: 12px; color: var(--gray-500); width: 16px; text-align: center; }
+    .ap-palette button.result .desc { color: var(--gray-500); font-size: 11px; font-family: var(--mono); margin-left: auto; }
+    .ap-palette .empty { padding: 24px; text-align: center; color: var(--gray-500); font-size: 13px; }
+    .ap-palette .foot { padding: 8px 16px; border-top: 1px solid var(--gray-150); display: flex; gap: 14px; font-family: var(--mono); font-size: 10.5px; color: var(--gray-500); }
+    .ap-palette .foot kbd { font-family: var(--mono); font-size: 10px; background: var(--gray-150); border: 1px solid var(--gray-300); border-radius: 3px; padding: 1px 4px; margin-right: 4px; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="crumb"><strong>AD</strong> · docs / design-docs / ui-redesign-options · <span style="color:var(--olive);font-weight:600;">A′ 已实施 2026-05-24</span></span>
+  <nav>
+    <a href="#today">现状</a>
+    <a href="#dirs">三个方向</a>
+    <a href="#matrix">痛点对照</a>
+    <a href="#playground">🎮 试一试</a>
+    <a href="#cta">下一步</a>
+  </nav>
+</div>
+
+<div class="container">
+
+<header class="intro">
+  <h1>UI 重设计：三个方向并排</h1>
+  <p class="lede">
+    当前 AD 的三栏布局（Profiles | Editor | Projects）在分层 profile 模型下信息架构错位 ——
+    左栏的 profile 列表跟主路径（per-project apply）脱节，三个加项目入口并列，
+    profile 三 tab 等权重塞 monaco + 表单，ApplyDialog 把流程全挤进一个模态框。
+    本文档给三个完全不同的重设计方向，每个都能解决主要痛点但侧重不同。
+    请挑一个（也可以指出要合并的部分），我再基于它创建 ExecPlan。
+  </p>
+  <div class="meta">
+    <span>状态: Stage 2 探索 (Tier 3 HTML native)</span>
+    <span>归属: docs/design-docs/</span>
+    <span>日期: 2026-05-24</span>
+  </div>
+</header>
+
+<!-- ============ 现状 ============ -->
+<section id="today" class="anchor">
+  <h2>现状速览</h2>
+  <p class="subtitle">M1-M5 刚落地的三栏架构，画图 + 9 个真实痛点。后面三个方向都会对照解决度。</p>
+
+  <div class="today">
+    <div>
+      <h3>当前布局</h3>
+      <!-- Layout mockup -->
+      <svg viewBox="0 0 520 320" xmlns="http://www.w3.org/2000/svg">
+        <!-- frame -->
+        <rect x="2" y="2" width="516" height="316" rx="8" fill="#FFFFFF" stroke="#D1CFC5" stroke-width="1.5"/>
+        <!-- titlebar -->
+        <rect x="2" y="2" width="516" height="22" fill="#F0EEE6"/>
+        <text x="12" y="17" font-family="ui-monospace" font-size="10" fill="#141413">AD</text>
+        <circle cx="450" cy="13" r="3" fill="#788C5D"/>
+        <text x="460" y="17" font-family="ui-monospace" font-size="9" fill="#3D3D3A">active: work</text>
+        <text x="503" y="17" font-family="ui-monospace" font-size="9" fill="#87867F">⚙</text>
+
+        <!-- left: Profiles -->
+        <rect x="2" y="24" width="120" height="294" fill="#FAF9F5"/>
+        <line x1="122" y1="24" x2="122" y2="318" stroke="#D1CFC5" stroke-width="1"/>
+        <rect x="10" y="34" width="80" height="18" fill="#141413" rx="4"/>
+        <text x="50" y="46" text-anchor="middle" font-family="system-ui" font-size="9" fill="#FAF9F5">+ New</text>
+        <rect x="94" y="34" width="20" height="18" fill="#FFFFFF" stroke="#D1CFC5" rx="4"/>
+        <!-- profile rows -->
+        <rect x="10" y="62" width="104" height="22" fill="#E3DACC" rx="3"/>
+        <circle cx="20" cy="73" r="4" fill="#D97757"/>
+        <text x="30" y="76" font-family="system-ui" font-size="9" fill="#141413">work</text>
+        <rect x="10" y="86" width="104" height="22" fill="#FFFFFF" rx="3" stroke="#F0EEE6"/>
+        <circle cx="20" cy="97" r="4" fill="#788C5D"/>
+        <text x="30" y="100" font-family="system-ui" font-size="9" fill="#3D3D3A">personal</text>
+        <rect x="10" y="110" width="104" height="22" fill="#FFFFFF" rx="3" stroke="#F0EEE6"/>
+        <circle cx="20" cy="121" r="4" fill="#B04A3F"/>
+        <text x="30" y="124" font-family="system-ui" font-size="9" fill="#3D3D3A">scratch</text>
+        <!-- history bottom -->
+        <line x1="10" y1="294" x2="114" y2="294" stroke="#D1CFC5"/>
+        <text x="14" y="308" font-family="system-ui" font-size="9" fill="#87867F">⏱ History</text>
+
+        <!-- middle: Editor -->
+        <rect x="122" y="24" width="240" height="294" fill="#FFFFFF"/>
+        <line x1="362" y1="24" x2="362" y2="318" stroke="#D1CFC5"/>
+        <!-- header -->
+        <rect x="130" y="32" width="20" height="14" fill="#D97757" rx="2"/>
+        <rect x="155" y="32" width="100" height="14" fill="#F0EEE6" rx="2"/>
+        <rect x="290" y="32" width="30" height="14" fill="#141413" rx="2"/>
+        <text x="305" y="42" text-anchor="middle" font-family="system-ui" font-size="8" fill="#FAF9F5">Save</text>
+        <rect x="325" y="32" width="30" height="14" fill="#FFFFFF" stroke="#D1CFC5" rx="2"/>
+        <text x="340" y="42" text-anchor="middle" font-family="system-ui" font-size="7" fill="#87867F">(hidden)</text>
+        <!-- tabs -->
+        <rect x="130" y="60" width="40" height="16" fill="#FFFFFF" stroke="#D1CFC5" rx="3"/>
+        <text x="150" y="71" text-anchor="middle" font-family="system-ui" font-size="8" fill="#3D3D3A">Shared</text>
+        <rect x="172" y="60" width="40" height="16" fill="#E3DACC" rx="3"/>
+        <text x="192" y="71" text-anchor="middle" font-family="system-ui" font-size="8" fill="#141413">Local</text>
+        <rect x="214" y="60" width="40" height="16" fill="#FFFFFF" stroke="#D1CFC5" rx="3"/>
+        <text x="234" y="71" text-anchor="middle" font-family="system-ui" font-size="8" fill="#3D3D3A">Env</text>
+        <!-- monaco fake -->
+        <rect x="130" y="82" width="224" height="228" fill="#F0EEE6"/>
+        <text x="140" y="98" font-family="ui-monospace" font-size="7" fill="#3D3D3A">{</text>
+        <text x="148" y="110" font-family="ui-monospace" font-size="7" fill="#3D3D3A">"env": {</text>
+        <text x="156" y="122" font-family="ui-monospace" font-size="7" fill="#788C5D">"ANTHROPIC_BASE_URL": "..."</text>
+        <text x="148" y="134" font-family="ui-monospace" font-size="7" fill="#3D3D3A">}</text>
+        <text x="140" y="146" font-family="ui-monospace" font-size="7" fill="#3D3D3A">}</text>
+
+        <!-- right: Projects -->
+        <rect x="362" y="24" width="156" height="294" fill="#FAF9F5"/>
+        <text x="372" y="42" font-family="system-ui" font-size="10" fill="#141413" font-weight="600">Projects</text>
+        <text x="510" y="42" text-anchor="end" font-family="system-ui" font-size="8" fill="#87867F">2 tracked</text>
+        <line x1="370" y1="50" x2="510" y2="50" stroke="#D1CFC5"/>
+        <!-- add input -->
+        <rect x="370" y="60" width="115" height="18" fill="#FFFFFF" stroke="#D1CFC5" rx="3"/>
+        <text x="375" y="71" font-family="ui-monospace" font-size="7" fill="#87867F">Type path…</text>
+        <rect x="489" y="60" width="22" height="18" fill="#141413" rx="3"/>
+        <text x="500" y="71" text-anchor="middle" font-family="system-ui" font-size="7" fill="#FAF9F5">+</text>
+        <!-- drop zone -->
+        <rect x="370" y="84" width="141" height="34" fill="none" stroke="#D1CFC5" stroke-dasharray="3 3" rx="4"/>
+        <text x="440" y="105" text-anchor="middle" font-family="system-ui" font-size="8" fill="#87867F">drop a folder</text>
+        <!-- detected banner -->
+        <rect x="370" y="124" width="141" height="22" fill="#FAEDE5"/>
+        <text x="378" y="138" font-family="system-ui" font-size="8" fill="#D97757">✨ 12 detected · Review →</text>
+        <!-- project rows -->
+        <line x1="370" y1="152" x2="510" y2="152" stroke="#D1CFC5"/>
+        <circle cx="378" cy="166" r="3" fill="#D97757"/>
+        <text x="386" y="169" font-family="system-ui" font-size="8" fill="#141413">cc-switch</text>
+        <text x="386" y="178" font-family="ui-monospace" font-size="6" fill="#87867F">~/ai_workspace/cc-switch</text>
+        <rect x="475" y="160" width="30" height="14" fill="#141413" rx="3"/>
+        <text x="490" y="170" text-anchor="middle" font-family="system-ui" font-size="7" fill="#FAF9F5">Apply</text>
+        <line x1="370" y1="190" x2="510" y2="190" stroke="#D1CFC5"/>
+        <circle cx="378" cy="204" r="3" fill="#788C5D"/>
+        <text x="386" y="207" font-family="system-ui" font-size="8" fill="#141413">my-blog</text>
+        <text x="386" y="216" font-family="ui-monospace" font-size="6" fill="#87867F">~/code/my-blog</text>
+        <rect x="475" y="198" width="30" height="14" fill="#141413" rx="3"/>
+        <text x="490" y="208" text-anchor="middle" font-family="system-ui" font-size="7" fill="#FAF9F5">Apply</text>
+
+        <!-- arrows pointing pain points -->
+        <text x="62" y="78" font-family="ui-monospace" font-size="9" fill="#B04A3F" font-weight="700">P2</text>
+        <text x="200" y="78" font-family="ui-monospace" font-size="9" fill="#B04A3F" font-weight="700">P3</text>
+        <text x="438" y="138" font-family="ui-monospace" font-size="9" fill="#B04A3F" font-weight="700">P5</text>
+        <text x="510" y="174" font-family="ui-monospace" font-size="9" fill="#B04A3F" font-weight="700">P4</text>
+        <text x="50" y="304" font-family="ui-monospace" font-size="9" fill="#B04A3F" font-weight="700">P7</text>
+        <text x="478" y="40" font-family="ui-monospace" font-size="9" fill="#B04A3F" font-weight="700">P9</text>
+      </svg>
+      <div class="legend">
+        <span><span class="swatch" style="background:#B04A3F"></span>痛点位置标号</span>
+        <span><span class="swatch" style="background:#E3DACC"></span>选中态</span>
+      </div>
+    </div>
+
+    <div>
+      <h3>九个痛点</h3>
+      <ol class="pain-list">
+        <li><span class="num">P1</span><span class="what"><strong>信息架构错位</strong> · profile 列表和 project 列表并列，但实际关系是"profile 应用到 project"，UI 上看不出来</span></li>
+        <li><span class="num">P2</span><span class="what"><strong>左栏 profile 跟主路径脱节</strong> · 选中左栏的 profile 不会影响 ApplyDialog 里的默认 profile</span></li>
+        <li><span class="num">P3</span><span class="what"><strong>三 tab 同权重</strong> · Local（日常）、Shared（团队稀有）、Env（手贴）认知频率差几十倍，但 UI 等大</span></li>
+        <li><span class="num">P4</span><span class="what"><strong>ApplyDialog 拥挤</strong> · profile select + 3 layer checkbox + dirty 警告 + status 信息 + outcome 全塞一个 modal，outcome 还压在按钮上面</span></li>
+        <li><span class="num">P5</span><span class="what"><strong>三个加项目入口并列</strong> · type path / drop zone / detected banner，挤一块右栏顶</span></li>
+        <li><span class="num">P6</span><span class="what"><strong>没有 active project 概念</strong> · 项目平铺，但你日常只在 1-2 个项目工作，没有 pinned / recent</span></li>
+        <li><span class="num">P7</span><span class="what"><strong>History 埋在左栏底</strong> · 跟 profile 列表关系不强，但占了主导航位置</span></li>
+        <li><span class="num">P8</span><span class="what"><strong>冲突 UI 只读</strong> · ApplyDialog 出冲突只能看，不能选 keep/use/custom（TD-005）</span></li>
+        <li><span class="num">P9</span><span class="what"><strong>Titlebar 显示 legacy active</strong> · "active: work" 是 v0.1 全局激活概念，新模型下基本没意义</span></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 三个方向 ============ -->
+<section id="dirs" class="anchor">
+  <h2>三个重设计方向</h2>
+  <p class="subtitle">差异故意拉大 —— 信息架构、主路径、视觉中心都不同。挑一个或要求合并。</p>
+
+  <div class="dirs">
+
+    <!-- ============ A ============ -->
+    <article class="dir">
+      <div class="dir-head">
+        <span class="dir-tag">方向 A · PROJECT-CENTRIC</span>
+        <div class="dir-title">项目即工作台</div>
+        <div class="dir-onelead">
+          项目卡片 grid 占主视图，profile 是工具栏里的可选项。
+          像 macOS Launchpad —— 你工作的对象是项目，profile 只在 apply 时出现。
+        </div>
+      </div>
+
+      <div class="dir-mockup">
+        <svg viewBox="0 0 360 260" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="356" height="256" rx="6" fill="#FFFFFF" stroke="#D1CFC5" stroke-width="1.5"/>
+          <!-- top toolbar -->
+          <rect x="2" y="2" width="356" height="28" fill="#F0EEE6"/>
+          <text x="14" y="20" font-family="serif" font-size="12" fill="#141413" font-weight="600">Projects</text>
+          <rect x="170" y="9" width="120" height="14" fill="#FFFFFF" stroke="#D1CFC5" rx="3"/>
+          <text x="176" y="19" font-family="ui-monospace" font-size="7" fill="#87867F">⌘K  add / search</text>
+          <rect x="300" y="9" width="40" height="14" fill="#FFFFFF" stroke="#D1CFC5" rx="3"/>
+          <text x="320" y="19" text-anchor="middle" font-family="system-ui" font-size="7" fill="#3D3D3A">Profiles</text>
+
+          <!-- pinned row -->
+          <text x="14" y="44" font-family="ui-monospace" font-size="8" fill="#87867F" letter-spacing="0.05em">PINNED</text>
+          <!-- big card 1 -->
+          <rect x="14" y="50" width="105" height="76" fill="#FFFFFF" stroke="#D97757" stroke-width="1.5" rx="6"/>
+          <circle cx="24" cy="60" r="4" fill="#D97757"/>
+          <text x="34" y="63" font-family="system-ui" font-size="9" fill="#141413" font-weight="600">cc-switch</text>
+          <text x="20" y="78" font-family="ui-monospace" font-size="6" fill="#87867F">~/ai_workspace/cc-switch</text>
+          <rect x="20" y="86" width="50" height="14" fill="#FAEDE5" rx="2"/>
+          <text x="45" y="96" text-anchor="middle" font-family="system-ui" font-size="7" fill="#D97757">work · L+E</text>
+          <text x="20" y="115" font-family="system-ui" font-size="7" fill="#788C5D">✓ clean · 2h ago</text>
+          <!-- card 2 -->
+          <rect x="125" y="50" width="105" height="76" fill="#FFFFFF" stroke="#D1CFC5" rx="6"/>
+          <circle cx="135" cy="60" r="4" fill="#788C5D"/>
+          <text x="145" y="63" font-family="system-ui" font-size="9" fill="#141413" font-weight="600">my-blog</text>
+          <text x="131" y="78" font-family="ui-monospace" font-size="6" fill="#87867F">~/code/my-blog</text>
+          <rect x="131" y="86" width="50" height="14" fill="#EDF1E5" rx="2"/>
+          <text x="156" y="96" text-anchor="middle" font-family="system-ui" font-size="7" fill="#788C5D">personal · L</text>
+          <text x="131" y="115" font-family="system-ui" font-size="7" fill="#87867F">3d ago</text>
+          <!-- card 3 -->
+          <rect x="236" y="50" width="105" height="76" fill="#FFFFFF" stroke="#D1CFC5" stroke-dasharray="3 3" rx="6"/>
+          <text x="288" y="92" text-anchor="middle" font-family="system-ui" font-size="9" fill="#87867F">+ pin a project</text>
+
+          <!-- recent row -->
+          <text x="14" y="148" font-family="ui-monospace" font-size="8" fill="#87867F" letter-spacing="0.05em">RECENT · 12</text>
+          <rect x="14" y="156" width="78" height="48" fill="#FFFFFF" stroke="#D1CFC5" rx="4"/>
+          <circle cx="24" cy="166" r="3" fill="#B04A3F"/>
+          <text x="32" y="169" font-family="system-ui" font-size="8" fill="#141413">scratch</text>
+          <text x="20" y="183" font-family="ui-monospace" font-size="5" fill="#87867F">~/tmp/scratch</text>
+          <text x="20" y="198" font-family="system-ui" font-size="6" fill="#87867F">never applied</text>
+          <rect x="98" y="156" width="78" height="48" fill="#FFFFFF" stroke="#D1CFC5" rx="4"/>
+          <circle cx="108" cy="166" r="3" fill="#D97757"/>
+          <text x="116" y="169" font-family="system-ui" font-size="8" fill="#141413">api-test</text>
+          <text x="104" y="183" font-family="ui-monospace" font-size="5" fill="#87867F">~/code/api-test</text>
+          <text x="104" y="198" font-family="system-ui" font-size="6" fill="#87867F">work · 1d ago</text>
+          <rect x="182" y="156" width="78" height="48" fill="#FFFFFF" stroke="#D1CFC5" rx="4"/>
+          <text x="221" y="183" text-anchor="middle" font-family="system-ui" font-size="7" fill="#87867F">…9 more</text>
+
+          <!-- detected ghost -->
+          <text x="14" y="226" font-family="ui-monospace" font-size="8" fill="#D97757" letter-spacing="0.05em">✨ DETECTED · 12</text>
+          <rect x="14" y="234" width="330" height="16" fill="#FAEDE5" rx="3"/>
+          <text x="20" y="245" font-family="system-ui" font-size="7" fill="#D97757">→ Review 12 projects from ~/.claude/projects</text>
+        </svg>
+      </div>
+
+      <div class="dir-body">
+        <div>
+          <h4>主路径</h4>
+          <ol>
+            <li>顶 <code>⌘K</code> 搜索或粘路径 → 项目卡片立刻 pin</li>
+            <li>卡片右下角的 chip <code>work · L+E</code> 点开 → inline 切换 profile / layer</li>
+            <li>"应用"是卡片本身的 mode —— 卡片 hover 出 [Re-apply] / [Diff] / [Open]</li>
+          </ol>
+        </div>
+        <div>
+          <h4>解决了</h4>
+          <div class="solves">
+            <span class="chip">P1</span>
+            <span class="chip">P5</span>
+            <span class="chip">P6</span>
+            <span class="chip">P7</span>
+            <span class="chip">P9</span>
+            <span class="chip weak">P2</span>
+            <span class="chip weak">P4</span>
+          </div>
+        </div>
+        <div class="trade">
+          <strong>Tradeoff：</strong>profile 编辑下沉到二级页面（顶 toolbar 的 Profiles 按钮 → 打开抽屉）。
+          单纯调 profile 不应用的场景需要多点一次。
+        </div>
+        <button class="try-btn" onclick="openPlayground('a')"><span class="arr">▶</span> 试 A · 在下面交互体验</button>
+      </div>
+    </article>
+
+    <!-- ============ B ============ -->
+    <article class="dir">
+      <div class="dir-head">
+        <span class="dir-tag">方向 B · RECIPE & WORKSPACE</span>
+        <div class="dir-title">配方 + 工作台</div>
+        <div class="dir-onelead">
+          像 Postman / Insomnia：左栏 collection（profile 即 recipe），
+          主区是当前 workspace（一个项目）—— inline 出 diff / apply / conflict resolver，不再用 modal。
+        </div>
+      </div>
+
+      <div class="dir-mockup">
+        <svg viewBox="0 0 360 260" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="356" height="256" rx="6" fill="#FFFFFF" stroke="#D1CFC5" stroke-width="1.5"/>
+          <!-- top: workspace switcher -->
+          <rect x="2" y="2" width="356" height="22" fill="#F0EEE6"/>
+          <text x="10" y="16" font-family="ui-monospace" font-size="8" fill="#87867F">workspace:</text>
+          <rect x="58" y="6" width="120" height="14" fill="#FFFFFF" stroke="#D97757" stroke-width="1.5" rx="3"/>
+          <circle cx="66" cy="13" r="3" fill="#D97757"/>
+          <text x="74" y="16" font-family="system-ui" font-size="8" fill="#141413">cc-switch  ▾</text>
+          <text x="190" y="16" font-family="system-ui" font-size="7" fill="#87867F">+ 11 more</text>
+          <text x="346" y="16" text-anchor="end" font-family="ui-monospace" font-size="8" fill="#87867F">⚙</text>
+
+          <!-- left: profiles -->
+          <rect x="2" y="24" width="86" height="234" fill="#FAF9F5"/>
+          <line x1="88" y1="24" x2="88" y2="258" stroke="#D1CFC5"/>
+          <text x="10" y="38" font-family="ui-monospace" font-size="8" fill="#87867F">PROFILES</text>
+          <rect x="68" y="30" width="14" height="12" fill="#141413" rx="2"/>
+          <text x="75" y="39" text-anchor="middle" font-family="system-ui" font-size="8" fill="#FAF9F5">+</text>
+          <rect x="8" y="46" width="74" height="18" fill="#E3DACC" rx="3"/>
+          <circle cx="16" cy="55" r="3" fill="#D97757"/>
+          <text x="22" y="58" font-family="system-ui" font-size="8" fill="#141413">work</text>
+          <text x="78" y="58" text-anchor="end" font-family="ui-monospace" font-size="6" fill="#788C5D">★</text>
+          <rect x="8" y="68" width="74" height="18" fill="#FFFFFF" rx="3"/>
+          <circle cx="16" cy="77" r="3" fill="#788C5D"/>
+          <text x="22" y="80" font-family="system-ui" font-size="8" fill="#3D3D3A">personal</text>
+          <rect x="8" y="90" width="74" height="18" fill="#FFFFFF" rx="3"/>
+          <circle cx="16" cy="99" r="3" fill="#B04A3F"/>
+          <text x="22" y="102" font-family="system-ui" font-size="8" fill="#3D3D3A">scratch</text>
+          <!-- shared/local/env sub-rows under selected -->
+          <text x="22" y="120" font-family="ui-monospace" font-size="7" fill="#87867F">  ▾ layers</text>
+          <text x="30" y="132" font-family="ui-monospace" font-size="6" fill="#3D3D3A">○ shared</text>
+          <text x="30" y="142" font-family="ui-monospace" font-size="6" fill="#141413" font-weight="600">● local</text>
+          <text x="30" y="152" font-family="ui-monospace" font-size="6" fill="#3D3D3A">○ env</text>
+
+          <!-- main: workspace -->
+          <text x="100" y="42" font-family="serif" font-size="11" fill="#141413" font-weight="600">cc-switch</text>
+          <text x="100" y="56" font-family="ui-monospace" font-size="7" fill="#87867F">~/ai_workspace/cc-switch · git clean</text>
+          <!-- status strip -->
+          <rect x="100" y="62" width="252" height="18" fill="#EDF1E5" rx="3"/>
+          <text x="106" y="74" font-family="system-ui" font-size="7" fill="#788C5D">✓ work · local · applied 2h ago — Re-apply</text>
+
+          <!-- diff preview area -->
+          <text x="100" y="94" font-family="ui-monospace" font-size="7" fill="#87867F">PREVIEW · .claude/settings.local.json</text>
+          <rect x="100" y="100" width="252" height="118" fill="#F0EEE6" rx="3"/>
+          <text x="106" y="114" font-family="ui-monospace" font-size="6" fill="#3D3D3A">  "env": {</text>
+          <rect x="106" y="118" width="240" height="9" fill="#FAEDE5"/>
+          <text x="108" y="125" font-family="ui-monospace" font-size="6" fill="#B04A3F">-   "ANTHROPIC_BASE_URL": "https://old"</text>
+          <rect x="106" y="129" width="240" height="9" fill="#EDF1E5"/>
+          <text x="108" y="136" font-family="ui-monospace" font-size="6" fill="#788C5D">+   "ANTHROPIC_BASE_URL": "https://new"</text>
+          <text x="106" y="148" font-family="ui-monospace" font-size="6" fill="#3D3D3A">    "ANTHROPIC_API_KEY": "sk-..."</text>
+          <text x="106" y="160" font-family="ui-monospace" font-size="6" fill="#3D3D3A">  },</text>
+          <!-- conflict inline -->
+          <rect x="106" y="166" width="240" height="34" fill="#FAEDE5" stroke="#D97757" rx="2"/>
+          <text x="112" y="178" font-family="system-ui" font-size="7" fill="#D97757" font-weight="600">⚠ permissions.allow conflicts</text>
+          <rect x="115" y="184" width="34" height="11" fill="#141413" rx="2"/>
+          <text x="132" y="192" text-anchor="middle" font-family="system-ui" font-size="6" fill="#FAF9F5">use new</text>
+          <rect x="152" y="184" width="40" height="11" fill="#FFFFFF" stroke="#D1CFC5" rx="2"/>
+          <text x="172" y="192" text-anchor="middle" font-family="system-ui" font-size="6" fill="#3D3D3A">keep old</text>
+          <rect x="195" y="184" width="34" height="11" fill="#FFFFFF" stroke="#D1CFC5" rx="2"/>
+          <text x="212" y="192" text-anchor="middle" font-family="system-ui" font-size="6" fill="#3D3D3A">custom</text>
+
+          <!-- bottom action -->
+          <rect x="100" y="224" width="252" height="22" fill="#FFFFFF" stroke="#D1CFC5" rx="3"/>
+          <rect x="106" y="228" width="44" height="14" fill="#141413" rx="2"/>
+          <text x="128" y="238" text-anchor="middle" font-family="system-ui" font-size="7" fill="#FAF9F5">Apply L</text>
+          <text x="158" y="238" font-family="system-ui" font-size="7" fill="#87867F">+ Shared</text>
+          <text x="200" y="238" font-family="system-ui" font-size="7" fill="#87867F">+ Env</text>
+          <text x="346" y="238" text-anchor="end" font-family="ui-monospace" font-size="7" fill="#D97757">unsaved ●</text>
+        </svg>
+      </div>
+
+      <div class="dir-body">
+        <div>
+          <h4>主路径</h4>
+          <ol>
+            <li>顶 workspace switcher 切到目标项目（最近的固定置顶）</li>
+            <li>左栏挑 profile → 主区域 inline 出 diff + 冲突 resolver（不再 modal）</li>
+            <li>勾 layer chip → 底部 [Apply L/Shared/Env] 是个分段按钮</li>
+            <li>profile 编辑 = 在左栏点 profile name → 切换到 Edit 子页（同主区域）</li>
+          </ol>
+        </div>
+        <div>
+          <h4>解决了</h4>
+          <div class="solves">
+            <span class="chip">P1</span>
+            <span class="chip">P2</span>
+            <span class="chip">P3</span>
+            <span class="chip">P4</span>
+            <span class="chip">P5</span>
+            <span class="chip">P8</span>
+            <span class="chip">P9</span>
+            <span class="chip weak">P6</span>
+            <span class="chip weak">P7</span>
+          </div>
+        </div>
+        <div class="trade">
+          <strong>Tradeoff：</strong>workspace 一次只看一个项目，对比/批量 apply 多个项目要切。
+          切 workspace 的开销靠"最近项目固定置顶 + 快捷键"补，但本质是单焦点视图。
+        </div>
+        <button class="try-btn" onclick="openPlayground('b')"><span class="arr">▶</span> 试 B · 在下面交互体验</button>
+      </div>
+    </article>
+
+    <!-- ============ C ============ -->
+    <article class="dir">
+      <div class="dir-head">
+        <span class="dir-tag">方向 C · CONNECTION GRAPH</span>
+        <div class="dir-title">配对视图 + 关系可视化</div>
+        <div class="dir-onelead">
+          左 profile · 中 关系 canvas · 右 project ——
+          点 profile 高亮所有用它的 project，点 project 高亮当前 profile。
+          应用 = 在两边各选一个 + 看 canvas 中间的 diff。
+        </div>
+      </div>
+
+      <div class="dir-mockup">
+        <svg viewBox="0 0 360 260" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="356" height="256" rx="6" fill="#FFFFFF" stroke="#D1CFC5" stroke-width="1.5"/>
+          <rect x="2" y="2" width="356" height="22" fill="#F0EEE6"/>
+          <text x="14" y="16" font-family="serif" font-size="11" fill="#141413" font-weight="600">AD</text>
+          <text x="346" y="16" text-anchor="end" font-family="ui-monospace" font-size="8" fill="#87867F">⚙ History</text>
+
+          <!-- left: profiles -->
+          <rect x="2" y="24" width="80" height="234" fill="#FAF9F5"/>
+          <line x1="82" y1="24" x2="82" y2="258" stroke="#D1CFC5"/>
+          <text x="8" y="38" font-family="ui-monospace" font-size="8" fill="#87867F">PROFILES</text>
+          <rect x="8" y="46" width="68" height="22" fill="#FFFFFF" stroke="#D1CFC5" rx="3"/>
+          <circle cx="16" cy="57" r="4" fill="#D97757"/>
+          <text x="24" y="60" font-family="system-ui" font-size="8" fill="#141413">work</text>
+          <text x="70" y="60" text-anchor="end" font-family="ui-monospace" font-size="6" fill="#87867F">×2</text>
+          <rect x="8" y="72" width="68" height="22" fill="#E3DACC" stroke="#D97757" stroke-width="1.5" rx="3"/>
+          <circle cx="16" cy="83" r="4" fill="#788C5D"/>
+          <text x="24" y="86" font-family="system-ui" font-size="8" fill="#141413" font-weight="600">personal</text>
+          <text x="70" y="86" text-anchor="end" font-family="ui-monospace" font-size="6" fill="#87867F">×1</text>
+          <rect x="8" y="98" width="68" height="22" fill="#FFFFFF" stroke="#D1CFC5" rx="3"/>
+          <circle cx="16" cy="109" r="4" fill="#B04A3F"/>
+          <text x="24" y="112" font-family="system-ui" font-size="8" fill="#141413">scratch</text>
+          <text x="70" y="112" text-anchor="end" font-family="ui-monospace" font-size="6" fill="#87867F">×0</text>
+          <rect x="8" y="128" width="68" height="14" fill="#141413" rx="2"/>
+          <text x="42" y="138" text-anchor="middle" font-family="system-ui" font-size="7" fill="#FAF9F5">+ New</text>
+
+          <!-- middle: canvas -->
+          <text x="120" y="38" font-family="ui-monospace" font-size="8" fill="#87867F">DIFF · personal → my-blog</text>
+          <!-- connecting line -->
+          <path d="M 82 83 Q 160 83 160 142 Q 160 200 278 200" stroke="#D97757" stroke-width="2" fill="none" stroke-dasharray="4 2"/>
+          <!-- diff card -->
+          <rect x="100" y="46" width="180" height="142" fill="#F0EEE6" rx="4"/>
+          <text x="108" y="60" font-family="ui-monospace" font-size="7" fill="#3D3D3A">  "env": {</text>
+          <rect x="108" y="64" width="166" height="9" fill="#FAEDE5"/>
+          <text x="110" y="71" font-family="ui-monospace" font-size="6" fill="#B04A3F">-   "MODEL": "opus-4-7"</text>
+          <rect x="108" y="75" width="166" height="9" fill="#EDF1E5"/>
+          <text x="110" y="82" font-family="ui-monospace" font-size="6" fill="#788C5D">+   "MODEL": "sonnet-4-6"</text>
+          <text x="108" y="94" font-family="ui-monospace" font-size="6" fill="#3D3D3A">  }</text>
+          <!-- chip rows -->
+          <text x="108" y="110" font-family="system-ui" font-size="7" fill="#87867F">writes to:</text>
+          <rect x="150" y="103" width="62" height="11" fill="#FFFFFF" stroke="#788C5D" rx="2"/>
+          <text x="181" y="111" text-anchor="middle" font-family="ui-monospace" font-size="6" fill="#788C5D">settings.local.json</text>
+          <text x="108" y="128" font-family="system-ui" font-size="7" fill="#87867F">layer:</text>
+          <rect x="140" y="121" width="32" height="11" fill="#141413" rx="2"/>
+          <text x="156" y="129" text-anchor="middle" font-family="system-ui" font-size="6" fill="#FAF9F5">local</text>
+          <rect x="174" y="121" width="32" height="11" fill="#FFFFFF" stroke="#D1CFC5" rx="2"/>
+          <text x="190" y="129" text-anchor="middle" font-family="system-ui" font-size="6" fill="#87867F">shared</text>
+          <rect x="208" y="121" width="32" height="11" fill="#FFFFFF" stroke="#D1CFC5" rx="2"/>
+          <text x="224" y="129" text-anchor="middle" font-family="system-ui" font-size="6" fill="#87867F">env</text>
+          <!-- big apply button -->
+          <rect x="120" y="158" width="140" height="20" fill="#141413" rx="3"/>
+          <text x="190" y="171" text-anchor="middle" font-family="system-ui" font-size="9" fill="#FAF9F5" font-weight="600">Apply personal → my-blog</text>
+
+          <!-- mini history -->
+          <text x="100" y="206" font-family="ui-monospace" font-size="7" fill="#87867F">RECENT APPLIES</text>
+          <text x="108" y="220" font-family="ui-monospace" font-size="6" fill="#3D3D3A">work → cc-switch · L+E · 2h ago</text>
+          <text x="108" y="232" font-family="ui-monospace" font-size="6" fill="#3D3D3A">work → api-test · L · 1d ago</text>
+          <text x="108" y="244" font-family="ui-monospace" font-size="6" fill="#3D3D3A">personal → my-blog · L · 3d ago</text>
+
+          <!-- right: projects -->
+          <rect x="280" y="24" width="78" height="234" fill="#FAF9F5"/>
+          <line x1="280" y1="24" x2="280" y2="258" stroke="#D1CFC5"/>
+          <text x="286" y="38" font-family="ui-monospace" font-size="8" fill="#87867F">PROJECTS</text>
+          <rect x="286" y="46" width="68" height="22" fill="#FFFFFF" stroke="#D1CFC5" rx="3"/>
+          <circle cx="294" cy="57" r="4" fill="#D97757"/>
+          <text x="302" y="60" font-family="system-ui" font-size="8" fill="#141413">cc-switch</text>
+          <rect x="286" y="72" width="68" height="22" fill="#E3DACC" stroke="#D97757" stroke-width="1.5" rx="3"/>
+          <circle cx="294" cy="83" r="4" fill="#788C5D"/>
+          <text x="302" y="86" font-family="system-ui" font-size="8" fill="#141413" font-weight="600">my-blog</text>
+          <rect x="286" y="98" width="68" height="22" fill="#FFFFFF" stroke="#D1CFC5" rx="3" opacity="0.4"/>
+          <circle cx="294" cy="109" r="4" fill="#D97757" opacity="0.4"/>
+          <text x="302" y="112" font-family="system-ui" font-size="8" fill="#141413" opacity="0.4">api-test</text>
+          <rect x="286" y="124" width="68" height="22" fill="#FFFFFF" stroke="#D1CFC5" rx="3" opacity="0.4"/>
+          <text x="320" y="138" text-anchor="middle" font-family="system-ui" font-size="7" fill="#87867F" opacity="0.4">scratch</text>
+          <rect x="286" y="234" width="68" height="14" fill="#141413" rx="2"/>
+          <text x="320" y="244" text-anchor="middle" font-family="system-ui" font-size="7" fill="#FAF9F5">+ Add</text>
+        </svg>
+      </div>
+
+      <div class="dir-body">
+        <div>
+          <h4>主路径</h4>
+          <ol>
+            <li>左 profile · 右 project 各点一个 → 中间 canvas 自动出 diff + layer chips</li>
+            <li>点 profile 高亮右栏所有使用它的 project（暗化其他）</li>
+            <li>底部一条横向 <code>Apply A → B</code> 主按钮，没有 modal</li>
+            <li>profile 编辑 = 右键 / cmd-click profile → drawer 弹出三 tab</li>
+          </ol>
+        </div>
+        <div>
+          <h4>解决了</h4>
+          <div class="solves">
+            <span class="chip">P1</span>
+            <span class="chip">P2</span>
+            <span class="chip">P4</span>
+            <span class="chip">P6</span>
+            <span class="chip">P8</span>
+            <span class="chip">P9</span>
+            <span class="chip weak">P3</span>
+            <span class="chip weak">P5</span>
+            <span class="chip weak">P7</span>
+          </div>
+        </div>
+        <div class="trade">
+          <strong>Tradeoff：</strong>视觉密度最高、最炫，但学习曲线最陡。
+          profile 编辑下沉到 drawer 后，正在编辑时跟主视图脱节，需要靠 inline preview 缓解。
+          不熟 AD 的人看到三栏 + canvas 可能反而懵。
+        </div>
+        <button class="try-btn" onclick="openPlayground('c')"><span class="arr">▶</span> 试 C · 在下面交互体验</button>
+      </div>
+    </article>
+
+    <!-- ============ A' ============ -->
+    <article class="dir">
+      <div class="dir-head" style="background:rgba(217,119,87,0.08);border-bottom-color:rgba(217,119,87,0.4);">
+        <span class="dir-tag" style="color:var(--clay);">方向 A′ · CMUX-INSPIRED</span>
+        <div class="dir-title">⌘K + 富 sidebar（A 的升级版）</div>
+        <div class="dir-onelead">
+          借鉴 cmux 的 vertical-tab sidebar + command palette 思路：
+          紧凑 project 列表 + 富 metadata row + 状态色环 + ⌘K 触发所有动作 + 键盘快捷键全覆盖。
+          A 是大卡片浏览风格，A′ 是 power-user 风格。
+        </div>
+      </div>
+
+      <div class="dir-mockup">
+        <svg viewBox="0 0 360 260" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="356" height="256" rx="6" fill="#FFFFFF" stroke="#D1CFC5" stroke-width="1.5"/>
+          <!-- titlebar with ⌘K -->
+          <rect x="2" y="2" width="356" height="26" fill="#F0EEE6"/>
+          <text x="14" y="19" font-family="serif" font-size="11" fill="#141413" font-weight="600">AD</text>
+          <rect x="120" y="7" width="160" height="14" fill="#FFFFFF" stroke="#D1CFC5" rx="3"/>
+          <text x="200" y="17" text-anchor="middle" font-family="ui-monospace" font-size="7" fill="#87867F">⌘K  run anything</text>
+          <text x="346" y="19" text-anchor="end" font-family="ui-monospace" font-size="8" fill="#87867F">⚙</text>
+
+          <!-- left: rich sidebar -->
+          <rect x="2" y="28" width="130" height="230" fill="#FAF9F5"/>
+          <line x1="132" y1="28" x2="132" y2="258" stroke="#D1CFC5"/>
+          <text x="10" y="42" font-family="ui-monospace" font-size="7" fill="#87867F">PROJECTS · ⌘1-8</text>
+          <rect x="98" y="34" width="28" height="12" fill="#141413" rx="2"/>
+          <text x="112" y="43" text-anchor="middle" font-family="system-ui" font-size="7" fill="#FAF9F5">+ ⌘T</text>
+
+          <!-- project row 1: synced (green ring) -->
+          <rect x="8" y="52" width="118" height="46" fill="#FFFFFF" stroke="#788C5D" stroke-width="2" rx="4"/>
+          <text x="14" y="62" font-family="ui-monospace" font-size="6" fill="#87867F">⌘1</text>
+          <text x="26" y="64" font-family="system-ui" font-size="9" fill="#141413" font-weight="600">cc-switch</text>
+          <circle cx="120" cy="61" r="3" fill="#D97757"/>
+          <text x="14" y="76" font-family="ui-monospace" font-size="5.5" fill="#87867F">~/ai_workspace/cc-switch</text>
+          <text x="14" y="86" font-family="ui-monospace" font-size="5.5" fill="#788C5D">● main · ✓ work · L+E</text>
+          <text x="14" y="94" font-family="ui-monospace" font-size="5.5" fill="#87867F">2h ago · in sync</text>
+
+          <!-- project row 2: dirty (orange ring) -->
+          <rect x="8" y="102" width="118" height="46" fill="#FFFFFF" stroke="#D97757" stroke-width="2" rx="4"/>
+          <text x="14" y="112" font-family="ui-monospace" font-size="6" fill="#87867F">⌘2</text>
+          <text x="26" y="114" font-family="system-ui" font-size="9" fill="#141413" font-weight="600">my-blog</text>
+          <circle cx="120" cy="111" r="3" fill="#788C5D"/>
+          <text x="14" y="126" font-family="ui-monospace" font-size="5.5" fill="#87867F">~/code/my-blog</text>
+          <text x="14" y="136" font-family="ui-monospace" font-size="5.5" fill="#D97757">⚠ feat-x · personal · L</text>
+          <text x="14" y="144" font-family="ui-monospace" font-size="5.5" fill="#87867F">git dirty · 3d ago</text>
+
+          <!-- project row 3: idle (gray ring) -->
+          <rect x="8" y="152" width="118" height="40" fill="#FFFFFF" stroke="#D1CFC5" rx="4"/>
+          <text x="14" y="162" font-family="ui-monospace" font-size="6" fill="#87867F">⌘3</text>
+          <text x="26" y="164" font-family="system-ui" font-size="9" fill="#141413">api-test</text>
+          <text x="14" y="176" font-family="ui-monospace" font-size="5.5" fill="#87867F">~/code/api-test</text>
+          <text x="14" y="186" font-family="ui-monospace" font-size="5.5" fill="#87867F">work · L · 1d ago</text>
+
+          <!-- project row 4 -->
+          <rect x="8" y="196" width="118" height="32" fill="#FFFFFF" stroke="#D1CFC5" stroke-dasharray="2 2" rx="4"/>
+          <text x="14" y="206" font-family="ui-monospace" font-size="6" fill="#87867F">⌘4</text>
+          <text x="26" y="208" font-family="system-ui" font-size="9" fill="#87867F">scratch-pad</text>
+          <text x="14" y="220" font-family="ui-monospace" font-size="5.5" fill="#87867F">never applied</text>
+
+          <!-- right: detail pane -->
+          <text x="142" y="42" font-family="serif" font-size="11" fill="#141413" font-weight="600">cc-switch</text>
+          <text x="142" y="54" font-family="ui-monospace" font-size="6" fill="#87867F">~/ai_workspace/cc-switch · main · 2 PRs</text>
+
+          <!-- current profile card -->
+          <text x="142" y="68" font-family="ui-monospace" font-size="7" fill="#87867F">CURRENT</text>
+          <rect x="142" y="72" width="210" height="36" fill="#EDF1E5" stroke="#788C5D" rx="4"/>
+          <circle cx="150" cy="84" r="4" fill="#D97757"/>
+          <text x="160" y="87" font-family="system-ui" font-size="9" fill="#141413" font-weight="600">work · local + env</text>
+          <text x="148" y="100" font-family="ui-monospace" font-size="6" fill="#788C5D">✓ in sync · applied 2h ago</text>
+
+          <!-- apply different -->
+          <text x="142" y="124" font-family="ui-monospace" font-size="7" fill="#87867F">APPLY DIFFERENT  ⌘P</text>
+          <rect x="142" y="128" width="210" height="60" fill="#FFFFFF" stroke="#D1CFC5" rx="4"/>
+          <rect x="148" y="134" width="34" height="14" fill="#141413" rx="2"/>
+          <text x="165" y="143" text-anchor="middle" font-family="system-ui" font-size="7" fill="#FAF9F5">work</text>
+          <rect x="186" y="134" width="46" height="14" fill="#FFFFFF" stroke="#D1CFC5" rx="2"/>
+          <text x="209" y="143" text-anchor="middle" font-family="system-ui" font-size="7" fill="#3D3D3A">personal</text>
+          <rect x="236" y="134" width="42" height="14" fill="#FFFFFF" stroke="#D1CFC5" rx="2"/>
+          <text x="257" y="143" text-anchor="middle" font-family="system-ui" font-size="7" fill="#3D3D3A">scratch</text>
+          <text x="148" y="160" font-family="ui-monospace" font-size="6" fill="#87867F">layers:</text>
+          <text x="180" y="160" font-family="ui-monospace" font-size="6" fill="#141413">☐ shared  ☑ local  ☑ env</text>
+          <rect x="148" y="166" width="60" height="14" fill="#141413" rx="2"/>
+          <text x="178" y="175" text-anchor="middle" font-family="system-ui" font-size="7" fill="#FAF9F5">⌘↵ Apply</text>
+
+          <!-- recent applies -->
+          <text x="142" y="204" font-family="ui-monospace" font-size="7" fill="#87867F">RECENT</text>
+          <text x="142" y="216" font-family="ui-monospace" font-size="6" fill="#3D3D3A">work · L+E · 2h ago</text>
+          <text x="142" y="226" font-family="ui-monospace" font-size="6" fill="#3D3D3A">work · L · 1d ago (api-test)</text>
+          <text x="142" y="236" font-family="ui-monospace" font-size="6" fill="#3D3D3A">personal · L · 3d ago (my-blog)</text>
+        </svg>
+      </div>
+
+      <div class="dir-body">
+        <div>
+          <h4>主路径</h4>
+          <ol>
+            <li><code>⌘K</code> 是入口：所有动作都从这里触发（add project / apply / switch / edit / open）</li>
+            <li>左 sidebar 紧凑 row，色环表达状态（🟢 synced / 🟠 dirty / ⚪ idle）+ <code>⌘1-8</code> 直接跳</li>
+            <li>主区域显示当前 project 的状态卡 + "Apply different profile" 区（chips + layer toggles + <code>⌘↵</code> apply）</li>
+            <li>profile 编辑也走 <code>⌘K</code>: "Edit profile work" → 滑出抽屉</li>
+          </ol>
+        </div>
+        <div>
+          <h4>跟原 A 的区别</h4>
+          <p style="font-size:13px;">
+            原 A 是大卡片 grid（适合浏览），A′ 是紧凑 sidebar + 详情主区（适合 power user）。
+            sidebar 一眼看完所有 project 状态，主区聚焦当前操作；快捷键覆盖所有路径，鼠标可选。
+            借鉴 cmux 的 sidebar row 富 metadata（git branch、PR、layers、last apply、ring 状态）。
+          </p>
+        </div>
+        <div>
+          <h4>解决了</h4>
+          <div class="solves">
+            <span class="chip">P1</span>
+            <span class="chip">P2</span>
+            <span class="chip">P4</span>
+            <span class="chip">P5</span>
+            <span class="chip">P6</span>
+            <span class="chip">P7</span>
+            <span class="chip">P9</span>
+            <span class="chip weak">P3</span>
+            <span class="chip weak">P8</span>
+          </div>
+        </div>
+        <div class="trade">
+          <strong>Tradeoff：</strong>对键盘党最爽，但新手第一眼看到全是缩写和快捷键标号会懵；
+          需要 onboarding 提示。富 sidebar row 信息密度高、字小，对宽屏友好对窄屏一般。
+        </div>
+        <button class="try-btn" onclick="openPlayground('aprime')"><span class="arr">▶</span> 试 A′ · 在下面交互体验</button>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<!-- ============ 痛点对照 ============ -->
+<section id="matrix" class="anchor">
+  <h2>痛点解决度对照</h2>
+  <p class="subtitle">● = 完全解决 · ◐ = 部分解决 · — = 不动 / 不在范围</p>
+
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th>痛点</th>
+        <th class="dir-col">A · 项目工作台</th>
+        <th class="dir-col">B · 配方工作台</th>
+        <th class="dir-col">C · 关系画布</th>
+        <th class="dir-col" style="background:rgba(217,119,87,0.12);color:var(--clay);">A′ · cmux 风</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>P1 信息架构错位</td><td class="dir-col mark-full">●</td><td class="dir-col mark-full">●</td><td class="dir-col mark-full">●</td><td class="dir-col mark-full">●</td></tr>
+      <tr><td>P2 profile 与主路径脱节</td><td class="dir-col mark-part">◐</td><td class="dir-col mark-full">●</td><td class="dir-col mark-full">●</td><td class="dir-col mark-full">●</td></tr>
+      <tr><td>P3 三 tab 等权重</td><td class="dir-col mark-none">—</td><td class="dir-col mark-full">●</td><td class="dir-col mark-part">◐</td><td class="dir-col mark-part">◐</td></tr>
+      <tr><td>P4 ApplyDialog 拥挤</td><td class="dir-col mark-part">◐</td><td class="dir-col mark-full">●</td><td class="dir-col mark-full">●</td><td class="dir-col mark-full">●</td></tr>
+      <tr><td>P5 三个加项目入口</td><td class="dir-col mark-full">●</td><td class="dir-col mark-full">●</td><td class="dir-col mark-part">◐</td><td class="dir-col mark-full">●</td></tr>
+      <tr><td>P6 无 active project</td><td class="dir-col mark-full">●</td><td class="dir-col mark-part">◐</td><td class="dir-col mark-full">●</td><td class="dir-col mark-full">●</td></tr>
+      <tr><td>P7 History 埋在角落</td><td class="dir-col mark-full">●</td><td class="dir-col mark-part">◐</td><td class="dir-col mark-part">◐</td><td class="dir-col mark-full">●</td></tr>
+      <tr><td>P8 冲突 UI 只读</td><td class="dir-col mark-none">—</td><td class="dir-col mark-full">●</td><td class="dir-col mark-full">●</td><td class="dir-col mark-part">◐</td></tr>
+      <tr><td>P9 Titlebar legacy</td><td class="dir-col mark-full">●</td><td class="dir-col mark-full">●</td><td class="dir-col mark-full">●</td><td class="dir-col mark-full">●</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ Playground ============ -->
+<section id="playground" class="anchor">
+  <h2>可交互原型</h2>
+  <p class="subtitle">每个方向都能点击 / 切换 / Apply —— 所有数据 mock 在内存，刷新页面重置。</p>
+
+  <div class="pg-bar">
+    <div class="seg" id="pg-seg">
+      <button data-dir="a" class="on">A · 项目工作台</button>
+      <button data-dir="b">B · 配方工作台</button>
+      <button data-dir="c">C · 关系画布</button>
+      <button data-dir="aprime" style="color:var(--clay);font-weight:600;">A′ · cmux 风</button>
+    </div>
+  </div>
+
+  <div class="try-text" id="pg-try"></div>
+
+  <div class="app-frame" id="pg-app"></div>
+</section>
+
+<!-- ============ CTA ============ -->
+<section id="cta" class="anchor">
+  <div class="cta">
+    <div>
+      <h3>下一步</h3>
+      <p>
+        挑一个方向告诉我（A / B / C），或者要求合并（例如"B 的 inline diff + A 的 ⌘K"）。
+        我会基于选定方向创建 Tier 2 ExecPlan（MD + HTML 同步），列出影响文件、里程碑、验证标准。
+        ExecPlan 也会先给你评审，LGTM 之后才动代码。
+      </p>
+    </div>
+    <div class="pick">⌘K → "我选 B"</div>
+  </div>
+</section>
+
+<footer>
+  Stage 2 exploration · docs/design-docs/ui-redesign-options.html · 2026-05-24
+</footer>
+
+</div>
+
+<div id="toast-root"></div>
+
+<script>
+/* ============================================================
+ *  Playground · 3 mock directions
+ * ============================================================ */
+const PROFILES = [
+  { id: 'work',     name: 'work',     color: '#D97757', description: '公司 Anthropic API' },
+  { id: 'personal', name: 'personal', color: '#788C5D', description: '个人 OpenRouter' },
+  { id: 'scratch',  name: 'scratch',  color: '#B04A3F', description: '本地 Ollama 测试' },
+];
+
+const STATE = {
+  dir: 'a',
+  projects: [
+    { path: '~/ai_workspace/cc-switch', name: 'cc-switch',   profileId: 'work',     layers: ['local','env'], lastAppliedAgo: '2h ago', pinned: true,  git: 'clean' },
+    { path: '~/code/my-blog',           name: 'my-blog',     profileId: 'personal', layers: ['local'],       lastAppliedAgo: '3d ago', pinned: true,  git: 'dirty' },
+    { path: '~/code/api-test',          name: 'api-test',    profileId: 'work',     layers: ['local'],       lastAppliedAgo: '1d ago', pinned: false, git: 'clean' },
+    { path: '~/tmp/scratch',            name: 'scratch-pad', profileId: null,       layers: [],              lastAppliedAgo: null,    pinned: false, git: 'not git' },
+    { path: '~/code/notes-app',         name: 'notes-app',   profileId: 'personal', layers: ['local'],       lastAppliedAgo: '5d ago', pinned: false, git: 'clean' },
+  ],
+  detected: 12,
+  cSelectedProfile: null, cSelectedProject: null,
+  cLayers: { shared: false, local: true, env: false },
+  cRecent: [
+    { profileId: 'work',     projectPath: '~/ai_workspace/cc-switch', layers: 'L+E', ago: '2h ago' },
+    { profileId: 'work',     projectPath: '~/code/api-test',          layers: 'L',   ago: '1d ago' },
+    { profileId: 'personal', projectPath: '~/code/my-blog',           layers: 'L',   ago: '3d ago' },
+  ],
+  bSelectedProfile: 'work', bSelectedProject: '~/ai_workspace/cc-switch',
+  bLayers: { shared: false, local: true, env: true },
+  bConflictResolved: null, bApplied: true, bWsMenuOpen: false,
+  aSearchOpen: false, aSearchTerm: '', aDrawerOpen: false, aPopoverFor: null,
+  // A' state
+  apSel: '~/ai_workspace/cc-switch',
+  apProfileSel: 'work',
+  apLayers: { shared: false, local: true, env: true },
+  apPaletteOpen: false, apPaletteTerm: '', apPaletteIdx: 0,
+};
+
+const TRY_TEXTS = {
+  a: '<strong>方向 A 可以试：</strong>顶部 <kbd>⌘K</kbd> 搜索框输入 <code>blog</code> 看下拉 · 点 <code>cc-switch</code> 卡片底部的 <code>work · L+E</code> chip 打开 inline 切换器 · 顶部 [Profiles ▸] 滑出右侧 drawer · detected 横幅点 Review。',
+  b: '<strong>方向 B 可以试：</strong>顶部 workspace 名 <code>cc-switch ▾</code> 点开切项目 · 左栏点不同 profile · 子层勾 shared/local/env · 中间 inline diff 里的冲突选 <code>use new</code>/<code>keep old</code>/<code>custom</code> · 底部 Apply 分段按钮。',
+  c: '<strong>方向 C 可以试：</strong>左栏点 profile (如 work) 看右栏哪些 project 高亮、哪些变暗 · 右栏点 project · 两边都选了之后中间出 diff + Apply 按钮 · 点 Apply 看 Recent applies 立刻新增一行（可点 Recent 行复现选择）。',
+  aprime: '<strong>方向 A′ 可以试：</strong>按 <kbd>⌘K</kbd>（或点顶部那条 bar）打开 command palette，输入 <code>apply</code> / <code>my-blog</code> 看动作 · 左栏 row 上的 ring 颜色表示状态（🟢 synced / 🟠 dirty / 🔵 recent / ⚪ idle）· <kbd>⌘1</kbd>/<kbd>⌘2</kbd>/<kbd>⌘3</kbd> 直接跳 project · 右下角 Apply 按 <kbd>⌘↵</kbd>。',
+};
+
+function profileById(id) { return PROFILES.find(p => p.id === id); }
+function projectByPath(path) { return STATE.projects.find(p => p.path === path); }
+function layersAbbr(arr) { return arr.map(l => l === 'shared' ? 'S' : l === 'local' ? 'L' : 'E').join('+'); }
+function toast(msg) {
+  const root = document.getElementById('toast-root');
+  root.innerHTML = '';
+  const e = document.createElement('div');
+  e.className = 'toast'; e.textContent = msg;
+  root.appendChild(e);
+  setTimeout(() => e.remove(), 2200);
+}
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  if (attrs) for (const k in attrs) {
+    if (attrs[k] == null) continue;
+    if (k === 'class') e.className = attrs[k];
+    else if (k === 'style') e.setAttribute('style', attrs[k]);
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
+    else if (k === 'html') e.innerHTML = attrs[k];
+    else e.setAttribute(k, attrs[k]);
+  }
+  for (const c of children) {
+    if (c == null) continue;
+    if (typeof c === 'string') e.appendChild(document.createTextNode(c));
+    else e.appendChild(c);
+  }
+  return e;
+}
+
+document.getElementById('pg-seg').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-dir]');
+  if (!b) return;
+  setDir(b.dataset.dir, false);
+});
+
+function setDir(dir, scroll) {
+  STATE.dir = dir;
+  STATE.aSearchOpen = false; STATE.aSearchTerm = '';
+  STATE.aDrawerOpen = false; STATE.aPopoverFor = null;
+  STATE.bWsMenuOpen = false;
+  STATE.apPaletteOpen = false; STATE.apPaletteTerm = ''; STATE.apPaletteIdx = 0;
+  document.querySelectorAll('#pg-seg button').forEach(x => x.classList.toggle('on', x.dataset.dir === dir));
+  document.getElementById('pg-try').innerHTML = TRY_TEXTS[dir];
+  render();
+  if (scroll) document.getElementById('playground').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function openPlayground(dir) { setDir(dir, true); }
+
+function render() {
+  const app = document.getElementById('pg-app');
+  app.innerHTML = '';
+  if      (STATE.dir === 'a')      app.appendChild(renderA());
+  else if (STATE.dir === 'b')      app.appendChild(renderB());
+  else if (STATE.dir === 'c')      app.appendChild(renderC());
+  else if (STATE.dir === 'aprime') app.appendChild(renderAPrime());
+}
+
+/* ---------- A ---------- */
+function renderA() {
+  const wrap = el('div', { style: 'display:flex;flex-direction:column;height:100%;' });
+  wrap.appendChild(el('div', { class: 'titlebar' },
+    el('span', { class: 'tbdot r' }), el('span', { class: 'tbdot y' }), el('span', { class: 'tbdot g' }),
+    el('span', { class: 'nm' }, 'AD'),
+    el('div', { class: 'right' },
+      el('span', null, STATE.projects.filter(p => p.profileId).length + ' tracked'),
+      el('span', null, '⚙')),
+  ));
+  const body = el('div', { class: 'app-body' });
+  const main = el('div', { style: 'flex:1;display:flex;flex-direction:column;overflow:hidden;' });
+
+  const toolbar = el('div', { class: 'a-toolbar' }, el('h1', null, 'Projects'));
+  const search = el('div', { class: 'a-search' });
+  const inp = el('input', {
+    type: 'text', placeholder: '⌘K — search or paste path to add…',
+    oninput: (e) => {
+      STATE.aSearchTerm = e.target.value.trim();
+      STATE.aSearchOpen = STATE.aSearchTerm.length > 0;
+      renderASearchDropdown(search);
+    },
+    onfocus: () => { if (STATE.aSearchTerm) { STATE.aSearchOpen = true; renderASearchDropdown(search); } },
+    onblur:  () => { setTimeout(() => { STATE.aSearchOpen = false; renderASearchDropdown(search); }, 150); },
+  });
+  inp.value = STATE.aSearchTerm || '';
+  search.appendChild(el('span', { class: 'icon' }, '⌘K'));
+  search.appendChild(inp);
+  renderASearchDropdown(search);
+  toolbar.appendChild(search);
+  toolbar.appendChild(el('button', { class: 'btn ghost sm', onclick: () => { STATE.aDrawerOpen = true; render(); } }, 'Profiles ▸'));
+  main.appendChild(toolbar);
+
+  const area = el('div', { class: 'a-area' });
+  if (STATE.detected > 0) {
+    area.appendChild(el('div', { class: 'a-detected' },
+      el('span', { style: 'color:var(--clay);font-size:15px;' }, '✨'),
+      el('span', null, STATE.detected + ' projects detected from ~/.claude/projects'),
+      el('button', { onclick: () => toast('打开 detected projects modal (mock)') }, 'Review →'),
+    ));
+    area.appendChild(el('div', { style: 'height:18px;' }));
+  }
+  const pinned = STATE.projects.filter(p => p.pinned);
+  area.appendChild(renderASection('PINNED · ' + pinned.length, pinned, true));
+  const recent = STATE.projects.filter(p => !p.pinned);
+  area.appendChild(renderASection('RECENT · ' + recent.length, recent, false));
+  main.appendChild(area);
+
+  body.appendChild(main);
+  body.appendChild(renderADrawer());
+  wrap.appendChild(body);
+  return wrap;
+}
+function renderASearchDropdown(parent) {
+  const ex = parent.querySelector('.dropdown');
+  if (ex) ex.remove();
+  if (!STATE.aSearchOpen) return;
+  const term = (STATE.aSearchTerm || '').toLowerCase();
+  const matches = STATE.projects.filter(p =>
+    p.name.toLowerCase().includes(term) || p.path.toLowerCase().includes(term)
+  ).slice(0, 5);
+  const dd = el('div', { class: 'dropdown' });
+  if (matches.length === 0) {
+    dd.appendChild(el('button', { onclick: () => {
+      toast('mock: 添加 ' + STATE.aSearchTerm);
+      STATE.aSearchOpen = false; STATE.aSearchTerm = '';
+      render();
+    } },
+      el('span', null, '+ Add as new project'),
+      el('span', { class: 'label' }, STATE.aSearchTerm || ''),
+    ));
+  } else {
+    matches.forEach(p => {
+      dd.appendChild(el('button', { onclick: () => {
+        toast('已切到 ' + p.name);
+        STATE.aSearchOpen = false; STATE.aSearchTerm = '';
+        render();
+      } },
+        el('span', { class: 'dot-color', style: 'background:' + (profileById(p.profileId)?.color || '#D1CFC5') }),
+        el('span', null, p.path),
+      ));
+    });
+  }
+  parent.appendChild(dd);
+}
+function renderASection(title, items, pinned) {
+  const sec = el('div', { class: 'a-section' });
+  sec.appendChild(el('div', { class: 'h' }, title));
+  const grid = el('div', { class: 'a-grid' });
+  items.forEach(p => grid.appendChild(renderACard(p, pinned)));
+  if (pinned) grid.appendChild(el('div', { class: 'a-card add', onclick: () => toast('add project mock') }, el('span', null, '+ Pin a project')));
+  sec.appendChild(grid);
+  return sec;
+}
+function renderACard(p, isPinned) {
+  const card = el('div', { class: 'a-card' + (isPinned ? ' pinned' : ''), style: 'position:relative;' });
+  card.appendChild(el('div', { class: 'top' },
+    el('span', { class: 'dot-color', style: 'background:' + (profileById(p.profileId)?.color || '#D1CFC5') + ';width:10px;height:10px;' }),
+    el('span', { class: 'name' }, p.name),
+  ));
+  card.appendChild(el('div', { class: 'path' }, p.path));
+  const chipRow = el('div', { class: 'a-chip-line' });
+  if (p.profileId) {
+    chipRow.appendChild(el('button', {
+      class: 'pgchip clay',
+      onclick: (e) => { e.stopPropagation(); STATE.aPopoverFor = STATE.aPopoverFor === p.path ? null : p.path; render(); },
+    },
+      el('span', { class: 'dot-color', style: 'background:' + profileById(p.profileId).color + ';width:7px;height:7px;' }),
+      el('span', null, profileById(p.profileId).name + ' · ' + (layersAbbr(p.layers) || '—')),
+      el('span', { style: 'margin-left:2px;font-size:9px;' }, '▾'),
+    ));
+  } else {
+    chipRow.appendChild(el('button', {
+      class: 'pgchip',
+      onclick: (e) => { e.stopPropagation(); STATE.aPopoverFor = STATE.aPopoverFor === p.path ? null : p.path; render(); },
+    }, '+ assign profile'));
+  }
+  if (p.git === 'dirty') chipRow.appendChild(el('span', { class: 'pgchip', style: 'color:var(--rust);border-color:rgba(176,74,63,0.3);background:rgba(176,74,63,0.08);' }, 'git dirty'));
+  card.appendChild(chipRow);
+  if (STATE.aPopoverFor === p.path) card.appendChild(renderAPopover(p));
+  card.appendChild(el('div', { class: 'status' },
+    p.lastAppliedAgo ? el('span', null, '✓ applied ' + p.lastAppliedAgo) : el('span', null, '• never applied'),
+  ));
+  const acts = el('div', { class: 'actions' });
+  if (p.profileId) {
+    acts.appendChild(el('button', { class: 'btn xs', onclick: (e) => {
+      e.stopPropagation(); p.lastAppliedAgo = 'just now';
+      toast('Re-applied ' + profileById(p.profileId).name + ' → ' + p.name); render();
+    } }, 'Re-apply'));
+  }
+  acts.appendChild(el('button', { class: 'btn xs ghost', onclick: (e) => { e.stopPropagation(); toast('Diff mock'); } }, 'Diff'));
+  acts.appendChild(el('button', { class: 'btn xs ghost', onclick: (e) => { e.stopPropagation(); toast('Open in Finder mock'); } }, 'Open'));
+  card.appendChild(acts);
+  return card;
+}
+function renderAPopover(p) {
+  const pop = el('div', { class: 'a-popover', onclick: (e) => e.stopPropagation() });
+  pop.appendChild(el('div', { style: 'font-size:11px;color:var(--gray-500);margin-bottom:6px;font-family:var(--mono);' }, 'PROFILE'));
+  PROFILES.forEach(pf => {
+    pop.appendChild(el('div', {
+      class: 'row' + (pf.id === p.profileId ? ' on' : ''),
+      onclick: () => { p.profileId = pf.id; if (p.layers.length === 0) p.layers = ['local']; render(); },
+    },
+      el('span', { class: 'dot-color', style: 'background:' + pf.color + ';width:8px;height:8px;' }),
+      el('span', null, pf.name),
+      el('span', { style: 'margin-left:auto;color:var(--gray-500);font-size:10px;font-family:var(--mono);' }, pf.id === p.profileId ? '✓' : ''),
+    ));
+  });
+  pop.appendChild(el('div', { class: 'divider' }));
+  pop.appendChild(el('div', { style: 'font-size:11px;color:var(--gray-500);margin-bottom:4px;font-family:var(--mono);' }, 'LAYERS'));
+  ['shared','local','env'].forEach(l => {
+    const id = 'ly-' + p.path.replace(/[^\w]/g,'') + '-' + l;
+    const inp = el('input', { type: 'checkbox', id, onchange: (e) => {
+      if (e.target.checked) { if (!p.layers.includes(l)) p.layers.push(l); }
+      else { p.layers = p.layers.filter(x => x !== l); }
+      render();
+    } });
+    inp.checked = p.layers.includes(l);
+    const lbl = el('label', { class: 'layer', for: id }, inp, el('span', null, l));
+    pop.appendChild(lbl);
+  });
+  pop.appendChild(el('button', {
+    class: 'btn apply-btn',
+    onclick: () => {
+      if (!p.profileId || p.layers.length === 0) { toast('请选 profile 和至少一个 layer'); return; }
+      p.lastAppliedAgo = 'just now'; STATE.aPopoverFor = null;
+      toast('Applied ' + profileById(p.profileId).name + ' (' + layersAbbr(p.layers) + ') → ' + p.name);
+      render();
+    },
+  }, 'Apply now'));
+  return pop;
+}
+function renderADrawer() {
+  const d = el('div', { class: 'a-drawer' + (STATE.aDrawerOpen ? ' open' : '') });
+  d.appendChild(el('div', { class: 'head' },
+    el('h2', null, 'Profiles'),
+    el('button', { class: 'x', onclick: () => { STATE.aDrawerOpen = false; render(); } }, '✕'),
+  ));
+  const body = el('div', { class: 'body-d' });
+  const ul = el('ul', { class: 'profiles' });
+  PROFILES.forEach(pf => {
+    const usedBy = STATE.projects.filter(p => p.profileId === pf.id).length;
+    ul.appendChild(el('li', { onclick: () => toast('编辑 ' + pf.name + ' (mock)') },
+      el('span', { class: 'dot-color', style: 'background:' + pf.color + ';width:10px;height:10px;' }),
+      el('span', null, pf.name),
+      el('span', { class: 'count' }, '×' + usedBy),
+    ));
+  });
+  ul.appendChild(el('li', { style: 'border-top:1px dashed var(--gray-300);margin-top:6px;padding-top:10px;color:var(--clay);font-weight:600;', onclick: () => toast('New profile mock') },
+    el('span', null, '+ New profile'),
+  ));
+  body.appendChild(ul);
+  d.appendChild(body);
+  return d;
+}
+
+/* ---------- B ---------- */
+function renderB() {
+  const wrap = el('div', { style: 'display:flex;flex-direction:column;height:100%;' });
+  wrap.appendChild(el('div', { class: 'titlebar' },
+    el('span', { class: 'tbdot r' }), el('span', { class: 'tbdot y' }), el('span', { class: 'tbdot g' }),
+    el('span', { class: 'nm' }, 'AD'),
+    el('div', { class: 'right' }, el('span', null, '⚙'), el('span', null, 'History')),
+  ));
+  const wsBar = el('div', { class: 'b-workspace-bar' },
+    el('span', { style: 'color:var(--gray-500);font-family:var(--mono);font-size:11px;' }, 'workspace:'),
+  );
+  const wsPick = el('div', { class: 'ws-pick' });
+  const cur = projectByPath(STATE.bSelectedProject);
+  wsPick.appendChild(el('button', {
+    class: 'b-ws-trigger',
+    onclick: () => { STATE.bWsMenuOpen = !STATE.bWsMenuOpen; render(); },
+  },
+    el('span', { class: 'dot-color', style: 'background:' + (profileById(cur.profileId)?.color || '#D1CFC5') }),
+    el('span', { style: 'font-weight:600;color:var(--slate);' }, cur.name),
+    el('span', { style: 'font-family:var(--mono);font-size:11px;color:var(--gray-500);' }, cur.path),
+    el('span', { style: 'color:var(--clay);' }, '▾'),
+  ));
+  if (STATE.bWsMenuOpen) {
+    const menu = el('div', { class: 'b-ws-menu' });
+    STATE.projects.forEach(p => {
+      menu.appendChild(el('button', {
+        class: p.path === STATE.bSelectedProject ? 'on' : '',
+        onclick: () => {
+          STATE.bSelectedProject = p.path; STATE.bWsMenuOpen = false;
+          STATE.bApplied = !!p.lastAppliedAgo; STATE.bConflictResolved = null;
+          render();
+        },
+      },
+        el('span', { class: 'dot-color', style: 'background:' + (profileById(p.profileId)?.color || '#D1CFC5') }),
+        el('span', null, p.name),
+        el('span', { class: 'path' }, p.path),
+      ));
+    });
+    wsPick.appendChild(menu);
+  }
+  wsBar.appendChild(wsPick);
+  wsBar.appendChild(el('span', { style: 'margin-left:auto;color:var(--gray-500);font-size:11px;' }, '⌘P 切换'));
+  wrap.appendChild(wsBar);
+
+  const body = el('div', { class: 'app-body' });
+  body.appendChild(renderBLeft());
+  body.appendChild(renderBMain());
+  wrap.appendChild(body);
+  return wrap;
+}
+function renderBLeft() {
+  const left = el('div', { class: 'b-left' });
+  left.appendChild(el('div', { class: 'b-head' },
+    el('span', null, 'PROFILES'),
+    el('button', { class: 'add', onclick: () => toast('新建 profile') }, '+'),
+  ));
+  const ul = el('ul');
+  PROFILES.forEach(pf => {
+    const sel = pf.id === STATE.bSelectedProfile;
+    const li = el('li', { class: sel ? 'sel' : '' });
+    li.appendChild(el('div', {
+      class: 'row',
+      onclick: () => { STATE.bSelectedProfile = pf.id; STATE.bApplied = false; STATE.bConflictResolved = null; render(); },
+    },
+      el('span', { class: 'dot-color', style: 'background:' + pf.color + ';width:10px;height:10px;' }),
+      el('span', null, pf.name),
+      sel ? el('span', { class: 'star' }, '★') : null,
+    ));
+    if (sel) {
+      const sub = el('div', { class: 'layers-sub' });
+      sub.appendChild(el('div', { style: 'color:var(--gray-500);font-size:10px;margin-bottom:2px;' }, '▾ layers'));
+      ['shared','local','env'].forEach(l => {
+        const id = 'b-l-' + l;
+        const inp = el('input', { type: 'checkbox', id, onchange: (e) => {
+          STATE.bLayers[l] = e.target.checked; STATE.bApplied = false; render();
+        } });
+        inp.checked = STATE.bLayers[l];
+        sub.appendChild(el('label', { for: id }, inp, el('span', null, l)));
+      });
+      li.appendChild(sub);
+    }
+    ul.appendChild(li);
+  });
+  left.appendChild(ul);
+  return left;
+}
+function renderBMain() {
+  const main = el('div', { class: 'b-main' });
+  const project = projectByPath(STATE.bSelectedProject);
+  const profile = profileById(STATE.bSelectedProfile);
+  main.appendChild(el('div', { class: 'b-project-head' },
+    el('h1', null, project.name),
+    el('div', { class: 'meta' }, project.path + ' · git ' + project.git),
+  ));
+  const sameProfile = project.profileId === STATE.bSelectedProfile;
+  const stripText = STATE.bApplied && sameProfile
+    ? '✓ ' + profile.name + ' · ' + layersAbbr(project.layers || ['local']) + ' · applied ' + project.lastAppliedAgo
+    : '● ' + profile.name + ' selected — unsaved changes from current state';
+  main.appendChild(el('div', { class: 'b-status-strip' + (STATE.bApplied && sameProfile ? ' applied' : ' unsaved') },
+    el('span', null, stripText),
+    STATE.bApplied && sameProfile
+      ? el('button', { class: 're', onclick: () => { STATE.bApplied = false; render(); } }, 'Re-apply')
+      : null,
+  ));
+
+  const preview = el('div', { class: 'b-preview' });
+  preview.appendChild(el('h3', null, 'PREVIEW · ' + (STATE.bLayers.shared ? '.claude/settings.json + ' : '') + '.claude/settings.local.json'));
+  const diff = el('div', { class: 'b-diff' });
+  diff.appendChild(el('div', { class: 'line ctx' }, '  "env": {'));
+  diff.appendChild(el('div', { class: 'line del' }, '-   "ANTHROPIC_BASE_URL": "https://api.anthropic.com"'));
+  diff.appendChild(el('div', { class: 'line add' }, '+   "ANTHROPIC_BASE_URL": "https://api.work-proxy.internal"'));
+  diff.appendChild(el('div', { class: 'line ctx' }, '    "ANTHROPIC_API_KEY": "sk-ant-..."'));
+  diff.appendChild(el('div', { class: 'line ctx' }, '  },'));
+  diff.appendChild(el('div', { class: 'line ctx' }, '  "model": "claude-opus-4-7"'));
+  preview.appendChild(diff);
+
+  if (STATE.bLayers.shared) {
+    const cf = el('div', { class: 'b-conflict' });
+    cf.appendChild(el('div', { class: 'ch' }, '⚠ Conflict in permissions.allow'));
+    cf.appendChild(el('div', { class: 'key' }, 'keyPath: permissions.allow'));
+    const choices = el('div', { class: 'choices' });
+    ['use new','keep old','custom'].forEach(c => {
+      const id = 'b-c-' + c.replace(/\s/g,'');
+      const lbl = el('label', { class: 'choice' });
+      const inp = el('input', { type: 'radio', name: 'b-conflict', id, onchange: () => { STATE.bConflictResolved = c; render(); } });
+      if (STATE.bConflictResolved === c) inp.checked = true;
+      lbl.appendChild(inp);
+      lbl.appendChild(el('span', null, c));
+      lbl.appendChild(el('span', { class: 'v' },
+        c === 'use new' ? '[Bash(npm:*), Edit(*)]' :
+        c === 'keep old' ? '[Bash(git:*)]' : '…'));
+      choices.appendChild(lbl);
+    });
+    cf.appendChild(choices);
+    preview.appendChild(cf);
+  }
+
+  if (STATE.bLayers.env) {
+    preview.appendChild(el('h3', null, 'ENV EXPORT SNIPPET (not written to file)'));
+    const eb = el('div', { class: 'b-diff' });
+    eb.appendChild(el('div', { class: 'line ctx' }, 'export ANTHROPIC_BETAS=oauth-2025-04-20'));
+    eb.appendChild(el('div', { class: 'line ctx' }, 'export ANTHROPIC_LOG_LEVEL=info'));
+    preview.appendChild(eb);
+  }
+  main.appendChild(preview);
+
+  const bar = el('div', { class: 'b-action-bar' });
+  const tg = el('div', { class: 'b-layer-toggles' });
+  ['shared','local','env'].forEach(l => {
+    const id = 'b-bl-' + l;
+    const inp = el('input', { type: 'checkbox', id, onchange: (e) => { STATE.bLayers[l] = e.target.checked; STATE.bApplied = false; render(); } });
+    inp.checked = STATE.bLayers[l];
+    tg.appendChild(el('label', { for: id }, inp, el('span', null, l)));
+  });
+  bar.appendChild(tg);
+  bar.appendChild(el('span', { class: 'grow' }));
+  const canApply = (STATE.bLayers.shared || STATE.bLayers.local || STATE.bLayers.env)
+    && (!STATE.bLayers.shared || STATE.bConflictResolved !== null);
+  if (STATE.bApplied && sameProfile) bar.appendChild(el('span', { class: 'applied-flag' }, '✓ in sync'));
+  bar.appendChild(el('button', {
+    class: 'btn',
+    disabled: !canApply ? 'disabled' : null,
+    onclick: () => {
+      const layers = [];
+      if (STATE.bLayers.shared) layers.push('shared');
+      if (STATE.bLayers.local)  layers.push('local');
+      if (STATE.bLayers.env)    layers.push('env');
+      project.profileId = STATE.bSelectedProfile;
+      project.layers = layers; project.lastAppliedAgo = 'just now';
+      STATE.bApplied = true; STATE.bConflictResolved = null;
+      toast('Applied ' + profile.name + ' (' + layersAbbr(layers) + ') → ' + project.name);
+      render();
+    },
+  }, canApply
+    ? ('Apply (' + Object.keys(STATE.bLayers).filter(k => STATE.bLayers[k]).map(l => l[0].toUpperCase()).join('+') + ')')
+    : (STATE.bLayers.shared && STATE.bConflictResolved === null ? 'Resolve conflict first' : 'Select at least 1 layer')));
+  main.appendChild(bar);
+  return main;
+}
+
+/* ---------- C ---------- */
+function renderC() {
+  const wrap = el('div', { style: 'display:flex;flex-direction:column;height:100%;' });
+  wrap.appendChild(el('div', { class: 'titlebar' },
+    el('span', { class: 'tbdot r' }), el('span', { class: 'tbdot y' }), el('span', { class: 'tbdot g' }),
+    el('span', { class: 'nm' }, 'AD'),
+    el('div', { class: 'right' }, el('span', null, '⚙ History')),
+  ));
+  const body = el('div', { class: 'app-body c-body' });
+  body.appendChild(renderCSide('left'));
+  body.appendChild(renderCCanvas());
+  body.appendChild(renderCSide('right'));
+  wrap.appendChild(body);
+  return wrap;
+}
+function renderCSide(side) {
+  const w = el('div', { class: 'c-side ' + side });
+  w.appendChild(el('div', { class: 'h' },
+    el('span', null, side === 'left' ? 'PROFILES' : 'PROJECTS'),
+    el('button', { class: 'plus', onclick: () => toast(side === 'left' ? '新建 profile' : '加项目') }, '+'),
+  ));
+  const ul = el('ul');
+  if (side === 'left') {
+    PROFILES.forEach(pf => {
+      const usedBy = STATE.projects.filter(p => p.profileId === pf.id).length;
+      const selected = pf.id === STATE.cSelectedProfile;
+      const cls = [];
+      if (selected) cls.push('sel');
+      else if (STATE.cSelectedProject) {
+        const proj = projectByPath(STATE.cSelectedProject);
+        if (proj.profileId === pf.id) cls.push('related'); else cls.push('dim');
+      }
+      ul.appendChild(el('li', {
+        class: cls.join(' '),
+        onclick: () => { STATE.cSelectedProfile = selected ? null : pf.id; render(); },
+      },
+        el('span', { class: 'dot-color', style: 'background:' + pf.color + ';width:10px;height:10px;' }),
+        el('div', { class: 'name-block' }, el('span', { class: 'nm' }, pf.name)),
+        el('span', { class: 'count' }, '×' + usedBy),
+      ));
+    });
+  } else {
+    STATE.projects.forEach(p => {
+      const selected = p.path === STATE.cSelectedProject;
+      const cls = [];
+      if (selected) cls.push('sel');
+      else if (STATE.cSelectedProfile) {
+        if (p.profileId === STATE.cSelectedProfile) cls.push('related'); else cls.push('dim');
+      }
+      ul.appendChild(el('li', {
+        class: cls.join(' '),
+        onclick: () => { STATE.cSelectedProject = selected ? null : p.path; render(); },
+      },
+        el('span', { class: 'dot-color', style: 'background:' + (profileById(p.profileId)?.color || '#D1CFC5') + ';width:8px;height:8px;' }),
+        el('div', { class: 'name-block' },
+          el('span', { class: 'nm' }, p.name),
+          el('span', { class: 'path-sub' }, p.path),
+        ),
+      ));
+    });
+  }
+  w.appendChild(ul);
+  return w;
+}
+function renderCCanvas() {
+  const cv = el('div', { class: 'c-canvas' });
+  if (!STATE.cSelectedProfile || !STATE.cSelectedProject) {
+    const e = el('div', { class: 'c-empty-canvas' });
+    e.appendChild(el('div', { style: 'font-size:36px;color:var(--gray-300);' }, '⇄'));
+    e.appendChild(el('div', null, '在两侧各选一个，看 diff'));
+    const hr = el('div', { class: 'hint-row' });
+    hr.appendChild(el('div', { class: 'step' }, el('span', { class: 'num' }, '1'), el('span', null, '左栏点 profile')));
+    hr.appendChild(el('div', { class: 'step' }, el('span', { class: 'num' }, '2'), el('span', null, '右栏点 project')));
+    hr.appendChild(el('div', { class: 'step' }, el('span', { class: 'num' }, '3'), el('span', null, '中间点 Apply')));
+    e.appendChild(hr);
+    cv.appendChild(e);
+  } else {
+    const profile = profileById(STATE.cSelectedProfile);
+    const project = projectByPath(STATE.cSelectedProject);
+    cv.appendChild(el('div', { class: 'title' }, 'PAIR'));
+    cv.appendChild(el('div', { class: 'pair' },
+      el('span', { class: 'dot-color', style: 'background:' + profile.color + ';width:14px;height:14px;' }),
+      el('span', null, profile.name),
+      el('span', { class: 'arrow' }),
+      el('span', null, project.name),
+    ));
+    const card = el('div', { class: 'c-diff-card' });
+    card.appendChild(el('h4', null, 'DIFF · what apply would change'));
+    const diff = el('div', { class: 'b-diff', style: 'margin-bottom:14px;' });
+    diff.appendChild(el('div', { class: 'line ctx' }, '  "env": {'));
+    diff.appendChild(el('div', { class: 'line del' }, '-   "MODEL": "claude-opus-4-7"'));
+    diff.appendChild(el('div', { class: 'line add' }, '+   "MODEL": "claude-sonnet-4-6"'));
+    diff.appendChild(el('div', { class: 'line ctx' }, '  }'));
+    card.appendChild(diff);
+    card.appendChild(el('h4', null, 'LAYERS · which files to write'));
+    const tg = el('div', { class: 'c-layer-toggles' });
+    ['shared','local','env'].forEach(l => {
+      const id = 'c-l-' + l;
+      const inp = el('input', { type: 'checkbox', id, onchange: (e) => { STATE.cLayers[l] = e.target.checked; render(); } });
+      inp.checked = STATE.cLayers[l];
+      tg.appendChild(el('label', { for: id }, inp, el('span', null, l)));
+    });
+    card.appendChild(tg);
+    const ab = el('div', { class: 'c-apply-bar' });
+    const layers = Object.keys(STATE.cLayers).filter(k => STATE.cLayers[k]);
+    ab.appendChild(el('button', {
+      class: 'big',
+      disabled: layers.length === 0 ? 'disabled' : null,
+      onclick: () => {
+        STATE.cRecent.unshift({
+          profileId: profile.id, projectPath: project.path,
+          layers: layersAbbr(layers), ago: 'just now',
+        });
+        if (STATE.cRecent.length > 6) STATE.cRecent.pop();
+        project.profileId = profile.id; project.layers = layers;
+        project.lastAppliedAgo = 'just now';
+        toast('Applied ' + profile.name + ' → ' + project.name + ' (' + layersAbbr(layers) + ')');
+        render();
+      },
+    }, layers.length === 0 ? 'Pick at least 1 layer' : ('Apply ' + profile.name + ' → ' + project.name + ' (' + layersAbbr(layers) + ')')));
+    card.appendChild(ab);
+    cv.appendChild(card);
+  }
+  const rc = el('div', { class: 'c-recent' });
+  rc.appendChild(el('h4', null, 'RECENT APPLIES'));
+  const rul = el('ul');
+  STATE.cRecent.forEach(r => {
+    const pf = profileById(r.profileId);
+    rul.appendChild(el('li', {
+      onclick: () => { STATE.cSelectedProfile = pf.id; STATE.cSelectedProject = r.projectPath; render(); },
+    },
+      el('span', { class: 'pcolor', style: 'background:' + pf.color }),
+      el('span', null, pf.name + ' → ' + projectByPath(r.projectPath).name + ' · ' + r.layers),
+      el('span', { class: 'ago' }, r.ago),
+    ));
+  });
+  rc.appendChild(rul);
+  cv.appendChild(rc);
+  return cv;
+}
+
+/* ---------- A′: cmux-inspired ---------- */
+function apRowStatus(p) {
+  if (!p.lastAppliedAgo) return { ring: 'idle',   text: 'never applied' };
+  if (p.git === 'dirty') return { ring: 'dirty',  text: '⚠ git dirty · ' + profileById(p.profileId).name + ' · ' + (layersAbbr(p.layers) || '—') };
+  if (p.lastAppliedAgo === 'just now' || /^[0-9]+m ago$|^just now$|^[0-9]+h ago$/.test(p.lastAppliedAgo)) {
+    return { ring: 'sync', text: '✓ ' + profileById(p.profileId).name + ' · ' + layersAbbr(p.layers) + ' · ' + p.lastAppliedAgo };
+  }
+  return { ring: 'recent', text: profileById(p.profileId).name + ' · ' + layersAbbr(p.layers) + ' · ' + p.lastAppliedAgo };
+}
+
+function renderAPrime() {
+  const wrap = el('div', { style: 'display:flex;flex-direction:column;height:100%;position:relative;' });
+
+  // titlebar with ⌘K bar
+  const tb = el('div', { class: 'ap-titlebar' },
+    el('span', { class: 'tbdot r' }), el('span', { class: 'tbdot y' }), el('span', { class: 'tbdot g' }),
+    el('span', { class: 'brand' }, 'AD'),
+  );
+  tb.appendChild(el('button', {
+    class: 'ap-kbar',
+    onclick: () => { STATE.apPaletteOpen = true; STATE.apPaletteTerm = ''; STATE.apPaletteIdx = 0; render(); setTimeout(() => document.getElementById('ap-palette-input')?.focus(), 30); },
+  },
+    el('span', { class: 'ic' }, '⌘K'),
+    el('span', null, 'run anything — apply, switch project, edit profile…'),
+    el('kbd', null, '⌘K'),
+  ));
+  tb.appendChild(el('span', { class: 'r-side' }, '⚙'));
+  wrap.appendChild(tb);
+
+  // body
+  const body = el('div', { class: 'app-body' });
+  body.appendChild(renderApSide());
+  body.appendChild(renderApMain());
+  if (STATE.apPaletteOpen) body.appendChild(renderApPalette());
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function renderApSide() {
+  const side = el('div', { class: 'ap-side' });
+  side.appendChild(el('div', { class: 'head' },
+    el('span', null, 'PROJECTS'),
+    el('kbd', null, '⌘1-8'),
+    el('button', { class: 'add', onclick: () => { STATE.apPaletteOpen = true; STATE.apPaletteTerm = 'add '; STATE.apPaletteIdx = 0; render(); setTimeout(() => document.getElementById('ap-palette-input')?.focus(), 30); } }, '+ ⌘T'),
+  ));
+  const ul = el('ul');
+  STATE.projects.forEach((p, idx) => {
+    const sel = p.path === STATE.apSel;
+    const st = apRowStatus(p);
+    const row = el('li', {
+      class: 'ap-row ring-' + st.ring + (sel ? ' sel' : ''),
+      onclick: () => { STATE.apSel = p.path; STATE.apProfileSel = p.profileId || STATE.apProfileSel; render(); },
+    });
+    row.appendChild(el('div', { class: 'head-line' },
+      el('span', { class: 'shortcut' }, '⌘' + (idx + 1)),
+      el('span', { class: 'name' }, p.name),
+      p.profileId ? el('span', { class: 'pdot', style: 'background:' + profileById(p.profileId).color }) : null,
+    ));
+    row.appendChild(el('div', { class: 'meta' }, p.path));
+    row.appendChild(el('div', { class: 'status' }, st.text));
+    ul.appendChild(row);
+  });
+  side.appendChild(ul);
+  return side;
+}
+
+function renderApMain() {
+  const main = el('div', { class: 'ap-main' });
+  const p = projectByPath(STATE.apSel);
+  main.appendChild(el('div', { class: 'p-head' },
+    el('h1', null, p.name),
+    el('div', { class: 'meta' }, p.path + ' · ' + (p.git === 'not git' ? 'no git' : p.git === 'dirty' ? 'main · 2 unstaged' : 'main · clean') + ' · 2 PRs open'),
+  ));
+
+  // current
+  const curProfile = p.profileId ? profileById(p.profileId) : null;
+  main.appendChild(el('div', { class: 'ap-block-h' }, el('span', null, 'CURRENT')));
+  if (curProfile) {
+    main.appendChild(el('div', { class: 'ap-current' },
+      el('span', { class: 'pdot', style: 'background:' + curProfile.color }),
+      el('div', { class: 'text' },
+        el('div', { class: 'top' }, curProfile.name + ' · ' + (layersAbbr(p.layers) || '—')),
+        el('div', { class: 'sub' }, '✓ in sync · applied ' + p.lastAppliedAgo),
+      ),
+    ));
+  } else {
+    main.appendChild(el('div', { class: 'ap-current never' },
+      el('span', { class: 'pdot', style: 'background:var(--gray-300)' }),
+      el('div', { class: 'text' },
+        el('div', { class: 'top' }, 'No profile applied yet'),
+        el('div', { class: 'sub' }, 'Pick one below to get started'),
+      ),
+    ));
+  }
+
+  // apply different
+  main.appendChild(el('div', { class: 'ap-block-h' },
+    el('span', null, 'APPLY DIFFERENT'),
+    el('kbd', null, '⌘P'),
+  ));
+  const ap = el('div', { class: 'ap-apply' });
+  const chips = el('div', { class: 'chips' });
+  PROFILES.forEach(pf => {
+    chips.appendChild(el('button', {
+      class: 'pchip' + (pf.id === STATE.apProfileSel ? ' on' : ''),
+      onclick: () => { STATE.apProfileSel = pf.id; render(); },
+    },
+      el('span', { class: 'pdot', style: 'width:8px;height:8px;border-radius:50%;background:' + pf.color + ';display:inline-block;' }),
+      el('span', null, pf.name),
+    ));
+  });
+  ap.appendChild(el('div', { class: 'row' },
+    el('span', { class: 'label' }, 'profile:'),
+    chips,
+  ));
+  const ltg = el('div', { class: 'ltoggles' });
+  ['shared','local','env'].forEach(l => {
+    const id = 'ap-l-' + l;
+    const inp = el('input', { type: 'checkbox', id, onchange: (e) => { STATE.apLayers[l] = e.target.checked; render(); } });
+    inp.checked = STATE.apLayers[l];
+    ltg.appendChild(el('label', { for: id }, inp, el('span', null, l)));
+  });
+  ap.appendChild(el('div', { class: 'row' },
+    el('span', { class: 'label' }, 'layers:'),
+    ltg,
+  ));
+
+  // mini diff preview
+  const layersSel = Object.keys(STATE.apLayers).filter(k => STATE.apLayers[k]);
+  const sameAsCurrent = p.profileId === STATE.apProfileSel
+    && JSON.stringify((p.layers || []).slice().sort()) === JSON.stringify(layersSel.slice().sort());
+  const diffMini = el('div', { class: 'diff-mini' });
+  if (sameAsCurrent) {
+    diffMini.appendChild(el('span', null, '✓ same as current — nothing to apply'));
+  } else if (layersSel.length === 0) {
+    diffMini.appendChild(el('span', null, '— pick at least 1 layer to preview diff'));
+  } else {
+    diffMini.appendChild(el('span', { class: 'del' }, '- "MODEL": "claude-opus-4-7"'));
+    diffMini.appendChild(el('br'));
+    diffMini.appendChild(el('span', { class: 'add' }, '+ "MODEL": "claude-sonnet-4-6"'));
+  }
+  ap.appendChild(el('div', { class: 'row' },
+    el('span', { class: 'label' }, 'preview:'),
+    diffMini,
+  ));
+
+  const canApply = !sameAsCurrent && layersSel.length > 0;
+  const profileSel = profileById(STATE.apProfileSel);
+  ap.appendChild(el('div', { class: 'apply-row' },
+    el('button', {
+      class: 'apply-btn',
+      disabled: !canApply ? 'disabled' : null,
+      onclick: () => { doApPrimeApply(); },
+    },
+      el('kbd', null, '⌘↵'),
+      el('span', null, sameAsCurrent ? 'In sync' : 'Apply ' + profileSel.name + ' (' + layersAbbr(layersSel) + ')'),
+    ),
+    el('span', { class: 'hint' }, sameAsCurrent ? '' : '→ ' + p.name),
+  ));
+  main.appendChild(ap);
+
+  // recent
+  main.appendChild(el('div', { class: 'ap-block-h' }, el('span', null, 'RECENT APPLIES')));
+  const rc = el('div', { class: 'ap-recent' });
+  const rul = el('ul');
+  const recent = [
+    { profileId: 'work',     project: 'cc-switch', layers: 'L+E', ago: '2h ago' },
+    { profileId: 'work',     project: 'api-test',  layers: 'L',   ago: '1d ago' },
+    { profileId: 'personal', project: 'my-blog',   layers: 'L',   ago: '3d ago' },
+  ];
+  recent.forEach(r => {
+    const pf = profileById(r.profileId);
+    rul.appendChild(el('li',
+      el('span', { class: 'pdot', style: 'background:' + pf.color }),
+      el('span', null, pf.name + ' · ' + r.layers + ' → ' + r.project),
+      el('span', { class: 'ago' }, r.ago),
+    ));
+  });
+  rc.appendChild(rul);
+  main.appendChild(rc);
+  return main;
+}
+
+function doApPrimeApply() {
+  const p = projectByPath(STATE.apSel);
+  const layers = Object.keys(STATE.apLayers).filter(k => STATE.apLayers[k]);
+  if (layers.length === 0) return;
+  p.profileId = STATE.apProfileSel;
+  p.layers = layers;
+  p.lastAppliedAgo = 'just now';
+  p.git = p.git === 'dirty' ? 'dirty' : 'clean';
+  toast('Applied ' + profileById(STATE.apProfileSel).name + ' (' + layersAbbr(layers) + ') → ' + p.name);
+  render();
+}
+
+function apPaletteItems() {
+  const term = (STATE.apPaletteTerm || '').toLowerCase().trim();
+  const items = [];
+  // actions
+  const cur = projectByPath(STATE.apSel);
+  PROFILES.forEach(pf => {
+    items.push({
+      group: 'APPLY',
+      icon: '↻',
+      label: 'Apply ' + pf.name + ' to ' + cur.name,
+      desc: '⌘↵',
+      run: () => {
+        STATE.apProfileSel = pf.id;
+        if (Object.values(STATE.apLayers).every(v => !v)) STATE.apLayers.local = true;
+        doApPrimeApply();
+      },
+    });
+  });
+  // switch to project
+  STATE.projects.forEach((p, idx) => {
+    if (p.path === STATE.apSel) return;
+    items.push({
+      group: 'SWITCH',
+      icon: '→',
+      label: 'Switch to ' + p.name,
+      desc: '⌘' + (idx + 1),
+      run: () => { STATE.apSel = p.path; STATE.apProfileSel = p.profileId || STATE.apProfileSel; },
+    });
+  });
+  // edit profiles
+  PROFILES.forEach(pf => {
+    items.push({
+      group: 'EDIT',
+      icon: '✎',
+      label: 'Edit profile: ' + pf.name,
+      desc: '',
+      run: () => toast('编辑 ' + pf.name + ' (mock drawer)'),
+    });
+  });
+  // add project
+  items.push({ group: 'ADD', icon: '+', label: 'Add project from path…', desc: '⌘T', run: () => toast('add project mock') });
+  items.push({ group: 'ADD', icon: '✨', label: 'Review ' + STATE.detected + ' detected projects', desc: '', run: () => toast('detected modal mock') });
+  // history
+  items.push({ group: 'OTHER', icon: '⏱', label: 'Open history', desc: '', run: () => toast('history panel mock') });
+
+  if (term === '') return items;
+  return items.filter(it => (it.label + ' ' + it.group).toLowerCase().includes(term));
+}
+
+function renderApPalette() {
+  const bg = el('div', {
+    class: 'ap-palette-bg',
+    onclick: (e) => { if (e.target === bg) { STATE.apPaletteOpen = false; render(); } },
+  });
+  const pl = el('div', { class: 'ap-palette' });
+  const sr = el('div', { class: 'search-row' });
+  sr.appendChild(el('span', { class: 'ic' }, '⌘K'));
+  const inp = el('input', {
+    id: 'ap-palette-input',
+    type: 'text',
+    placeholder: 'Type an action or project…',
+    oninput: (e) => { STATE.apPaletteTerm = e.target.value; STATE.apPaletteIdx = 0; renderApPaletteResults(pl); },
+    onkeydown: (e) => {
+      const items = apPaletteItems();
+      if (e.key === 'ArrowDown') { e.preventDefault(); STATE.apPaletteIdx = Math.min(STATE.apPaletteIdx + 1, items.length - 1); renderApPaletteResults(pl); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); STATE.apPaletteIdx = Math.max(STATE.apPaletteIdx - 1, 0); renderApPaletteResults(pl); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        const it = items[STATE.apPaletteIdx];
+        if (it) { STATE.apPaletteOpen = false; it.run(); render(); }
+      }
+      else if (e.key === 'Escape') { e.preventDefault(); STATE.apPaletteOpen = false; render(); }
+    },
+  });
+  inp.value = STATE.apPaletteTerm || '';
+  sr.appendChild(inp);
+  pl.appendChild(sr);
+  const results = el('div', { class: 'results', id: 'ap-palette-results' });
+  pl.appendChild(results);
+  pl.appendChild(el('div', { class: 'foot' },
+    el('span', null, el('kbd', null, '↑↓'), 'navigate'),
+    el('span', null, el('kbd', null, '↵'), 'run'),
+    el('span', null, el('kbd', null, 'esc'), 'close'),
+  ));
+  bg.appendChild(pl);
+  setTimeout(() => renderApPaletteResults(pl), 0);
+  return bg;
+}
+
+function renderApPaletteResults(pl) {
+  const root = pl.querySelector('#ap-palette-results');
+  if (!root) return;
+  root.innerHTML = '';
+  const items = apPaletteItems();
+  if (items.length === 0) {
+    root.appendChild(el('div', { class: 'empty' }, 'No matches'));
+    return;
+  }
+  let lastGroup = null;
+  items.forEach((it, idx) => {
+    if (it.group !== lastGroup) {
+      root.appendChild(el('div', { class: 'group-h' }, it.group));
+      lastGroup = it.group;
+    }
+    root.appendChild(el('button', {
+      class: 'result' + (idx === STATE.apPaletteIdx ? ' active' : ''),
+      onclick: () => { STATE.apPaletteOpen = false; it.run(); render(); },
+      onmouseenter: () => { STATE.apPaletteIdx = idx; document.querySelectorAll('#ap-palette-results .result').forEach((el, i) => el.classList.toggle('active', i === idx)); },
+    },
+      el('span', { class: 'ic' }, it.icon),
+      el('span', null, it.label),
+      el('span', { class: 'desc' }, it.desc),
+    ));
+  });
+}
+
+// Global ⌘K + ⌘1-8 for A′
+document.addEventListener('keydown', (e) => {
+  if (STATE.dir !== 'aprime') return;
+  if (!document.getElementById('pg-app')?.contains(document.activeElement) && document.activeElement !== document.body && !isInPlaygroundView()) {
+    // only intercept when playground is in view
+    if (!isInPlaygroundView()) return;
+  }
+  const meta = e.metaKey || e.ctrlKey;
+  if (meta && e.key === 'k') {
+    e.preventDefault();
+    STATE.apPaletteOpen = !STATE.apPaletteOpen;
+    if (STATE.apPaletteOpen) { STATE.apPaletteTerm = ''; STATE.apPaletteIdx = 0; }
+    render();
+    if (STATE.apPaletteOpen) setTimeout(() => document.getElementById('ap-palette-input')?.focus(), 30);
+  } else if (meta && /^[1-8]$/.test(e.key)) {
+    const idx = parseInt(e.key, 10) - 1;
+    if (STATE.projects[idx]) {
+      e.preventDefault();
+      STATE.apSel = STATE.projects[idx].path;
+      STATE.apProfileSel = STATE.projects[idx].profileId || STATE.apProfileSel;
+      render();
+    }
+  } else if (meta && e.key === 'Enter') {
+    if (!STATE.apPaletteOpen) {
+      e.preventDefault();
+      doApPrimeApply();
+    }
+  }
+});
+function isInPlaygroundView() {
+  const r = document.getElementById('pg-app')?.getBoundingClientRect();
+  if (!r) return false;
+  return r.top < window.innerHeight && r.bottom > 0;
+}
+
+// init
+document.getElementById('pg-try').innerHTML = TRY_TEXTS.a;
+render();
+</script>
+
+</body>
+</html>

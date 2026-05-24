@@ -79,6 +79,8 @@ pub fn run() {
             commands::projects::remove_project,
             commands::projects::rename_project,
             commands::projects::get_project_status,
+            commands::projects::read_project_settings,
+            commands::projects::write_project_settings,
             commands::apply::apply_profile_to_project,
             commands::scan_roots::list_scan_roots,
             commands::scan_roots::add_scan_root,

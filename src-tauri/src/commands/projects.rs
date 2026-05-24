@@ -227,6 +227,41 @@ fn gitignore_excludes_settings_local(dir: &Path) -> bool {
     false
 }
 
+/// Reads the current content of a project's settings file directly from disk.
+/// `layer` is `"shared"` (.claude/settings.json) or `"local"` (.claude/settings.local.json).
+/// Returns empty object string if the file doesn't exist yet.
+#[tauri::command]
+pub fn read_project_settings(project_path: String, layer: String) -> CmdResult<String> {
+    let file = settings_file_for(&project_path, &layer)?;
+    if !file.exists() {
+        return Ok("{}".into());
+    }
+    std::fs::read_to_string(&file)
+        .with_context(|| format!("read {}", file.display()))
+        .map_err(Into::into)
+}
+
+/// Writes content directly to a project's settings file (atomic write + backup).
+/// `layer` is `"shared"` or `"local"`.
+#[tauri::command]
+pub fn write_project_settings(project_path: String, layer: String, content: String) -> CmdResult<()> {
+    let _: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| CommandError::Generic(format!("invalid JSON: {e}")))?;
+    let file = settings_file_for(&project_path, &layer)?;
+    ensure_dir(file.parent().unwrap())?;
+    write_atomic(&file, content.as_bytes())?;
+    Ok(())
+}
+
+fn settings_file_for(project_path: &str, layer: &str) -> CmdResult<std::path::PathBuf> {
+    let base = std::path::Path::new(project_path).join(".claude");
+    match layer {
+        "shared" => Ok(base.join("settings.json")),
+        "local"  => Ok(base.join("settings.local.json")),
+        other    => Err(CommandError::Generic(format!("unknown layer: {other}"))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -346,6 +381,40 @@ mod tests {
         assert!(s.claude_dir_exists);
         assert!(!s.has_settings_json);
         assert!(s.has_settings_local_json);
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn read_project_settings_returns_empty_when_missing() {
+        let _g = setup_home();
+        let s = read_project_settings("/no/such/project".into(), "local".into()).unwrap();
+        assert_eq!(s, "{}");
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn write_and_read_project_settings_roundtrip() {
+        let g = setup_home();
+        let p = make_project_dir(g.path(), "proj");
+        std::fs::create_dir(p.join(".claude")).unwrap();
+        let content = r#"{"ANTHROPIC_BASE_URL":"https://example.com"}"#;
+        write_project_settings(p.to_string_lossy().into_owned(), "local".into(), content.into()).unwrap();
+        let back = read_project_settings(p.to_string_lossy().into_owned(), "local".into()).unwrap();
+        assert!(back.contains("example.com"));
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn write_project_settings_rejects_invalid_json() {
+        let _g = setup_home();
+        assert!(write_project_settings("/p".into(), "local".into(), "{bad".into()).is_err());
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn write_project_settings_rejects_unknown_layer() {
+        let _g = setup_home();
+        assert!(write_project_settings("/p".into(), "bogus".into(), "{}".into()).is_err());
     }
 
     #[test]

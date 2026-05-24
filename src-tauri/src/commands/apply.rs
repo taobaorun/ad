@@ -139,6 +139,7 @@ pub fn apply_profile_to_project(
                 let outcome = write_layer(
                     &target,
                     incoming,
+                    None,
                     &options.resolutions,
                     &project.path,
                     "shared",
@@ -161,14 +162,19 @@ pub fn apply_profile_to_project(
                 }
             }
             "local" => {
-                let Some(incoming) = profile.layers.local.as_ref() else {
-                    warnings.push("profile has no `local` layer; nothing to apply".into());
+                // Profile template content lives in the shared layer; apply it
+                // to settings.local.json so the project has its own editable copy.
+                let incoming = profile.layers.shared.as_ref()
+                    .or(profile.layers.local.as_ref());
+                let Some(incoming) = incoming else {
+                    warnings.push("profile has no settings; nothing to apply".into());
                     continue;
                 };
                 let target = claude_dir.join("settings.local.json");
                 let outcome = write_layer(
                     &target,
                     incoming,
+                    None,
                     &options.resolutions,
                     &project.path,
                     "local",
@@ -247,16 +253,21 @@ enum LayerWriteOutcome {
     Conflicts(Vec<Conflict>),
 }
 
+// `base_override`: reserved for future use — `None` merges against the existing target file.
+// instead of the existing target file. `None` = old behaviour (merge against target).
 fn write_layer(
     target: &Path,
     incoming: &Value,
+    base_override: Option<&Value>,
     resolutions: &HashMap<String, Resolution>,
     project_path: &str,
     layer: &str,
     ts: chrono::DateTime<chrono::Utc>,
 ) -> CmdResult<LayerWriteOutcome> {
-    // Read existing target if any.
-    let existing: Value = if target.exists() {
+    // Determine the base to merge `incoming` against.
+    let existing: Value = if let Some(base) = base_override {
+        base.clone()
+    } else if target.exists() {
         let bytes = std::fs::read(target).with_context(|| format!("read {}", target.display()))?;
         if bytes.is_empty() {
             Value::Object(serde_json::Map::new())
@@ -511,6 +522,7 @@ mod tests {
                     &std::fs::read(claude_dir.join("settings.local.json")).unwrap(),
                 )
                 .unwrap();
+                // Existing key preserved, profile key added.
                 assert_eq!(merged["existing"], true);
                 assert_eq!(merged["model"], "x");
             }

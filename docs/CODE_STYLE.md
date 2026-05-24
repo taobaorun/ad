@@ -67,7 +67,33 @@ tracing::info!("done");
 
 ### UI / 面向用户文案
 
-AD 是英文界面（面向开发者）。UI 字符串硬编码英文是允许的；如果将来加中文，必须走 i18n 资源文件，绝不硬编码在组件里。
+AD 的默认界面语言是**中文**，可通过 Advanced settings 切到英文。所有面向用户的字符串**必须**走 i18n 资源文件，绝不硬编码在组件里。
+
+**怎么写：**
+
+- 资源文件：`src/i18n/locales/{zh,en}.json`，按 namespace 组织（`palette` / `sidebar` / `detail` / `advanced` / `toast` / `import` / `detected` / `history` / `drawer` / `conflict` / `status` 等）。两份文件 key 必须保持同步。
+- React 组件内：`const { t } = useTranslation();`，调用 `t('namespace.key')` 或 `t('namespace.key', { var })`。
+- 非组件辅助函数（如 `StatusRing` 的 `ringStatusText`）：从 `@/i18n` 导入 i18next 单例，调用 `i18n.t(...)`。
+
+**例外（保持英文）：**
+
+- 控制台 `console.error/info/log` 输出
+- 抛出的 `Error.message`（保持可被开发者 grep）
+- 后端通过 IPC 传上来的错误字符串（已在 Rust 层定为英文）
+- 技术 / 配置概念名：`shared` / `local` / `env` 这种层名、文件路径、git 命令片段等
+
+**反例：**
+
+```tsx
+// ❌ Bad — 硬编码
+<button title="Add project">+</button>
+
+// ❌ Bad — 直接在 JSX 里写中文
+<button title="添加项目">+</button>
+
+// ✅ Good
+<button title={t('sidebar.addProject')}>+</button>
+```
 
 ---
 
