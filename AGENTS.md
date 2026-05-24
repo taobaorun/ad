@@ -104,9 +104,24 @@ xattr -dr com.apple.quarantine /Applications/AD.app
 ad/
 ├── src/                     # 前端源码（React + TS）
 │   ├── components/          # UI 组件
-│   ├── store/               # Zustand stores
-│   ├── lib/                 # 工具函数
-│   └── App.tsx              # 应用入口
+│   │   ├── ui/              # shadcn/radix 基础组件（button/dialog/input/tabs 等）
+│   │   ├── ProjectSidebar.tsx   # 左栏 project 列表
+│   │   ├── ProjectDetail.tsx    # 主区 project 详情 + apply flow
+│   │   ├── ProfileEditDrawer.tsx # 右侧 profile 编辑浮层
+│   │   ├── CommandPalette.tsx   # ⌘K 全局动作面板
+│   │   ├── GlobalKeymap.tsx     # 全局快捷键注册
+│   │   ├── ProfileEditor.tsx    # profile 内容编辑（Shared/Local/Env 三 tab）
+│   │   ├── HistoryDialog.tsx    # 应用历史对话框
+│   │   ├── HistoryPanel.tsx     # 历史条目列表（被 HistoryDialog 引用）
+│   │   ├── InlineConflictResolver.tsx  # apply 冲突 inline 解决
+│   │   ├── StatusRing.tsx       # 项目状态色环
+│   │   ├── DiffView.tsx         # diff 展示
+│   │   ├── EmptyState.tsx       # 空状态占位
+│   │   └── ...                  # ActivateToast / AdvancedSettings 等
+│   ├── store/               # Zustand stores（profiles / projects / ui / uiSettings）
+│   ├── lib/                 # 工具函数（tauri IPC / keymap / pathAutocomplete 等）
+│   ├── i18n/                # i18next init + locales/{zh,en}.json（默认 zh）
+│   └── App.tsx              # 应用入口（双栏布局 + overlay 层）
 ├── src-tauri/               # Tauri / Rust 后端
 │   ├── src/
 │   │   ├── commands/        # Tauri 命令（前端可调用）
@@ -122,7 +137,6 @@ ad/
 │   └── tauri.conf.json
 ├── tests/                   # 前端测试
 ├── docs/                    # 文档（harness）
-├── scripts/                 # 构建/发布脚本
 └── package.json
 ```
 
@@ -138,14 +152,23 @@ AD 的数据全部在 `~/.ad/`（v0.2 后从 `~/.claude/` 搬出，启动时自�
 - 扫描根：`~/.ad/state/scan_roots.json`（auto-detect 源；默认含 builtin `~/.claude/projects`）
 - 测试 home 覆盖：`AD_HOME=<path>` env var
 
-## 主要架构（v0.2）
+## 主要架构（v0.3）
 
-**分层 profile + per-project apply**。Profile 的 `layers: { shared, local, env }` 经过 deep-merge + 冲突解决后写到指定项目的 `.claude/settings.json` / `.claude/settings.local.json`。env 层作为 export 片段呈现，不落文件。全局 `~/.claude/settings.json` 默认不被写（除非用户在 Advanced settings 里开启 legacy 模式）。
+**分层 profile + per-project apply**（v0.2 数据模型不变）：Profile 的 `layers: { shared, local, env }` 经过 deep-merge + 冲突解决后写到指定项目的 `.claude/settings.json` / `.claude/settings.local.json`。env 层作为 export 片段呈现，不落文件。全局 `~/.claude/settings.json` 默认不被写（除非用户在 Advanced settings 里开启 legacy 模式）。
 
-主路径：右栏 Projects 面板 → 选 profile → ApplyDialog → 写到项目本地。
-旧路径：Advanced settings → 开启 legacy toggle → ProfileEditor 头部出现 [Activate (legacy)] 按钮。
+**UI 形态（v0.3，A′ cmux-inspired 重设计）**：双栏 + drawer + command palette
+- 左栏 `ProjectSidebar` 是紧凑 project rows，每行带状态色环（synced=olive / dirty=clay / recent=blue / never=gray-dashed）+ ⌘1-9 快捷键 + profile color dot
+- 主区 `ProjectDetail` 是当前 project 详情：CURRENT 卡（已应用 profile）+ APPLY DIFFERENT 区（profile chips + layer toggles + dirty 警告 + inline 冲突 resolver + Apply 按钮带 ⌘↵）+ RECENT
+- ⌘K `CommandPalette` 是全局动作入口：apply / switch / edit / add / history / advanced 全在这里
+- 右侧 `ProfileEditDrawer` 浮窗编辑 profile（包原三 tab Shared/Local/Env）
+- 全局快捷键由 `GlobalKeymap` 注册：⌘K palette / ⌘1-9 跳 project / ⌘T 加项目 / ⌘P apply / ⌘E 编辑 / ⌘↵ 应用 / ⌘⇧K 折叠 sidebar / esc 关浮层
 
-完整设计见 `docs/exec-plans/completed/layered-profile-redesign.{md,html}`。
+主路径：sidebar 选 project（或 ⌘N）→ 主区切 profile chip + 勾 layer → ⌘↵ apply。冲突 inline keep/use/custom 解决。
+
+旧路径：Advanced settings → 开启 legacy toggle → drawer 内 ProfileEditor 头部仍出现 [Activate (legacy)] 按钮。
+
+完整设计见 `docs/exec-plans/completed/ui-redesign.{md,html}` 和 `docs/design-docs/ui-redesign-options.html`（含可交互原型 + 4 方向对比）。
+分层 profile 模型基础见 `docs/exec-plans/completed/layered-profile-redesign.{md,html}`。
 
 ## 代码规范摘要
 
@@ -155,12 +178,12 @@ AD 的数据全部在 `~/.ad/`（v0.2 后从 `~/.claude/` 搬出，启动时自�
 - **Rust**：`snake_case` 函数变量、`PascalCase` 类型、`SCREAMING_SNAKE_CASE` 常量
 - **TypeScript**：`camelCase` 变量函数、`PascalCase` 组件/类型、`SCREAMING_SNAKE_CASE` 常量
 - **Git 提交**：Conventional Commits，scope 对应模块（`feat(tray):`、`fix(fs):`、`refactor(commands):`）
-- **UI 文案**：英文为主（产品面向开发者）；如有中文必须放 i18n 资源
+- **UI 文案**：默认中文，可切英文（react-i18next）；所有面向用户字符串必须走 `src/i18n/locales/{zh,en}.json`，禁止硬编码
 
 ## 注意事项
 
 - macOS only — 不要为其他平台加抽象层
 - bundle identifier `com.jiaxy.ad`，改它会让 macOS 视为新 app（丢失通知/辅助功能权限）
-- 运行时数据目录是 `~/.claude/ad/`，重命名前必须先迁移用户数据
+- 运行时数据目录是 `~/.ad/`，重命名前必须先迁移用户数据
 - 文件原子写依赖 APFS rename 语义（`src-tauri/src/fs/atomic.rs` 顶部有 caveat）
 - bundle name 受 `tauri.conf.json:productName` 控制，目前是 `AD`（产物 `AD.app`）；package 名是 `ad`（lowercase）

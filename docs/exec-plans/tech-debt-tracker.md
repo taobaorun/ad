@@ -18,7 +18,6 @@
 
 | 编号 | 描述 | 影响 | 计划解决 | 相关 ExecPlan |
 |---|---|---|---|---|
-| TD-005 | ApplyDialog 的冲突解决 UI 是只读列表，不是交互式 keep/use/custom radio。当前用户遇到冲突只能换 layer 或手动改文件 | 中等：apply 流程不完整，遇冲突体验差 | 后续小迭代加 radio 选择器 + 重新 invoke apply 带 resolutions | — |
 | TD-006 | M3 layered profile 编辑器保存时通过 `settingsFromLayers` 同步老 `settings` 字段。如果用户在 legacy 模式下直接 Activate，settings 是 M3 保存时算出的平铺，可能与 layers 实时不同步（如果 layers 有未保存改动） | 低：legacy 路径将在 M5 sunset 后路径，无人会用 | M5 完成后实际可移除整个 settings 字段 + 删 settingsFromLayers | — |
 
 ### 中优先级
@@ -33,6 +32,7 @@
 | 编号 | 描述 | 影响 | 计划解决 |
 |---|---|---|---|
 | TD-004 | 旧 `history.jsonl` 单文件兼容读路径仍在 | 代码复杂度 | 老用户全部迁移完后移除 |
+| TD-007 | `ProfileEditor` 与 `HistoryPanel` 未接 i18n（约 40 + 15 个 keys）。`HistoryDialog` 包装层已接 i18n，但内部 `HistoryPanel` 硬编码英文 | 中文用户在这两处仍看到英文 | UI Polish Pass 2 — 先设计 profile 字段术语表（中英对照），再批量替换 |
 
 ---
 
@@ -52,3 +52,4 @@
 | 编号 | 描述 | 偿还时间 | 相关提交 |
 |---|---|---|---|
 | TD-001 | profile 激活策略覆盖全局 `~/.claude/settings.json` | 2026-05-23 | 分层 profile 重构 ExecPlan（M1-M5）— 默认走 per-project apply，全局覆盖路径藏到 Advanced。详见 `docs/exec-plans/completed/layered-profile-redesign.md` |
+| TD-005 | ApplyDialog 冲突 UI 只读 | 2026-05-24 | UI 重设计 A′ ExecPlan 中由新组件 `InlineConflictResolver.tsx` 解决：每个 conflict 三 radio（keep existing / use incoming / custom JSON），重 invoke apply 带 resolutions。详见 `docs/exec-plans/completed/ui-redesign.md` |
