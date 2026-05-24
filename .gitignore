@@ -38,6 +38,12 @@ Thumbs.db
 .env.*
 !.env.example
 
+# Claude Code local config (may contain tokens, API hosts, model overrides)
+.claude/
+
+# Superpowers / AI tooling session data
+.superpowers/
+
 # Apple notarization keys
 AuthKey_*.p8
 *.cer
