@@ -52,6 +52,10 @@ export const tauri = {
   renameProject: (path: string, displayName: string) =>
     invoke<Project>('rename_project', { path, displayName }),
   getProjectStatus: (path: string) => invoke<ProjectStatus>('get_project_status', { path }),
+  readProjectSettings: (projectPath: string, layer: 'shared' | 'local') =>
+    invoke<string>('read_project_settings', { projectPath, layer }),
+  writeProjectSettings: (projectPath: string, layer: 'shared' | 'local', content: string) =>
+    invoke<void>('write_project_settings', { projectPath, layer, content }),
 
   applyProfileToProject: (
     profileId: string,

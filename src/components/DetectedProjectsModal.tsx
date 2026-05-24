@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -12,6 +13,7 @@ import { Sparkles, X, Plus, Lock, AlertCircle } from 'lucide-react';
  * filter, a multi-select list, and a bottom panel for managing scan roots.
  */
 export function DetectedProjectsModal() {
+  const { t } = useTranslation();
   const open = useProjects((s) => s.detectedModalOpen);
   const close = useProjects((s) => s.closeDetectedModal);
   const detected = useProjects((s) => s.detected);
@@ -87,9 +89,9 @@ export function DetectedProjectsModal() {
       <div className="flex max-h-[70vh] flex-col gap-3">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-clay" />
-          <h2 className="text-base font-semibold">Detected projects</h2>
+          <h2 className="text-base font-semibold">{t('detected.title')}</h2>
           <span className="text-xs text-muted-foreground">
-            {detected.length} total · {visible.length} unadded
+            {t('detected.summary', { total: detected.length, unadded: visible.length })}
           </span>
           <Button
             size="sm"
@@ -97,14 +99,14 @@ export function DetectedProjectsModal() {
             onClick={() => void refresh()}
             className="ml-auto"
           >
-            Re-scan
+            {t('detected.rescan')}
           </Button>
         </div>
 
         <Input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Search by path…"
+          placeholder={t('detected.searchPlaceholder')}
           className="h-8"
         />
 
@@ -112,8 +114,8 @@ export function DetectedProjectsModal() {
           {visible.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground">
               {detected.length === 0
-                ? 'No projects detected. Add a scan root below to widen the search.'
-                : 'All detected projects are already tracked.'}
+                ? t('detected.noneDetected')
+                : t('detected.allTracked')}
             </div>
           ) : (
             <ul className="divide-y divide-border">
@@ -127,12 +129,12 @@ export function DetectedProjectsModal() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-mono text-xs">{d.path}</div>
                     <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                      <span>{d.sourceKind === 'cc_projects_meta' ? 'cc-history' : 'custom'}</span>
+                      <span>{d.sourceKind === 'cc_projects_meta' ? t('detected.sourceCcHistory') : t('detected.sourceCustom')}</span>
                       {d.signals.length > 0 && <span>· {d.signals.join(', ')}</span>}
                     </div>
                   </div>
                   {d.signals.includes('missing') && (
-                    <span title="Path no longer exists" className="text-rust">
+                    <span title={t('detected.pathMissing')} className="text-rust">
                       <AlertCircle className="h-4 w-4" />
                     </span>
                   )}
@@ -145,7 +147,7 @@ export function DetectedProjectsModal() {
         {/* Scan roots management */}
         <div className="rounded border border-border bg-muted/30 p-3">
           <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
-            Scan roots
+            {t('detected.scanRootsHeader')}
           </div>
           <div className="mb-2 flex flex-wrap gap-2">
             {scanRoots.map((r) => (
@@ -166,12 +168,12 @@ export function DetectedProjectsModal() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void onAddRoot();
               }}
-              placeholder="~/dev or /path/to/projects-root"
+              placeholder={t('detected.scanRootPlaceholder')}
               className="h-7 font-mono text-xs"
             />
             <Button size="sm" variant="outline" onClick={() => void onAddRoot()}>
               <Plus className="h-3.5 w-3.5" />
-              Add root
+              {t('detected.addRoot')}
             </Button>
           </div>
         </div>
@@ -183,13 +185,13 @@ export function DetectedProjectsModal() {
         )}
 
         <div className="flex items-center justify-between">
-          <div className="text-xs text-muted-foreground">{selected.size} selected</div>
+          <div className="text-xs text-muted-foreground">{t('detected.selectedCount', { count: selected.size })}</div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={close} disabled={busy}>
-              Skip
+              {t('detected.skip')}
             </Button>
             <Button onClick={() => void onAddSelected()} disabled={busy || selected.size === 0}>
-              Add {selected.size || ''} selected
+              {t('detected.addSelected', { count: selected.size })}
             </Button>
           </div>
         </div>
@@ -211,6 +213,7 @@ function ScanRootChip({
   onRemove: () => void;
   onToggle: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       className={
@@ -221,7 +224,7 @@ function ScanRootChip({
       <button
         type="button"
         onClick={onToggle}
-        title={enabled ? 'Click to disable' : 'Click to enable'}
+        title={enabled ? t('detected.scanRootClickDisable') : t('detected.scanRootClickEnable')}
         className="flex items-center gap-1.5"
       >
         {builtin && <Lock className="h-3 w-3 text-muted-foreground" />}
@@ -231,7 +234,7 @@ function ScanRootChip({
         <button
           type="button"
           onClick={onRemove}
-          aria-label={`Remove ${path}`}
+          aria-label={t('detected.removeScanRoot', { path })}
           className="rounded p-0.5 text-rust hover:bg-rust/10"
         >
           <X className="h-3 w-3" />

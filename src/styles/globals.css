@@ -4,44 +4,92 @@
 
 @layer base {
   :root {
+    /* Zinc/Indigo palette matching ad-redesign */
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 240 10% 4%;          /* #09090b zinc-950 */
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --card-foreground: 240 10% 4%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 4%;
+    --primary: 239 67% 57%;            /* #5b5bd6 indigo */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 5% 96%;           /* #f5f5f4 bg-soft */
+    --secondary-foreground: 240 6% 25%;
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;    /* #71717a zinc-500 */
+    --accent: 240 5% 96%;
+    --accent-foreground: 240 10% 4%;
+    --destructive: 358 73% 57%;        /* #e5484d */
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 6% 90%;              /* light zinc border */
+    --input: 240 6% 90%;
+    --ring: 239 67% 57%;
     --radius: 0.5rem;
+
+    /* Design-system tokens (used via var() in components) */
+    --ds-line:         rgba(0,0,0,0.06);
+    --ds-line-strong:  rgba(0,0,0,0.10);
+    --ds-bg-sidebar:   #fafaf9;
+    --ds-bg-soft:      #f5f5f4;
+    --ds-bg-inset:     #f7f7f6;
+    --ds-bg-card:      #ffffff;
+    --ds-bg-card-hov:  #fafaf9;
+    --ds-fg-2:         #3f3f46;
+    --ds-fg-3:         #71717a;
+    --ds-fg-4:         #a1a1aa;
+    --ds-fg-5:         #d4d4d8;
+    --ds-accent:       #5b5bd6;
+    --ds-accent-hover: #4f4fcb;
+    --ds-accent-soft:  rgba(91,91,214,0.10);
+    --ds-accent-line:  rgba(91,91,214,0.22);
+    --ds-ok:           #15803d;
+    --ds-warning:      #c2410c;
+    --ds-warning-soft: rgba(194,65,12,0.08);
+    --ds-danger:       #e5484d;
+    --ds-danger-soft:  rgba(229,72,77,0.10);
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --background: 240 10% 4%;          /* #0a0a0b */
+    --foreground: 0 0% 98%;            /* #fafafa */
+    --card: 240 5% 8%;                 /* #131316 */
+    --card-foreground: 0 0% 98%;
+    --popover: 240 5% 8%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 239 67% 76%;            /* #8c8cf5 */
+    --primary-foreground: 240 10% 4%;
+    --secondary: 240 4% 12%;
+    --secondary-foreground: 240 4% 84%;
+    --muted: 240 4% 12%;
+    --muted-foreground: 240 4% 64%;    /* #a1a1aa */
+    --accent: 240 4% 12%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 65% 61%;          /* #ef6063 */
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 4% 11%;
+    --input: 240 4% 11%;
+    --ring: 239 67% 76%;
+
+    --ds-line:         rgba(255,255,255,0.07);
+    --ds-line-strong:  rgba(255,255,255,0.13);
+    --ds-bg-sidebar:   #0e0e10;
+    --ds-bg-soft:      #18181b;
+    --ds-bg-inset:     #131316;
+    --ds-bg-card:      #131316;
+    --ds-bg-card-hov:  #181820;
+    --ds-fg-2:         #d4d4d8;
+    --ds-fg-3:         #a1a1aa;
+    --ds-fg-4:         #71717a;
+    --ds-fg-5:         #3f3f46;
+    --ds-accent:       #8c8cf5;
+    --ds-accent-hover: #a3a3f7;
+    --ds-accent-soft:  rgba(140,140,250,0.14);
+    --ds-accent-line:  rgba(140,140,250,0.30);
+    --ds-ok:           #22c55e;
+    --ds-warning:      #f59e0b;
+    --ds-warning-soft: rgba(245,158,11,0.10);
+    --ds-danger:       #ef6063;
+    --ds-danger-soft:  rgba(239,96,99,0.14);
   }
 }
 
@@ -60,4 +108,11 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  overscroll-behavior: none;
+}
+
+/* Prevent drag-to-select on interactive elements without blocking text content */
+button, [role="button"], label, nav, header, aside {
+  -webkit-user-select: none;
+  user-select: none;
 }

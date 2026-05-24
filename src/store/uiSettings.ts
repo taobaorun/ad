@@ -11,10 +11,12 @@ interface Persisted {
   /** When true, the legacy [Activate] button is shown in ProfileEditor and
    * other legacy global-overwrite entry points. Defaults to false in v0.2. */
   showLegacyActivation: boolean;
+  darkMode: boolean;
 }
 
 const defaults: Persisted = {
   showLegacyActivation: false,
+  darkMode: true,
 };
 
 function load(): Persisted {
@@ -38,12 +40,17 @@ function save(state: Persisted): void {
 
 interface State extends Persisted {
   setShowLegacyActivation: (v: boolean) => void;
+  setDarkMode: (v: boolean) => void;
 }
 
 export const useUiSettings = create<State>((set, get) => ({
   ...load(),
   setShowLegacyActivation: (v) => {
     set({ showLegacyActivation: v });
-    save({ showLegacyActivation: get().showLegacyActivation });
+    save({ ...get(), showLegacyActivation: v });
+  },
+  setDarkMode: (v) => {
+    set({ darkMode: v });
+    save({ ...get(), darkMode: v });
   },
 }));

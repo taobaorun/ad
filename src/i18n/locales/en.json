@@ -1,0 +1,172 @@
+{
+  "palette": {
+    "placeholder": "Type an action or project…",
+    "noMatches": "No matches",
+    "noMatchingDirs": "No matching directories.",
+    "pressToAddAsIs": "to add {{path}} as-is",
+    "addProjectHeader": "ADD PROJECT — TYPE A PATH",
+    "groups": {
+      "apply": "APPLY",
+      "switch": "SWITCH",
+      "edit": "EDIT",
+      "add": "ADD",
+      "other": "OTHER"
+    },
+    "kbd": {
+      "navigate": "navigate",
+      "complete": "complete",
+      "add": "add",
+      "run": "run",
+      "close": "close"
+    },
+    "applyTo": "Apply {{profile}} to {{project}}",
+    "switchTo": "Switch to {{project}}",
+    "editProfile": "Edit profile: {{name}}",
+    "addProjectFromPath": "Add project from path…",
+    "reviewDetected": "Review detected projects…",
+    "importProfile": "Import profile from JSON…",
+    "openHistory": "Open activation history",
+    "conflictsAlert": "Conflicts in {{layer}} — open the project detail to resolve.",
+    "gitDirtyAlert": "Git dirty: {{message}}"
+  },
+  "sidebar": {
+    "projects": "Projects",
+    "addProject": "Add project",
+    "addProjectTitle": "Add project (⌘T)",
+    "noProjectsPrefix": "No projects yet. Press ",
+    "noProjectsSuffix": " to add one.",
+    "detectedCount": "{{count}} detected",
+    "review": "Review →",
+    "pathNotFound": "path not found",
+    "profileAria": "Profile {{name}}"
+  },
+  "detail": {
+    "selectPrefix": "Select a project from the sidebar (or press ",
+    "selectSuffix": ").",
+    "loading": "loading…",
+    "notARepo": "not a repo",
+    "gitDirty": "⚠ dirty",
+    "gitClean": "✓ clean",
+    "claudeDirPresent": "present",
+    "claudeDirAbsent": "absent",
+    "settingsLocalNotIgnored": "⚠ settings.local.json not gitignored",
+    "removeConfirm": "Remove \"{{name}}\" from AD?\n(Files in the project are not touched.)",
+    "removeTitle": "Remove from AD",
+    "sections": {
+      "current": "CURRENT",
+      "layerPrecedence": "LAYER PRECEDENCE",
+      "switchProfile": "SWITCH PROFILE",
+      "applyDifferent": "APPLY DIFFERENT",
+      "recent": "RECENT APPLIES"
+    },
+    "noProfileApplied": "No profile applied yet. Pick one below to get started.",
+    "editProfileTitle": "Edit profile (⌘E)",
+    "edit": "Edit",
+    "row": {
+      "profile": "profile",
+      "layers": "layers",
+      "writes": "writes"
+    },
+    "pickLayer": "— pick at least 1 layer",
+    "envClipboardNote": "(env copied to clipboard — no file)",
+    "dirtyTitle": "Working tree is dirty",
+    "dirtyDesc": "Shared layer writes to .claude/settings.json (git-tracked). Applying may collide with your uncommitted changes.",
+    "applyAnyway": "Apply anyway — I'll review the diff in git",
+    "applying": "Applying…",
+    "applyWithResolutions": "Apply with resolutions",
+    "applyButton": "Apply {{name}} ({{abbr}})",
+    "apply": "Apply",
+    "appliedFlash": "Applied · {{count}} file(s) written",
+    "envExports": "env exports (not written to file):",
+    "copy": "Copy",
+    "noApplies": "No applies yet.",
+    "conflictsResolved": "{{count}} conflict(s) resolved"
+  },
+  "app": {
+    "titlebar": {
+      "runAnything": "run anything…",
+      "openPaletteTitle": "Open command palette (⌘K)"
+    }
+  },
+  "advanced": {
+    "openTitle": "Advanced settings",
+    "dialogTitle": "Advanced settings",
+    "language": "Language",
+    "languageDesc": "Switch the interface language. Takes effect immediately; persists across restarts.",
+    "langZh": "中文 (zh)",
+    "langEn": "English (en)",
+    "legacy": "Legacy",
+    "showLegacyTitle": "Show legacy global activation",
+    "showLegacyDesc": "Adds an [Activate] button to the profile editor that overwrites your global ~/.claude/settings.json. This is the v0.1 behavior — it affects all Claude Code instances and is deprecated in favor of the per-project Apply flow on the right.",
+    "close": "Close"
+  },
+  "toast": {
+    "activated": "Activated: {{name}}",
+    "restartHint": "Restart Claude Code to apply the new env.",
+    "runningProcesses": "Running Claude processes:",
+    "noRunningProcesses": "No running Claude processes detected.",
+    "copyRestartCmd": "Copy restart command",
+    "dismiss": "Dismiss"
+  },
+  "import": {
+    "title": "Import profile",
+    "tabFile": "File",
+    "tabUrl": "URL / Gist",
+    "filePrompt": "Pick a JSON file matching the ProfileFile shape.",
+    "chooseFile": "Choose file…",
+    "urlLabel": "URL",
+    "fetchAndImport": "Fetch & import"
+  },
+  "detected": {
+    "title": "Detected projects",
+    "summary": "{{total}} total · {{unadded}} unadded",
+    "rescan": "Re-scan",
+    "searchPlaceholder": "Search by path…",
+    "noneDetected": "No projects detected. Add a scan root below to widen the search.",
+    "allTracked": "All detected projects are already tracked.",
+    "sourceCcHistory": "cc-history",
+    "sourceCustom": "custom",
+    "pathMissing": "Path no longer exists",
+    "scanRootsHeader": "Scan roots",
+    "scanRootPlaceholder": "~/dev or /path/to/projects-root",
+    "addRoot": "Add root",
+    "selectedCount": "{{count}} selected",
+    "skip": "Skip",
+    "addSelected": "Add {{count}} selected",
+    "scanRootClickEnable": "Click to enable",
+    "scanRootClickDisable": "Click to disable",
+    "removeScanRoot": "Remove {{path}}"
+  },
+  "history": {
+    "title": "Activation history"
+  },
+  "drawer": {
+    "editProfile": "Edit profile",
+    "unsavedConfirm": "Unsaved changes will be lost. Close anyway?",
+    "closeAria": "Close drawer"
+  },
+  "conflict": {
+    "headerOne": "⚠ {{count}} conflict — pick a side",
+    "headerMany": "⚠ {{count}} conflicts — pick a side for each",
+    "keepOld": "keep old",
+    "useNew": "use new",
+    "custom": "custom",
+    "editJson": "edit JSON →",
+    "jsonPlaceholder": "JSON value",
+    "invalidJson": "Invalid JSON: {{message}}"
+  },
+  "status": {
+    "neverApplied": "never applied",
+    "justNow": "just now",
+    "minutesAgo": "{{n}}m ago",
+    "hoursAgo": "{{n}}h ago",
+    "daysAgo": "{{n}}d ago"
+  },
+  "projectSettings": {
+    "sectionTitle": "Project Settings",
+    "description": "Edit this project's .claude/settings.local.json directly. Independent of the profile template — belongs only to this project.",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved"
+  }
+}

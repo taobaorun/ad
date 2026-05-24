@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Dialog } from './ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { Button } from './ui/button';
@@ -9,6 +10,7 @@ import { tauri } from '@/lib/tauri';
 import { useProfiles } from '@/store/profiles';
 
 export function ImportDialog() {
+  const { t } = useTranslation();
   const open = useProfiles((s) => s.importOpen);
   const setImportOpen = useProfiles((s) => s.setImportOpen);
   const loadAll = useProfiles((s) => s.loadAll);
@@ -51,32 +53,30 @@ export function ImportDialog() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setImportOpen} title="Import profile" size="lg">
+    <Dialog open={open} onOpenChange={setImportOpen} title={t('import.title')} size="lg">
       <Tabs value={tab} onValueChange={(v) => setTab(v as 'file' | 'url')}>
         <TabsList>
-          <TabsTrigger value="file">File</TabsTrigger>
-          <TabsTrigger value="url">URL / Gist</TabsTrigger>
+          <TabsTrigger value="file">{t('import.tabFile')}</TabsTrigger>
+          <TabsTrigger value="url">{t('import.tabUrl')}</TabsTrigger>
         </TabsList>
         <TabsContent value="file">
           <div className="flex flex-col gap-2 py-2">
-            <p className="text-sm text-muted-foreground">
-              Pick a JSON file matching the ProfileFile shape.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('import.filePrompt')}</p>
             <Button onClick={() => void importFile()} disabled={busy}>
-              Choose file…
+              {t('import.chooseFile')}
             </Button>
           </div>
         </TabsContent>
         <TabsContent value="url">
           <div className="flex flex-col gap-2 py-2">
-            <Label>URL</Label>
+            <Label>{t('import.urlLabel')}</Label>
             <Input
               placeholder="https://example.com/profile.json or https://gist.github.com/..."
               value={url}
               onChange={(e) => setUrl(e.target.value)}
             />
             <Button onClick={() => void importUrl()} disabled={busy || url.trim() === ''}>
-              Fetch & import
+              {t('import.fetchAndImport')}
             </Button>
           </div>
         </TabsContent>

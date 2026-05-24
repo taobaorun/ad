@@ -14,6 +14,8 @@ const config: Config = {
         rust: '#B04A3F',
         olive: '#788C5D',
         oat: '#E3DACC',
+        // A′ redesign: 4th status ring color for "applied >24h ago" rows
+        slate2: '#6588C3',
 
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',

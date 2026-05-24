@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useProfiles, type ToastPayload } from '@/store/profiles';
 import { Button } from './ui/button';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
@@ -20,6 +21,7 @@ export function ActivateToast() {
 }
 
 function ToastCard({ toast }: { toast: ToastPayload }) {
+  const { t } = useTranslation();
   const dismiss = useProfiles((s) => s.dismissToast);
 
   useEffect(() => {
@@ -38,13 +40,11 @@ function ToastCard({ toast }: { toast: ToastPayload }) {
     >
       <div className="flex items-start gap-3">
         <div className="flex-1">
-          <div className="font-semibold">Activated: {toast.profileName}</div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Restart Claude Code to apply the new env.
-          </p>
+          <div className="font-semibold">{t('toast.activated', { name: toast.profileName })}</div>
+          <p className="mt-1 text-sm text-muted-foreground">{t('toast.restartHint')}</p>
           {toast.detected.length > 0 ? (
             <>
-              <p className="mt-2 text-xs font-medium">Running Claude processes:</p>
+              <p className="mt-2 text-xs font-medium">{t('toast.runningProcesses')}</p>
               <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
                 {toast.detected.map((p) => (
                   <li key={p.pid} className="font-mono">
@@ -54,21 +54,19 @@ function ToastCard({ toast }: { toast: ToastPayload }) {
               </ul>
             </>
           ) : (
-            <p className="mt-2 text-xs text-muted-foreground">
-              No running Claude processes detected.
-            </p>
+            <p className="mt-2 text-xs text-muted-foreground">{t('toast.noRunningProcesses')}</p>
           )}
           <div className="mt-3 flex gap-2">
             <Button size="sm" variant="outline" onClick={() => void writeText(RESTART_COMMAND)}>
               <Copy className="h-3.5 w-3.5" />
-              Copy restart command
+              {t('toast.copyRestartCmd')}
             </Button>
           </div>
         </div>
         <button
           type="button"
           onClick={() => dismiss(toast.id)}
-          aria-label="Dismiss"
+          aria-label={t('toast.dismiss')}
           className="rounded p-1 text-muted-foreground hover:bg-muted"
         >
           <X className="h-4 w-4" />

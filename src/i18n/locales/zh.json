@@ -1,0 +1,172 @@
+{
+  "palette": {
+    "placeholder": "输入命令或项目…",
+    "noMatches": "无匹配",
+    "noMatchingDirs": "没有匹配的目录。",
+    "pressToAddAsIs": "按原样添加 {{path}}",
+    "addProjectHeader": "添加项目 — 输入路径",
+    "groups": {
+      "apply": "应用",
+      "switch": "切换",
+      "edit": "编辑",
+      "add": "添加",
+      "other": "其他"
+    },
+    "kbd": {
+      "navigate": "选择",
+      "complete": "补齐",
+      "add": "添加",
+      "run": "执行",
+      "close": "关闭"
+    },
+    "applyTo": "将 {{profile}} 应用到 {{project}}",
+    "switchTo": "切换到 {{project}}",
+    "editProfile": "编辑 profile：{{name}}",
+    "addProjectFromPath": "从路径添加项目…",
+    "reviewDetected": "查看自动发现的项目…",
+    "importProfile": "从 JSON 导入 profile…",
+    "openHistory": "打开应用历史",
+    "conflictsAlert": "{{layer}} 层存在冲突 — 打开项目详情解决。",
+    "gitDirtyAlert": "Git 工作区有未提交改动：{{message}}"
+  },
+  "sidebar": {
+    "projects": "项目",
+    "addProject": "添加项目",
+    "addProjectTitle": "添加项目 (⌘T)",
+    "noProjectsPrefix": "暂无项目。按 ",
+    "noProjectsSuffix": " 添加。",
+    "detectedCount": "{{count}} 个已发现",
+    "review": "查看 →",
+    "pathNotFound": "路径不存在",
+    "profileAria": "Profile {{name}}"
+  },
+  "detail": {
+    "selectPrefix": "从侧栏选择一个项目（或按 ",
+    "selectSuffix": "）。",
+    "loading": "加载中…",
+    "notARepo": "非 git 仓库",
+    "gitDirty": "⚠ 有未提交改动",
+    "gitClean": "✓ 工作区干净",
+    "claudeDirPresent": "存在",
+    "claudeDirAbsent": "不存在",
+    "settingsLocalNotIgnored": "⚠ settings.local.json 未加入 gitignore",
+    "removeConfirm": "从 AD 中移除「{{name}}」？\n(项目内的文件不会被删除。)",
+    "removeTitle": "从 AD 移除",
+    "sections": {
+      "current": "当前生效",
+      "layerPrecedence": "层级优先级",
+      "switchProfile": "切换配置",
+      "applyDifferent": "应用其他",
+      "recent": "最近应用"
+    },
+    "noProfileApplied": "尚未应用任何 profile。从下方选一个开始。",
+    "editProfileTitle": "编辑 profile (⌘E)",
+    "edit": "编辑",
+    "row": {
+      "profile": "配置",
+      "layers": "层",
+      "writes": "写入"
+    },
+    "pickLayer": "— 至少选择一层",
+    "envClipboardNote": "(env 已复制到剪贴板 — 不写入文件)",
+    "dirtyTitle": "工作区有未提交改动",
+    "dirtyDesc": "Shared 层会写入 .claude/settings.json (受 git 追踪)。应用可能与你未提交的改动冲突。",
+    "applyAnyway": "仍要应用 — 我会去 git 检查 diff",
+    "applying": "应用中…",
+    "applyWithResolutions": "按解决方案应用",
+    "applyButton": "应用 {{name}} ({{abbr}})",
+    "apply": "应用",
+    "appliedFlash": "已应用 · {{count}} 个文件已写入",
+    "envExports": "env 导出 (不写入文件)：",
+    "copy": "复制",
+    "noApplies": "暂无应用记录。",
+    "conflictsResolved": "{{count}} 个冲突已解决"
+  },
+  "app": {
+    "titlebar": {
+      "runAnything": "执行任意命令…",
+      "openPaletteTitle": "打开命令面板 (⌘K)"
+    }
+  },
+  "advanced": {
+    "openTitle": "高级设置",
+    "dialogTitle": "高级设置",
+    "language": "语言",
+    "languageDesc": "切换界面语言。改动立即生效，重启仍保留。",
+    "langZh": "中文 (zh)",
+    "langEn": "English (en)",
+    "legacy": "兼容",
+    "showLegacyTitle": "显示旧版全局激活",
+    "showLegacyDesc": "在 profile 编辑器中显示 [Activate] 按钮，会覆盖全局 ~/.claude/settings.json。这是 v0.1 行为 — 影响所有 Claude Code 实例，已被右侧的「按项目应用」流程取代。",
+    "close": "关闭"
+  },
+  "toast": {
+    "activated": "已激活：{{name}}",
+    "restartHint": "重启 Claude Code 以应用新的 env。",
+    "runningProcesses": "正在运行的 Claude 进程：",
+    "noRunningProcesses": "未检测到正在运行的 Claude 进程。",
+    "copyRestartCmd": "复制重启命令",
+    "dismiss": "关闭"
+  },
+  "import": {
+    "title": "导入 profile",
+    "tabFile": "文件",
+    "tabUrl": "URL / Gist",
+    "filePrompt": "选择一个符合 ProfileFile shape 的 JSON 文件。",
+    "chooseFile": "选择文件…",
+    "urlLabel": "URL",
+    "fetchAndImport": "拉取并导入"
+  },
+  "detected": {
+    "title": "自动发现的项目",
+    "summary": "共 {{total}} · {{unadded}} 个未添加",
+    "rescan": "重新扫描",
+    "searchPlaceholder": "按路径搜索…",
+    "noneDetected": "未发现任何项目。在下方添加扫描根目录以扩大搜索范围。",
+    "allTracked": "所有发现的项目都已添加。",
+    "sourceCcHistory": "cc-history",
+    "sourceCustom": "custom",
+    "pathMissing": "路径不存在",
+    "scanRootsHeader": "扫描根目录",
+    "scanRootPlaceholder": "~/dev 或 /path/to/projects-root",
+    "addRoot": "添加根目录",
+    "selectedCount": "{{count}} 项已选择",
+    "skip": "跳过",
+    "addSelected": "添加 {{count}} 个已选",
+    "scanRootClickEnable": "点击启用",
+    "scanRootClickDisable": "点击禁用",
+    "removeScanRoot": "移除 {{path}}"
+  },
+  "history": {
+    "title": "激活历史"
+  },
+  "drawer": {
+    "editProfile": "编辑 profile",
+    "unsavedConfirm": "有未保存的改动将会丢失。仍要关闭吗？",
+    "closeAria": "关闭抽屉"
+  },
+  "conflict": {
+    "headerOne": "⚠ {{count}} 个冲突 — 逐个选择一边",
+    "headerMany": "⚠ {{count}} 个冲突 — 逐个选择一边",
+    "keepOld": "保留旧值",
+    "useNew": "使用新值",
+    "custom": "自定义",
+    "editJson": "编辑 JSON →",
+    "jsonPlaceholder": "JSON 值",
+    "invalidJson": "无效 JSON：{{message}}"
+  },
+  "status": {
+    "neverApplied": "从未应用",
+    "justNow": "刚刚",
+    "minutesAgo": "{{n}} 分钟前",
+    "hoursAgo": "{{n}} 小时前",
+    "daysAgo": "{{n}} 天前"
+  },
+  "projectSettings": {
+    "sectionTitle": "项目配置",
+    "description": "直接编辑此项目的 .claude/settings.local.json。和 profile 模板无关，只属于这个项目。",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "已保存"
+  }
+}

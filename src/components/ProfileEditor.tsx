@@ -14,7 +14,7 @@ import {
 import { useUiSettings } from '@/store/uiSettings';
 import { Play, Save, Plus, X, Copy } from 'lucide-react';
 
-type LayerName = 'shared' | 'local' | 'env';
+type LayerName = 'shared' | 'env';
 
 /**
  * Three-tab layered profile editor (M3).
@@ -30,9 +30,17 @@ type LayerName = 'shared' | 'local' | 'env';
  * `settingsFromLayers` so the v0.1 global-overwrite activation path
  * (deprecated, sunset in M5) keeps working.
  */
-export function ProfileEditor() {
-  const selectedId = useProfiles((s) => s.selectedId);
-  const profile = useProfiles((s) => s.profiles.find((p) => p.id === selectedId)) ?? null;
+export interface ProfileEditorProps {
+  /** When provided, edits this profile id instead of `useProfiles.selectedId`. */
+  profileId?: string;
+  /** Called whenever `dirty` changes — drawer uses this to confirm-on-close. */
+  onDirty?: (dirty: boolean) => void;
+}
+
+export function ProfileEditor({ profileId, onDirty }: ProfileEditorProps = {}) {
+  const storedId = useProfiles((s) => s.selectedId);
+  const effectiveId = profileId ?? storedId;
+  const profile = useProfiles((s) => s.profiles.find((p) => p.id === effectiveId)) ?? null;
   const save = useProfiles((s) => s.save);
   const activate = useProfiles((s) => s.activate);
   const select = useProfiles((s) => s.select);
@@ -40,16 +48,41 @@ export function ProfileEditor() {
 
   // Backend may omit empty layer fields via skip_serializing_if; fill defaults
   // through the zod schema so the editor always sees a fully-shaped profile.
-  const normalize = (p: ProfileFile | null): ProfileFile | null =>
-    p ? ProfileFileSchema.parse(p) : null;
+  // Also migrate v0.1 profiles: if layers.shared is empty but the legacy
+  // `settings` field has content, surface it in the editor so the user sees
+  // their existing config rather than a blank canvas.
+  const normalize = (p: ProfileFile | null): ProfileFile | null => {
+    if (!p) return null;
+    const parsed = ProfileFileSchema.parse(p);
+    let layers = parsed.layers;
+    // Migrate shared: settings (minus env) → layers.shared
+    if (layers.shared == null) {
+      const s = parsed.settings as Record<string, unknown>;
+      const rest = Object.fromEntries(Object.entries(s).filter(([k]) => k !== 'env'));
+      if (Object.keys(rest).length > 0) {
+        layers = { ...layers, shared: rest };
+      }
+    }
+    // Migrate env: settings.env → layers.env
+    if (Object.keys(layers.env).length === 0) {
+      const legacyEnv = (parsed.settings as Record<string, unknown>).env;
+      if (legacyEnv && typeof legacyEnv === 'object' && !Array.isArray(legacyEnv)) {
+        const envEntries = Object.entries(legacyEnv as Record<string, unknown>)
+          .filter(([, v]) => typeof v === 'string');
+        if (envEntries.length > 0) {
+          layers = { ...layers, env: Object.fromEntries(envEntries) as Record<string, string> };
+        }
+      }
+    }
+    return layers === parsed.layers ? parsed : { ...parsed, layers };
+  };
 
   const [draft, setDraft] = useState<ProfileFile | null>(normalize(profile));
-  const [activeLayer, setActiveLayer] = useState<LayerName>('local');
+  const [activeLayer, setActiveLayer] = useState<LayerName>('shared');
 
   // Per-layer monaco buffers. We mirror layers.<layer> as text so edits show
   // up immediately even before the JSON parses cleanly.
   const [sharedText, setSharedText] = useState<string>('');
-  const [localText, setLocalText] = useState<string>('');
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [activateError, setActivateError] = useState<string | null>(null);
@@ -58,6 +91,11 @@ export function ProfileEditor() {
   const [envCopied, setEnvCopied] = useState(false);
 
   const lastLoadedIdRef = useRef<string | null>(profile?.id ?? null);
+
+  // Notify host (drawer) of dirty state changes so it can prompt on close.
+  useEffect(() => {
+    onDirty?.(dirty);
+  }, [dirty, onDirty]);
 
   useEffect(() => {
     // Selection changed — confirm if there are unsaved edits.
@@ -71,7 +109,6 @@ export function ProfileEditor() {
     const normalized = normalize(profile);
     setDraft(normalized);
     setSharedText(layerText(normalized?.layers.shared));
-    setLocalText(layerText(normalized?.layers.local));
     setSaveError(null);
     setActivateError(null);
     setDirty(false);
@@ -84,8 +121,7 @@ export function ProfileEditor() {
   // Validate the active text-based layer (shared/local). Env is structurally
   // valid by construction.
   const sharedValidation = useMemo(() => parseLayer(sharedText), [sharedText]);
-  const localValidation = useMemo(() => parseLayer(localText), [localText]);
-  const allValid = sharedValidation.ok && localValidation.ok;
+  const allValid = sharedValidation.ok;
 
   if (!draft) {
     return (
@@ -114,7 +150,7 @@ export function ProfileEditor() {
     try {
       const layers: ProfileLayers = {
         shared: sharedValidation.ok ? sharedValidation.value : undefined,
-        local: localValidation.ok ? localValidation.value : undefined,
+        local: undefined,
         env: draft.layers.env,
       };
       // Keep the v0.1 `settings` field synced for the legacy activation path.
@@ -220,8 +256,7 @@ export function ProfileEditor() {
       {/* Errors */}
       {!allValid && (
         <div className="border-y border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
-          {!sharedValidation.ok && <div>Shared: {sharedValidation.message}</div>}
-          {!localValidation.ok && <div>Local: {localValidation.message}</div>}
+          {!sharedValidation.ok && <div>Settings: {sharedValidation.message}</div>}
         </div>
       )}
       {saveError && (
@@ -244,10 +279,7 @@ export function ProfileEditor() {
         <div className="px-3 pt-2">
           <TabsList>
             <TabsTrigger value="shared">
-              Shared {tabBadge(sharedValidation, draft.layers.shared)}
-            </TabsTrigger>
-            <TabsTrigger value="local">
-              Local {tabBadge(localValidation, draft.layers.local)}
+              Settings {tabBadge(sharedValidation, draft.layers.shared)}
             </TabsTrigger>
             <TabsTrigger value="env">
               Env ({Object.keys(draft.layers.env).length})
@@ -256,13 +288,6 @@ export function ProfileEditor() {
         </div>
 
         <TabsContent value="shared" className="flex flex-1 flex-col overflow-hidden">
-          <div className="border-b border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
-            ⚠ This layer writes to{' '}
-            <code className="rounded bg-muted px-1 text-[11px]">
-              &lt;project&gt;/.claude/settings.json
-            </code>{' '}
-            — committed to git, visible to your team. Don't put API keys here.
-          </div>
           <div className="flex-1 overflow-hidden">
             <Editor
               height="100%"
@@ -270,28 +295,6 @@ export function ProfileEditor() {
               value={sharedText}
               onChange={(v) => {
                 setSharedText(v ?? '');
-                setDirty(true);
-              }}
-              options={editorOptions}
-            />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="local" className="flex flex-1 flex-col overflow-hidden">
-          <div className="border-b border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs text-muted-foreground">
-            ✓ This layer writes to{' '}
-            <code className="rounded bg-muted px-1 text-[11px]">
-              &lt;project&gt;/.claude/settings.local.json
-            </code>{' '}
-            — gitignored, personal.
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <Editor
-              height="100%"
-              defaultLanguage="json"
-              value={localText}
-              onChange={(v) => {
-                setLocalText(v ?? '');
                 setDirty(true);
               }}
               options={editorOptions}
