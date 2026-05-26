@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import Editor from '@monaco-editor/react';
+import { useEffect, useRef, useState } from 'react';
 import { useProfiles } from '@/store/profiles';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import {
   ProfileFileSchema,
   type ProfileFile,
@@ -12,9 +10,9 @@ import {
   settingsFromLayers,
 } from '@/lib/profileSchema';
 import { useUiSettings } from '@/store/uiSettings';
-import { Play, Save, Plus, X, Copy } from 'lucide-react';
-
-type LayerName = 'shared' | 'env';
+import { Play, Save, Copy } from 'lucide-react';
+import { LayeredSettingsEditor } from './LayeredSettingsEditor';
+import { parseLayer } from '@/lib/layeredSettings';
 
 /**
  * Three-tab layered profile editor (M3).
@@ -78,7 +76,6 @@ export function ProfileEditor({ profileId, onDirty }: ProfileEditorProps = {}) {
   };
 
   const [draft, setDraft] = useState<ProfileFile | null>(normalize(profile));
-  const [activeLayer, setActiveLayer] = useState<LayerName>('shared');
 
   // Per-layer monaco buffers. We mirror layers.<layer> as text so edits show
   // up immediately even before the JSON parses cleanly.
@@ -89,6 +86,7 @@ export function ProfileEditor({ profileId, onDirty }: ProfileEditorProps = {}) {
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [envCopied, setEnvCopied] = useState(false);
+  const [allValid, setAllValid] = useState(true);
 
   const lastLoadedIdRef = useRef<string | null>(profile?.id ?? null);
 
@@ -118,11 +116,6 @@ export function ProfileEditor({ profileId, onDirty }: ProfileEditorProps = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
 
-  // Validate the active text-based layer (shared/local). Env is structurally
-  // valid by construction.
-  const sharedValidation = useMemo(() => parseLayer(sharedText), [sharedText]);
-  const allValid = sharedValidation.ok;
-
   if (!draft) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -148,8 +141,9 @@ export function ProfileEditor({ profileId, onDirty }: ProfileEditorProps = {}) {
     setBusy(true);
     setSaveError(null);
     try {
+      const sharedParse = parseLayer(sharedText);
       const layers: ProfileLayers = {
-        shared: sharedValidation.ok ? sharedValidation.value : undefined,
+        shared: sharedParse.ok ? sharedParse.value : undefined,
         local: undefined,
         env: draft.layers.env,
       };
@@ -254,11 +248,6 @@ export function ProfileEditor({ profileId, onDirty }: ProfileEditorProps = {}) {
       </div>
 
       {/* Errors */}
-      {!allValid && (
-        <div className="border-y border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
-          {!sharedValidation.ok && <div>Settings: {sharedValidation.message}</div>}
-        </div>
-      )}
       {saveError && (
         <div className="border-y border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
           Save failed: {saveError}
@@ -270,177 +259,44 @@ export function ProfileEditor({ profileId, onDirty }: ProfileEditorProps = {}) {
         </div>
       )}
 
-      {/* Tabs */}
-      <Tabs
-        value={activeLayer}
-        onValueChange={(v) => setActiveLayer(v as LayerName)}
-        className="flex flex-1 flex-col overflow-hidden"
-      >
-        <div className="px-3 pt-2">
-          <TabsList>
-            <TabsTrigger value="shared">
-              Settings {tabBadge(sharedValidation, draft.layers.shared)}
-            </TabsTrigger>
-            <TabsTrigger value="env">
-              Env ({Object.keys(draft.layers.env).length})
-            </TabsTrigger>
-          </TabsList>
-        </div>
-
-        <TabsContent value="shared" className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex-1 overflow-hidden">
-            <Editor
-              height="100%"
-              defaultLanguage="json"
-              value={sharedText}
-              onChange={(v) => {
-                setSharedText(v ?? '');
-                setDirty(true);
-              }}
-              options={editorOptions}
-            />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="env" className="flex flex-1 flex-col overflow-auto">
-          <EnvLayerEditor env={draft.layers.env} onChange={onEditEnv} />
-          <div className="border-t border-border px-3 py-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void onCopyExport()}
-              disabled={Object.keys(draft.layers.env).length === 0}
-            >
-              <Copy className="h-4 w-4" />
-              {envCopied ? 'Copied' : 'Copy export commands'}
-            </Button>
-            <span className="ml-3 text-xs text-muted-foreground">
-              env vars are never written to a file — paste these into your shell when needed.
-            </span>
-          </div>
-        </TabsContent>
-      </Tabs>
+      <LayeredSettingsEditor
+        shared={{
+          text: sharedText,
+          label: 'Settings',
+          onChange: (next) => {
+            setSharedText(next);
+            setDirty(true);
+          },
+        }}
+        env={{
+          entries: draft.layers.env,
+          onChange: onEditEnv,
+          footer: (
+            <div className="border-t border-border px-3 py-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void onCopyExport()}
+                disabled={Object.keys(draft.layers.env).length === 0}
+              >
+                <Copy className="h-4 w-4" />
+                {envCopied ? 'Copied' : 'Copy export commands'}
+              </Button>
+              <span className="ml-3 text-xs text-muted-foreground">
+                env vars are never written to a file — paste these into your shell when needed.
+              </span>
+            </div>
+          ),
+        }}
+        onValidityChange={setAllValid}
+      />
     </div>
   );
 }
-
-function EnvLayerEditor({
-  env,
-  onChange,
-}: {
-  env: Record<string, string>;
-  onChange: (next: Record<string, string>) => void;
-}) {
-  const entries = Object.entries(env);
-
-  function setKey(oldKey: string, newKey: string) {
-    if (oldKey === newKey) return;
-    const next: Record<string, string> = {};
-    for (const [k, v] of entries) {
-      next[k === oldKey ? newKey : k] = v;
-    }
-    onChange(next);
-  }
-
-  function setValue(key: string, value: string) {
-    onChange({ ...env, [key]: value });
-  }
-
-  function remove(key: string) {
-    const next = { ...env };
-    delete next[key];
-    onChange(next);
-  }
-
-  function addRow() {
-    const next = { ...env };
-    let i = 1;
-    while (`KEY_${i}` in next) i += 1;
-    next[`KEY_${i}`] = '';
-    onChange(next);
-  }
-
-  if (entries.length === 0) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-        <div>No env vars yet.</div>
-        <Button variant="outline" size="sm" onClick={addRow}>
-          <Plus className="h-4 w-4" />
-          Add row
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-1.5 p-3">
-      <div className="grid grid-cols-[1fr_2fr_auto] items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
-        <div>Key</div>
-        <div>Value</div>
-        <div></div>
-      </div>
-      {entries.map(([k, v]) => (
-        <div key={k} className="grid grid-cols-[1fr_2fr_auto] items-center gap-2">
-          <Input
-            value={k}
-            onChange={(e) => setKey(k, e.target.value)}
-            className="font-mono text-xs"
-          />
-          <Input
-            value={v}
-            onChange={(e) => setValue(k, e.target.value)}
-            className="font-mono text-xs"
-            placeholder="value"
-          />
-          <Button variant="ghost" size="sm" onClick={() => remove(k)} aria-label={`Remove ${k}`}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      ))}
-      <Button variant="outline" size="sm" onClick={addRow} className="mt-2 self-start">
-        <Plus className="h-4 w-4" />
-        Add row
-      </Button>
-    </div>
-  );
-}
-
-const editorOptions = {
-  fontSize: 13,
-  minimap: { enabled: false },
-  scrollBeyondLastLine: false,
-  automaticLayout: true,
-  tabSize: 2,
-} as const;
 
 function layerText(value: unknown): string {
   if (value === undefined || value === null) return '';
   return JSON.stringify(value, null, 2);
-}
-
-type LayerParse =
-  | { ok: true; value: unknown | undefined }
-  | { ok: false; message: string };
-
-function parseLayer(text: string): LayerParse {
-  const trimmed = text.trim();
-  if (trimmed === '') return { ok: true, value: undefined };
-  try {
-    const value = JSON.parse(trimmed);
-    if (value !== null && typeof value !== 'object') {
-      return { ok: false, message: 'must be a JSON object (or empty)' };
-    }
-    return { ok: true, value };
-  } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : String(e) };
-  }
-}
-
-function tabBadge(parse: LayerParse, value: unknown): string {
-  if (!parse.ok) return '⚠';
-  if (value === undefined || value === null) return '(empty)';
-  const keys = Object.keys(value as Record<string, unknown>).length;
-  return `(${keys})`;
 }
 
 function shellQuote(s: string): string {

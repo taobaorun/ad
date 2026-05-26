@@ -75,7 +75,6 @@ export interface ApplyResult {
   projectPath: string;
   writtenFiles: string[];
   backupPaths: string[];
-  envExportSnippet?: string | null;
   warnings: string[];
   conflictsResolved: number;
 }

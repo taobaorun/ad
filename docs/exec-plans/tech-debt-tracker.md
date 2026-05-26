@@ -33,6 +33,7 @@
 |---|---|---|---|
 | TD-004 | 旧 `history.jsonl` 单文件兼容读路径仍在 | 代码复杂度 | 老用户全部迁移完后移除 |
 | TD-007 | `ProfileEditor` 与 `HistoryPanel` 未接 i18n（约 40 + 15 个 keys）。`HistoryDialog` 包装层已接 i18n，但内部 `HistoryPanel` 硬编码英文 | 中文用户在这两处仍看到英文 | UI Polish Pass 2 — 先设计 profile 字段术语表（中英对照），再批量替换 |
+| TD-008 | `pnpm lint` 在 main 上长期不通过：`ProjectSidebar.tsx:252` 用了 `React.ReactNode` 但未 import `React`（no-undef error）；`CommandPalette.tsx:199` useMemo 缺 `openPalette` 依赖。两处均为 v0.3 重设计期遗留，per-project-config-model 重构期发现 | 低：CI 没把 lint 卡死，但 `pnpm lint --max-warnings=0` 命令对开发者直接无效 | 单独清理一轮，并把 lint 加入 pre-push 钩子防回归 |
 
 ---
 

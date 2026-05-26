@@ -116,3 +116,68 @@ button, [role="button"], label, nav, header, aside {
   -webkit-user-select: none;
   user-select: none;
 }
+
+/*
+ * Custom scrollbars — match the theme in both modes.
+ * Light mode = neutral zinc; dark mode = inherits .dark tokens. Width 10px
+ * for normal regions, 8px for inset panels (.thin-scrollbar). Track is
+ * transparent so it doesn't fight with adjacent backgrounds.
+ *
+ * Monaco editor manages its own scrollbar internally — these rules don't
+ * leak in because Monaco renders inside its own shadow-DOM-style container.
+ */
+:root {
+  --scrollbar-thumb:       rgba(0,0,0,0.18);
+  --scrollbar-thumb-hover: rgba(0,0,0,0.32);
+}
+.dark {
+  --scrollbar-thumb:       rgba(255,255,255,0.16);
+  --scrollbar-thumb-hover: rgba(255,255,255,0.28);
+}
+
+/* `-webkit-appearance: none` is required to displace macOS "Always show scroll
+   bars" system rendering — without it, WKWebView paints the native platform
+   scrollbar and ignores our color rules entirely. */
+::-webkit-scrollbar {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  background: transparent;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-track-piece {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+  min-height: 32px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+  width: 0;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox fallback (Tauri on macOS uses WKWebView so the above always applies,
+   but keep this for consistency if cross-platform ever comes up). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* Tell macOS WKWebView which UI palette to draw native widgets in. With this,
+   the system scrollbar (which `::-webkit-scrollbar` rules can't override when
+   macOS "Always show scroll bars" is on) automatically picks dark / light
+   chrome instead of always rendering bright white in dark mode. */
+:root { color-scheme: light; }
+:root.dark { color-scheme: dark; }

@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ExecPlan — Per-Project Config Model</title>
+  <style>
+    :root {
+      --ivory:    #FAF9F5;
+      --paper:    #FFFFFF;
+      --slate:    #141413;
+      --clay:     #D97757;
+      --oat:      #E3DACC;
+      --olive:    #788C5D;
+      --rust:     #B04A3F;
+      --gray-150: #F0EEE6;
+      --gray-300: #D1CFC5;
+      --gray-500: #87867F;
+      --gray-700: #3D3D3A;
+      --serif: ui-serif, Georgia, 'Times New Roman', serif;
+      --sans:  system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --mono:  ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: var(--sans);
+      background: var(--ivory);
+      color: var(--gray-700);
+      line-height: 1.55;
+      padding: 56px 32px 120px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .page { max-width: 1040px; margin: 0 auto; }
+
+    /* header */
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--gray-500);
+      font-family: var(--mono);
+      margin-bottom: 10px;
+    }
+    h1 {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 36px;
+      line-height: 1.15;
+      color: var(--slate);
+      margin-bottom: 14px;
+      letter-spacing: -0.01em;
+    }
+    .goal-box {
+      background: var(--gray-150);
+      border: 1.5px solid var(--gray-300);
+      border-left: 4px solid var(--clay);
+      border-radius: 10px;
+      padding: 16px 20px;
+      font-size: 14.5px;
+      color: var(--gray-700);
+      max-width: 760px;
+      margin-bottom: 48px;
+    }
+
+    /* summary strip */
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 56px;
+    }
+    .summary .cell {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 10px;
+      padding: 16px 18px;
+    }
+    .summary .k {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--gray-500);
+      margin-bottom: 5px;
+    }
+    .summary .v {
+      font-size: 16px;
+      color: var(--slate);
+      font-weight: 600;
+    }
+    .summary .v.accent { color: var(--clay); }
+
+    /* section headers */
+    section { margin-bottom: 60px; }
+    .sec-label {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--gray-500);
+      margin-bottom: 6px;
+    }
+    h2 {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 24px;
+      color: var(--slate);
+      letter-spacing: -0.01em;
+      margin-bottom: 20px;
+    }
+    .sec-intro {
+      font-size: 14px;
+      color: var(--gray-500);
+      max-width: 680px;
+      margin-bottom: 24px;
+    }
+
+    /* before-after table */
+    .compare-card {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .compare-row {
+      display: grid;
+      grid-template-columns: 160px 1fr 1fr;
+      align-items: stretch;
+      border-top: 1.5px solid var(--gray-300);
+    }
+    .compare-row:first-child { border-top: 0; }
+    .compare-cell {
+      padding: 16px 20px;
+      font-size: 13.5px;
+      color: var(--gray-700);
+    }
+    .compare-row .label {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--gray-500);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: var(--gray-150);
+      display: flex;
+      align-items: center;
+    }
+    .compare-row .v-old { background: #FDF6F0; color: var(--gray-700); border-left: 1.5px solid var(--gray-300); }
+    .compare-row .v-new { background: #F2F6EE; color: var(--slate); border-left: 1.5px solid var(--gray-300); font-weight: 500; }
+    .compare-row .v-old code,
+    .compare-row .v-new code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: rgba(0,0,0,0.04);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .compare-tag {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      padding: 1px 7px;
+      border-radius: 5px;
+      margin-bottom: 6px;
+      letter-spacing: 0.04em;
+    }
+    .compare-tag.old { background: #FEF3EE; color: var(--clay); }
+    .compare-tag.new { background: #EEF3E8; color: var(--olive); }
+
+    /* SVG file tree */
+    .filetree-wrap {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      padding: 28px;
+      overflow-x: auto;
+    }
+    .filetree-wrap svg { display: block; }
+
+    /* decision cards */
+    .decisions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    @media (max-width: 760px) { .decisions { grid-template-columns: 1fr; } }
+    .decision {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      padding: 20px 22px;
+    }
+    .decision .d-num {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--oat);
+      color: var(--slate);
+      padding: 2px 8px;
+      border-radius: 6px;
+      display: inline-block;
+      margin-bottom: 10px;
+    }
+    .decision h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--slate);
+      margin-bottom: 8px;
+    }
+    .decision .rationale {
+      font-size: 13.5px;
+      color: var(--gray-500);
+      margin-bottom: 12px;
+    }
+    .decision .tags { display: flex; gap: 6px; flex-wrap: wrap; }
+    .decision .tag {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--gray-150);
+      border: 1px solid var(--gray-300);
+      border-radius: 6px;
+      padding: 2px 7px;
+      color: var(--gray-700);
+    }
+    .decision .tag.warn { background: #FEF3EE; border-color: #F4C4A8; color: var(--clay); }
+    .decision .tag.ok   { background: #EEF3E8; border-color: #BDD0A1; color: var(--olive); }
+
+    /* stepper */
+    .stepper { display: flex; flex-direction: column; gap: 0; }
+    .step {
+      display: grid;
+      grid-template-columns: 52px 28px 1fr;
+      gap: 0 16px;
+    }
+    .step .s-num {
+      text-align: right;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--gray-500);
+      padding-top: 5px;
+    }
+    .step .s-dot-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .step .s-dot {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--paper);
+      border: 2.5px solid var(--clay);
+      margin-top: 5px;
+      flex-shrink: 0;
+    }
+    .step .s-line {
+      width: 2px;
+      flex: 1;
+      background: var(--gray-300);
+      margin: 4px 0;
+    }
+    .step:last-child .s-line { display: none; }
+    .step .s-body { padding-bottom: 28px; }
+    .step .s-body h3 {
+      font-size: 15.5px;
+      font-weight: 600;
+      color: var(--slate);
+      margin-bottom: 4px;
+    }
+    .step .s-body .s-layer {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+    .s-layer.backend { background: #EEF3E8; color: var(--olive); }
+    .s-layer.frontend { background: #EEF0F8; color: #4A5A8C; }
+    .s-layer.i18n { background: #FEF3EE; color: var(--clay); }
+    .s-layer.docs { background: var(--gray-150); color: var(--gray-700); }
+    .step .s-body p {
+      font-size: 13.5px;
+      color: var(--gray-500);
+      max-width: 560px;
+      margin-bottom: 8px;
+    }
+    .step .verify {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--gray-700);
+      background: var(--gray-150);
+      border: 1px solid var(--gray-300);
+      border-radius: 6px;
+      padding: 6px 10px;
+      display: inline-block;
+    }
+    .step .verify::before { content: '✓ '; color: var(--olive); }
+
+    /* checklist */
+    .checklist { display: flex; flex-direction: column; gap: 10px; max-width: 680px; }
+    .check-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 9px;
+      padding: 13px 16px;
+    }
+    .check-box {
+      width: 18px; height: 18px;
+      border-radius: 4px;
+      border: 2px solid var(--gray-300);
+      background: var(--paper);
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .check-item .c-text { font-size: 14px; color: var(--gray-700); }
+    .check-item .c-note {
+      font-size: 12px;
+      color: var(--gray-500);
+      margin-top: 2px;
+      font-family: var(--mono);
+    }
+
+    /* assumptions */
+    .assumption-list { display: flex; flex-direction: column; gap: 10px; max-width: 720px; }
+    .assumption {
+      display: flex;
+      gap: 12px;
+      font-size: 14px;
+      color: var(--gray-700);
+    }
+    .assumption .a-num {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--oat);
+      color: var(--slate);
+      padding: 2px 7px;
+      border-radius: 5px;
+      height: fit-content;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+
+    /* ascii model diagram */
+    .model-diagram {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      padding: 28px 32px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      color: var(--gray-700);
+      line-height: 1.85;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .model-diagram .accent { color: var(--clay); font-weight: 600; }
+    .model-diagram .ok { color: var(--olive); font-weight: 600; }
+    .model-diagram .label { color: var(--gray-500); }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="eyebrow">ExecPlan · AD · 2026-05-25</div>
+  <h1>Per-Project Config Model</h1>
+  <div class="goal-box">
+    把"项目当前状态"从 profile 解耦：profile = 只读模板，<code style="font-family:var(--mono);font-size:13px;color:var(--clay)">&lt;project&gt;/.claude/settings*.json</code> = 真理源。主区从"切换 profile 看板"变成内联三 tab 编辑器；env 层落进 settings.local.json；底部「项目配置」覆盖编辑器移除。
+  </div>
+
+  <!-- Summary strip -->
+  <div class="summary">
+    <div class="cell">
+      <div class="k">涉及文件</div>
+      <div class="v accent">~10</div>
+    </div>
+    <div class="cell">
+      <div class="k">步骤数</div>
+      <div class="v">9</div>
+    </div>
+    <div class="cell">
+      <div class="k">模块</div>
+      <div class="v">Backend + Frontend + i18n</div>
+    </div>
+    <div class="cell">
+      <div class="k">主要风险</div>
+      <div class="v">UI 重构</div>
+    </div>
+  </div>
+
+  <!-- Concept model -->
+  <section>
+    <div class="sec-label">概念模型</div>
+    <h2>从「profile 是项目状态」到「profile 是只读模板」</h2>
+    <p class="sec-intro">profile 仍然存活，但语义收窄到"初始化 / 切换时复制内容的源头"；编辑 profile 不再影响已经从它生成的项目。</p>
+<div class="model-diagram">  <span class="label">┌─ ~/.ad/profiles/&lt;id&gt;.json (template, read-only relative to projects)</span>
+  <span class="label">│</span>     <span class="accent">layers: { shared, local, env }</span>
+  <span class="label">│</span>
+  <span class="label">│        ╔═══════════════════════════════════════════╗</span>
+  <span class="label">│   ◯───┄┄ </span>init from template     <span class="label">┃</span>     ◯──── re-apply (switch template)
+  <span class="label">│   │    ╚═══════════════════════════════════════════╝     │</span>
+  <span class="label">│   ▼                                                       ▼</span>
+  ◯  &lt;project&gt;/.claude/settings.json         <span class="ok">←  truth source (shared layer, git-tracked)</span>
+  ◯  &lt;project&gt;/.claude/settings.local.json   <span class="ok">←  truth source (local + env, gitignored)</span>
+  <span class="label">│        </span>
+  <span class="label">└─ </span>edit in ProjectDetail main pane (3 tabs) <span class="ok">— Save 即落盘，无 Apply 步骤</span></div>
+  </section>
+
+  <!-- Before / After -->
+  <section>
+    <div class="sec-label">前后对比</div>
+    <h2>用户能看到什么变化</h2>
+    <div class="compare-card">
+      <div class="compare-row">
+        <div class="compare-cell label">主区</div>
+        <div class="compare-cell v-old">
+          <span class="compare-tag old">v0.3</span><br>
+          HeroCard + LayerStack + ProfileCards + ApplyBar + Recent + 折叠的 ProjectSettings(<code>.local.json</code>)
+        </div>
+        <div class="compare-cell v-new">
+          <span class="compare-tag new">v0.4</span><br>
+          Header (含 "Initialized from &lt;template&gt;" + Switch template) + 内联三 tab 编辑器 (Shared / Local / Env) + Save
+        </div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-cell label">编辑动作</div>
+        <div class="compare-cell v-old">
+          编辑 profile（drawer）→ 点 Apply → 选 layers → 写项目；底部还能直接编辑 <code>.local.json</code>
+        </div>
+        <div class="compare-cell v-new">
+          编辑器三 tab 直接读写项目的 <code>.claude/settings*.json</code>；Save 即落盘
+        </div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-cell label">env 层</div>
+        <div class="compare-cell v-old">
+          Apply 后展示 <code>export KEY='...'</code> 片段，让用户复制到 shell
+        </div>
+        <div class="compare-cell v-new">
+          init / switch template 时合并到 <code>settings.local.json</code> 顶层 <code>env</code> 字段；CC 启动时自动加载；UI 移除 export 片段
+        </div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-cell label">profile 编辑</div>
+        <div class="compare-cell v-old">
+          ProjectDetail 上的 ✎Edit 按钮 → 右抽屉编辑当前生效 profile
+        </div>
+        <div class="compare-cell v-new">
+          ⌘K palette → "manage templates" / "edit template &lt;name&gt;" → 抽屉作为独立 template 编辑器；和当前项目无关
+        </div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-cell label">改 template 的影响</div>
+        <div class="compare-cell v-old">
+          模糊：Apply 之后 profile 和项目的关系不明确
+        </div>
+        <div class="compare-cell v-new">
+          清晰：profile 是模板，改它不影响已存在的项目；下次 init / switch template 才会用新版本
+        </div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-cell label">全局生效（legacy）</div>
+        <div class="compare-cell v-old">
+          Advanced settings → 开启 legacy → ProfileEditor 顶部出现 <code>[Activate (legacy)]</code>，点击覆盖 <code>~/.claude/settings.json</code>
+        </div>
+        <div class="compare-cell v-new">
+          <strong>保留不动</strong>：drawer 仍然作为 template 编辑器，Activate (legacy) 按钮 + IPC + 行为完全不变；给"我只想全局换一份配置"的简单用法兜底
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- File tree -->
+  <section>
+    <div class="sec-label">影响范围</div>
+    <h2>修改的文件</h2>
+    <p class="sec-intro">前端为主（主区重构），后端只动 apply.rs 一处。Schema、IPC 名称、profile 文件结构都不变。</p>
+    <div class="filetree-wrap">
+      <svg viewBox="0 0 920 460" width="920" height="460" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <style>
+            .ft { font-family: ui-monospace, 'SF Mono', Menlo, Monaco, monospace; font-size: 12.5px; fill: #3D3D3A; }
+            .ft-dim { fill: #87867F; }
+            .ft-dir { fill: #141413; font-weight: 600; }
+            .tag { font-family: ui-monospace, 'SF Mono', Menlo, Monaco, monospace; font-size: 10.5px; }
+            .tag-m text { fill: #B04A3F; }
+            .tag-n text { fill: #788C5D; }
+            .tag-keep text { fill: #87867F; }
+          </style>
+        </defs>
+
+        <!-- Tree lines -->
+        <g stroke="#D1CFC5" stroke-width="1.5" fill="none">
+          <!-- src-tauri root vertical -->
+          <line x1="32" y1="44" x2="32" y2="100"/>
+          <!-- src-tauri/src -->
+          <line x1="32" y1="100" x2="56" y2="100"/>
+          <!-- src-tauri/src/commands vertical -->
+          <line x1="80" y1="100" x2="80" y2="156"/>
+          <line x1="80" y1="128" x2="104" y2="128"/>
+          <line x1="80" y1="156" x2="104" y2="156"/>
+
+          <!-- src tree -->
+          <line x1="32" y1="200" x2="32" y2="436"/>
+          <line x1="32" y1="232" x2="56" y2="232"/>
+          <line x1="32" y1="316" x2="56" y2="316"/>
+          <line x1="32" y1="400" x2="56" y2="400"/>
+          <line x1="32" y1="436" x2="56" y2="436"/>
+          <!-- src/components -->
+          <line x1="80" y1="232" x2="80" y2="316"/>
+          <line x1="80" y1="260" x2="104" y2="260"/>
+          <line x1="80" y1="288" x2="104" y2="288"/>
+          <line x1="80" y1="316" x2="104" y2="316"/>
+          <!-- src/store -->
+          <line x1="80" y1="316" x2="80" y2="372"/>
+          <line x1="80" y1="344" x2="104" y2="344"/>
+          <line x1="80" y1="372" x2="104" y2="372"/>
+          <!-- src/i18n -->
+          <line x1="80" y1="400" x2="80" y2="436"/>
+          <line x1="80" y1="428" x2="104" y2="428"/>
+        </g>
+
+        <!-- Backend section -->
+        <text x="20" y="36" class="ft ft-dir">src-tauri/</text>
+        <text x="44" y="100" class="ft ft-dir">src/</text>
+        <text x="68" y="128" class="ft ft-dir">commands/</text>
+        <text x="108" y="156" class="ft">apply.rs</text>
+        <g class="tag tag-m"><text x="220" y="156">[M]</text></g>
+        <text x="260" y="156" class="ft ft-dim">env 分支：合并到 settings.local.json 顶层 env 字段（不再生成 export 片段）</text>
+
+        <!-- Frontend section -->
+        <text x="20" y="200" class="ft ft-dir">src/</text>
+        <text x="44" y="232" class="ft ft-dir">components/</text>
+        <text x="108" y="260" class="ft">ProjectDetail.tsx</text>
+        <g class="tag tag-m"><text x="260" y="260">[M]</text></g>
+        <text x="296" y="260" class="ft ft-dim">删 HeroCard/LayerStack/ProfileCards/ApplyBar/ProjectSettingsSection；引入内联三 tab 编辑器</text>
+        <text x="108" y="288" class="ft">ProfileEditor.tsx</text>
+        <g class="tag tag-m"><text x="260" y="288">[M]</text></g>
+        <text x="296" y="288" class="ft ft-dim">抽出 LayeredSettingsEditor 公共组件（Step 1 前置）</text>
+        <text x="108" y="316" class="ft">CommandPalette.tsx · ProfileEditDrawer.tsx</text>
+        <g class="tag tag-m"><text x="380" y="316">[M]</text></g>
+        <text x="416" y="316" class="ft ft-dim">drawer 改 template 编辑；palette 加 switch template / manage templates</text>
+
+        <text x="44" y="316" class="ft ft-dir">store/</text>
+        <text x="108" y="344" class="ft">projects.ts · profiles.ts</text>
+        <g class="tag tag-keep"><text x="288" y="344">[—]</text></g>
+        <text x="324" y="344" class="ft ft-dim">不变结构，可能加一个 selector helper</text>
+
+        <text x="44" y="400" class="ft ft-dir">i18n/locales/</text>
+        <text x="108" y="428" class="ft">zh.json · en.json</text>
+        <g class="tag tag-m"><text x="252" y="428">[M]</text></g>
+        <text x="288" y="428" class="ft ft-dim">+ projectEditor.* / template.*；- projectSettings.* 与无用 detail.* 键</text>
+
+        <!-- Legend -->
+        <g transform="translate(620, 20)">
+          <rect x="0" y="0" width="280" height="64" rx="8" fill="#FAF9F5" stroke="#D1CFC5" stroke-width="1"/>
+          <text x="14" y="20" class="ft ft-dim" style="font-size:10.5px;letter-spacing:0.05em;">LEGEND</text>
+          <g class="tag tag-m"><text x="14" y="40">[M]</text></g>
+          <text x="50" y="40" class="ft" style="font-size:11.5px;">modified — 现有文件改动</text>
+          <g class="tag tag-keep"><text x="14" y="58">[—]</text></g>
+          <text x="50" y="58" class="ft" style="font-size:11.5px;">unchanged — 提及但不改</text>
+        </g>
+      </svg>
+    </div>
+  </section>
+
+  <!-- Decisions -->
+  <section>
+    <div class="sec-label">关键决策</div>
+    <h2>设计取舍</h2>
+    <div class="decisions">
+      <div class="decision">
+        <div class="d-num">D1</div>
+        <h3>Project 真理源 = .claude/settings*.json</h3>
+        <p class="rationale">不再镜像到 ~/.ad/。CC 自己读这两个文件，多一份镜像必然漂移；APFS 原子写已能保证一致性。</p>
+        <div class="tags"><span class="tag ok">no mirror</span><span class="tag">single source</span></div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D2</div>
+        <h3>env → settings.local.json 顶层 env 字段</h3>
+        <p class="rationale">env 通常含 API key 等敏感值；settings.json 走 git，不适合存敏感值。settings.local.json 是 gitignored，正合适。</p>
+        <div class="tags"><span class="tag ok">CC native</span><span class="tag warn">remove export UI</span></div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D3</div>
+        <h3>Save 即落盘，无 Apply 按钮</h3>
+        <p class="rationale">用户已确认。per-project 后没有"先暂存、再下发"的延迟写入需要。Save → write_atomic + 备份。</p>
+        <div class="tags"><span class="tag ok">one-step</span></div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D4</div>
+        <h3>Template 编辑入口收敛到独立位置</h3>
+        <p class="rationale">避免主区被 template / project 两类编辑混淆。drawer 仍然在，但只用于 template；触发器移到 ⌘K palette。</p>
+        <div class="tags"><span class="tag">UX clarity</span></div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D5</div>
+        <h3>抽 LayeredSettingsEditor 公共组件</h3>
+        <p class="rationale">ProfileEditor 和 ProjectConfigEditor 都需要 Monaco JSON + KV env 表 + 校验提示，分两份会立刻分叉。</p>
+        <div class="tags"><span class="tag">DRY</span><span class="tag ok">controlled</span></div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D6</div>
+        <h3>HeroCard / LayerStack / ProfileCards / ApplyBar 全删</h3>
+        <p class="rationale">这些都是「展示 profile + 选切换」的 UI，per-project 后失去意义。Switch template 走 palette。</p>
+        <div class="tags"><span class="tag warn">删旧 UI</span></div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D7</div>
+        <h3>不做存量数据迁移</h3>
+        <p class="rationale">现有项目的 .claude/ 已经是真实状态，新模型直接读它；profiles 保持为 templates，无需改 schema。</p>
+        <div class="tags"><span class="tag ok">zero-migration</span></div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D8</div>
+        <h3>Profile 全局生效（legacy）保留</h3>
+        <p class="rationale">用户明确要求保留：activate_profile IPC、showLegacyActivation 开关、[Activate (legacy)] 按钮全部不动。给"只想全局换配置"的兜底场景。</p>
+        <div class="tags"><span class="tag ok">keep legacy</span><span class="tag">no IPC change</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stepper -->
+  <section>
+    <div class="sec-label">执行步骤</div>
+    <h2>9 步顺序推进</h2>
+    <p class="sec-intro">每步独立可验证。Step 1 是其它前端步骤的前置；Step 2 是后端隔离改动；Step 4–7 是主区重构主线；Step 8–9 是收尾。</p>
+    <div class="stepper">
+      <div class="step">
+        <div class="s-num">01</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer frontend">FRONTEND</span>
+          <h3>抽 &lt;LayeredSettingsEditor&gt; 公共组件</h3>
+          <p>从 ProfileEditor 抽出 Settings tab 的 Monaco + Env tab 的 KV 表，做成纯受控组件：<code>{ shared, local, env }</code> 三个受控接口 + onValidityChange。</p>
+          <div class="verify">pnpm typecheck · ProfileEditor 内表现不变</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="s-num">02</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer backend">BACKEND</span>
+          <h3>apply.rs：env 合并进 settings.local.json</h3>
+          <p>原 <code>"env" =&gt;</code> 分支删除"生成 export 片段"路径，改为读 settings.local.json → deep-merge profile.layers.env 到顶层 <code>env</code> → 写回。</p>
+          <div class="verify">cargo test apply · 旧 apply_env_layer_returns_export_snippet 改成 apply_env_layer_merges_into_settings_local</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="s-num">03</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer frontend">FRONTEND</span>
+          <h3>同步 ApplyResult 类型</h3>
+          <p>移除 <code>envExportSnippet</code> 字段（前后端各一处）；前端 ProjectDetail 不再渲染 export 片段卡片（在 Step 5 一并删）。</p>
+          <div class="verify">pnpm typecheck · cargo check --all-targets</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="s-num">04</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer frontend">FRONTEND</span>
+          <h3>新增 &lt;ProjectConfigEditor&gt;</h3>
+          <p>在 ProjectDetail 主区，包 LayeredSettingsEditor，三 tab 直接读写 <code>&lt;project&gt;/.claude/settings.json</code> 和 <code>.claude/settings.local.json</code>；Save 调用 <code>write_project_settings</code>。</p>
+          <div class="verify">pnpm typecheck · pnpm tauri dev 能编辑 + 保存 + reload 后值还在</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="s-num">05</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer frontend">FRONTEND</span>
+          <h3>删 HeroCard/LayerStack/ProfileCards/ApplyBar/ProjectSettingsSection</h3>
+          <p>清理主区残留代码，保留 header（项目名 / 路径 / 状态 pills / 删除按钮）+ 新增 SwitchTemplate 入口 + ProjectConfigEditor。</p>
+          <div class="verify">pnpm typecheck · 主区只剩 header + Switch template + 编辑器</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="s-num">06</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer frontend">FRONTEND</span>
+          <h3>SwitchTemplate 流程</h3>
+          <p>弹 modal/popover 列 templates，用户选一个 → 调 <code>apply_profile_to_project</code> → 冲突走 InlineConflictResolver → 写完后 reload 编辑器内容。</p>
+          <div class="verify">从 template A 切到 template B：settings 文件被合并；env 落地到 settings.local.json env 字段</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="s-num">07</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer frontend">FRONTEND</span>
+          <h3>Drawer 与 Palette 文案重定位</h3>
+          <p>ProfileEditDrawer 文案改 "Edit template"；CommandPalette 加 "manage templates" / "switch template"；移除 ProjectDetail 里所有 <code>openEditDrawer(currentProfile.id)</code> 调用。<strong>保留</strong> ProfileEditor 里的 <code>[Activate (legacy)]</code> 按钮和 <code>showLegacyActivation</code> 行为不动。</p>
+          <div class="verify">palette 能找到 manage / switch template 命令；Advanced settings 开 legacy 后 drawer 内仍有 Activate 按钮</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="s-num">08</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer i18n">I18N</span>
+          <h3>i18n 同步</h3>
+          <p>新增 <code>projectEditor.*</code> / <code>template.*</code> keys（zh + en）；移除 <code>projectSettings.*</code> 和 ApplyBar 相关的 <code>detail.*</code> keys。</p>
+          <div class="verify">pnpm typecheck · 应用界面无 missing-key fallback</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="s-num">09</div>
+        <div class="s-dot-col"><div class="s-dot"></div></div>
+        <div class="s-body">
+          <span class="s-layer docs">DOCS</span>
+          <h3>AGENTS.md / design-docs/index.md 同步</h3>
+          <p>写一句"v0.4 主区为项目配置编辑器，profile 是只读 template"；如发现遗留问题写到 tech-debt-tracker.md。</p>
+          <div class="verify">git diff AGENTS.md docs/ — 只动这一行</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Assumptions -->
+  <section>
+    <div class="sec-label">假设</div>
+    <h2>开始前需要承认的事</h2>
+    <div class="assumption-list">
+      <div class="assumption"><span class="a-num">A1</span><span>项目当前状态的真理源是 <code style="font-family:var(--mono);font-size:12.5px;color:var(--slate);background:var(--gray-150);padding:1px 5px;border-radius:4px;">&lt;project&gt;/.claude/settings*.json</code>，AD 不再额外维护"项目侧 profile"文件。</span></div>
+      <div class="assumption"><span class="a-num">A2</span><span><code style="font-family:var(--mono);font-size:12.5px;color:var(--slate);background:var(--gray-150);padding:1px 5px;border-radius:4px;">~/.ad/state/projects.json</code> 的 currentProfileId 改为"最近一次从哪个 template 初始化或重置"，仅历史溯源用，不再决定 UI 状态。</span></div>
+      <div class="assumption"><span class="a-num">A3</span><span><code style="font-family:var(--mono);font-size:12.5px;color:var(--slate);background:var(--gray-150);padding:1px 5px;border-radius:4px;">~/.ad/profiles/&lt;id&gt;.json</code> schema 不变（layers: { shared, local, env }），不做新一轮迁移。</span></div>
+      <div class="assumption"><span class="a-num">A4</span><span>CC 的 settings 支持顶层 <code style="font-family:var(--mono);font-size:12.5px;color:var(--slate);background:var(--gray-150);padding:1px 5px;border-radius:4px;">env: { KEY: VALUE }</code> 字段（来源：用户回答 + Claude Code 官方 env-vars 文档）。</span></div>
+      <div class="assumption"><span class="a-num">A5</span><span>Save 走原子写 + 备份（沿用 write_atomic + ~/.ad/backups/）。</span></div>
+      <div class="assumption"><span class="a-num">A6</span><span>Switch template 仍然走 apply_profile_to_project + 冲突解决，不是无声覆盖。</span></div>
+      <div class="assumption"><span class="a-num">A7</span><span>底层 read_project_settings / write_project_settings IPC 保留，新主区编辑器复用。</span></div>
+      <div class="assumption"><span class="a-num">A8</span><span>v0.1 全局激活路径（<code style="font-family:var(--mono);font-size:12.5px;color:var(--slate);background:var(--gray-150);padding:1px 5px;border-radius:4px;">activate_profile</code> IPC + 覆盖 ~/.claude/settings.json + legacy 开关 + Activate 按钮）整条保留，本次重构不动它的代码 / IPC / 备份行为。</span></div>
+    </div>
+  </section>
+
+  <!-- Acceptance criteria -->
+  <section>
+    <div class="sec-label">验收</div>
+    <h2>完成标准</h2>
+    <div class="checklist">
+      <div class="check-item"><div class="check-box"></div><div><div class="c-text">AC1 — 从 template 创建项目：settings.json + settings.local.json 都被写入；env 出现在 settings.local.json 顶层 env 字段；不再出现 export 片段 UI。</div></div></div>
+      <div class="check-item"><div class="check-box"></div><div><div class="c-text">AC2 — 在主区编辑器修改 settings.json 并 Save：文件即时被写回（mtime 改变）；profile 文件不变（diff 为空）。</div></div></div>
+      <div class="check-item"><div class="check-box"></div><div><div class="c-text">AC3 — 编辑 template（drawer）：已存在的项目 .claude/ 文件 mtime 不变。</div></div></div>
+      <div class="check-item"><div class="check-box"></div><div><div class="c-text">AC4 — 删 ProjectSettingsSection 后 UI 不再出现"项目配置 / settings.local.json"折叠区。</div></div></div>
+      <div class="check-item"><div class="check-box"></div><div><div class="c-text">AC5 — ⌘K palette 出现 "switch template" 命令；选完 → 走 merge / 冲突解决；不会无声覆盖。</div></div></div>
+      <div class="check-item"><div class="check-box"></div><div><div class="c-text">AC6 — Advanced settings 开 legacy → template 编辑器（drawer）仍出现 [Activate (legacy)] → 点击后 ~/.claude/settings.json 被 profile 覆盖；当前项目的 .claude/settings*.json mtime 不变。</div></div></div>
+      <div class="check-item"><div class="check-box"></div><div><div class="c-text">AC7 — pnpm typecheck / pnpm lint / cargo check / cargo clippy / cargo test 全绿。</div></div></div>
+    </div>
+  </section>
+
+  <!-- Recovery -->
+  <section>
+    <div class="sec-label">幂等性 & 回退</div>
+    <h2>每步独立 commit</h2>
+    <p class="sec-intro">中途中止 → 后续从 Progress 表里第一个未打勾继续。Step 2 出问题 → 保留旧 export 片段路径作为回退兜底；ProjectSettingsSection 删除是不可逆操作，但 git 历史能回查 — Step 5 必须独立 commit 便于 revert。</p>
+  </section>
+
+  <!-- Frozen baseline -->
+  <section style="margin-bottom:0;">
+    <div style="background:var(--gray-150);border:1.5px solid var(--gray-300);border-left:4px solid var(--olive);border-radius:10px;padding:14px 18px;font-size:13px;color:var(--gray-700);max-width:760px;">
+      <strong style="color:var(--olive);font-family:var(--mono);font-size:11.5px;letter-spacing:0.06em;text-transform:uppercase;">Approved plan baseline</strong> &nbsp; <span style="font-family:var(--mono);font-size:12px;color:var(--gray-500);">frozen at 2026-05-25T14:55Z</span>
+      <div style="margin-top:6px;">Live execution state: see <code style="font-family:var(--mono);font-size:12px;color:var(--slate);background:var(--paper);padding:2px 6px;border-radius:4px;border:1px solid var(--gray-300);">docs/exec-plans/active/per-project-config-model.md</code></div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

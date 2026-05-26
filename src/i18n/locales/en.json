@@ -21,7 +21,8 @@
     },
     "applyTo": "Apply {{profile}} to {{project}}",
     "switchTo": "Switch to {{project}}",
-    "editProfile": "Edit profile: {{name}}",
+    "editTemplate": "Edit template: {{name}}",
+    "switchTemplate": "Switch template: {{project}} …",
     "addProjectFromPath": "Add project from path…",
     "reviewDetected": "Review detected projects…",
     "importProfile": "Import profile from JSON…",
@@ -52,35 +53,9 @@
     "settingsLocalNotIgnored": "⚠ settings.local.json not gitignored",
     "removeConfirm": "Remove \"{{name}}\" from AD?\n(Files in the project are not touched.)",
     "removeTitle": "Remove from AD",
-    "sections": {
-      "current": "CURRENT",
-      "layerPrecedence": "LAYER PRECEDENCE",
-      "switchProfile": "SWITCH PROFILE",
-      "applyDifferent": "APPLY DIFFERENT",
-      "recent": "RECENT APPLIES"
-    },
-    "noProfileApplied": "No profile applied yet. Pick one below to get started.",
-    "editProfileTitle": "Edit profile (⌘E)",
-    "edit": "Edit",
-    "row": {
-      "profile": "profile",
-      "layers": "layers",
-      "writes": "writes"
-    },
-    "pickLayer": "— pick at least 1 layer",
-    "envClipboardNote": "(env copied to clipboard — no file)",
-    "dirtyTitle": "Working tree is dirty",
-    "dirtyDesc": "Shared layer writes to .claude/settings.json (git-tracked). Applying may collide with your uncommitted changes.",
-    "applyAnyway": "Apply anyway — I'll review the diff in git",
-    "applying": "Applying…",
-    "applyWithResolutions": "Apply with resolutions",
-    "applyButton": "Apply {{name}} ({{abbr}})",
-    "apply": "Apply",
-    "appliedFlash": "Applied · {{count}} file(s) written",
-    "envExports": "env exports (not written to file):",
-    "copy": "Copy",
-    "noApplies": "No applies yet.",
-    "conflictsResolved": "{{count}} conflict(s) resolved"
+    "initializedFrom": "Initialized from template \"{{name}}\"",
+    "noTemplateYet": "Not initialized from any template yet",
+    "switchTemplate": "Switch template"
   },
   "app": {
     "titlebar": {
@@ -141,7 +116,7 @@
     "title": "Activation history"
   },
   "drawer": {
-    "editProfile": "Edit profile",
+    "editTemplate": "Edit template",
     "unsavedConfirm": "Unsaved changes will be lost. Close anyway?",
     "closeAria": "Close drawer"
   },
@@ -162,11 +137,51 @@
     "hoursAgo": "{{n}}h ago",
     "daysAgo": "{{n}}d ago"
   },
-  "projectSettings": {
-    "sectionTitle": "Project Settings",
-    "description": "Edit this project's .claude/settings.local.json directly. Independent of the profile template — belongs only to this project.",
+  "switchTemplate": {
+    "title": "Switch template",
+    "description": "Pick a template — its content will be written into this project's .claude/settings*.json. Existing content is deep-merged; conflicts require a per-key decision.",
+    "empty": "No templates yet. Create one from the command palette first.",
+    "currentTag": "current",
+    "changeTemplate": "Change",
+    "cancel": "Cancel",
+    "apply": "Apply",
+    "applying": "Applying…",
+    "applyWithResolutions": "Apply with resolutions",
+    "dirtyTitle": "Working tree has uncommitted changes",
+    "dirtyAck": "I understand — apply anyway",
+    "layers": {
+      "title": "Layers to write",
+      "noneSelected": "Select at least one layer",
+      "gitTracked": "GIT-TRACKED",
+      "shared": {
+        "label": "Shared",
+        "desc": ".claude/settings.json — team-visible, git-tracked"
+      },
+      "local": {
+        "label": "Local",
+        "desc": ".claude/settings.local.json — local only, gitignored"
+      },
+      "env": {
+        "label": "Env",
+        "desc": "Merged into settings.local.json top-level env field"
+      }
+    }
+  },
+  "projectEditor": {
+    "title": "Project Config",
     "save": "Save",
     "saving": "Saving…",
-    "saved": "Saved"
+    "saved": "Saved",
+    "unsaved": "unsaved",
+    "tabs": {
+      "shared": "Shared",
+      "local": "Local",
+      "env": "Env"
+    },
+    "captions": {
+      "shared": ".claude/settings.json — team-visible, git-tracked",
+      "local": ".claude/settings.local.json — local only, gitignored",
+      "env": "settings.local.json top-level env — auto-loaded by Claude Code at startup"
+    }
   }
 }

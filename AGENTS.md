@@ -152,23 +152,25 @@ AD 的数据全部在 `~/.ad/`（v0.2 后从 `~/.claude/` 搬出，启动时自�
 - 扫描根：`~/.ad/state/scan_roots.json`（auto-detect 源；默认含 builtin `~/.claude/projects`）
 - 测试 home 覆盖：`AD_HOME=<path>` env var
 
-## 主要架构（v0.3）
+## 主要架构（v0.4）
 
-**分层 profile + per-project apply**（v0.2 数据模型不变）：Profile 的 `layers: { shared, local, env }` 经过 deep-merge + 冲突解决后写到指定项目的 `.claude/settings.json` / `.claude/settings.local.json`。env 层作为 export 片段呈现，不落文件。全局 `~/.claude/settings.json` 默认不被写（除非用户在 Advanced settings 里开启 legacy 模式）。
+**项目状态真理源 = `<project>/.claude/settings*.json`，profile 退化为只读 template**：每个 project 的当前配置就是它自己 .claude 目录下的两个文件，AD 不再额外维护"项目侧 profile"镜像。Profile（也就是过去的 profile 文件）现在纯粹是"初始化或切换 template 时复制内容的来源"——改 profile 不再影响已经从它生成的项目。env 层在切换 template 时合并到 `settings.local.json` 顶层 `env` 字段，CC 启动时自动加载，不再需要手动 export。
 
-**UI 形态（v0.3，A′ cmux-inspired 重设计）**：双栏 + drawer + command palette
-- 左栏 `ProjectSidebar` 是紧凑 project rows，每行带状态色环（synced=olive / dirty=clay / recent=blue / never=gray-dashed）+ ⌘1-9 快捷键 + profile color dot
-- 主区 `ProjectDetail` 是当前 project 详情：CURRENT 卡（已应用 profile）+ APPLY DIFFERENT 区（profile chips + layer toggles + dirty 警告 + inline 冲突 resolver + Apply 按钮带 ⌘↵）+ RECENT
-- ⌘K `CommandPalette` 是全局动作入口：apply / switch / edit / add / history / advanced 全在这里
-- 右侧 `ProfileEditDrawer` 浮窗编辑 profile（包原三 tab Shared/Local/Env）
-- 全局快捷键由 `GlobalKeymap` 注册：⌘K palette / ⌘1-9 跳 project / ⌘T 加项目 / ⌘P apply / ⌘E 编辑 / ⌘↵ 应用 / ⌘⇧K 折叠 sidebar / esc 关浮层
+**UI 形态（v0.4）**：双栏 + drawer + command palette
+- 左栏 `ProjectSidebar` 不变：紧凑 project rows + 状态色环 + ⌘1-9 快捷键
+- 主区 `ProjectDetail` 是项目自身的配置编辑器：header（项目名 / 路径 / git 状态）+ TemplateBreadcrumb（"由模板 X 初始化" + Switch template 按钮）+ 内联 `ProjectConfigEditor`（三 tab Shared/Local/Env，Save 直接写盘到 .claude/）
+- `<LayeredSettingsEditor>` 是公共组件（Monaco JSON + KV env 表），ProfileEditor 和 ProjectConfigEditor 都用它
+- ⌘K `CommandPalette` 入口：apply / switch project / **switch template** / **edit template** / add / history
+- 右侧 `ProfileEditDrawer` 现在是 **template 编辑器**（编辑只读模板，不影响当前项目），从 ⌘K palette 的 "edit template <name>" 触发
+- `SwitchTemplateDialog` 弹出选模板 → 调 `apply_profile_to_project`（保留原 IPC）→ 三层都写入 .claude/settings*.json，冲突走 InlineConflictResolver
 
-主路径：sidebar 选 project（或 ⌘N）→ 主区切 profile chip + 勾 layer → ⌘↵ apply。冲突 inline keep/use/custom 解决。
+主路径：sidebar 选 project → 主区编辑 .claude/settings*.json → Save。从模板初始化或切换走 Switch template 按钮 / ⌘K palette。
 
-旧路径：Advanced settings → 开启 legacy toggle → drawer 内 ProfileEditor 头部仍出现 [Activate (legacy)] 按钮。
+旧路径（保留）：Advanced settings → 开启 legacy toggle → template 编辑器（drawer）顶部出现 [Activate (legacy)] 按钮，点击后覆盖 `~/.claude/settings.json`，给"我只想全局换一份配置"的简单用法兜底。
 
-完整设计见 `docs/exec-plans/completed/ui-redesign.{md,html}` 和 `docs/design-docs/ui-redesign-options.html`（含可交互原型 + 4 方向对比）。
-分层 profile 模型基础见 `docs/exec-plans/completed/layered-profile-redesign.{md,html}`。
+完整 v0.4 设计见 `docs/exec-plans/completed/per-project-config-model.{md,html}`（活动期间在 active/ 下）。
+v0.3 历史：`docs/exec-plans/completed/ui-redesign.{md,html}` + `docs/design-docs/ui-redesign-options.html`（含可交互原型 + 4 方向对比）。
+分层 profile 模型基础（schema 不变）：`docs/exec-plans/completed/layered-profile-redesign.{md,html}`。
 
 ## 代码规范摘要
 

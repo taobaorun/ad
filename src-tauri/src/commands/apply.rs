@@ -60,8 +60,6 @@ pub struct ApplyResult {
     pub project_path: String,
     pub written_files: Vec<String>,
     pub backup_paths: Vec<String>,
-    /// Present when `env` layer was requested. Multi-line `export ...` block.
-    pub env_export_snippet: Option<String>,
     pub warnings: Vec<String>,
     pub conflicts_resolved: usize,
 }
@@ -122,7 +120,6 @@ pub fn apply_profile_to_project(
     let mut written_files = Vec::new();
     let mut backup_paths = Vec::new();
     let mut warnings = Vec::new();
-    let mut env_export_snippet: Option<String> = None;
     let mut conflicts_resolved = 0usize;
     let now = Utc::now();
 
@@ -205,16 +202,46 @@ pub fn apply_profile_to_project(
             }
             "env" => {
                 if profile.layers.env.is_empty() {
-                    warnings.push("profile has no `env` layer; nothing to copy".into());
+                    warnings.push("profile has no `env` layer; nothing to merge".into());
                     continue;
                 }
-                let mut snippet = String::new();
+                // Merge env into settings.local.json's top-level `env` field —
+                // CC reads it on startup, no shell export needed. Wrap the env
+                // map as `{"env": {...}}` so write_layer's deep-merge handles
+                // existing keys (with conflict resolution) like other layers.
+                let mut env_obj = serde_json::Map::new();
                 for (k, v) in &profile.layers.env {
-                    // Shell-safe single-quote escaping.
-                    let escaped = v.replace('\'', "'\\''");
-                    snippet.push_str(&format!("export {k}='{escaped}'\n"));
+                    env_obj.insert(k.clone(), Value::String(v.clone()));
                 }
-                env_export_snippet = Some(snippet);
+                let mut incoming = serde_json::Map::new();
+                incoming.insert("env".into(), Value::Object(env_obj));
+                let incoming = Value::Object(incoming);
+
+                let target = claude_dir.join("settings.local.json");
+                let outcome = write_layer(
+                    &target,
+                    &incoming,
+                    None,
+                    &options.resolutions,
+                    &project.path,
+                    "env",
+                    now,
+                )?;
+                match outcome {
+                    LayerWriteOutcome::Wrote { backup, n_resolved } => {
+                        written_files.push(target.to_string_lossy().into_owned());
+                        if let Some(b) = backup {
+                            backup_paths.push(b);
+                        }
+                        conflicts_resolved += n_resolved;
+                    }
+                    LayerWriteOutcome::Conflicts(cs) => {
+                        return Ok(ApplyOutcome::NeedsResolution {
+                            layer: "env".into(),
+                            conflicts: cs,
+                        });
+                    }
+                }
             }
             other => {
                 return Err(CommandError::Generic(format!(
@@ -239,7 +266,6 @@ pub fn apply_profile_to_project(
         project_path: project.path,
         written_files,
         backup_paths,
-        env_export_snippet,
         warnings,
         conflicts_resolved,
     }))
@@ -604,7 +630,7 @@ mod tests {
 
     #[test]
     #[serial(home_env)]
-    fn apply_env_layer_returns_export_snippet() {
+    fn apply_env_layer_merges_into_settings_local() {
         let g = setup_home();
         let proj = make_project(g.path(), "demo");
         let proj_canonical = std::fs::canonicalize(&proj)
@@ -640,11 +666,71 @@ mod tests {
             ApplyOutcome::Applied(r) => r,
             other => panic!("expected Applied, got {other:?}"),
         };
-        let snippet = r.env_export_snippet.expect("env snippet present");
-        assert!(snippet.contains("export ANTHROPIC_API_KEY='sk-test'"));
-        assert!(snippet.contains("export ANTHROPIC_MODEL='claude-opus-4-7'"));
-        // No files should have been written for env-only apply.
-        assert!(r.written_files.is_empty());
+        // env now lands in settings.local.json's top-level `env` field.
+        assert_eq!(r.written_files.len(), 1);
+        assert!(r.written_files[0].ends_with(".claude/settings.local.json"));
+        let written: Value =
+            serde_json::from_slice(&std::fs::read(&r.written_files[0]).unwrap()).unwrap();
+        assert_eq!(written["env"]["ANTHROPIC_API_KEY"], "sk-test");
+        assert_eq!(written["env"]["ANTHROPIC_MODEL"], "claude-opus-4-7");
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn apply_env_layer_preserves_existing_settings_local_keys() {
+        let g = setup_home();
+        let proj = make_project(g.path(), "demo");
+        let proj_canonical = std::fs::canonicalize(&proj)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        add_project(proj.to_string_lossy().into_owned()).unwrap();
+
+        // Existing settings.local.json with unrelated content + a partial env block.
+        let claude_dir = proj.join(".claude");
+        std::fs::create_dir(&claude_dir).unwrap();
+        std::fs::write(
+            claude_dir.join("settings.local.json"),
+            r#"{"theme":"dark","env":{"PATH_OVERRIDE":"/usr/local/bin"}}"#,
+        )
+        .unwrap();
+
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("ANTHROPIC_API_KEY".into(), "sk-test".into());
+        let profile = make_layered_profile(
+            "work",
+            ProfileLayers {
+                shared: None,
+                local: None,
+                env,
+            },
+        );
+        save_profile(profile).unwrap();
+
+        let outcome = apply_profile_to_project(
+            "work".into(),
+            proj_canonical,
+            ApplyOptions {
+                layers: vec!["env".into()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let r = match outcome {
+            ApplyOutcome::Applied(r) => r,
+            other => panic!("expected Applied, got {other:?}"),
+        };
+        assert_eq!(r.backup_paths.len(), 1, "existing file backed up");
+        let merged: Value = serde_json::from_slice(
+            &std::fs::read(claude_dir.join("settings.local.json")).unwrap(),
+        )
+        .unwrap();
+        // Existing top-level key preserved.
+        assert_eq!(merged["theme"], "dark");
+        // Existing env key preserved + profile env key added.
+        assert_eq!(merged["env"]["PATH_OVERRIDE"], "/usr/local/bin");
+        assert_eq!(merged["env"]["ANTHROPIC_API_KEY"], "sk-test");
     }
 
     #[test]

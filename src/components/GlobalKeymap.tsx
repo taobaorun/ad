@@ -2,17 +2,14 @@
  * Mount-only component that wires global keyboard shortcuts to UI
  * state actions. Renders nothing.
  *
- * Shortcuts (M4 + ExecPlan D6):
+ * Shortcuts:
  *   ⌘K        toggle command palette
  *   ⌘1-9      jump to project N
  *   ⌘T        open palette with `add ` prefill
  *   ⌘P        open palette with `apply ` prefill
- *   ⌘E        edit current project's profile
+ *   ⌘E        edit the template the current project was initialized from
  *   ⌘⇧K       toggle sidebar collapse
  *   esc       close palette / drawer
- *
- * `mod+enter` is owned by `ProjectDetail` (apply) — registered there
- * because it depends on local apply state.
  */
 
 import { useMemo } from 'react';

@@ -21,7 +21,8 @@
     },
     "applyTo": "将 {{profile}} 应用到 {{project}}",
     "switchTo": "切换到 {{project}}",
-    "editProfile": "编辑 profile：{{name}}",
+    "editTemplate": "编辑模板：{{name}}",
+    "switchTemplate": "切换模板：{{project}} …",
     "addProjectFromPath": "从路径添加项目…",
     "reviewDetected": "查看自动发现的项目…",
     "importProfile": "从 JSON 导入 profile…",
@@ -52,35 +53,9 @@
     "settingsLocalNotIgnored": "⚠ settings.local.json 未加入 gitignore",
     "removeConfirm": "从 AD 中移除「{{name}}」？\n(项目内的文件不会被删除。)",
     "removeTitle": "从 AD 移除",
-    "sections": {
-      "current": "当前生效",
-      "layerPrecedence": "层级优先级",
-      "switchProfile": "切换配置",
-      "applyDifferent": "应用其他",
-      "recent": "最近应用"
-    },
-    "noProfileApplied": "尚未应用任何 profile。从下方选一个开始。",
-    "editProfileTitle": "编辑 profile (⌘E)",
-    "edit": "编辑",
-    "row": {
-      "profile": "配置",
-      "layers": "层",
-      "writes": "写入"
-    },
-    "pickLayer": "— 至少选择一层",
-    "envClipboardNote": "(env 已复制到剪贴板 — 不写入文件)",
-    "dirtyTitle": "工作区有未提交改动",
-    "dirtyDesc": "Shared 层会写入 .claude/settings.json (受 git 追踪)。应用可能与你未提交的改动冲突。",
-    "applyAnyway": "仍要应用 — 我会去 git 检查 diff",
-    "applying": "应用中…",
-    "applyWithResolutions": "按解决方案应用",
-    "applyButton": "应用 {{name}} ({{abbr}})",
-    "apply": "应用",
-    "appliedFlash": "已应用 · {{count}} 个文件已写入",
-    "envExports": "env 导出 (不写入文件)：",
-    "copy": "复制",
-    "noApplies": "暂无应用记录。",
-    "conflictsResolved": "{{count}} 个冲突已解决"
+    "initializedFrom": "由模板「{{name}}」初始化",
+    "noTemplateYet": "尚未从任何模板初始化",
+    "switchTemplate": "切换模板"
   },
   "app": {
     "titlebar": {
@@ -141,7 +116,7 @@
     "title": "激活历史"
   },
   "drawer": {
-    "editProfile": "编辑 profile",
+    "editTemplate": "编辑模板",
     "unsavedConfirm": "有未保存的改动将会丢失。仍要关闭吗？",
     "closeAria": "关闭抽屉"
   },
@@ -162,11 +137,51 @@
     "hoursAgo": "{{n}} 小时前",
     "daysAgo": "{{n}} 天前"
   },
-  "projectSettings": {
-    "sectionTitle": "项目配置",
-    "description": "直接编辑此项目的 .claude/settings.local.json。和 profile 模板无关，只属于这个项目。",
+  "switchTemplate": {
+    "title": "切换模板",
+    "description": "选择一个模板，把它的内容写入当前项目的 .claude/settings*.json。已有内容会被深度合并；冲突需要逐项决定保留哪一边。",
+    "empty": "还没有任何模板。先去命令面板新建一个。",
+    "currentTag": "当前",
+    "changeTemplate": "换一个",
+    "cancel": "取消",
+    "apply": "应用",
+    "applying": "应用中…",
+    "applyWithResolutions": "按解决方案应用",
+    "dirtyTitle": "工作区有未提交改动",
+    "dirtyAck": "我已确认 — 仍要应用",
+    "layers": {
+      "title": "写入哪些层",
+      "noneSelected": "至少选择一层",
+      "gitTracked": "GIT-TRACKED",
+      "shared": {
+        "label": "Shared",
+        "desc": ".claude/settings.json — 团队共享，会被 git 跟踪"
+      },
+      "local": {
+        "label": "Local",
+        "desc": ".claude/settings.local.json — 仅本机，已 gitignore"
+      },
+      "env": {
+        "label": "Env",
+        "desc": "合并到 settings.local.json 顶层 env 字段"
+      }
+    }
+  },
+  "projectEditor": {
+    "title": "项目配置",
     "save": "保存",
     "saving": "保存中…",
-    "saved": "已保存"
+    "saved": "已保存",
+    "unsaved": "未保存",
+    "tabs": {
+      "shared": "Shared",
+      "local": "Local",
+      "env": "Env"
+    },
+    "captions": {
+      "shared": ".claude/settings.json — 团队共享，会被 git 跟踪",
+      "local": ".claude/settings.local.json — 仅本机，已在 .gitignore",
+      "env": "settings.local.json 顶层 env — Claude Code 启动时自动加载"
+    }
   }
 }

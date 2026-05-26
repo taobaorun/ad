@@ -48,14 +48,19 @@ interface State extends Persisted {
   paletteOpen: boolean;
   palettePrefill: string;
 
-  /** When non-null, the profile-edit drawer is open for this profile id. */
+  /** When non-null, the profile-edit drawer is open for this template id. */
   editingProfileId: string | null;
+
+  /** When true, the SwitchTemplateDialog is open for the active project. */
+  switchTemplateOpen: boolean;
 
   setActiveProject: (path: string | null) => void;
   openPalette: (prefill?: string) => void;
   closePalette: () => void;
   openEditDrawer: (profileId: string) => void;
   closeEditDrawer: () => void;
+  openSwitchTemplate: () => void;
+  closeSwitchTemplate: () => void;
   toggleSidebar: () => void;
 }
 
@@ -64,6 +69,7 @@ export const useUiState = create<State>((set, get) => ({
   paletteOpen: false,
   palettePrefill: '',
   editingProfileId: null,
+  switchTemplateOpen: false,
 
   setActiveProject: (path) => {
     set({ activeProjectPath: path });
@@ -75,6 +81,9 @@ export const useUiState = create<State>((set, get) => ({
 
   openEditDrawer: (profileId) => set({ editingProfileId: profileId }),
   closeEditDrawer: () => set({ editingProfileId: null }),
+
+  openSwitchTemplate: () => set({ switchTemplateOpen: true }),
+  closeSwitchTemplate: () => set({ switchTemplateOpen: false }),
 
   toggleSidebar: () => {
     const next = !get().sidebarCollapsed;

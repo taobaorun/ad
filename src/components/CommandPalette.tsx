@@ -40,6 +40,7 @@ export function CommandPalette() {
   const openPalette = useUiState((s) => s.openPalette);
   const setActiveProject = useUiState((s) => s.setActiveProject);
   const openEditDrawer = useUiState((s) => s.openEditDrawer);
+  const openSwitchTemplate = useUiState((s) => s.openSwitchTemplate);
   const setView = useProfiles((s) => s.setView);
   const setImportOpen = useProfiles((s) => s.setImportOpen);
   const openDetectedModal = useProjects((s) => s.openDetectedModal);
@@ -148,13 +149,24 @@ export function CommandPalette() {
       });
     });
 
-    // EDIT: open profile editor drawer
+    // SWITCH-TEMPLATE: open the dialog for the active project
+    if (activeProject) {
+      list.push({
+        group: 'APPLY',
+        id: 'switch-template',
+        icon: '↻',
+        label: t('palette.switchTemplate', { project: activeProject.displayName }),
+        run: () => openSwitchTemplate(),
+      });
+    }
+
+    // EDIT: open template editor drawer
     profiles.forEach((pf) => {
       list.push({
         group: 'EDIT',
         id: `edit-${pf.id}`,
         icon: '✎',
-        label: t('palette.editProfile', { name: pf.displayName }),
+        label: t('palette.editTemplate', { name: pf.displayName }),
         run: () => openEditDrawer(pf.id),
       });
     });
@@ -196,7 +208,7 @@ export function CommandPalette() {
     });
 
     return list;
-  }, [t, profiles, projects, activeProject, activePath, setActiveProject, openEditDrawer, setView, setImportOpen, openDetectedModal, reloadProjects]);
+  }, [t, profiles, projects, activeProject, activePath, setActiveProject, openEditDrawer, openSwitchTemplate, setView, setImportOpen, openDetectedModal, reloadProjects]);
 
   const filtered = useMemo(() => {
     const q = term.trim().toLowerCase();
