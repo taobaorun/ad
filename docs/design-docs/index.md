@@ -12,6 +12,7 @@
 |---|---|---|
 | [core-beliefs.md](core-beliefs.md) | AD 核心设计信念和原则 | 活跃 |
 | [ui-redesign-options.html](ui-redesign-options.html) | UI 整体重设计 Stage 2 多方案探索：现状 9 痛点 + 3 个方向（项目工作台 / 配方工作台 / 关系画布）并排对比 + 同页内可交互原型（A/B/C tab 切换） | 已完成（A′ cmux 方向已实现，见 exec-plans/completed/ui-redesign.md） |
+| [terminal-launcher.html](terminal-launcher.html) | 外部终端 launcher 设计：4 个 backend 行为契约、Ghostty/AppleScript 取舍、cmux 模型兼容、Custom 模板规范、错误反馈策略 | 活跃 |
 
 ## 如何添加新设计文档
 

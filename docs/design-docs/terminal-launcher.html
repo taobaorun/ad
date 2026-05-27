@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Design — Terminal Launcher</title>
+<style>
+  :root{
+    --ivory:#FAF9F5; --paper:#FFFFFF; --slate:#141413;
+    --clay:#D97757; --oat:#E3DACC; --olive:#788C5D; --rust:#B04A3F;
+    --gray-150:#F0EEE6; --gray-300:#D1CFC5; --gray-500:#87867F; --gray-700:#3D3D3A;
+    --serif: ui-serif, Georgia, 'Times New Roman', serif;
+    --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:var(--sans);background:var(--ivory);color:var(--gray-700);line-height:1.6;padding:56px 32px 120px;-webkit-font-smoothing:antialiased;font-size:15px}
+  .page{max-width:1000px;margin:0 auto}
+  .eyebrow{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray-500);margin-bottom:12px;font-family:var(--mono)}
+  h1{font-family:var(--serif);font-weight:500;font-size:34px;line-height:1.15;color:var(--slate);margin-bottom:16px;letter-spacing:-.01em}
+  .lede{font-size:16px;margin-bottom:36px;max-width:760px}
+  section{margin-bottom:48px}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:16px}
+  .sec-head .num{font-family:var(--mono);font-size:12px;background:var(--oat);color:var(--slate);padding:3px 9px;border-radius:8px}
+  .sec-head h2{font-family:var(--serif);font-weight:500;font-size:24px;color:var(--slate);letter-spacing:-.01em}
+  .card{background:var(--paper);border:1.5px solid var(--gray-300);border-radius:12px;padding:18px 22px;margin-bottom:12px}
+  .card h3{font-family:var(--serif);font-weight:500;font-size:16px;color:var(--slate);margin-bottom:6px}
+  .card .meta{font-family:var(--mono);font-size:11px;color:var(--gray-500);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+  .card p{font-size:14px}
+  .card p + p{margin-top:8px}
+  .card .why{margin-top:10px;padding-top:10px;border-top:1px dashed var(--gray-300);font-size:13px;color:var(--gray-500)}
+  table.matrix{width:100%;border-collapse:separate;border-spacing:0;background:var(--paper);border:1.5px solid var(--gray-300);border-radius:12px;overflow:hidden;font-size:13px}
+  table.matrix th,table.matrix td{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--gray-150)}
+  table.matrix tbody tr:last-child td{border-bottom:none}
+  table.matrix th{background:var(--gray-150);color:var(--slate);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+  table.matrix td.feat{font-family:var(--serif);color:var(--slate);font-weight:500;font-size:14px}
+  .pill{display:inline-block;padding:2px 7px;border-radius:5px;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.03em;border:1px solid}
+  .pill.yes{background:#EEF4E5;color:#3F5C1F;border-color:#C7D7AC}
+  .pill.no{background:#F5E4E1;color:#8B3A1A;border-color:#E5BFB7}
+  .pill.via{background:#FFF3E6;color:#8B3A1A;border-color:#F0CDAE}
+  .pill.transparent{background:var(--gray-150);color:var(--gray-700);border-color:var(--gray-300)}
+  code,.mono{font-family:var(--mono);font-size:13px;background:var(--gray-150);padding:1px 6px;border-radius:4px;color:var(--slate)}
+  pre{font-family:var(--mono);font-size:12.5px;background:var(--slate);color:#E5E4DA;padding:16px 18px;border-radius:10px;overflow-x:auto;line-height:1.55;margin:8px 0}
+  ul.bullets{list-style:none;padding-left:0}
+  ul.bullets li{position:relative;padding-left:18px;margin-bottom:8px;font-size:14px}
+  ul.bullets li::before{content:'';position:absolute;left:4px;top:.7em;width:6px;height:6px;border-radius:50%;background:var(--clay)}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="eyebrow">design-docs · terminal launcher</div>
+  <h1>External Terminal Launcher</h1>
+  <p class="lede">AD 在选中 project 后,通过用户配置的外部终端打开 <span class="mono">claude</span>,cwd 锚定到 project 路径。本文档记录 4 个 backend 的行为契约和实现取舍。</p>
+
+  <section>
+    <div class="sec-head"><span class="num">1</span><h2>设计原则</h2></div>
+    <div class="card">
+      <h3>不重新发明 env 注入</h3>
+      <p>CC 启动时自动从 <span class="mono">&lt;project&gt;/.claude/settings.local.json</span> 顶层 <span class="mono">env</span> 字段加载环境变量(v0.4 per-project config model 落地)。launcher 只负责 <span class="mono">cd + claude</span>,<strong>不</strong>在 shell 命令里 export env。</p>
+      <p class="why">单一职责。如果 launcher 自己 export env,会和 CC 的加载逻辑漂移,任何一边出 bug 都难定位。</p>
+    </div>
+    <div class="card">
+      <h3>窗口存活检测靠失败回退,不维护状态</h3>
+      <p>每次按钮按下都是冷判断:用 <span class="mono">pgrep</span> 看进程在不在,在就尝试 AppleScript 复用窗口,失败立即降级到 "open 新窗口"。不维护 PID 或 socket 缓存。</p>
+      <p class="why">维护状态需要监听进程退出、处理多窗口并存、跨 AD 重启持久化——所有这些复杂度换来的收益,只是少跑一次 pgrep。不划算。</p>
+    </div>
+    <div class="card">
+      <h3>每个 backend 自己消化平台差异</h3>
+      <p>对调用方来说接口都是 <span class="mono">launch(LaunchSpec) -&gt; Result&lt;()&gt;</span>。"新 tab 还是新窗口" / "AppleScript 还是 CLI" 这些细节藏在各 backend 文件里。</p>
+      <p class="why">未来加 WezTerm / iTerm2 时,只需要新增一个 enum variant + 一个文件,不动其他实现。</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="num">2</span><h2>Backend 行为矩阵</h2></div>
+    <table class="matrix">
+      <thead>
+        <tr>
+          <th>能力</th>
+          <th>Ghostty</th>
+          <th>cmux</th>
+          <th>Terminal.app</th>
+          <th>Custom</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="feat">冷启动命令</td>
+          <td><span class="mono">open -na Ghostty.app -e zsh -lc "cd … && exec claude"</span></td>
+          <td><span class="mono">cmux &lt;path&gt;</span></td>
+          <td><span class="mono">osascript</span> + Terminal.app 自启</td>
+          <td>用户模板 via <span class="mono">sh -c</span></td>
+        </tr>
+        <tr>
+          <td class="feat">复用窗口</td>
+          <td><span class="pill no">不支持(每次新窗口)</span></td>
+          <td><span class="pill transparent">cmux 自管</span></td>
+          <td><span class="pill via">AppleScript do script</span></td>
+          <td><span class="pill no">不支持</span></td>
+        </tr>
+        <tr>
+          <td class="feat">未运行回退</td>
+          <td><span class="pill yes">新窗口</span></td>
+          <td><span class="pill yes">cmux 自启</span></td>
+          <td><span class="pill yes">新窗口</span></td>
+          <td>取决于模板</td>
+        </tr>
+        <tr>
+          <td class="feat">cwd 传递</td>
+          <td>shell 内 <span class="mono">cd</span></td>
+          <td>位置参数</td>
+          <td>AppleScript <span class="mono">do script "cd …"</span></td>
+          <td><span class="mono">{{cwd}}</span></td>
+        </tr>
+        <tr>
+          <td class="feat">所需外部二进制</td>
+          <td>Ghostty</td>
+          <td>cmux</td>
+          <td>osascript</td>
+          <td>用户决定</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="num">3</span><h2>为什么 Ghostty 每次都是新窗口</h2></div>
+    <div class="card">
+      <p>macOS Ghostty 在 CLI 层<strong>没有任何复用窗口开新 tab 的接口</strong>:</p>
+      <ul class="bullets">
+        <li><span class="mono">ghostty +new-window</span> 报 <span class="mono">not supported on this platform</span>(只在 GTK/Linux 实现 IPC)</li>
+        <li><span class="mono">+new-tab</span> 是内部 keybind action,无法从 CLI 调用</li>
+        <li>tab 复用唯一办法是 <span class="mono">osascript keystroke</span> 模拟 ⌘T,但需要把 <strong>osascript</strong> 加入 Accessibility 权限列表,而 osascript 不能干净地加入(权限对象错位)</li>
+      </ul>
+      <p>结论:不做 hack。AD 直接走 <span class="mono">open -na Ghostty.app --args -e zsh -lc "cd '&lt;cwd&gt;' && exec '&lt;claude&gt;'"</span>,每次开新窗口。</p>
+      <p class="why">需要 tab/workspace 模型的用户切到 cmux backend——它的产品定位就是多 workspace,且自管 IPC,不需要任何系统权限。</p>
+    </div>
+    <div class="card">
+      <h3>shell wrapper 的作用</h3>
+      <p>不直接 <span class="mono">-e claude</span> 的原因:</p>
+      <ul class="bullets">
+        <li><span class="mono">-e</span> 走 <span class="mono">/usr/bin/login -flp &lt;user&gt; &lt;cmd&gt;</span>,会把 claude 当 login shell 参数而不是命令</li>
+        <li><span class="mono">-e</span> 子进程不 source 用户 rc 文件,所以 <span class="mono">claude</span> 不在 PATH 里(homebrew/nvm/asdf 路径都没有)</li>
+        <li><span class="mono">--working-directory=</span> 对 <span class="mono">-e</span> 模式不生效,exec 时 cwd 继承自父进程</li>
+      </ul>
+      <p>因此包一层 <span class="mono">zsh -lc</span>:login shell 加载 rc → 拿到正确 PATH/env → 内部 <span class="mono">cd</span> + <span class="mono">exec claude</span>。</p>
+      <p>AD 同时用 <span class="mono">SHELL -lc 'command -v claude'</span> 预先 resolve claude 绝对路径作为兜底,避免 rc 加载失败时找不到。</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="num">4</span><h2>为什么 cmux 透传 path</h2></div>
+    <div class="card">
+      <p>cmux 的产品模型自带 workspace / window / pane 三层概念,且 <span class="mono">cmux &lt;path&gt;</span> 已经做到:</p>
+      <ul class="bullets">
+        <li>cmux 没运行 → 启动 cmux 并打开 path 作为 workspace</li>
+        <li>cmux 已运行 → 在现有窗口里新开一个 workspace 显示 path</li>
+      </ul>
+      <p>AD 介入会和它的产品行为冲突——比如"新窗口 vs 新 tab"在 cmux 里是用户用快捷键决定的,不是命令行参数。</p>
+      <p class="why">UI 上需要明确告知用户:cmux backend 下"新窗口"开关不起作用。Settings 里加一行 helper text。</p>
+    </div>
+    <div class="card">
+      <h3>cmux backend 的用户前置条件</h3>
+      <p>cmux 默认 socket access mode 是 <span class="mono">cmuxOnly</span> — 只接受 cmux 自己 fork 的子进程的 IPC 调用。AD 作为外部进程会被拒,报 <span class="mono">ERROR: Access denied — only processes started inside cmux can connect</span>。</p>
+      <p>用户必须在 cmux Settings → Socket Control 切换到 <strong>Automation mode</strong>(推荐,只放行同一 macOS 用户的外部 client,无密码),或 <strong>Full open access</strong>(不安全)。命令行写法:</p>
+<pre>defaults write com.cmuxterm.app socketControlMode automation
+cmux reload-config</pre>
+      <p class="why">这是 cmux 的安全边界。AD 不试图代用户修改,而是在错误消息和 Settings hint 里明确告知。</p>
+    </div>
+    <div class="card">
+      <h3>cmux 可能保留上次 workspace</h3>
+      <p>cmux 启动时会 restore 上一次 session 的 workspace。即使 AD 这次只创建 1 个 workspace,用户可能看到多个 — 那是 cmux 的 restore 行为,不是 AD 重复创建。</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="num">5</span><h2>Custom 模板设计</h2></div>
+    <div class="card">
+      <p>两个占位符:</p>
+      <ul class="bullets">
+        <li><span class="mono">{{cwd}}</span> → POSIX 单引号包裹的项目路径</li>
+        <li><span class="mono">{{cmd}}</span> → POSIX 单引号包裹的 claude 命令</li>
+      </ul>
+      <p>替换由 AD 做 shell-quoting,模板作者不用处理含空格或单引号的路径。替换后整串交给 <span class="mono">sh -c</span> 执行。</p>
+      <p>常见模板示例:</p>
+<pre>open -na WezTerm.app --args start --cwd {{cwd}} -- {{cmd}}
+alacritty --working-directory {{cwd}} -e {{cmd}}</pre>
+      <p class="why">让用户写完整 shell 脚本太自由,quoting 翻车率高;只暴露两个占位符就够覆盖 95% 的终端。未来如果有 backend 需要更复杂的参数化(比如 split pane / profile name),再加新占位符不破坏现有模板。</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="num">6</span><h2>错误反馈策略</h2></div>
+    <ul class="bullets">
+      <li><strong>成功不弹 toast</strong> — 窗口本身就是反馈。多弹一次 toast 是噪声。</li>
+      <li><strong>失败用 inline error banner</strong>(ProjectDetail header 下方红条)— 比 toast 更显眼,且不会自动消失,用户能从容看错误内容。</li>
+      <li><strong>错误内容直出 anyhow message</strong> — 不做"友好化包装",二进制找不到时直接显示 <span class="mono">ghostty: command not found</span>,工程师一眼能定位。</li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="num">7</span><h2>未来扩展点</h2></div>
+    <ul class="bullets">
+      <li>新增 backend:加 enum variant + 新文件,大约 50 行</li>
+      <li>启动参数化(<span class="mono">claude --resume</span> / 自定义 args):在 LaunchSpec 加字段,不影响接口</li>
+      <li>tray menu 直接打开终端:tray module 调用 <span class="mono">terminal::launch</span> 即可,不需要走 IPC</li>
+      <li>切 backend 时验证二进制存在:可以加 <span class="mono">which</span> 探测,但不是默认行为(避免每次保存 settings 触发 IO)</li>
+    </ul>
+  </section>
+</div>
+</body>
+</html>

@@ -183,5 +183,33 @@
       "local": ".claude/settings.local.json — 仅本机，已在 .gitignore",
       "env": "settings.local.json 顶层 env — Claude Code 启动时自动加载"
     }
+  },
+  "terminal": {
+    "openInTerminal": "在终端打开",
+    "openTooltip": "在 {{backend}} 中以 {{path}} 启动 claude",
+    "openTooltipDisabled": "请先在 Settings 配置 custom 命令模板",
+    "section": "终端",
+    "backendLabel": "终端类型",
+    "backend": {
+      "ghostty": "Ghostty",
+      "cmux": "cmux",
+      "apple-terminal": "Terminal.app",
+      "custom": "自定义"
+    },
+    "backendHint": {
+      "ghostty": "每个 project 开新窗口(Ghostty CLI 不支持复用窗口开 tab)",
+      "cmux": "多 workspace,tab 由 cmux 管理(需在 cmux 设置里把 Socket Control 改为 Automation mode)",
+      "apple-terminal": "macOS 自带,已运行时复用窗口开新 tab",
+      "custom": "自定义命令模板"
+    },
+    "claudeBinLabel": "Claude 二进制路径",
+    "claudeBinPlaceholder": "claude",
+    "claudeBinHint": "默认依赖 PATH，留空使用 `claude`",
+    "customTemplateLabel": "命令模板",
+    "customTemplateHint": "可用占位符：{{cwd}}=项目路径，{{cmd}}=完整 claude 启动命令",
+    "launchFailed": "无法打开终端",
+    "openSettings": "打开 Settings",
+    "paletteEntry": "在终端打开：{{project}}",
+    "paletteSubtitle": "在 {{backend}} 启动 claude（cwd: {{path}}）"
   }
 }

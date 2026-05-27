@@ -126,6 +126,7 @@ ad/
 │   ├── src/
 │   │   ├── commands/        # Tauri 命令（前端可调用）
 │   │   ├── fs/              # 文件原子写、路径解析
+│   │   ├── terminal/        # 外部终端 launcher（Ghostty / cmux / Terminal.app / Custom）
 │   │   ├── tray/            # macOS 菜单栏托盘
 │   │   ├── migration.rs     # 旧 profile 迁移
 │   │   ├── models.rs        # 共享数据模型
@@ -171,6 +172,7 @@ AD 的数据全部在 `~/.ad/`（v0.2 后从 `~/.claude/` 搬出，启动时自�
 完整 v0.4 设计见 `docs/exec-plans/completed/per-project-config-model.{md,html}`（活动期间在 active/ 下）。
 v0.3 历史：`docs/exec-plans/completed/ui-redesign.{md,html}` + `docs/design-docs/ui-redesign-options.html`（含可交互原型 + 4 方向对比）。
 分层 profile 模型基础（schema 不变）：`docs/exec-plans/completed/layered-profile-redesign.{md,html}`。
+外部终端集成：`docs/exec-plans/completed/terminal-launcher-integration.{md,html}` + `docs/design-docs/terminal-launcher.html`（4 backend 行为矩阵）。
 
 ## 代码规范摘要
 

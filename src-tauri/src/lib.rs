@@ -3,6 +3,7 @@
 pub mod fs;
 mod migration;
 mod models;
+mod terminal;
 mod tray;
 
 pub mod commands;
@@ -88,6 +89,8 @@ pub fn run() {
             commands::scan_roots::set_scan_root_enabled,
             commands::discover::scan_for_projects,
             commands::path_complete::complete_path_prefix,
+            commands::terminal::open_in_terminal,
+            commands::terminal::list_terminal_backends,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ad");

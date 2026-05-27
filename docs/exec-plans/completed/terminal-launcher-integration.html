@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ExecPlan — 集成外部终端启动 Claude</title>
+<style>
+  :root{
+    --ivory:#FAF9F5; --paper:#FFFFFF; --slate:#141413;
+    --clay:#D97757; --oat:#E3DACC; --olive:#788C5D; --rust:#B04A3F;
+    --gray-150:#F0EEE6; --gray-300:#D1CFC5; --gray-500:#87867F; --gray-700:#3D3D3A;
+    --serif: ui-serif, Georgia, 'Times New Roman', serif;
+    --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:var(--sans);background:var(--ivory);color:var(--gray-700);line-height:1.6;padding:56px 32px 120px;-webkit-font-smoothing:antialiased;font-size:15px}
+  .page{max-width:1080px;margin:0 auto}
+
+  header.page-head{margin-bottom:48px;max-width:860px}
+  .eyebrow{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray-500);margin-bottom:12px;font-family:var(--mono)}
+  h1{font-family:var(--serif);font-weight:500;font-size:38px;line-height:1.15;color:var(--slate);margin-bottom:18px;letter-spacing:-.01em}
+  .lede{font-size:16.5px;color:var(--gray-700);margin-bottom:24px}
+  .status-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;background:#FFF3E6;border:1.5px solid var(--clay);color:#8B3A1A;font-family:var(--mono);font-size:12px;font-weight:600}
+  .status-pill::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--clay)}
+
+  section{margin-bottom:56px}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:18px}
+  .sec-head .num{font-family:var(--mono);font-size:12px;background:var(--oat);color:var(--slate);padding:3px 9px;border-radius:8px}
+  .sec-head h2{font-family:var(--serif);font-weight:500;font-size:26px;color:var(--slate);letter-spacing:-.01em}
+
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+
+  .card{background:var(--paper);border:1.5px solid var(--gray-300);border-radius:12px;padding:20px 22px}
+  .card h3{font-family:var(--serif);font-weight:500;font-size:17px;color:var(--slate);margin-bottom:8px}
+  .card .meta{font-family:var(--mono);font-size:11px;color:var(--gray-500);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}
+  .card p{font-size:14.5px}
+  .card p + p{margin-top:8px}
+  .card .why{margin-top:10px;padding-top:10px;border-top:1px dashed var(--gray-300);font-size:13.5px;color:var(--gray-500)}
+
+  ul.bullets{list-style:none;padding-left:0}
+  ul.bullets li{position:relative;padding-left:18px;margin-bottom:8px}
+  ul.bullets li::before{content:'';position:absolute;left:4px;top:.7em;width:6px;height:6px;border-radius:50%;background:var(--clay)}
+
+  /* file tree */
+  .tree{background:var(--paper);border:1.5px solid var(--gray-300);border-radius:12px;padding:22px 26px;font-family:var(--mono);font-size:13px;color:var(--gray-700);line-height:1.75;overflow-x:auto}
+  .tree .root{color:var(--slate);font-weight:600}
+  .tree .tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:5px;margin-left:8px;font-weight:600;letter-spacing:.04em}
+  .tag.new{background:#EEF4E5;color:#3F5C1F;border:1px solid #C7D7AC}
+  .tag.mod{background:#FFF3E6;color:#8B3A1A;border:1px solid #F0CDAE}
+  .tag.test{background:#E8EFF7;color:#2C4D75;border:1px solid #C5D5EA}
+  .tree .cmt{color:var(--gray-500)}
+
+  /* stepper */
+  .stepper{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1.5px solid var(--gray-300);border-radius:12px;background:var(--paper);overflow:hidden}
+  .step{padding:22px 22px 24px;border-right:1.5px solid var(--gray-300);position:relative}
+  .step:last-child{border-right:none}
+  .step .badge{display:inline-block;font-family:var(--mono);font-size:11px;background:var(--slate);color:var(--ivory);padding:3px 9px;border-radius:6px;margin-bottom:10px;letter-spacing:.04em}
+  .step h3{font-family:var(--serif);font-weight:500;font-size:18px;color:var(--slate);margin-bottom:6px}
+  .step .sub{font-size:13px;color:var(--gray-500);margin-bottom:14px;font-style:italic}
+  .step ol{list-style:none;counter-reset:s;padding-left:0}
+  .step ol li{counter-increment:s;position:relative;padding-left:24px;margin-bottom:8px;font-size:13.5px}
+  .step ol li::before{content:counter(s);position:absolute;left:0;top:-1px;width:18px;height:18px;background:var(--oat);color:var(--slate);border-radius:50%;font-family:var(--mono);font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:700}
+
+  /* matrix */
+  table.matrix{width:100%;border-collapse:separate;border-spacing:0;background:var(--paper);border:1.5px solid var(--gray-300);border-radius:12px;overflow:hidden;font-size:13.5px}
+  table.matrix th, table.matrix td{padding:12px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--gray-150)}
+  table.matrix tbody tr:last-child td{border-bottom:none}
+  table.matrix th{background:var(--gray-150);color:var(--slate);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+  table.matrix td.feat{font-family:var(--serif);color:var(--slate);font-weight:500;font-size:15px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:5px;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.03em;border:1px solid}
+  .pill.yes{background:#EEF4E5;color:#3F5C1F;border-color:#C7D7AC}
+  .pill.no{background:#F5E4E1;color:#8B3A1A;border-color:#E5BFB7}
+  .pill.via{background:#FFF3E6;color:#8B3A1A;border-color:#F0CDAE}
+  .pill.transparent{background:var(--gray-150);color:var(--gray-700);border-color:var(--gray-300)}
+
+  .assumption{background:var(--paper);border:1.5px solid var(--gray-300);border-left:4px solid var(--olive);border-radius:8px;padding:14px 18px;margin-bottom:10px;font-size:14px}
+  .assumption strong{color:var(--slate);font-family:var(--serif);font-weight:500;display:block;margin-bottom:3px}
+
+  code, .mono{font-family:var(--mono);font-size:13px;background:var(--gray-150);padding:1px 6px;border-radius:4px;color:var(--slate)}
+  pre{font-family:var(--mono);font-size:12.5px;background:var(--slate);color:#E5E4DA;padding:18px 20px;border-radius:10px;overflow-x:auto;line-height:1.6}
+  pre .k{color:#C9A0E0}
+  pre .s{color:#A8C68C}
+  pre .c{color:var(--gray-500);font-style:italic}
+
+  .verify{background:var(--paper);border:1.5px solid var(--gray-300);border-radius:12px;padding:18px 22px}
+  .verify-item{display:grid;grid-template-columns:170px 1fr;gap:14px;padding:10px 0;border-bottom:1px solid var(--gray-150);font-size:14px}
+  .verify-item:last-child{border-bottom:none}
+  .verify-item .when{font-family:var(--mono);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--olive);font-weight:600;padding-top:2px}
+
+  .footer-note{margin-top:48px;padding:16px 20px;background:var(--gray-150);border-radius:10px;font-size:13px;color:var(--gray-500);font-family:var(--mono);text-align:center}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="page-head">
+  <div class="eyebrow">ExecPlan · Stage 2 评审版</div>
+  <h1>集成外部终端启动 Claude</h1>
+  <p class="lede">让 AD 在选中 project 后一键到外部终端里以正确 cwd 启动 <span class="mono">claude</span>。支持 Ghostty / cmux / Terminal.app / 自定义命令，launcher 接口从一开始就抽象，方便后续扩展。</p>
+  <span class="status-pill">待用户确认 · 评审中</span>
+</header>
+
+<section>
+  <div class="sec-head"><span class="num">01</span><h2>目的</h2></div>
+  <div class="card">
+    <p>用户在 ProjectDetail 主区按 <span class="mono">Open in terminal</span> 按钮，AD 在用户配置的终端里以当前 project 路径为 cwd 启动 <span class="mono">claude</span>。首次开新窗口，已有窗口开新 tab，窗口被关掉则自动回退新窗口。终端 backend 在 Settings 里可选。</p>
+    <p class="why">env 仍由 CC 自己从 <span class="mono">&lt;project&gt;/.claude/settings.local.json</span> 读取——launcher <strong>不</strong>负责 export env。</p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="num">02</span><h2>假设（显式列出，不沉默）</h2></div>
+  <div class="assumption"><strong>env 边界</strong>CC 启动时自动从 settings.local.json 加载 env，launcher 只需 cd + 起 claude。</div>
+  <div class="assumption"><strong>claude 二进制</strong>默认依赖 PATH，可在 Settings 覆盖为绝对路径，launcher 不自己探测。</div>
+  <div class="assumption"><strong>macOS only</strong>所有适配走 macOS 原生（open -na / osascript），不为其他平台留接口。</div>
+  <div class="assumption"><strong>窗口存活检测</strong>通过尝试 AppleScript / CLI 命令失败回退，不维护额外的 PID/socket。</div>
+  <div class="assumption"><strong>cmux 自管 tab/window</strong>AD 只透传 path，不解析 cmux 的 workspace/window/pane 模型。</div>
+  <div class="assumption"><strong>不持久化"上次终端"</strong>每次按按钮都是冷判断当前 project + 当前 backend。</div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="num">03</span><h2>影响范围</h2></div>
+  <div class="tree">
+<span class="root">src-tauri/</span>
+└── src/
+    ├── <span class="root">terminal/</span>                          <span class="tag new">NEW</span> <span class="cmt"># launcher 模块</span>
+    │   ├── mod.rs                       <span class="cmt"># enum TerminalBackend + launch() 入口</span>
+    │   ├── ghostty.rs                   <span class="cmt"># osascript + open -na 回退</span>
+    │   ├── cmux.rs                      <span class="cmt"># 直接 cmux &lt;path&gt;</span>
+    │   ├── apple_terminal.rs            <span class="cmt"># Terminal.app via AppleScript</span>
+    │   └── custom.rs                    <span class="cmt"># {{cwd}}/{{cmd}} 模板</span>
+    ├── commands/
+    │   ├── mod.rs                       <span class="tag mod">MOD</span> <span class="cmt"># 注册新模块</span>
+    │   └── terminal.rs                  <span class="tag new">NEW</span> <span class="cmt"># open_in_terminal / list_backends</span>
+    ├── models.rs                        <span class="tag mod">MOD</span> <span class="cmt"># TerminalConfig（如需共享前端）</span>
+    └── lib.rs                           <span class="tag mod">MOD</span>
+└── tests/
+    └── terminal_launcher.rs             <span class="tag test">TEST</span> <span class="cmt"># 适配器命令构造单测</span>
+
+<span class="root">src/</span>
+├── lib/tauri.ts                         <span class="tag mod">MOD</span> <span class="cmt"># openInTerminal binding</span>
+├── store/uiSettings.ts                  <span class="tag mod">MOD</span> <span class="cmt"># terminal.{backend,claudeBinPath,customCommand}</span>
+├── components/
+│   ├── ProjectDetail.tsx                <span class="tag mod">MOD</span> <span class="cmt"># header 按钮</span>
+│   ├── CommandPalette.tsx               <span class="tag mod">MOD</span> <span class="cmt"># ⌘K 入口</span>
+│   └── AdvancedSettings.tsx             <span class="tag mod">MOD</span> <span class="cmt"># Terminal section</span>
+└── i18n/locales/{zh,en}.json            <span class="tag mod">MOD</span> <span class="cmt"># terminal.*</span>
+
+<span class="root">docs/</span>
+├── design-docs/terminal-launcher.html   <span class="tag new">NEW</span> <span class="cmt"># backend 行为矩阵 + 决策</span>
+└── design-docs/index.md                 <span class="tag mod">MOD</span>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="num">04</span><h2>UI 交互设计</h2></div>
+
+  <h3 style="font-family:var(--serif);font-size:18px;color:var(--slate);margin:8px 0 14px;font-weight:500">触点 1 · ProjectDetail header 按钮</h3>
+  <div style="background:var(--paper);border:1.5px solid var(--gray-300);border-radius:12px;padding:0;margin-bottom:24px;overflow:hidden">
+    <div style="background:var(--gray-150);padding:18px 24px;border-bottom:1.5px solid var(--gray-300);display:flex;align-items:center;justify-content:space-between;gap:16px">
+      <div>
+        <div style="font-family:var(--serif);font-size:18px;color:var(--slate);font-weight:500;margin-bottom:4px">
+          <span style="color:var(--clay)">▣</span> my-project
+        </div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--gray-500)">~/dev/my-project · main (clean)</div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button style="background:var(--paper);border:1.5px solid var(--gray-300);color:var(--gray-700);padding:8px 14px;border-radius:8px;font-family:var(--sans);font-size:13px;cursor:default">⌘ Switch template</button>
+        <button style="background:var(--slate);border:1.5px solid var(--slate);color:var(--ivory);padding:8px 14px;border-radius:8px;font-family:var(--sans);font-size:13px;cursor:default;display:inline-flex;align-items:center;gap:6px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>
+          Open in terminal
+        </button>
+      </div>
+    </div>
+    <div style="padding:16px 24px;font-size:13.5px;color:var(--gray-500)">
+      <strong style="color:var(--slate);font-family:var(--serif);font-weight:500">行为</strong>:secondary 按钮,hover tooltip "Ghostty · ~/dev/my-project",点击立即触发无 confirm,200ms 内防抖。lucide <span class="mono">Terminal</span> 图标,i18n key <span class="mono">terminal.openInTerminal</span>。
+    </div>
+  </div>
+
+  <h3 style="font-family:var(--serif);font-size:18px;color:var(--slate);margin:8px 0 14px;font-weight:500">触点 2 · 失败 toast</h3>
+  <div style="background:var(--paper);border:1.5px solid var(--gray-300);border-radius:12px;padding:20px 22px;margin-bottom:24px">
+    <div style="background:var(--slate);color:var(--ivory);padding:14px 18px;border-radius:8px;max-width:380px;margin-left:auto;display:flex;gap:12px;align-items:flex-start">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--clay)" stroke-width="2" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <div style="flex:1">
+        <div style="font-family:var(--serif);font-weight:500;font-size:14.5px;margin-bottom:3px">无法打开终端</div>
+        <div style="font-size:12.5px;color:var(--gray-300);font-family:var(--mono)">ghostty: command not found</div>
+        <button style="margin-top:8px;background:transparent;border:1px solid var(--gray-500);color:var(--ivory);padding:4px 10px;border-radius:5px;font-size:11px;font-family:var(--sans);cursor:default">打开 Settings</button>
+      </div>
+    </div>
+    <div style="margin-top:14px;font-size:13.5px;color:var(--gray-500)">
+      <strong style="color:var(--slate);font-family:var(--serif);font-weight:500">行为</strong>:成功不弹 toast(窗口本身就是反馈),失败右下角 toast + 跳转 Settings 的 action。
+    </div>
+  </div>
+
+  <h3 style="font-family:var(--serif);font-size:18px;color:var(--slate);margin:8px 0 14px;font-weight:500">触点 3 · AdvancedSettings · Terminal section</h3>
+  <div style="background:var(--paper);border:1.5px solid var(--gray-300);border-radius:12px;padding:24px 26px;margin-bottom:24px">
+    <div style="font-family:var(--serif);font-size:16px;color:var(--slate);font-weight:500;margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid var(--gray-150)">Terminal</div>
+
+    <div style="margin-bottom:20px">
+      <div style="font-size:12px;font-family:var(--mono);color:var(--gray-500);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Backend</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <label style="display:flex;gap:10px;padding:12px 14px;border:1.5px solid var(--clay);background:#FFF3E6;border-radius:8px;cursor:default;align-items:flex-start">
+          <span style="width:14px;height:14px;border:1.5px solid var(--clay);border-radius:50%;background:radial-gradient(var(--clay) 40%, transparent 45%);flex-shrink:0;margin-top:2px"></span>
+          <div><div style="color:var(--slate);font-weight:500;font-size:14px">Ghostty</div><div style="font-size:12px;color:var(--gray-500);margin-top:2px">默认推荐,支持新 tab 复用</div></div>
+        </label>
+        <label style="display:flex;gap:10px;padding:12px 14px;border:1.5px solid var(--gray-300);border-radius:8px;cursor:default;align-items:flex-start">
+          <span style="width:14px;height:14px;border:1.5px solid var(--gray-500);border-radius:50%;flex-shrink:0;margin-top:2px"></span>
+          <div><div style="color:var(--slate);font-weight:500;font-size:14px">cmux</div><div style="font-size:12px;color:var(--gray-500);margin-top:2px">多 workspace,tab 由 cmux 管</div></div>
+        </label>
+        <label style="display:flex;gap:10px;padding:12px 14px;border:1.5px solid var(--gray-300);border-radius:8px;cursor:default;align-items:flex-start">
+          <span style="width:14px;height:14px;border:1.5px solid var(--gray-500);border-radius:50%;flex-shrink:0;margin-top:2px"></span>
+          <div><div style="color:var(--slate);font-weight:500;font-size:14px">Terminal.app</div><div style="font-size:12px;color:var(--gray-500);margin-top:2px">macOS 自带</div></div>
+        </label>
+        <label style="display:flex;gap:10px;padding:12px 14px;border:1.5px solid var(--gray-300);border-radius:8px;cursor:default;align-items:flex-start">
+          <span style="width:14px;height:14px;border:1.5px solid var(--gray-500);border-radius:50%;flex-shrink:0;margin-top:2px"></span>
+          <div><div style="color:var(--slate);font-weight:500;font-size:14px">Custom</div><div style="font-size:12px;color:var(--gray-500);margin-top:2px">自定义命令模板</div></div>
+        </label>
+      </div>
+    </div>
+
+    <div style="margin-bottom:20px">
+      <div style="font-size:12px;font-family:var(--mono);color:var(--gray-500);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Claude binary path</div>
+      <input style="width:100%;padding:10px 12px;border:1.5px solid var(--gray-300);border-radius:8px;font-family:var(--mono);font-size:13px;background:var(--paper);color:var(--slate)" value="claude" readonly>
+      <div style="font-size:12px;color:var(--gray-500);margin-top:6px">默认依赖 PATH,留空使用 <span class="mono">claude</span></div>
+    </div>
+
+    <div style="border-top:1px dashed var(--gray-300);padding-top:18px;opacity:.55">
+      <div style="font-size:11px;font-family:var(--mono);color:var(--gray-500);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">仅 Custom 时显示 · Command template</div>
+      <div style="padding:10px 12px;border:1.5px solid var(--gray-300);border-radius:8px;font-family:var(--mono);font-size:12.5px;background:var(--gray-150);color:var(--gray-500)">open -na WezTerm.app --args start --cwd <span style="color:var(--clay);font-weight:600">{{cwd}}</span> -- <span style="color:var(--clay);font-weight:600">{{cmd}}</span></div>
+      <div style="font-size:12px;color:var(--gray-500);margin-top:6px">可用占位符:<span class="mono">{{cwd}}</span>=项目路径,<span class="mono">{{cmd}}</span>=完整 claude 启动命令</div>
+    </div>
+  </div>
+
+  <h3 style="font-family:var(--serif);font-size:18px;color:var(--slate);margin:8px 0 14px;font-weight:500">触点 4 · ⌘K CommandPalette 条目 <span style="font-family:var(--mono);font-size:11px;background:var(--oat);color:var(--slate);padding:2px 8px;border-radius:5px;margin-left:8px;vertical-align:middle">M3</span></h3>
+  <div style="background:var(--paper);border:1.5px solid var(--gray-300);border-radius:12px;padding:20px 22px;margin-bottom:24px">
+    <div style="background:var(--slate);padding:14px;border-radius:10px;max-width:520px;margin:0 auto">
+      <div style="background:#1F1E1D;border:1px solid #2A2928;border-radius:6px;padding:10px 12px;margin-bottom:8px;font-family:var(--mono);font-size:13px;color:var(--gray-500)">› terminal</div>
+      <div style="background:var(--clay);padding:10px 12px;border-radius:6px;display:flex;align-items:center;gap:12px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ivory)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>
+        <div style="flex:1;color:var(--ivory)">
+          <div style="font-size:13.5px;font-weight:500">Open in terminal: my-project</div>
+          <div style="font-size:11.5px;opacity:.85;font-family:var(--mono)">Launch claude in Ghostty (cwd: ~/dev/...)</div>
+        </div>
+        <kbd style="background:rgba(255,255,255,.2);color:var(--ivory);padding:2px 6px;border-radius:4px;font-family:var(--mono);font-size:10px">↵</kbd>
+      </div>
+    </div>
+    <div style="margin-top:14px;font-size:13.5px;color:var(--gray-500)">
+      <strong style="color:var(--slate);font-family:var(--serif);font-weight:500">关键词</strong>:<span class="mono">terminal</span> / <span class="mono">term</span> / <span class="mono">open</span> 可命中;subtitle 显示当前 backend + 短路径。
+    </div>
+  </div>
+
+  <h3 style="font-family:var(--serif);font-size:18px;color:var(--slate);margin:8px 0 14px;font-weight:500">交互边界</h3>
+  <ul class="bullets">
+    <li>backend = custom 但模板为空 → 按钮 disable,tooltip "请先在 Settings 配置 custom 命令模板"</li>
+    <li>Settings 中切换 backend 后,已经起来的终端窗口不受影响(下次点按钮才生效)</li>
+    <li>backend = cmux 时,Settings 显示一行 helper text "cmux 自己管理 tab/window,AD 只透传 project 路径"</li>
+    <li><strong style="color:var(--slate);font-family:var(--serif);font-weight:500">menubar tray 图标的"切换全局 profile"功能保留</strong> — legacy 全局激活路径不动,tray 仍然能一键覆盖 <span class="mono">~/.claude/settings.json</span>。Terminal 集成是 project 维度的附加能力,与 tray 全局切换并存</li>
+  </ul>
+</section>
+
+<section>
+  <div class="sec-head"><span class="num">05</span><h2>关键决策</h2></div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="meta">D1 · 架构</div>
+      <h3>Rust enum 而非 trait object</h3>
+      <p>后端集合封闭（4 个），enum 在 Tauri 序列化、settings 持久化、match 穷尽性检查上都更顺手。</p>
+      <p class="why">替代：<span class="mono">Box&lt;dyn TerminalLauncher&gt;</span>——更"OO"但带 Send/Sync 与一层间接，不划算。</p>
+    </div>
+    <div class="card">
+      <div class="meta">D2 · 平台限制</div>
+      <h3>Ghostty 新 tab 走 osascript</h3>
+      <p>macOS 上 <span class="mono">ghostty +new-window</span> 明确返回 <span class="mono">not supported on this platform</span>。CLI 只能 <span class="mono">open -na</span> 每次开新窗口。tab 复用必须 AppleScript。</p>
+      <p class="why">这是上游限制不是临时缺陷,osascript 失败时自动回退到 open -na 新窗口。</p>
+    </div>
+    <div class="card">
+      <div class="meta">D3 · 不重复造轮子</div>
+      <h3>cmux 透传 path,不管 tab/window</h3>
+      <p>cmux 的 <span class="mono">cmux &lt;path&gt;</span> 已经做到"没运行就启动 + 已运行就开 workspace"。AD 介入会和它的产品模型冲突。</p>
+      <p class="why">代价：cmux 用户感受不到 AD "新窗口 vs 新 tab"开关。UI 用 helper text 说明。</p>
+    </div>
+    <div class="card">
+      <div class="meta">D4 · 扩展性</div>
+      <h3>Custom 用 {{cwd}}/{{cmd}} 模板</h3>
+      <p>示例 <span class="mono">open -na WezTerm.app --args start --cwd {{cwd}} -- {{cmd}}</span>。比让用户写 shell 脚本可控得多。</p>
+      <p class="why">单测覆盖几个常见 wezterm / alacritty 模板,降低 quoting 翻车风险。</p>
+    </div>
+    <div class="card">
+      <div class="meta">D5 · 边界</div>
+      <h3>不在 launcher 里 export env</h3>
+      <p>v0.4 已经把 env 写到 <span class="mono">.claude/settings.local.json</span> 顶层,CC 启动自动加载。launcher 只 <span class="mono">cd + claude</span>。</p>
+      <p class="why">单一职责,避免和 CC 的 env 加载逻辑漂移。</p>
+    </div>
+    <div class="card">
+      <div class="meta">D6 · 配置范围</div>
+      <h3>终端偏好存用户级,不跟 project 走</h3>
+      <p>写到 <span class="mono">~/.ad/settings.json</span>。同一用户在所有 project 里用同一终端是合理默认。</p>
+      <p class="why">未来如果有强需求再加 project-level 覆盖,现在不做（准则 2：最小实现）。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="num">06</span><h2>Backend 行为矩阵</h2></div>
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th>能力</th>
+        <th>Ghostty</th>
+        <th>cmux</th>
+        <th>Terminal.app</th>
+        <th>Custom</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="feat">冷启动命令</td>
+        <td><span class="mono">open -na Ghostty.app</span></td>
+        <td><span class="mono">cmux &lt;path&gt;</span></td>
+        <td><span class="mono">open -na Terminal.app</span></td>
+        <td>用户模板</td>
+      </tr>
+      <tr>
+        <td class="feat">复用窗口</td>
+        <td><span class="pill via">via AppleScript</span></td>
+        <td><span class="pill transparent">cmux 自管</span></td>
+        <td><span class="pill via">via AppleScript</span></td>
+        <td><span class="pill no">不支持</span></td>
+      </tr>
+      <tr>
+        <td class="feat">未运行回退</td>
+        <td><span class="pill yes">→ 新窗口</span></td>
+        <td><span class="pill yes">cmux 自启</span></td>
+        <td><span class="pill yes">→ 新窗口</span></td>
+        <td>取决于模板</td>
+      </tr>
+      <tr>
+        <td class="feat">cwd 传递</td>
+        <td><span class="mono">--working-directory=</span></td>
+        <td>path arg</td>
+        <td>AppleScript <span class="mono">cd</span></td>
+        <td><span class="mono">{{cwd}}</span></td>
+      </tr>
+      <tr>
+        <td class="feat">claude 启动方式</td>
+        <td><span class="mono">-e claude</span></td>
+        <td>新 tab 内执行</td>
+        <td>AppleScript do script</td>
+        <td><span class="mono">{{cmd}}</span></td>
+      </tr>
+      <tr>
+        <td class="feat">所需外部二进制</td>
+        <td>Ghostty + osascript</td>
+        <td>cmux</td>
+        <td>osascript</td>
+        <td>用户决定</td>
+      </tr>
+      <tr>
+        <td class="feat">MVP 里程碑</td>
+        <td><span class="pill yes">M1</span></td>
+        <td><span class="pill yes">M1</span></td>
+        <td><span class="pill via">M3</span></td>
+        <td><span class="pill via">M3</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <div class="sec-head"><span class="num">07</span><h2>里程碑</h2></div>
+  <div class="stepper">
+    <div class="step">
+      <span class="badge">M1</span>
+      <h3>Rust launcher MVP</h3>
+      <p class="sub">后端通跑,⌘K 临时入口验证</p>
+      <ol>
+        <li><span class="mono">terminal/mod.rs</span> 定义 enum + LaunchSpec + launch()</li>
+        <li>实现 <span class="mono">ghostty.rs</span>（osascript + open -na 回退）</li>
+        <li>实现 <span class="mono">cmux.rs</span>（透传 path）</li>
+        <li><span class="mono">commands/terminal.rs</span> Tauri command 注册</li>
+        <li><span class="mono">src/lib/tauri.ts</span> 前端 binding</li>
+      </ol>
+    </div>
+    <div class="step">
+      <span class="badge">M2</span>
+      <h3>正式 UI + Settings</h3>
+      <p class="sub">可发版,普通用户能用</p>
+      <ol>
+        <li>uiSettings store 加 <span class="mono">terminal</span> 字段</li>
+        <li>AdvancedSettings Terminal section</li>
+        <li>ProjectDetail header "Open in terminal" 按钮</li>
+        <li>i18n 文案 zh + en</li>
+      </ol>
+    </div>
+    <div class="step">
+      <span class="badge">M3</span>
+      <h3>完整 backend + 文档</h3>
+      <p class="sub">产品完整度</p>
+      <ol>
+        <li><span class="mono">apple_terminal.rs</span> 适配</li>
+        <li><span class="mono">custom.rs</span> 模板替换 + 单测</li>
+        <li>CommandPalette 加 ⌘K 入口</li>
+        <li><span class="mono">design-docs/terminal-launcher.html</span> + index.md</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="num">08</span><h2>关键接口签名</h2></div>
+<pre><span class="c">// src-tauri/src/terminal/mod.rs</span>
+<span class="k">pub enum</span> TerminalBackend { Ghostty, Cmux, AppleTerminal, Custom }
+
+<span class="k">pub struct</span> LaunchSpec&lt;<span class="k">'a</span>&gt; {
+    <span class="k">pub</span> cwd: &amp;<span class="k">'a</span> Path,
+    <span class="k">pub</span> claude_bin: &amp;<span class="k">'a</span> <span class="k">str</span>,
+    <span class="k">pub</span> custom_template: <span class="k">Option</span>&lt;&amp;<span class="k">'a</span> <span class="k">str</span>&gt;,
+}
+
+<span class="k">pub fn</span> launch(backend: TerminalBackend, spec: LaunchSpec&lt;<span class="k">'_</span>&gt;) -&gt; anyhow::Result&lt;()&gt;;
+
+<span class="c">// src-tauri/src/commands/terminal.rs</span>
+#[tauri::command]
+<span class="k">pub async fn</span> open_in_terminal(
+    project_path: <span class="k">String</span>,
+    backend: <span class="k">String</span>,
+    claude_bin: <span class="k">Option</span>&lt;<span class="k">String</span>&gt;,
+    custom_template: <span class="k">Option</span>&lt;<span class="k">String</span>&gt;,
+) -&gt; <span class="k">Result</span>&lt;(), <span class="k">String</span>&gt;;</pre>
+</section>
+
+<section>
+  <div class="sec-head"><span class="num">09</span><h2>验证与验收</h2></div>
+  <div class="verify">
+    <div class="verify-item"><span class="when">冷启动</span><span>未运行 Ghostty → 选 project A → 点按钮 → Ghostty 起来新窗口 cwd=A,自动跑 claude</span></div>
+    <div class="verify-item"><span class="when">复用窗口</span><span>紧接着选 project B → 点按钮 → 同一 Ghostty 窗口出现新 tab cwd=B</span></div>
+    <div class="verify-item"><span class="when">关窗回退</span><span>手动关 Ghostty → 再点按钮 → 新窗口起来（不报错）</span></div>
+    <div class="verify-item"><span class="when">切 backend</span><span>Settings 切 cmux → 点按钮 → cmux 起新 workspace</span></div>
+    <div class="verify-item"><span class="when">Custom</span><span>填 wezterm 模板 → 点按钮 → wezterm 起来</span></div>
+    <div class="verify-item"><span class="when">i18n</span><span>切英文,所有按钮 + settings label 是英文</span></div>
+    <div class="verify-item"><span class="when">env 加载</span><span>在 project 设 env <span class="mono">FOO=bar</span> → 终端里 <span class="mono">echo $FOO</span> 能读到</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="num">10</span><h2>幂等性 / 回滚</h2></div>
+  <ul class="bullets">
+    <li>所有 launch 都是"启动新东西",本身幂等（重复点会开多个 tab,符合预期）</li>
+    <li>失败不修改任何持久化状态,只 Err 返回给前端 toast</li>
+    <li>Settings 改 backend 不影响已经起来的终端窗口</li>
+    <li>回滚：删 <span class="mono">terminal/</span> 模块 + revert UI 改动即可,无 schema 迁移</li>
+  </ul>
+</section>
+
+<div class="footer-note">
+  Approved plan baseline (frozen at 2026-05-27 08:45 GMT+8). Live execution state: see <span class="mono">terminal-launcher-integration.md</span>
+</div>
+
+</div>
+</body>
+</html>

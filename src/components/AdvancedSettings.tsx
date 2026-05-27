@@ -5,6 +5,9 @@ import { Button } from './ui/button';
 import { useUiSettings } from '@/store/uiSettings';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { setLanguage, type Lang } from '@/i18n';
+import type { TerminalBackendId } from '@/lib/tauri';
+
+const TERMINAL_BACKENDS: TerminalBackendId[] = ['ghostty', 'cmux', 'apple-terminal', 'custom'];
 
 /**
  * Advanced / preferences dialog (M5).
@@ -43,6 +46,8 @@ function AdvancedSettingsDialog({
   const { t, i18n } = useTranslation();
   const show = useUiSettings((s) => s.showLegacyActivation);
   const setShow = useUiSettings((s) => s.setShowLegacyActivation);
+  const terminal = useUiSettings((s) => s.terminal);
+  const setTerminal = useUiSettings((s) => s.setTerminal);
 
   const currentLang = (i18n.language as Lang) === 'zh' ? 'zh' : 'en';
 
@@ -62,6 +67,70 @@ function AdvancedSettingsDialog({
               {t('advanced.langEn')}
             </LangButton>
           </div>
+        </section>
+
+        <section data-section="terminal">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {t('terminal.section')}
+          </h3>
+          <div className="mb-3">
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              {t('terminal.backendLabel')}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {TERMINAL_BACKENDS.map((id) => {
+                const selected = terminal.backend === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setTerminal({ backend: id })}
+                    className={
+                      'flex flex-col gap-1 rounded-md border p-2.5 text-left transition-colors ' +
+                      (selected
+                        ? 'border-clay bg-clay/10 text-foreground'
+                        : 'border-border bg-background hover:border-clay/60')
+                    }
+                  >
+                    <span className="text-sm font-medium">{t(`terminal.backend.${id}`)}</span>
+                    <span className="text-[11px] leading-tight text-muted-foreground">
+                      {t(`terminal.backendHint.${id}`)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              {t('terminal.claudeBinLabel')}
+            </div>
+            <input
+              type="text"
+              value={terminal.claudeBinPath}
+              onChange={(e) => setTerminal({ claudeBinPath: e.target.value })}
+              placeholder={t('terminal.claudeBinPlaceholder')}
+              className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-clay"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">{t('terminal.claudeBinHint')}</p>
+          </div>
+
+          {terminal.backend === 'custom' && (
+            <div>
+              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                {t('terminal.customTemplateLabel')}
+              </div>
+              <textarea
+                value={terminal.customCommand}
+                onChange={(e) => setTerminal({ customCommand: e.target.value })}
+                rows={3}
+                placeholder="open -na WezTerm.app --args start --cwd {{cwd}} -- {{cmd}}"
+                className="w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-clay"
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">{t('terminal.customTemplateHint')}</p>
+            </div>
+          )}
         </section>
 
         <section>

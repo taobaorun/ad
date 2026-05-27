@@ -77,4 +77,16 @@ export const tauri = {
   scanForProjects: () => invoke<DetectedProject[]>('scan_for_projects'),
   completePathPrefix: (prefix: string) =>
     invoke<string[]>('complete_path_prefix', { prefix }),
+
+  // External terminal launcher
+  listTerminalBackends: () =>
+    invoke<{ id: TerminalBackendId; label: string }[]>('list_terminal_backends'),
+  openInTerminal: (args: {
+    projectPath: string;
+    backend: TerminalBackendId;
+    claudeBin?: string;
+    customTemplate?: string;
+  }) => invoke<void>('open_in_terminal', args),
 };
+
+export type TerminalBackendId = 'ghostty' | 'cmux' | 'apple-terminal' | 'custom';

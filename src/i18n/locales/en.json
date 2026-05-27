@@ -183,5 +183,33 @@
       "local": ".claude/settings.local.json — local only, gitignored",
       "env": "settings.local.json top-level env — auto-loaded by Claude Code at startup"
     }
+  },
+  "terminal": {
+    "openInTerminal": "Open in terminal",
+    "openTooltip": "Launch claude in {{backend}} at {{path}}",
+    "openTooltipDisabled": "Configure a custom command template in Settings first",
+    "section": "Terminal",
+    "backendLabel": "Backend",
+    "backend": {
+      "ghostty": "Ghostty",
+      "cmux": "cmux",
+      "apple-terminal": "Terminal.app",
+      "custom": "Custom"
+    },
+    "backendHint": {
+      "ghostty": "New window per project (Ghostty CLI cannot reuse existing windows for new tabs)",
+      "cmux": "Multi-workspace; cmux manages tabs itself (set cmux Settings → Socket Control to \"Automation mode\")",
+      "apple-terminal": "Built into macOS; reuses front window for a new tab when running",
+      "custom": "Custom command template"
+    },
+    "claudeBinLabel": "Claude binary path",
+    "claudeBinPlaceholder": "claude",
+    "claudeBinHint": "Defaults to PATH lookup; leave empty to use `claude`",
+    "customTemplateLabel": "Command template",
+    "customTemplateHint": "Placeholders: {{cwd}} = project path, {{cmd}} = full claude command",
+    "launchFailed": "Could not open terminal",
+    "openSettings": "Open Settings",
+    "paletteEntry": "Open in terminal: {{project}}",
+    "paletteSubtitle": "Launch claude in {{backend}} (cwd: {{path}})"
   }
 }

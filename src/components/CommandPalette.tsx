@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { useUiState } from '@/store/ui';
 import { useProfiles } from '@/store/profiles';
 import { useProjects } from '@/store/projects';
+import { useUiSettings } from '@/store/uiSettings';
 import { tauri } from '@/lib/tauri';
 import { usePathAutocomplete } from '@/lib/pathAutocomplete';
 import type { ApplyOptions } from '@/lib/projectTypes';
@@ -49,6 +50,7 @@ export function CommandPalette() {
   const projects = useProjects((s) => s.projects);
   const activePath = useUiState((s) => s.activeProjectPath);
   const activeProject = projects.find((p) => p.path === activePath) ?? null;
+  const terminal = useUiSettings((s) => s.terminal);
 
   const [term, setTerm] = useState<string>('');
   const [activeIdx, setActiveIdx] = useState<number>(0);
@@ -158,6 +160,31 @@ export function CommandPalette() {
         label: t('palette.switchTemplate', { project: activeProject.displayName }),
         run: () => openSwitchTemplate(),
       });
+
+      // OPEN IN TERMINAL: launch claude in the configured external terminal
+      const customMissing = terminal.backend === 'custom' && terminal.customCommand.trim() === '';
+      if (!customMissing) {
+        const backendLabel = t(`terminal.backend.${terminal.backend}`);
+        list.push({
+          group: 'APPLY',
+          id: 'open-in-terminal',
+          icon: '▶',
+          label: t('terminal.paletteEntry', { project: activeProject.displayName }),
+          desc: t('terminal.paletteSubtitle', { backend: backendLabel, path: activeProject.path }),
+          run: async () => {
+            try {
+              await tauri.openInTerminal({
+                projectPath: activeProject.path,
+                backend: terminal.backend,
+                claudeBin: terminal.claudeBinPath || undefined,
+                customTemplate: terminal.customCommand || undefined,
+              });
+            } catch (e) {
+              alert(`${t('terminal.launchFailed')}: ${e instanceof Error ? e.message : String(e)}`);
+            }
+          },
+        });
+      }
     }
 
     // EDIT: open template editor drawer
