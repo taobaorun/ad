@@ -24,6 +24,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(commands::shortcut::ShortcutState::default())
         .setup(|app| {
             // First-run: relocate AD data from ~/.claude/ to ~/.ad/ if needed.
             // Must run before legacy profile migration since the latter walks
@@ -49,16 +51,27 @@ pub fn run() {
             // Initialize menubar tray with the active profile color.
             tray::install(app.handle())?;
 
+            // Register the default OS-global shortcut for show/hide. The
+            // frontend will re-register on boot with the user's persisted
+            // binding, so this is mainly a fallback for the first frame.
+            commands::shortcut::register_default(
+                app.handle(),
+                commands::shortcut::DEFAULT_BINDING,
+            );
+
             info!("ad ready");
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the window button hides instead of quitting — ad
-            // is a menubar app, the user expects it to stay running. Quit
-            // happens explicitly via the tray "Quit" menu item.
+            // Only the main window hides-on-close: ad is a menubar app and
+            // the user expects it to stay running. Auxiliary windows
+            // (e.g. settings) close normally so they can be re-created
+            // from a fresh state on the next open.
             if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -91,6 +104,7 @@ pub fn run() {
             commands::path_complete::complete_path_prefix,
             commands::terminal::open_in_terminal,
             commands::terminal::list_terminal_backends,
+            commands::shortcut::set_global_shortcut,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ad");

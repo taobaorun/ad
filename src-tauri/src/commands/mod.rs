@@ -8,6 +8,7 @@ pub mod profiles;
 pub mod projects;
 pub mod scan_roots;
 pub mod settings;
+pub mod shortcut;
 pub mod terminal;
 
 use thiserror::Error;

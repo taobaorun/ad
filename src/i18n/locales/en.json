@@ -211,5 +211,37 @@
     "openSettings": "Open Settings",
     "paletteEntry": "Open in terminal: {{project}}",
     "paletteSubtitle": "Launch claude in {{backend}} (cwd: {{path}})"
+  },
+  "settings": {
+    "title": "Settings",
+    "nav": {
+      "general": "General",
+      "terminal": "Terminal",
+      "shortcuts": "Shortcuts",
+      "legacy": "Legacy"
+    },
+    "general": {
+      "title": "General",
+      "desc": "Language and basic preferences"
+    },
+    "terminal": {
+      "title": "Terminal",
+      "desc": "Behavior when launching Claude in an external terminal"
+    },
+    "shortcuts": {
+      "title": "Shortcuts",
+      "desc": "OS-wide hotkeys — bring up the AD main window from anywhere",
+      "enableTitle": "Enable global shortcut",
+      "enableDesc": "When off, you can still show AD from the menubar tray “Show AD” item",
+      "bindingLabel": "Toggle main window",
+      "bindingHint": "Click the button, then press your combo (must include ⌥ / ⌘ / ⌃ / ⇧)",
+      "recording": "Press keys…",
+      "recordingHint": "Press Esc to cancel",
+      "reset": "Reset to default"
+    },
+    "legacy": {
+      "title": "Legacy",
+      "desc": "Deprecated entry points you can re-enable"
+    }
   }
 }

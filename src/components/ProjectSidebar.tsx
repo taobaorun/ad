@@ -171,11 +171,13 @@ function ProjectRow({
       className="block w-full rounded-lg text-left transition-colors"
       style={{
         padding: '10px 12px',
+        // Active tint + 3px left accent bar use the bound profile color, so
+        // the selection state and the profile binding read as one cue.
         background: active
-          ? 'var(--ds-bg-card)'
+          ? `color-mix(in srgb, ${dotColor} 12%, transparent)`
           : 'transparent',
         boxShadow: active
-          ? '0 0 0 0.5px var(--ds-line-strong), 0 1px 2px rgba(0,0,0,0.04)'
+          ? `inset 3px 0 0 ${dotColor}, 0 0 0 0.5px color-mix(in srgb, ${dotColor} 40%, transparent)`
           : undefined,
         opacity: missing ? 0.5 : 1,
         display: 'grid',

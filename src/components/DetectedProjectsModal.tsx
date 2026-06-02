@@ -4,7 +4,8 @@ import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { useProjects } from '@/store/projects';
-import { Sparkles, X, Plus, Lock, AlertCircle } from 'lucide-react';
+import { useUiState } from '@/store/ui';
+import { Sparkles, X, Plus, Lock, AlertCircle, Search } from 'lucide-react';
 
 /**
  * The auto-detect modal (D12 main path).
@@ -23,6 +24,7 @@ export function DetectedProjectsModal() {
   const removeRoot = useProjects((s) => s.removeScanRoot);
   const toggleRoot = useProjects((s) => s.setScanRootEnabled);
   const addProject = useProjects((s) => s.addProject);
+  const setActiveProject = useUiState((s) => s.setActiveProject);
 
   const [filter, setFilter] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -59,11 +61,16 @@ export function DetectedProjectsModal() {
     if (selected.size === 0) return;
     setBusy(true);
     setError(null);
+    let firstAddedPath: string | null = null;
     try {
       // Sequential to keep ordering and surface first error clearly.
       for (const path of selected) {
-        await addProject(path);
+        const project = await addProject(path);
+        if (firstAddedPath === null) firstAddedPath = project.path;
       }
+      // Jump to the first newly added project so the user immediately sees
+      // the result of their action without a manual sidebar click.
+      if (firstAddedPath !== null) setActiveProject(firstAddedPath);
       close();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -103,12 +110,19 @@ export function DetectedProjectsModal() {
           </Button>
         </div>
 
-        <Input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder={t('detected.searchPlaceholder')}
-          className="h-8"
-        />
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-clay/70"
+            aria-hidden
+          />
+          <Input
+            autoFocus
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder={t('detected.searchPlaceholder')}
+            className="h-9 border-clay/40 pl-8 text-sm focus:border-clay focus:ring-1 focus:ring-clay/30"
+          />
+        </div>
 
         <div className="flex-1 overflow-auto rounded border border-border">
           {visible.length === 0 ? (

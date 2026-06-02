@@ -87,6 +87,12 @@ export const tauri = {
     claudeBin?: string;
     customTemplate?: string;
   }) => invoke<void>('open_in_terminal', args),
+
+  // Global OS-level keyboard shortcut to toggle the main window.
+  // Pass `null` to unregister; pass a Tauri shortcut string
+  // (e.g. "Alt+Cmd+KeyA") to register / replace.
+  setGlobalShortcut: (binding: string | null) =>
+    invoke<void>('set_global_shortcut', { binding }),
 };
 
 export type TerminalBackendId = 'ghostty' | 'cmux' | 'apple-terminal' | 'custom';

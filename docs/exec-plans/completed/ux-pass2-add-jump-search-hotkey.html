@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ExecPlan — UX Pass 2 · AD</title>
+  <style>
+    :root {
+      --ivory:    #FAF9F5;
+      --paper:    #FFFFFF;
+      --slate:    #141413;
+      --clay:     #D97757;
+      --oat:      #E3DACC;
+      --olive:    #788C5D;
+      --rust:     #B04A3F;
+      --slate2:   #6588C3;
+      --gray-150: #F0EEE6;
+      --gray-300: #D1CFC5;
+      --gray-500: #87867F;
+      --gray-700: #3D3D3A;
+
+      --serif: ui-serif, Georgia, "Times New Roman", serif;
+      --sans:  system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --mono:  ui-monospace, "SF Mono", Menlo, Monaco, monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--ivory);
+      color: var(--gray-700);
+      line-height: 1.6;
+      padding: 56px 32px 120px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page { max-width: 1080px; margin: 0 auto; }
+
+    /* ---------- header ---------- */
+    header.page-head { margin-bottom: 48px; max-width: 880px; }
+
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--gray-500);
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 40px;
+      line-height: 1.12;
+      color: var(--slate);
+      margin-bottom: 20px;
+      letter-spacing: -0.015em;
+    }
+
+    .subtitle {
+      font-size: 17px;
+      color: var(--gray-700);
+      max-width: 780px;
+      margin-bottom: 24px;
+    }
+
+    .approval-strip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--gray-150);
+      border: 1.5px solid var(--gray-300);
+      border-left: 4px solid var(--clay);
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: 14px;
+    }
+    .approval-strip .pill {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--clay);
+      color: var(--paper);
+      letter-spacing: 0.04em;
+    }
+    .approval-strip strong { color: var(--slate); }
+    .approval-strip code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--paper);
+      border: 1px solid var(--gray-300);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--slate);
+    }
+
+    /* ---------- summary cards ---------- */
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin: 40px 0 64px;
+    }
+    @media (max-width: 880px) { .summary { grid-template-columns: 1fr; } }
+    .summary .cell {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      padding: 18px 20px;
+    }
+    .summary .cell .num {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--clay);
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+    .summary .cell .title {
+      font-family: var(--serif);
+      font-size: 19px;
+      color: var(--slate);
+      margin-bottom: 6px;
+    }
+    .summary .cell .body {
+      font-size: 13.5px;
+      color: var(--gray-500);
+      line-height: 1.5;
+    }
+
+    /* ---------- sections ---------- */
+    section { margin-bottom: 56px; }
+    h2 {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 26px;
+      color: var(--slate);
+      margin-bottom: 18px;
+      letter-spacing: -0.01em;
+    }
+
+    .lead {
+      font-size: 14.5px;
+      color: var(--gray-500);
+      margin-bottom: 20px;
+      max-width: 760px;
+    }
+
+    /* ---------- file tree ---------- */
+    .tree {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.85;
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 10px;
+      padding: 18px 22px;
+      color: var(--gray-700);
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .tree .new { color: var(--olive); }
+    .tree .mod { color: var(--clay); }
+    .tree .note { color: var(--gray-500); }
+
+    /* ---------- decisions ---------- */
+    .decisions {
+      display: grid;
+      gap: 12px;
+    }
+    .decision {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-left: 3px solid var(--slate2);
+      border-radius: 10px;
+      padding: 16px 20px;
+    }
+    .decision .key {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      color: var(--slate2);
+      margin-bottom: 4px;
+    }
+    .decision .head {
+      font-family: var(--serif);
+      font-size: 16px;
+      color: var(--slate);
+      margin-bottom: 6px;
+    }
+    .decision .body {
+      font-size: 13.5px;
+      color: var(--gray-700);
+    }
+    .decision .body code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--gray-150);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    /* ---------- stepper ---------- */
+    .stepper {
+      display: grid;
+      gap: 14px;
+    }
+    .step {
+      display: grid;
+      grid-template-columns: 44px 1fr;
+      gap: 18px;
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 10px;
+      padding: 16px 18px;
+    }
+    .step .dot {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--clay);
+      color: var(--paper);
+      font-family: var(--mono);
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .step .stepbody { min-width: 0; }
+    .step .stepbody .head {
+      font-family: var(--serif);
+      font-size: 17px;
+      color: var(--slate);
+      margin-bottom: 4px;
+    }
+    .step .stepbody .desc {
+      font-size: 13.5px;
+      color: var(--gray-700);
+      margin-bottom: 8px;
+    }
+    .step .stepbody .verify {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--olive);
+      padding: 6px 10px;
+      background: rgba(120, 140, 93, 0.08);
+      border-left: 2px solid var(--olive);
+      border-radius: 3px;
+      display: inline-block;
+    }
+    .step .stepbody code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--gray-150);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    /* ---------- verify table ---------- */
+    table.verify-tbl {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    table.verify-tbl th, table.verify-tbl td {
+      padding: 11px 14px;
+      text-align: left;
+      font-size: 13px;
+      border-bottom: 1px solid var(--gray-300);
+    }
+    table.verify-tbl thead th {
+      background: var(--gray-150);
+      color: var(--slate);
+      font-weight: 500;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    table.verify-tbl tbody tr:last-child td { border-bottom: 0; }
+    table.verify-tbl code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--gray-150);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    table.verify-tbl td:first-child {
+      font-family: var(--serif);
+      color: var(--slate);
+      white-space: nowrap;
+    }
+
+    /* ---------- key chip ---------- */
+    .kbd {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 3px 7px;
+      border: 1px solid var(--gray-300);
+      border-radius: 4px;
+      background: var(--paper);
+      color: var(--slate);
+      box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+      letter-spacing: 0.02em;
+    }
+
+    /* ---------- footer ---------- */
+    footer.foot {
+      margin-top: 80px;
+      padding-top: 24px;
+      border-top: 1px solid var(--gray-300);
+      font-size: 12px;
+      color: var(--gray-500);
+      font-family: var(--mono);
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+
+    <header class="page-head">
+      <div class="eyebrow">ExecPlan · ux-pass2 · ad</div>
+      <h1>UX Pass 2 — 添加后定位 / 搜索框显眼 / Show AD 全局快捷键</h1>
+      <p class="subtitle">
+        三条独立的用户体验反馈，一次交付：把"加完 project 还要手工切"、"搜索框被淹"、"必须去菜单栏点 Show AD"这三个小阻塞一次性补齐。
+      </p>
+      <div class="approval-strip" style="border-left-color: var(--olive);">
+        <span class="pill" style="background: var(--olive);">APPROVED</span>
+        <strong>用户已批准</strong> · HTML 基线冻结于 <code>2026-06-02 02:15Z</code> · Live execution state: <code>docs/exec-plans/active/ux-pass2-add-jump-search-hotkey.md</code>
+      </div>
+    </header>
+
+    <div class="summary">
+      <div class="cell">
+        <div class="num">FEEDBACK 1</div>
+        <div class="title">添加后自动跳到新项</div>
+        <div class="body">
+          CommandPalette 已经做到了；DetectedProjectsModal 批量加项时没调 setActiveProject。补一行 = 完。
+        </div>
+      </div>
+      <div class="cell">
+        <div class="num">FEEDBACK 2</div>
+        <div class="title">导入弹窗搜索框显眼化</div>
+        <div class="body">
+          DetectedProjectsModal 的搜索框淹没在标题和列表之间。加 🔍 图标 + autoFocus + 提升到 h-9 + 暖色细边框，不动整体风格。
+        </div>
+      </div>
+      <div class="cell">
+        <div class="num">FEEDBACK 3</div>
+        <div class="title">Show AD 全局快捷键</div>
+        <div class="body">
+          默认 <span class="kbd">⌥⌘A</span>，OS 全局生效。Settings 里可改键、可关闭。前后台 toggle 行为与 Raycast 一致。
+        </div>
+      </div>
+    </div>
+
+    <section>
+      <h2>影响范围</h2>
+      <p class="lead">
+        <span style="color: var(--olive);">●</span> 新增 2 个文件 ·
+        <span style="color: var(--clay);">●</span> 修改 9 个文件 · 无新前端 npm 依赖
+      </p>
+<pre class="tree">src-tauri/
+├── <span class="mod">Cargo.toml</span>                          <span class="note"># + tauri-plugin-global-shortcut</span>
+├── <span class="mod">capabilities/default.json</span>           <span class="note"># + global-shortcut:default</span>
+└── src/
+    ├── <span class="mod">lib.rs</span>                          <span class="note"># register plugin + 启动注册默认快捷键</span>
+    └── commands/
+        ├── <span class="mod">mod.rs</span>                      <span class="note"># pub mod shortcut</span>
+        └── <span class="new">shortcut.rs</span>                 <span class="note"># [NEW] set_global_shortcut IPC + register helper</span>
+
+src/
+├── <span class="mod">lib/tauri.ts</span>                        <span class="note"># + setGlobalShortcut wrapper</span>
+├── <span class="mod">store/uiSettings.ts</span>                 <span class="note"># + globalShortcut: { enabled, binding }</span>
+├── <span class="mod">SettingsApp.tsx</span>                     <span class="note"># + shortcuts section + 录键 UI</span>
+├── <span class="mod">main.tsx</span>                            <span class="note"># boot 时同步当前 prefs 到后端</span>
+├── <span class="mod">components/DetectedProjectsModal.tsx</span> <span class="note"># 反馈 1 + 2</span>
+└── <span class="mod">i18n/locales/{zh,en}.json</span>           <span class="note"># settings.shortcuts.* 新字符串</span></pre>
+    </section>
+
+    <section>
+      <h2>关键决策</h2>
+      <div class="decisions">
+        <div class="decision">
+          <div class="key">D1 · PLUGIN</div>
+          <div class="head">全局快捷键 = <code>tauri-plugin-global-shortcut</code></div>
+          <div class="body">
+            Tauri 2 官方插件，API 稳定，接受字符串 binding（<code>"Alt+Cmd+KeyA"</code>）。备选 <code>rdev</code> 是 raw 输入劫持，权限要求与误伤面更大，否决。
+          </div>
+        </div>
+        <div class="decision">
+          <div class="key">D2 · KEY</div>
+          <div class="head">默认绑定 <span class="kbd">⌥⌘A</span></div>
+          <div class="body">
+            <code>⌃⌥⌘A</code> 三键修饰物理上费手；<code>⌘⇧Space</code> 与系统输入法切换/Spotlight 衍生有冲突风险；<code>⌥⌘A</code> macOS 系统与常见 app（VSCode/Chrome/Slack/Notion）均未占用，A 又对应 "AD"，语义直观。
+          </div>
+        </div>
+        <div class="decision">
+          <div class="key">D3 · PERSIST</div>
+          <div class="head">偏好沿用 <code>useUiSettings</code> localStorage，不开 <code>~/.ad/state/</code></div>
+          <div class="body">
+            是逐设备 UI 偏好，已有 localStorage + 跨窗口同步基建。后端不直接读 webview localStorage —— 前端在 boot 时调一次 IPC 把当前 prefs 同步给后端，注册由后端落实。
+          </div>
+        </div>
+        <div class="decision">
+          <div class="key">D4 · UI</div>
+          <div class="head">录键 UI 不引入第三方库</div>
+          <div class="body">
+            最简实现：一个 "Press keys…" 按钮 + 监听 keydown + Esc 取消。组合键格式化逻辑约 30 行。引入 react-hotkeys-hook 类库属于过度工程。
+          </div>
+        </div>
+        <div class="decision">
+          <div class="key">D5 · BEHAVIOR</div>
+          <div class="head">同一快捷键 = toggle visibility</div>
+          <div class="body">
+            按 <span class="kbd">⌥⌘A</span> 时：窗口已可见且聚焦 → hide；否则 show + focus。与 Raycast / Alfred 行为一致，避免"按了第二下没反应"。
+          </div>
+        </div>
+        <div class="decision">
+          <div class="key">D6 · ACTIVE</div>
+          <div class="head">批量加 project 时定位"第一个成功的"</div>
+          <div class="body">
+            多选 N 个 project 都"新"，但 sidebar 排序最上的那个心理预期最强。如果用户希望"全选模式下不打断现选中"，请明确，否则按本方案。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>执行步骤</h2>
+      <p class="lead">
+        步骤 1+2 是孤立反馈，可单独验证；3-7 是全局快捷键链路，需一起到位。每步都有可独立运行的验证标准。
+      </p>
+      <div class="stepper">
+        <div class="step">
+          <div class="dot">1</div>
+          <div class="stepbody">
+            <div class="head">反馈 1 — DetectedProjectsModal 添加后跳转</div>
+            <div class="desc"><code>onAddSelected</code> 循环里抓第一次返回的 <code>project.path</code>，关闭对话框前调 <code>useUiState.getState().setActiveProject(firstPath)</code>。</div>
+            <div class="verify">VERIFY · 触发 detect modal → 勾两个 → Add → 主区显示第一个被勾的</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="dot">2</div>
+          <div class="stepbody">
+            <div class="head">反馈 2 — 搜索框显眼化</div>
+            <div class="desc">同文件 search Input 外包一层 relative div，左侧绝对定位 Search 图标；加 autoFocus；className 升级到 <code>h-9 pl-8 border-clay/30 focus:border-clay focus:ring-1 focus:ring-clay/30</code>。Input 组件不动。</div>
+            <div class="verify">VERIFY · 打开 modal → 焦点已在搜索框 → 输入立即过滤 → 视觉重量 > scan-roots 输入框</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="dot">3</div>
+          <div class="stepbody">
+            <div class="head">Cargo &amp; capability 加依赖</div>
+            <div class="desc"><code>Cargo.toml</code> 加 <code>tauri-plugin-global-shortcut = "2"</code>；<code>capabilities/default.json</code> 加 <code>global-shortcut:default</code>。</div>
+            <div class="verify">VERIFY · cargo check --all-targets 通过</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="dot">4</div>
+          <div class="stepbody">
+            <div class="head">Rust shortcut 模块</div>
+            <div class="desc">新建 <code>commands/shortcut.rs</code>：<code>register_default</code> helper + <code>#[tauri::command] set_global_shortcut(binding: Option&lt;String&gt;)</code>。回调里 toggle 主窗口 visible。当前 binding 保存在 <code>tauri::State&lt;Mutex&lt;Option&lt;String&gt;&gt;&gt;</code>。<code>lib.rs::setup</code> 注册默认 <code>"Alt+Cmd+KeyA"</code>，失败 <code>tracing::warn</code> 不阻塞。</div>
+            <div class="verify">VERIFY · cargo check 绿；启动 app 后无窗口可见时按 ⌥⌘A 应弹窗</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="dot">5</div>
+          <div class="stepbody">
+            <div class="head">前端 store + IPC</div>
+            <div class="desc"><code>tauri.ts</code> 加 <code>setGlobalShortcut</code>；<code>uiSettings.ts</code> 加 <code>globalShortcut: { enabled, binding }</code>（默认 <code>{ true, "Alt+Cmd+KeyA" }</code>）+ setter；<code>main.tsx</code> 在 mount 时根据当前 prefs 触发一次 IPC，确保后端态 = 用户偏好。</div>
+            <div class="verify">VERIFY · 刷新前端 → 后端日志看到 register；toggle 关闭 → unregister</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="dot">6</div>
+          <div class="stepbody">
+            <div class="head">Settings UI — Shortcuts section</div>
+            <div class="desc"><code>SettingsApp.tsx</code>：<code>SectionId</code> 加 <code>'shortcuts'</code>；nav 增项（Keyboard icon）；新写 <code>ShortcutsSection</code>：enable 开关 + 录键按钮（点击后 "Press keys…" 监听 keydown，Esc 取消，捕获后格式化为 Tauri binding 字符串）+ "Reset to default"。</div>
+            <div class="verify">VERIFY · Settings → Shortcuts → 改成 ⌥⌘B → 隐藏窗口 → 按新键 → 唤起</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="dot">7</div>
+          <div class="stepbody">
+            <div class="head">i18n + lint + typecheck</div>
+            <div class="desc">补 zh/en 字符串：<code>settings.nav.shortcuts</code>、<code>settings.shortcuts.{title,desc,enable,binding,recording,reset}</code>。跑 <code>pnpm typecheck &amp;&amp; pnpm lint</code> 和 <code>cargo check + cargo clippy</code>。</div>
+            <div class="verify">VERIFY · 全绿</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="dot">8</div>
+          <div class="stepbody">
+            <div class="head">手测 + 收尾归档</div>
+            <div class="desc">起 <code>pnpm tauri dev</code>，跑下方验收表所有场景；MD/HTML 移到 <code>completed/</code>；如有架构级决策，写到 <code>docs/design-docs/</code>。</div>
+            <div class="verify">VERIFY · 七个验收场景全部通过</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>验收场景</h2>
+      <table class="verify-tbl">
+        <thead>
+          <tr>
+            <th>反馈</th>
+            <th>操作</th>
+            <th>期望</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1 · A</td>
+            <td>⌘K → <code>add ~/code/foo</code> → Enter（路径合法）</td>
+            <td>主区切到 foo，sidebar 高亮在 foo</td>
+          </tr>
+          <tr>
+            <td>1 · B</td>
+            <td>sidebar Review → 勾两个 → Add Selected</td>
+            <td>modal 关闭后主区显示第一个被勾项</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>sidebar Review 打开 modal</td>
+            <td>焦点落在搜索框；图标可见；输入立即过滤</td>
+          </tr>
+          <tr>
+            <td>3 · 默认键</td>
+            <td>隐藏主窗口 → 在任意 app 按 <span class="kbd">⌥⌘A</span></td>
+            <td>主窗口立即可见并聚焦</td>
+          </tr>
+          <tr>
+            <td>3 · 切换</td>
+            <td>主窗口前台时按 <span class="kbd">⌥⌘A</span></td>
+            <td>窗口隐藏</td>
+          </tr>
+          <tr>
+            <td>3 · 改键</td>
+            <td>Settings → Shortcuts → 录 ⌥⌘B → 隐藏 → 按 ⌥⌘B</td>
+            <td>唤起；旧 ⌥⌘A 无反应</td>
+          </tr>
+          <tr>
+            <td>3 · 关闭</td>
+            <td>Settings → Shortcuts → 关闭 enable</td>
+            <td>⌥⌘A 无反应；托盘 "Show AD" 仍工作</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>假设清单（不认同请提）</h2>
+      <div class="decisions">
+        <div class="decision" style="border-left-color: var(--olive);">
+          <div class="key" style="color: var(--olive);">A1 · A2</div>
+          <div class="head">添加后定位策略</div>
+          <div class="body">
+            CommandPalette <code>add</code> 路径已正确（在 CommandPalette.tsx:78-79 已调 setActiveProject）。需要补的是 DetectedProjectsModal 批量加完后 → 定位到<strong>第一个成功添加的</strong>。如要改成"最后一个"或"保持当前不变"请提。
+          </div>
+        </div>
+        <div class="decision" style="border-left-color: var(--olive);">
+          <div class="key" style="color: var(--olive);">A3</div>
+          <div class="head">搜索框样式幅度</div>
+          <div class="body">
+            仅改皮（icon + autoFocus + h-9 + clay 细边框），<strong>不</strong>替换 Input 组件、不引入新设计 token。期望视觉与整体暖色基调协调。
+          </div>
+        </div>
+        <div class="decision" style="border-left-color: var(--olive);">
+          <div class="key" style="color: var(--olive);">A11</div>
+          <div class="head">不做"快捷键冲突检测"</div>
+          <div class="body">
+            注册失败用 toast 提示即可。本次不做"录键时显示已注册 shortcuts 列表"或"自动避让"。如需要请明确，会上升复杂度。
+          </div>
+        </div>
+        <div class="decision" style="border-left-color: var(--olive);">
+          <div class="key" style="color: var(--olive);">A12</div>
+          <div class="head">macOS only</div>
+          <div class="body">
+            按现有项目规范，不为其他平台兜底。Tauri shortcut 字符串使用 macOS 修饰键映射。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot">
+      ExecPlan v1 · created 2026-06-02 · author yuanxuan · status: APPROVED<br>
+      Approved plan baseline (frozen at 2026-06-02 02:15Z). Live execution state: <code>docs/exec-plans/active/ux-pass2-add-jump-search-hotkey.md</code>
+    </footer>
+
+  </div>
+</body>
+</html>

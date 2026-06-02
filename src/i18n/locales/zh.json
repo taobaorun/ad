@@ -211,5 +211,37 @@
     "openSettings": "打开 Settings",
     "paletteEntry": "在终端打开：{{project}}",
     "paletteSubtitle": "在 {{backend}} 启动 claude（cwd: {{path}}）"
+  },
+  "settings": {
+    "title": "设置",
+    "nav": {
+      "general": "通用",
+      "terminal": "终端",
+      "shortcuts": "快捷键",
+      "legacy": "遗留"
+    },
+    "general": {
+      "title": "通用",
+      "desc": "语言与基础偏好"
+    },
+    "terminal": {
+      "title": "终端",
+      "desc": "在外部终端启动 Claude 时的行为"
+    },
+    "shortcuts": {
+      "title": "快捷键",
+      "desc": "系统级全局快捷键 — 在任何 app 内都能唤起 AD 主窗口",
+      "enableTitle": "启用全局快捷键",
+      "enableDesc": "关闭后只能通过菜单栏托盘的 “Show AD” 唤起主窗口",
+      "bindingLabel": "唤起 / 隐藏主窗口",
+      "bindingHint": "点击按钮后按下组合键修改;必须含修饰键(⌥ / ⌘ / ⌃ / ⇧)",
+      "recording": "按下组合键…",
+      "recordingHint": "按 Esc 取消录制",
+      "reset": "恢复默认"
+    },
+    "legacy": {
+      "title": "遗留",
+      "desc": "已废弃但仍可启用的旧版入口"
+    }
   }
 }
