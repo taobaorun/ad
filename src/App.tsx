@@ -1,20 +1,42 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { ProjectDetail } from './components/ProjectDetail';
-import { ProfileEditDrawer } from './components/ProfileEditDrawer';
-import { CommandPalette } from './components/CommandPalette';
 import { GlobalKeymap } from './components/GlobalKeymap';
-import { HistoryDialog } from './components/HistoryDialog';
-import { DetectedProjectsModal } from './components/DetectedProjectsModal';
-import { ImportDialog } from './components/ImportDialog';
 import { ActivateToast } from './components/ActivateToast';
 import { AdvancedSettingsButton } from './components/AdvancedSettings';
 import { useProfiles } from './store/profiles';
 import { useProjects } from './store/projects';
 import { useUiState } from './store/ui';
 import { useUiSettings } from './store/uiSettings';
+
+// Heavy dialogs/drawers are lazy-loaded so they don't sit in the first-paint
+// chunk. Each is wrapped in a tiny "gate" below that only mounts the lazy
+// component after its open state has been true at least once — afterwards
+// the component stays mounted so its open/close animations keep working.
+const ProfileEditDrawer = lazy(() =>
+  import('./components/ProfileEditDrawer').then((m) => ({ default: m.ProfileEditDrawer })),
+);
+const CommandPalette = lazy(() =>
+  import('./components/CommandPalette').then((m) => ({ default: m.CommandPalette })),
+);
+const HistoryDialog = lazy(() =>
+  import('./components/HistoryDialog').then((m) => ({ default: m.HistoryDialog })),
+);
+const DetectedProjectsModal = lazy(() =>
+  import('./components/DetectedProjectsModal').then((m) => ({ default: m.DetectedProjectsModal })),
+);
+const ImportDialog = lazy(() =>
+  import('./components/ImportDialog').then((m) => ({ default: m.ImportDialog })),
+);
+
+function useHasBeenTrue(condition: boolean): boolean {
+  const [seen, setSeen] = useState(false);
+  if (condition && !seen) setSeen(true);
+  return seen;
+}
 
 /**
  * A′ main window (cmux-inspired): two-column layout with a compact
@@ -26,8 +48,6 @@ export function App() {
   const loadAll = useProfiles((s) => s.loadAll);
   const loadProjects = useProjects((s) => s.loadAll);
   const sidebarCollapsed = useUiState((s) => s.sidebarCollapsed);
-  const view = useProfiles((s) => s.view);
-  const setView = useProfiles((s) => s.setView);
   const openPalette = useUiState((s) => s.openPalette);
   const darkMode = useUiSettings((s) => s.darkMode);
   const setDarkMode = useUiSettings((s) => s.setDarkMode);
@@ -40,6 +60,16 @@ export function App() {
     void loadAll();
     void loadProjects();
   }, [loadAll, loadProjects]);
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.getElementById('ad-splash')?.remove();
+        getCurrentWindow().show().catch(() => {});
+        getCurrentWindow().setFocus().catch(() => {});
+      });
+    });
+  }, []);
 
   // Block WebKit gesture events (two-finger rotate/pinch) that cause page wobble.
   useEffect(() => {
@@ -78,14 +108,75 @@ export function App() {
         </main>
       </div>
 
-      <ProfileEditDrawer />
-      <CommandPalette />
-      <HistoryDialog open={view === 'history'} onClose={() => setView('editor')} />
-      <DetectedProjectsModal />
-      <ImportDialog />
+      <GatedProfileEditDrawer />
+      <GatedCommandPalette />
+      <GatedHistoryDialog />
+      <GatedDetectedProjectsModal />
+      <GatedImportDialog />
       <ActivateToast />
       <GlobalKeymap />
     </div>
+  );
+}
+
+// Each Gated* below defers mounting its lazy child until the dialog's open
+// state has been true at least once. After that the child stays mounted so
+// Radix can keep driving open/close transitions via the `open` prop (or via
+// the store the child reads internally).
+
+function GatedProfileEditDrawer() {
+  const editingProfileId = useUiState((s) => s.editingProfileId);
+  const mounted = useHasBeenTrue(editingProfileId != null);
+  if (!mounted) return null;
+  return (
+    <Suspense fallback={null}>
+      <ProfileEditDrawer />
+    </Suspense>
+  );
+}
+
+function GatedCommandPalette() {
+  const paletteOpen = useUiState((s) => s.paletteOpen);
+  const mounted = useHasBeenTrue(paletteOpen);
+  if (!mounted) return null;
+  return (
+    <Suspense fallback={null}>
+      <CommandPalette />
+    </Suspense>
+  );
+}
+
+function GatedHistoryDialog() {
+  const view = useProfiles((s) => s.view);
+  const setView = useProfiles((s) => s.setView);
+  const mounted = useHasBeenTrue(view === 'history');
+  if (!mounted) return null;
+  return (
+    <Suspense fallback={null}>
+      <HistoryDialog open={view === 'history'} onClose={() => setView('editor')} />
+    </Suspense>
+  );
+}
+
+function GatedDetectedProjectsModal() {
+  const open = useProjects((s) => s.detectedModalOpen);
+  const mounted = useHasBeenTrue(open);
+  if (!mounted) return null;
+  return (
+    <Suspense fallback={null}>
+      <DetectedProjectsModal />
+    </Suspense>
+  );
+}
+
+function GatedImportDialog() {
+  const open = useProfiles((s) => s.importOpen);
+  const mounted = useHasBeenTrue(open);
+  if (!mounted) return null;
+  return (
+    <Suspense fallback={null}>
+      <ImportDialog />
+    </Suspense>
   );
 }
 

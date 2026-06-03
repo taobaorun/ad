@@ -11,46 +11,14 @@
 
 import { useTranslation } from 'react-i18next';
 import { Settings as SettingsIcon } from 'lucide-react';
-import { WebviewWindow, getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-
-const SETTINGS_LABEL = 'settings';
-
-async function openSettingsWindow() {
-  // Tauri 2: getByLabel was renamed; iterate getAll on WebviewWindow to find it.
-  const existing = await WebviewWindow.getByLabel(SETTINGS_LABEL).catch(() => null);
-  if (existing) {
-    await existing.show();
-    await existing.setFocus();
-    return;
-  }
-
-  const current = getCurrentWebviewWindow();
-  // Reuse the same Vite-built bundle; hash routing selects SettingsApp.
-  const url = new URL(window.location.href);
-  url.hash = '#/settings';
-
-  const win = new WebviewWindow(SETTINGS_LABEL, {
-    url: url.pathname + url.search + url.hash,
-    title: '设置',
-    width: 720,
-    height: 520,
-    minWidth: 560,
-    minHeight: 400,
-    resizable: true,
-    parent: current.label,
-    titleBarStyle: 'visible',
-  });
-  win.once('tauri://error', (e) => {
-    console.error('Failed to open settings window:', e);
-  });
-}
+import { tauri } from '@/lib/tauri';
 
 export function AdvancedSettingsButton() {
   const { t } = useTranslation();
   return (
     <button
       type="button"
-      onClick={() => void openSettingsWindow()}
+      onClick={() => void tauri.openSettingsWindow()}
       title={t('advanced.openTitle')}
       aria-label={t('advanced.openTitle')}
       className="rounded p-1 text-muted-foreground hover:bg-muted"

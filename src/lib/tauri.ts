@@ -93,6 +93,12 @@ export const tauri = {
   // (e.g. "Alt+Cmd+KeyA") to register / replace.
   setGlobalShortcut: (binding: string | null) =>
     invoke<void>('set_global_shortcut', { binding }),
+
+  writeThemeHint: (dark: boolean) =>
+    invoke<void>('write_theme_hint', { dark }),
+
+  openSettingsWindow: () =>
+    invoke<void>('open_settings_window'),
 };
 
 export type TerminalBackendId = 'ghostty' | 'cmux' | 'apple-terminal' | 'custom';

@@ -8,8 +8,22 @@ mod tray;
 
 pub mod commands;
 
-use tauri::WindowEvent;
+use tauri::webview::Color;
+use tauri::{WebviewWindowBuilder, WindowEvent};
 use tracing::info;
+
+fn theme_bg() -> Color {
+    let is_dark = fs::paths::theme_hint_path()
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim() != "light")
+        .unwrap_or(true);
+    if is_dark {
+        Color(0x0a, 0x0a, 0x0b, 0xff)
+    } else {
+        Color(0xff, 0xff, 0xff, 0xff)
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -48,6 +62,36 @@ pub fn run() {
                 Err(err) => tracing::warn!(?err, "v1 -> layered migration failed; continuing"),
             }
 
+            // Create the main window hidden, with theme-aware background.
+            // on_page_load(Finished) fires from WKWebView's didFinishNavigation
+            // delegate — at that point the HTML/CSS splash is fully loaded and
+            // composited, so the user sees the splash instead of a blank frame.
+            let bg = theme_bg();
+            let main_win = WebviewWindowBuilder::from_config(
+                app.handle(),
+                &app.config().app.windows[0],
+            )?
+            .background_color(bg)
+            .visible(false)
+            .build()?;
+
+            // Pre-create settings window hidden so it's instantly ready when
+            // the user clicks the gear icon — no loading flash.
+            // NOT a child of main — macOS shows child windows when the parent
+            // becomes visible, which would flash settings on launch.
+            WebviewWindowBuilder::new(
+                app.handle(),
+                "settings",
+                tauri::WebviewUrl::App("index.html#/settings".into()),
+            )
+            .title("Settings")
+            .inner_size(720.0, 520.0)
+            .min_inner_size(560.0, 400.0)
+            .resizable(true)
+            .visible(false)
+            .background_color(bg)
+            .build()?;
+
             // Initialize menubar tray with the active profile color.
             tray::install(app.handle())?;
 
@@ -68,7 +112,7 @@ pub fn run() {
             // (e.g. settings) close normally so they can be re-created
             // from a fresh state on the next open.
             if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
+                if window.label() == "main" || window.label() == "settings" {
                     api.prevent_close();
                     let _ = window.hide();
                 }
@@ -81,6 +125,7 @@ pub fn run() {
             commands::profiles::delete_profile,
             commands::profiles::get_active_profile_id,
             commands::settings::read_current_settings,
+            commands::settings::write_theme_hint,
             commands::activate::activate_profile,
             commands::activate::detect_claude_processes,
             commands::history::read_history,
@@ -105,6 +150,7 @@ pub fn run() {
             commands::terminal::open_in_terminal,
             commands::terminal::list_terminal_backends,
             commands::shortcut::set_global_shortcut,
+            commands::settings::open_settings_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ad");

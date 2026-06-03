@@ -6,6 +6,9 @@
   "permissions": [
     "core:default",
     "core:window:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
     "core:app:default",
     "core:event:default",
     "core:menu:default",

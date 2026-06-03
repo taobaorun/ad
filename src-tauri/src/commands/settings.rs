@@ -1,4 +1,4 @@
-use crate::fs::paths::claude_settings_path;
+use crate::fs::paths::{claude_settings_path, ensure_dir, theme_hint_path};
 use crate::models::ClaudeSettings;
 
 use super::CmdResult;
@@ -15,6 +15,32 @@ pub fn read_current_settings() -> CmdResult<Option<ClaudeSettings>> {
     }
     let settings: ClaudeSettings = serde_json::from_slice(&bytes)?;
     Ok(Some(settings))
+}
+
+#[tauri::command]
+pub fn open_settings_window(app: tauri::AppHandle) -> CmdResult<()> {
+    use tauri::Manager;
+    let win = app
+        .get_webview_window("settings")
+        .ok_or_else(|| super::CommandError::Generic("settings window not found".into()))?;
+    let _ = win.show();
+    let _ = win.set_focus();
+    // WKWebView skips paint for hidden windows — force a reflow so the
+    // pre-rendered content actually appears.
+    let _ = win.eval(
+        "requestAnimationFrame(function(){document.body.style.display='none';\
+         void document.body.offsetHeight;\
+         document.body.style.display=''})"
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub fn write_theme_hint(dark: bool) -> CmdResult<()> {
+    let path = theme_hint_path()?;
+    ensure_dir(path.parent().unwrap())?;
+    std::fs::write(&path, if dark { "dark" } else { "light" })?;
+    Ok(())
 }
 
 #[cfg(test)]

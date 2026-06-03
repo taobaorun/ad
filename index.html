@@ -5,9 +5,85 @@
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AD</title>
+    <script>
+      // Paint the theme background before React/Tailwind load so the window
+      // doesn't flash white while the JS bundle initializes. Reads the same
+      // persisted state used by useUiSettings (STORAGE_KEY in
+      // src/store/uiSettings.ts) — fallback matches defaults.darkMode = true.
+      (function () {
+        try {
+          var dark = true;
+          var raw = localStorage.getItem('ad.ui-settings.v1');
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            if (typeof parsed.darkMode === 'boolean') dark = parsed.darkMode;
+          }
+          var bg = dark ? '#0a0a0b' : '#ffffff';
+          var fg = dark ? '#fafafa' : '#09090b';
+          var root = document.documentElement;
+          if (dark) root.classList.add('dark');
+          root.style.backgroundColor = bg;
+          root.style.color = fg;
+        } catch (_) {}
+      })();
+    </script>
   </head>
   <body class="bg-background text-foreground">
+    <!-- Splash overlay: covers the window until React removes it.
+         Lives OUTSIDE #root so React.createRoot().render() cannot destroy it.
+         The main window starts hidden (visible:false in Rust); the settings
+         window shows immediately — either way the splash guarantees the user
+         sees the correct theme color, never a blank/wrong-color frame. -->
+    <div id="ad-splash">
+      <style>
+        #ad-splash{position:fixed;inset:0;z-index:9999;background:#ffffff}
+        .dark #ad-splash{background:#0a0a0b}
+        #ad-skel{display:flex;flex-direction:column;height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+        #ad-skel-bar{height:36px;display:flex;align-items:center;padding:0 12px;font-size:14px;font-weight:600}
+        #ad-skel-body{display:flex;flex:1;overflow:hidden}
+        #ad-skel-side{width:264px;flex-shrink:0;padding:12px}
+        #ad-skel-main{flex:1}
+        .ad-skel-pill{border-radius:6px;margin-bottom:8px}
+        #ad-skel-bar{border-bottom:0.5px solid rgba(0,0,0,0.06);color:#09090b}
+        #ad-skel-side{background:#fafaf9;border-right:0.5px solid rgba(0,0,0,0.06)}
+        .ad-skel-pill{background:rgba(0,0,0,0.06)}
+        .dark #ad-skel-bar{border-bottom-color:rgba(255,255,255,0.07);color:#fafafa}
+        .dark #ad-skel-side{background:#0e0e10;border-right-color:rgba(255,255,255,0.07)}
+        .dark .ad-skel-pill{background:rgba(255,255,255,0.06)}
+      </style>
+      <div id="ad-skel">
+        <div id="ad-skel-bar">AD</div>
+        <div id="ad-skel-body">
+          <div id="ad-skel-side">
+            <div class="ad-skel-pill" style="width:60%;height:12px"></div>
+            <div class="ad-skel-pill" style="width:80%;height:28px"></div>
+            <div class="ad-skel-pill" style="width:80%;height:28px"></div>
+            <div class="ad-skel-pill" style="width:80%;height:28px"></div>
+          </div>
+          <div id="ad-skel-main"></div>
+        </div>
+      </div>
+    </div>
+    <script>
+      // Main window starts visible:false in Rust. Show after double-rAF
+      // guarantees two compositor frames — the splash is painted.
+      // Settings window is pre-created hidden; only shown via the gear button.
+      (function () {
+        try {
+          var T = window.__TAURI_INTERNALS__;
+          if (!T) return;
+          var label = T.metadata.currentWindow.label;
+          if (label !== 'main') return;
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              T.invoke('plugin:window|show', { label: label });
+              T.invoke('plugin:window|set_focus', { label: label });
+            });
+          });
+        } catch (_) {}
+      })();
+    </script>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+<script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

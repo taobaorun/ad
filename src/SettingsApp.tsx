@@ -23,11 +23,18 @@ export function SettingsApp() {
   const { t } = useTranslation();
   const [section, setSection] = useState<SectionId>('general');
 
-  // Sync dark mode from store so the standalone window respects the toggle.
   const dark = useUiSettings((s) => s.darkMode);
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
   }, [dark]);
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.getElementById('ad-splash')?.remove();
+      });
+    });
+  }, []);
 
   const nav: { id: SectionId; label: string; icon: ReactNode }[] = [
     { id: 'general', label: t('settings.nav.general'), icon: <Languages className="h-4 w-4" /> },
