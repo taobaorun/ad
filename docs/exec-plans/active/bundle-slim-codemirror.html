@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ExecPlan — Bundle 瘦身 Monaco→CodeMirror</title>
+  <style>
+    :root {
+      --ivory:    #FAF9F5;
+      --paper:    #FFFFFF;
+      --slate:    #141413;
+      --clay:     #D97757;
+      --oat:      #E3DACC;
+      --olive:    #788C5D;
+      --rust:     #B04A3F;
+      --gray-150: #F0EEE6;
+      --gray-300: #D1CFC5;
+      --gray-500: #87867F;
+      --gray-700: #3D3D3A;
+      --serif: ui-serif, Georgia, 'Times New Roman', serif;
+      --sans:  system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --mono:  ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: var(--sans);
+      background: var(--ivory);
+      color: var(--gray-700);
+      line-height: 1.55;
+      padding: 56px 32px 120px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .page { max-width: 1040px; margin: 0 auto; }
+
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--gray-500);
+      font-family: var(--mono);
+      margin-bottom: 10px;
+    }
+    h1 {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 36px;
+      line-height: 1.15;
+      color: var(--slate);
+      margin-bottom: 14px;
+      letter-spacing: -0.01em;
+    }
+    .goal-box {
+      background: var(--gray-150);
+      border: 1.5px solid var(--gray-300);
+      border-left: 4px solid var(--clay);
+      border-radius: 10px;
+      padding: 16px 20px;
+      font-size: 14.5px;
+      color: var(--gray-700);
+      max-width: 760px;
+      margin-bottom: 48px;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 56px;
+    }
+    .summary .cell {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 10px;
+      padding: 16px 18px;
+    }
+    .summary .k {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--gray-500);
+      margin-bottom: 5px;
+    }
+    .summary .v {
+      font-size: 16px;
+      color: var(--slate);
+      font-weight: 600;
+    }
+    .summary .v.accent { color: var(--clay); }
+    .summary .v.ok { color: var(--olive); }
+
+    section { margin-bottom: 60px; }
+    .sec-label {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--gray-500);
+      margin-bottom: 6px;
+    }
+    h2 {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 24px;
+      color: var(--slate);
+      letter-spacing: -0.01em;
+      margin-bottom: 20px;
+    }
+    .sec-intro {
+      font-size: 14px;
+      color: var(--gray-500);
+      max-width: 680px;
+      margin-bottom: 24px;
+    }
+
+    /* before-after */
+    .compare-card {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .compare-row {
+      display: grid;
+      grid-template-columns: 160px 1fr 1fr;
+      align-items: stretch;
+      border-top: 1.5px solid var(--gray-300);
+    }
+    .compare-row:first-child { border-top: 0; }
+    .compare-cell {
+      padding: 16px 20px;
+      font-size: 13.5px;
+      color: var(--gray-700);
+    }
+    .compare-row .label {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--gray-500);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: var(--gray-150);
+      display: flex;
+      align-items: center;
+    }
+    .compare-row .v-old { background: #FDF6F0; color: var(--gray-700); border-left: 1.5px solid var(--gray-300); }
+    .compare-row .v-new { background: #F2F6EE; color: var(--slate); border-left: 1.5px solid var(--gray-300); font-weight: 500; }
+    .compare-row code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: rgba(0,0,0,0.04);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .compare-tag {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      padding: 1px 7px;
+      border-radius: 5px;
+      margin-bottom: 6px;
+      letter-spacing: 0.04em;
+    }
+    .compare-tag.old { background: #FEF3EE; color: var(--clay); }
+    .compare-tag.new { background: #EEF3E8; color: var(--olive); }
+
+    /* ascii diagram */
+    .model-diagram {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      padding: 28px 32px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      color: var(--gray-700);
+      line-height: 1.85;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .model-diagram .accent { color: var(--clay); font-weight: 600; }
+    .model-diagram .ok { color: var(--olive); font-weight: 600; }
+    .model-diagram .label { color: var(--gray-500); }
+
+    /* file tree */
+    .filetree {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      padding: 24px 28px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.85;
+      color: var(--gray-700);
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .filetree .dir { color: var(--slate); font-weight: 600; }
+    .filetree .new { color: var(--olive); font-weight: 600; }
+    .filetree .mod { color: var(--clay); font-weight: 600; }
+    .filetree .del { color: var(--rust); font-weight: 600; text-decoration: line-through; }
+    .filetree .keep { color: var(--gray-500); }
+    .filetree .badge {
+      font-size: 10.5px;
+      letter-spacing: 0.06em;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 6px;
+    }
+    .filetree .badge.n { background: #EEF3E8; color: var(--olive); }
+    .filetree .badge.m { background: #FEF3EE; color: var(--clay); }
+    .filetree .badge.d { background: #F4E1DE; color: var(--rust); }
+    .filetree .badge.k { background: var(--gray-150); color: var(--gray-500); }
+
+    /* decisions */
+    .decisions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    @media (max-width: 760px) { .decisions { grid-template-columns: 1fr; } }
+    .decision {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      padding: 20px 22px;
+    }
+    .decision .d-num {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--oat);
+      color: var(--slate);
+      padding: 2px 8px;
+      border-radius: 6px;
+      display: inline-block;
+      margin-bottom: 10px;
+    }
+    .decision h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--slate);
+      margin-bottom: 8px;
+    }
+    .decision .rationale {
+      font-size: 13.5px;
+      color: var(--gray-500);
+      margin-bottom: 12px;
+    }
+    .decision .tags { display: flex; gap: 6px; flex-wrap: wrap; }
+    .decision .tag {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--gray-150);
+      border: 1px solid var(--gray-300);
+      border-radius: 6px;
+      padding: 2px 7px;
+      color: var(--gray-700);
+    }
+    .decision .tag.warn { background: #FEF3EE; border-color: #F4C4A8; color: var(--clay); }
+    .decision .tag.ok   { background: #EEF3E8; border-color: #BDD0A1; color: var(--olive); }
+
+    /* stepper */
+    .stepper { display: flex; flex-direction: column; gap: 0; }
+    .step {
+      display: grid;
+      grid-template-columns: 52px 28px 1fr;
+      gap: 0 16px;
+    }
+    .step .s-num {
+      text-align: right;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--gray-500);
+      padding-top: 5px;
+    }
+    .step .s-dot-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .step .s-dot {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--paper);
+      border: 2.5px solid var(--clay);
+      margin-top: 5px;
+      flex-shrink: 0;
+    }
+    .step .s-line {
+      width: 2px;
+      flex: 1;
+      background: var(--gray-300);
+      margin: 4px 0;
+    }
+    .step:last-child .s-line { display: none; }
+    .step .s-body { padding-bottom: 28px; }
+    .step .s-body h3 {
+      font-size: 15.5px;
+      font-weight: 600;
+      color: var(--slate);
+      margin-bottom: 4px;
+    }
+    .step .s-body .s-layer {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+    .s-layer.deps { background: #EEF3E8; color: var(--olive); }
+    .s-layer.code { background: #EEF0F8; color: #4A5A8C; }
+    .s-layer.split { background: #FEF3EE; color: var(--clay); }
+    .s-layer.verify { background: var(--gray-150); color: var(--gray-700); }
+    .step .s-body p {
+      font-size: 13.5px;
+      color: var(--gray-500);
+      max-width: 600px;
+      margin-bottom: 8px;
+    }
+    .step .verify {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--gray-700);
+      background: var(--gray-150);
+      border: 1px solid var(--gray-300);
+      border-radius: 6px;
+      padding: 6px 10px;
+      display: inline-block;
+    }
+    .step .verify::before { content: '✓ '; color: var(--olive); }
+
+    /* checklist */
+    .checklist { display: flex; flex-direction: column; gap: 10px; max-width: 720px; }
+    .check-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 9px;
+      padding: 13px 16px;
+    }
+    .check-box {
+      width: 18px; height: 18px;
+      border-radius: 4px;
+      border: 2px solid var(--gray-300);
+      background: var(--paper);
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .check-item .c-text { font-size: 14px; color: var(--gray-700); }
+    .check-item .c-note {
+      font-size: 12px;
+      color: var(--gray-500);
+      margin-top: 2px;
+      font-family: var(--mono);
+    }
+
+    /* assumptions */
+    .assumption-list { display: flex; flex-direction: column; gap: 10px; max-width: 760px; }
+    .assumption {
+      display: flex;
+      gap: 12px;
+      font-size: 14px;
+      color: var(--gray-700);
+    }
+    .assumption .a-num {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--oat);
+      color: var(--slate);
+      padding: 2px 7px;
+      border-radius: 5px;
+      height: fit-content;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+
+    /* size visualization */
+    .size-bars {
+      background: var(--paper);
+      border: 1.5px solid var(--gray-300);
+      border-radius: 12px;
+      padding: 24px 28px;
+    }
+    .size-row {
+      display: grid;
+      grid-template-columns: 140px 1fr 110px;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    .size-row:last-child { margin-bottom: 0; }
+    .size-row .label {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--gray-700);
+    }
+    .size-row .bar-wrap {
+      background: var(--gray-150);
+      border-radius: 4px;
+      height: 22px;
+      overflow: hidden;
+      position: relative;
+    }
+    .size-row .bar {
+      height: 100%;
+      border-radius: 4px;
+    }
+    .size-row .bar.old { background: var(--clay); }
+    .size-row .bar.new { background: var(--olive); }
+    .size-row .val {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--slate);
+      font-weight: 600;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="eyebrow">ExecPlan · AD · 2026-06-02 · 待评审</div>
+  <h1>Bundle 瘦身 — Monaco → CodeMirror 6</h1>
+  <div class="goal-box">
+    <strong>根治</strong>主窗口和 Settings 窗口启动时的「空白页 → 内容」过渡感。问题根因不在窗口显示时机，而在首屏 bundle 体积 — 当前主 chunk 是 <code style="font-family:var(--mono);font-size:13px;color:var(--clay)">3.7 MB</code>（Monaco editor 全量打包）。WebView 要等这个 bundle 下载/解析/执行完成才能 paint UI，所以哪怕 OS 窗口已显示，里面也会有几百毫秒到一两秒的空白。
+  </div>
+
+  <!-- Summary -->
+  <div class="summary">
+    <div class="cell">
+      <div class="k">主 bundle 目标</div>
+      <div class="v ok">&lt; 600 KB</div>
+    </div>
+    <div class="cell">
+      <div class="k">涉及文件</div>
+      <div class="v accent">~10</div>
+    </div>
+    <div class="cell">
+      <div class="k">里程碑</div>
+      <div class="v">7 步</div>
+    </div>
+    <div class="cell">
+      <div class="k">主要风险</div>
+      <div class="v">编辑器替换</div>
+    </div>
+  </div>
+
+  <!-- Size visualization -->
+  <section>
+    <div class="sec-label">问题尺度</div>
+    <h2>体积差距：3.7 MB vs &lt; 600 KB</h2>
+    <p class="sec-intro">Monaco 是面向 VS Code 的全功能 IDE 内核，自带 worker 和上百种语言。AD 只用来编辑 JSON。CodeMirror 6 同等的"专业代码编辑器"语义，但模块化按需加载。</p>
+    <div class="size-bars">
+      <div class="size-row">
+        <div class="label">现状 index-*.js</div>
+        <div class="bar-wrap"><div class="bar old" style="width: 100%"></div></div>
+        <div class="val">3.7 MB</div>
+      </div>
+      <div class="size-row">
+        <div class="label">现状 gzip</div>
+        <div class="bar-wrap"><div class="bar old" style="width: 26%"></div></div>
+        <div class="val">969 KB</div>
+      </div>
+      <div class="size-row">
+        <div class="label">目标 index-*.js</div>
+        <div class="bar-wrap"><div class="bar new" style="width: 16%"></div></div>
+        <div class="val">&lt; 600 KB</div>
+      </div>
+      <div class="size-row">
+        <div class="label">CodeMirror gzip</div>
+        <div class="bar-wrap"><div class="bar new" style="width: 2.2%"></div></div>
+        <div class="val">~80 KB</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Why blank -->
+  <section>
+    <div class="sec-label">根因分析</div>
+    <h2>为什么会"先空白再出内容"</h2>
+<div class="model-diagram">  <span class="label">┌─ OS 创建 Tauri 窗口  </span>     <span class="accent">[已 backgroundColor 兜底，第一帧不再白]</span>
+  <span class="label">│</span>
+  <span class="label">▼</span>
+  ◯  WebView 加载 index.html         <span class="ok">← 同步 inline script: 涂主题色</span>
+  <span class="label">│</span>
+  <span class="label">▼</span>
+  ◯  下载 <span class="accent">/assets/index-*.js (3.7 MB)</span>  <span class="label">← 阻塞点 ①</span>
+  <span class="label">│</span>
+  <span class="label">▼</span>
+  ◯  解析 + 执行 Monaco 模块图       <span class="label">← 阻塞点 ②</span>
+  <span class="label">│</span>
+  <span class="label">▼</span>
+  ◯  React 首次 render → UI 可见     <span class="ok">← 这才离开"空白态"</span>
+
+  <span class="label">阻塞点 ① ② 加起来 = 用户看到的"过渡感"。换 CodeMirror 后两点都消除。</span></div>
+  </section>
+
+  <!-- Before / After -->
+  <section>
+    <div class="sec-label">用户视角</div>
+    <h2>会感知到什么变化</h2>
+    <div class="compare-card">
+      <div class="compare-row">
+        <div class="compare-cell label">主窗口启动</div>
+        <div class="compare-cell v-old">
+          <div class="compare-tag old">现状</div>
+          OS 窗口出现 → 数百 ms 空白 → sidebar 出现
+        </div>
+        <div class="compare-cell v-new">
+          <div class="compare-tag new">目标</div>
+          OS 窗口出现 → sidebar 立即可见（&lt; 300 ms）
+        </div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-cell label">Settings 窗口</div>
+        <div class="compare-cell v-old">
+          <div class="compare-tag old">现状</div>
+          点开后空白 ~1-2 s 才出内容
+        </div>
+        <div class="compare-cell v-new">
+          <div class="compare-tag new">目标</div>
+          点开内容立即可见（&lt; 200 ms）
+        </div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-cell label">JSON 编辑器</div>
+        <div class="compare-cell v-old">
+          <div class="compare-tag old">现状</div>
+          Monaco：行号、高亮、查找替换、暗色主题、撤销
+        </div>
+        <div class="compare-cell v-new">
+          <div class="compare-tag new">目标</div>
+          CodeMirror：行号、高亮、查找替换、暗色主题、撤销 <strong>（等价）</strong>
+        </div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-cell label">已删能力</div>
+        <div class="compare-cell v-old">
+          <div class="compare-tag old">现状</div>
+          Monaco JSON schema 自动补全（AD 没配 schema，未启用）
+        </div>
+        <div class="compare-cell v-new">
+          <div class="compare-tag new">目标</div>
+          无（用户感知 ≈ 0）
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Affected scope -->
+  <section>
+    <div class="sec-label">影响范围</div>
+    <h2>文件级改动</h2>
+<div class="filetree">  <span class="dir">src/</span>
+  ├── main.tsx                        <span class="badge m">M</span>  <span class="keep">路由级动态 import App / SettingsApp</span>
+  ├── App.tsx                         <span class="badge m">M</span>  <span class="keep">大组件改 React.lazy + Suspense</span>
+  ├── <span class="dir">components/</span>
+  │   ├── <span class="del">DiffView.tsx</span>                  <span class="badge d">DEL</span>  <span class="keep">死代码</span>
+  │   ├── LayeredSettingsEditor.tsx   <span class="badge m">M</span>  <span class="keep">Monaco → JsonEditor</span>
+  │   ├── <span class="new">JsonEditor.tsx</span>                <span class="badge n">N</span>  <span class="keep">CodeMirror 6 受控包装</span>
+  │   ├── ProjectDetail.tsx           <span class="badge m">M</span>  <span class="keep">ProjectConfigEditor 改 lazy</span>
+  │   ├── ProfileEditDrawer.tsx       <span class="badge m">M</span>  <span class="keep">内容 lazy</span>
+  │   ├── HistoryDialog.tsx           <span class="badge m">M</span>  <span class="keep">内容 lazy</span>
+  │   ├── ImportDialog.tsx            <span class="badge m">M</span>  <span class="keep">内容 lazy</span>
+  │   ├── DetectedProjectsModal.tsx   <span class="badge m">M</span>  <span class="keep">内容 lazy</span>
+  │   └── CommandPalette.tsx          <span class="badge m">M</span>  <span class="keep">内容 lazy</span>
+  ├── <span class="dir">lib/</span>
+  │   └── <span class="del">monacoSetup.ts</span>                <span class="badge d">DEL</span>  <span class="keep">不再需要 monaco worker 配置</span>
+  └── <span class="dir">styles/</span>
+      └── globals.css                 <span class="badge m">M</span>  <span class="keep">CodeMirror 主题 / 字体微调</span>
+
+  vite.config.ts                      <span class="badge m">M</span>  <span class="keep">manualChunks + chunkSizeWarningLimit</span>
+  package.json                        <span class="badge m">M</span>  <span class="keep">- monaco-editor / @monaco-editor/react</span>
+                                            <span class="keep">+ codemirror, @codemirror/{state,view,</span>
+                                            <span class="keep">  lang-json,theme-one-dark}</span>
+
+  <span class="dir">src-tauri/tauri.conf.json</span>           <span class="badge k">KEEP</span>  <span class="keep">backgroundColor 留作兜底</span>
+  index.html                          <span class="badge k">KEEP</span>  <span class="keep">预绘脚本留作兜底</span>
+  AdvancedSettings.tsx                <span class="badge k">KEEP</span>  <span class="keep">新窗口 backgroundColor 留作兜底</span></div>
+  </section>
+
+  <!-- Assumptions -->
+  <section>
+    <div class="sec-label">假设</div>
+    <h2>开始前的隐含前提</h2>
+    <div class="assumption-list">
+      <div class="assumption"><div class="a-num">A1</div><div>CodeMirror 6 在 Tauri 2 WKWebView 上运行良好。纯 ESM、无 worker、无平台依赖。</div></div>
+      <div class="assumption"><div class="a-num">A2</div><div>现有 CSP（<code>default-src 'self'; ...; worker-src 'self' blob:</code>）对 CodeMirror 不需要任何调整。</div></div>
+      <div class="assumption"><div class="a-num">A3</div><div><code>@codemirror/lang-json</code> 提供的高亮 + 括号匹配 + 折叠 + 自动闭合已满足实际需要；用户对 JSON schema 自动补全无强需求。</div></div>
+      <div class="assumption"><div class="a-num">A4</div><div>JSON 校验由父组件 <code>LayeredSettingsEditor</code> 完成（沿用现有 <code>parseLayer</code> + <code>onValidityChange</code>），编辑器内部不画 gutter marker。</div></div>
+      <div class="assumption"><div class="a-num">A5</div><div>dark/light 主题切换通过 <code>EditorView.dispatch</code> 重新配置 extensions 实现，能在 <code>useUiSettings.darkMode</code> 变化时无缝切换。</div></div>
+      <div class="assumption"><div class="a-num">A6</div><div><code>DiffView.tsx</code> 是死代码 — <code>grep -rn "DiffView" src/</code> 全仓只匹配自身定义。</div></div>
+      <div class="assumption"><div class="a-num">A7</div><div>之前加的 backgroundColor + 预绘脚本保留作为兜底，但根治后过渡时间应该 &lt; 100 ms，不需要再补 deferred-show。</div></div>
+      <div class="assumption"><div class="a-num">A8</div><div>移除 monaco 相关 deps 后，Vite 不再产出 <code>*.worker-*.js</code> 文件。</div></div>
+    </div>
+  </section>
+
+  <!-- Decisions -->
+  <section>
+    <div class="sec-label">关键决策</div>
+    <h2>方案选型</h2>
+    <div class="decisions">
+      <div class="decision">
+        <div class="d-num">D1</div>
+        <h3>用 CodeMirror 6 替代 Monaco</h3>
+        <div class="rationale">体积差 30-50 倍（3 MB+ vs ~80 KB gzip），功能覆盖 100% 实际需要的（JSON 高亮、行号、暗色主题、撤销重做、查找替换）。否决「保留 Monaco + lazy」 — bundle 总量不变；否决「textarea + Prism」 — 失去行号/查找/撤销栈。</div>
+        <div class="tags">
+          <span class="tag warn">重写 ~150 行</span>
+          <span class="tag ok">收益最大</span>
+        </div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D2</div>
+        <h3>抽出 JsonEditor 组件</h3>
+        <div class="rationale">CodeMirror 命令式 API 与 React 受控模式有阻抗。把这层封装在组件边界内，对外仍是 <code>value</code> / <code>onChange</code>，<code>LayeredSettingsEditor</code> 不感知差异。将来换其它编辑器只动一处。</div>
+        <div class="tags">
+          <span class="tag">关注点分离</span>
+        </div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D3</div>
+        <h3>JSON 校验留在父组件</h3>
+        <div class="rationale">当前 <code>parseLayer</code> + <code>onValidityChange</code> 已经把校验放在父层；CodeMirror lint 也能做但会重复。保持单一来源。</div>
+        <div class="tags">
+          <span class="tag">单一来源</span>
+        </div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D4</div>
+        <h3>路由级 split 走 dynamic import</h3>
+        <div class="rationale">保持 vite/index.html 单 entry 模型不变。<code>main.tsx</code> 根据 hash 动态 import App / SettingsApp，Vite 自动产出独立 chunk。否决双 entry — 要改 vite multi-page 配置 + AdvancedSettings.tsx url 拼接，工程量更大。</div>
+        <div class="tags">
+          <span class="tag ok">小改动</span>
+        </div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D5</div>
+        <h3>保留 backgroundColor + 预绘脚本兜底</h3>
+        <div class="rationale">无害（CodeMirror 加载快后 1-2 帧内被 React 接管），但万一某机器加载稍慢，至少首帧不是白色。不再需要 deferred-show（visible:false + frontend ready 后 show）— 根治后过渡 &lt; 100 ms 肉眼不可见。</div>
+        <div class="tags">
+          <span class="tag">defense-in-depth</span>
+        </div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D6</div>
+        <h3>不做 i18n locale lazy</h3>
+        <div class="rationale">zh.json + en.json 加起来 ~30 KB，相对收益太小，不值得复杂化（要异步等 locale 加载完才能 render）。</div>
+        <div class="tags">
+          <span class="tag">收益不足</span>
+        </div>
+      </div>
+      <div class="decision">
+        <div class="d-num">D7</div>
+        <h3>vite manualChunks 分组</h3>
+        <div class="rationale"><code>vendor-react</code>: react/react-dom/react-i18next；<code>vendor-codemirror</code>: codemirror/@codemirror/*；<code>vendor-radix</code>: @radix-ui/* + cmdk + lucide-react。让构建产物结构更可读，开发期 reload 速度也有帮助。</div>
+        <div class="tags">
+          <span class="tag">缓存友好</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Milestones -->
+  <section>
+    <div class="sec-label">执行</div>
+    <h2>7 个里程碑</h2>
+    <p class="sec-intro">总预估 ~2 小时。每步完成后 MD 打勾 + 时间戳。</p>
+    <div class="stepper">
+
+      <div class="step">
+        <div class="s-num">M1</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer deps">deps · cleanup</span>
+          <h3>基础设施 + 死代码清理</h3>
+          <p>删除 DiffView.tsx / monacoSetup.ts；从 main.tsx 移除 <code>import './lib/monacoSetup'</code>；<code>pnpm remove monaco-editor @monaco-editor/react</code>；<code>pnpm add codemirror @codemirror/state @codemirror/view @codemirror/lang-json @codemirror/theme-one-dark</code>。</p>
+          <span class="verify">pnpm typecheck 期待报错（捕获所有 Monaco 引用点）</span>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="s-num">M2</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer code">code · new component</span>
+          <h3>新建 JsonEditor.tsx</h3>
+          <p>props: <code>{ value, onChange, dark?, readOnly? }</code>；useRef + useEffect 管理 EditorView 生命周期；extensions: lineNumbers, history, json(), oneDark (条件), keymap, updateListener；dark 切换通过 themeCompartment.reconfigure；外部受控用 docChanged 守卫避免循环。</p>
+          <span class="verify">临时页手动渲染：输入 JSON → 高亮 + 行号正确</span>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="s-num">M3</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer code">code · replace</span>
+          <h3>LayeredSettingsEditor 接入 JsonEditor</h3>
+          <p><code>import Editor from '@monaco-editor/react'</code> → <code>import { JsonEditor } from './JsonEditor'</code>；移除 Monaco 特有 options（minimap/fontSize/word-wrap）— CodeMirror 默认已合理。</p>
+          <span class="verify">pnpm typecheck 通过；pnpm tauri build 成功；dist/assets 不再出现 monaco chunk</span>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="s-num">M4</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer split">split · routes</span>
+          <h3>路由级 split</h3>
+          <p>main.tsx：根据 <code>window.location.hash.startsWith('#/settings')</code> 动态 <code>import('./App')</code> 或 <code>import('./SettingsApp')</code>；用顶层 await 或 IIFE 包裹。</p>
+          <span class="verify">dist/assets 出现独立 App-*.js 和 SettingsApp-*.js；Settings chunk 不引用 codemirror</span>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="s-num">M5</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer split">split · components</span>
+          <h3>大组件 React.lazy</h3>
+          <p>App.tsx 顶层把 HistoryDialog / ImportDialog / DetectedProjectsModal / CommandPalette / ProfileEditDrawer 改成 React.lazy（默认隐藏的 dialog/drawer，<code>&lt;Suspense fallback={null}&gt;</code> 即可）。ProjectDetail.tsx 把 ProjectConfigEditor 改 lazy，外层用 <code>&lt;Suspense fallback={&lt;EditorSkeleton /&gt;}&gt;</code>。</p>
+          <span class="verify">每个 dialog/drawer 首次打开时按需加载，无报错</span>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="s-num">M6</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer split">split · vendors</span>
+          <h3>vite manualChunks</h3>
+          <p>vite.config.ts 在 <code>build.rollupOptions.output.manualChunks</code> 配置 vendor-react / vendor-codemirror / vendor-radix；<code>chunkSizeWarningLimit: 800</code>。</p>
+          <span class="verify">pnpm tauri build 后 chunk 分布合理，主 bundle &lt; 600 KB</span>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="s-num">M7</div>
+        <div class="s-dot-col"><div class="s-dot"></div><div class="s-line"></div></div>
+        <div class="s-body">
+          <span class="s-layer verify">verify · deploy</span>
+          <h3>验证 + 部署 + 文档</h3>
+          <p>typecheck + test + build 全绿；部署到 /Applications/AD.app 肉眼验证主窗口和 Settings 窗口启动；JSON 高亮、行号、暗色主题、撤销重做、Cmd+F 全部正常；非法 JSON 红框报错；darkMode 切换主题跟随；⌘K palette / dialog 按需加载。更新 AGENTS.md 项目结构，归档 MD+HTML 到 completed/。</p>
+          <span class="verify">主 bundle &lt; 600 KB；窗口空白过渡 &lt; 300 ms（目测）</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Validation -->
+  <section>
+    <div class="sec-label">验收</div>
+    <h2>合格标准</h2>
+    <div class="checklist">
+      <div class="check-item">
+        <div class="check-box"></div>
+        <div>
+          <div class="c-text">主 bundle 体积达标</div>
+          <div class="c-note">dist/assets/index-*.js &lt; 600 KB（无压缩）</div>
+        </div>
+      </div>
+      <div class="check-item">
+        <div class="check-box"></div>
+        <div>
+          <div class="c-text">不再含 Monaco 产物</div>
+          <div class="c-note">dist/assets/ 不含 monaco-editor* / *.worker-*.js</div>
+        </div>
+      </div>
+      <div class="check-item">
+        <div class="check-box"></div>
+        <div>
+          <div class="c-text">独立 vendor-codemirror chunk</div>
+          <div class="c-note">dist/assets/vendor-codemirror-*.js 存在</div>
+        </div>
+      </div>
+      <div class="check-item">
+        <div class="check-box"></div>
+        <div>
+          <div class="c-text">主窗口冷启动 UI 可见 &lt; 300 ms</div>
+          <div class="c-note">目测：从点击图标到 sidebar 出现</div>
+        </div>
+      </div>
+      <div class="check-item">
+        <div class="check-box"></div>
+        <div>
+          <div class="c-text">Settings 窗口冷启动 UI 可见 &lt; 200 ms</div>
+          <div class="c-note">目测：从点击设置图标到 tab 出现</div>
+        </div>
+      </div>
+      <div class="check-item">
+        <div class="check-box"></div>
+        <div>
+          <div class="c-text">编辑器功能不退化</div>
+          <div class="c-note">JSON 高亮 / 行号 / 错误提示 / 撤销重做 / Cmd+F</div>
+        </div>
+      </div>
+      <div class="check-item">
+        <div class="check-box"></div>
+        <div>
+          <div class="c-text">主流程无报错</div>
+          <div class="c-note">启动 → 选 project → 编辑 → 保存 → 切 template → ⌘K → history → settings 窗口</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <section style="margin-top: 80px; padding-top: 32px; border-top: 1.5px solid var(--gray-300);">
+    <div class="sec-label" style="margin-bottom: 14px;">基线状态</div>
+    <p style="font-size: 14px; color: var(--gray-700); max-width: 760px;">
+      <strong style="color: var(--olive);">Approved plan baseline (frozen at 2026-06-02 17:55 GMT+8).</strong>
+      Live execution state: see
+      <code style="font-family:var(--mono);font-size:13px;color:var(--clay)">docs/exec-plans/active/bundle-slim-codemirror.md</code>
+    </p>
+  </section>
+
+</div>
+</body>
+</html>

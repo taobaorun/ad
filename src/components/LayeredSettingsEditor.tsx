@@ -1,5 +1,5 @@
 /**
- * Reusable layered settings editor — Monaco JSON tabs (shared / local) + KV env tab.
+ * Reusable layered settings editor — JSON tabs (shared / local) + KV env tab.
  *
  * Author: taobaorun
  *
@@ -14,11 +14,11 @@
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import Editor from '@monaco-editor/react';
+import { JsonEditor } from './JsonEditor';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, WrapText } from 'lucide-react';
 import { parseLayer, type LayerParse } from '@/lib/layeredSettings';
 import { useUiSettings } from '@/store/uiSettings';
 
@@ -154,27 +154,43 @@ export function LayeredSettingsEditor({
 
 function TextLayerPanel({ layer, parse }: { layer: TextLayer; parse: LayerParse }) {
   const darkMode = useUiSettings((s) => s.darkMode);
+
+  function formatJson() {
+    try {
+      const formatted = JSON.stringify(JSON.parse(layer.text), null, 2);
+      if (formatted !== layer.text) layer.onChange(formatted);
+    } catch {
+      // invalid JSON — do nothing
+    }
+  }
+
   return (
     <>
-      {layer.caption && (
-        <div className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
-          {layer.caption}
-        </div>
-      )}
+      <div className="flex items-center justify-between border-b border-border px-3 py-1">
+        {layer.caption ? (
+          <span className="text-xs text-muted-foreground">{layer.caption}</span>
+        ) : (
+          <span />
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={formatJson}
+          disabled={!parse.ok}
+          className="h-6 gap-1 px-2 text-xs text-muted-foreground"
+          title="Format JSON"
+        >
+          <WrapText className="h-3 w-3" />
+          Format
+        </Button>
+      </div>
       {!parse.ok && (
         <div className="border-b border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
           {parse.message}
         </div>
       )}
       <div className="flex-1 overflow-hidden">
-        <Editor
-          height="100%"
-          defaultLanguage="json"
-          value={layer.text}
-          onChange={(v) => layer.onChange(v ?? '')}
-          theme={darkMode ? 'vs-dark' : 'light'}
-          options={MONACO_OPTIONS}
-        />
+        <JsonEditor value={layer.text} onChange={layer.onChange} dark={darkMode} />
       </div>
     </>
   );
@@ -260,14 +276,6 @@ function EnvLayerEditor({
     </div>
   );
 }
-
-const MONACO_OPTIONS = {
-  fontSize: 13,
-  minimap: { enabled: false },
-  scrollBeyondLastLine: false,
-  automaticLayout: true,
-  tabSize: 2,
-} as const;
 
 function tabBadge(parse: LayerParse): string {
   if (!parse.ok) return '⚠';

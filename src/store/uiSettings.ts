@@ -96,6 +96,7 @@ export const useUiSettings = create<State>((set, get) => ({
   setDarkMode: (v) => {
     set({ darkMode: v });
     save({ ...get(), darkMode: v });
+    tauri.writeThemeHint(v).catch(() => {});
   },
   setTerminal: (patch) => {
     const next = { ...get().terminal, ...patch };

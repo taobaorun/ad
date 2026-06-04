@@ -115,13 +115,15 @@ ad/
 │   │   ├── HistoryPanel.tsx     # 历史条目列表（被 HistoryDialog 引用）
 │   │   ├── InlineConflictResolver.tsx  # apply 冲突 inline 解决
 │   │   ├── StatusRing.tsx       # 项目状态色环
-│   │   ├── DiffView.tsx         # diff 展示
+│   │   ├── JsonEditor.tsx       # CodeMirror 6 受控包装（LayeredSettingsEditor 用）
 │   │   ├── EmptyState.tsx       # 空状态占位
 │   │   └── ...                  # ActivateToast / AdvancedSettings 等
 │   ├── store/               # Zustand stores（profiles / projects / ui / uiSettings）
 │   ├── lib/                 # 工具函数（tauri IPC / keymap / pathAutocomplete 等）
 │   ├── i18n/                # i18next init + locales/{zh,en}.json（默认 zh）
-│   └── App.tsx              # 应用入口（双栏布局 + overlay 层）
+│   ├── main.tsx             # entry：hash 路由动态 import App / SettingsApp（独立 chunk）
+│   ├── App.tsx              # 主窗口（双栏布局 + overlay 层，所有 dialog 走 React.lazy）
+│   └── SettingsApp.tsx      # Settings 窗口入口（独立路由，不拉编辑器依赖）
 ├── src-tauri/               # Tauri / Rust 后端
 │   ├── src/
 │   │   ├── commands/        # Tauri 命令（前端可调用）
@@ -160,7 +162,7 @@ AD 的数据全部在 `~/.ad/`（v0.2 后从 `~/.claude/` 搬出，启动时自�
 **UI 形态（v0.4）**：双栏 + drawer + command palette
 - 左栏 `ProjectSidebar` 不变：紧凑 project rows + 状态色环 + ⌘1-9 快捷键
 - 主区 `ProjectDetail` 是项目自身的配置编辑器：header（项目名 / 路径 / git 状态）+ TemplateBreadcrumb（"由模板 X 初始化" + Switch template 按钮）+ 内联 `ProjectConfigEditor`（三 tab Shared/Local/Env，Save 直接写盘到 .claude/）
-- `<LayeredSettingsEditor>` 是公共组件（Monaco JSON + KV env 表），ProfileEditor 和 ProjectConfigEditor 都用它
+- `<LayeredSettingsEditor>` 是公共组件（CodeMirror 6 JSON via `JsonEditor.tsx` + KV env 表），ProfileEditor 和 ProjectConfigEditor 都用它
 - ⌘K `CommandPalette` 入口：apply / switch project / **switch template** / **edit template** / add / history
 - 右侧 `ProfileEditDrawer` 现在是 **template 编辑器**（编辑只读模板，不影响当前项目），从 ⌘K palette 的 "edit template <name>" 触发
 - `SwitchTemplateDialog` 弹出选模板 → 调 `apply_profile_to_project`（保留原 IPC）→ 三层都写入 .claude/settings*.json，冲突走 InlineConflictResolver

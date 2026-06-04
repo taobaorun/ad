@@ -83,6 +83,10 @@ pub fn scan_roots_state_path() -> Result<PathBuf, FsError> {
     Ok(state_dir()?.join("scan_roots.json"))
 }
 
+pub fn theme_hint_path() -> Result<PathBuf, FsError> {
+    Ok(state_dir()?.join("theme"))
+}
+
 // --- Legacy v0.1 paths (only referenced by migrate_data_dir_to_home) ---
 
 /// v0.1 location of AD's data (under ~/.claude/ad/). Migrated to `ad_home()`.

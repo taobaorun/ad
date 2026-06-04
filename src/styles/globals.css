@@ -181,3 +181,120 @@ button, [role="button"], label, nav, header, aside {
    chrome instead of always rendering bright white in dark mode. */
 :root { color-scheme: light; }
 :root.dark { color-scheme: dark; }
+
+/*
+ * CodeMirror 6 base layout — duplicated from CM's base theme because style-mod's
+ * dynamically injected <style> tag is silently ignored by WKWebView in Tauri's
+ * production bundle. Without these rules .cm-scroller falls back to display:block,
+ * stacking gutters and content vertically instead of side-by-side.
+ */
+.cm-editor {
+  position: relative !important;
+  overflow: hidden !important;
+  height: 100%;
+}
+.cm-scroller {
+  display: flex !important;
+  align-items: flex-start !important;
+  overflow: auto;
+  height: 100%;
+  position: relative;
+  z-index: 0;
+  font-family: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.cm-content {
+  display: block;
+  flex-grow: 2;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px 0;
+  white-space: pre;
+  word-wrap: normal;
+  box-sizing: border-box;
+  min-height: 100%;
+  outline: none;
+}
+.cm-gutters {
+  display: flex;
+  flex-shrink: 0;
+  position: sticky;
+  left: 0;
+  z-index: 200;
+  box-sizing: border-box;
+  background: var(--ds-bg-soft);
+  border-right: 1px solid var(--ds-line);
+}
+.cm-gutter {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.cm-gutterElement {
+  box-sizing: border-box;
+}
+.cm-lineNumbers .cm-gutterElement {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ds-fg-4);
+  padding: 0 8px 0 4px;
+  min-width: 2.5ch;
+  text-align: right;
+}
+.cm-cursor {
+  position: absolute;
+  border-left: 1.2px solid var(--ds-fg-2);
+  margin-left: -0.6px;
+  pointer-events: none;
+}
+.cm-activeLine {
+  background: var(--ds-accent-soft);
+}
+.cm-activeLineGutter {
+  background: var(--ds-accent-soft);
+}
+.cm-line {
+  display: block;
+  padding: 0 2px 0 6px;
+}
+.cm-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  contain: size style;
+}
+.cm-widgetBuffer {
+  content: "";
+  display: inline !important;
+}
+.cm-foldPlaceholder {
+  display: inline-block;
+  border: 1px solid var(--ds-line-strong);
+  color: var(--ds-fg-3);
+  background: var(--ds-bg-inset);
+  padding: 0px 6px;
+  border-radius: 4px;
+  margin: 0 2px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8em;
+  line-height: 1.4;
+  vertical-align: middle;
+}
+.dark .cm-foldPlaceholder {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.15);
+  color: var(--ds-fg-3);
+}
+.cm-foldGutter .cm-gutterElement {
+  cursor: pointer;
+  color: var(--ds-fg-4);
+  padding: 0 4px;
+  text-align: center;
+  font-size: 11px;
+  transition: color 0.15s;
+}
+.cm-foldGutter .cm-gutterElement:hover {
+  color: var(--ds-fg-2);
+}

@@ -13,7 +13,7 @@
  * intentionally not reachable from this pane any more.
  */
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useUiState } from '@/store/ui';
 import { useProjects } from '@/store/projects';
@@ -23,8 +23,24 @@ import { tauri } from '@/lib/tauri';
 import { Trash2, Repeat, SquareTerminal, X as XIcon } from 'lucide-react';
 import type { Project, ProjectStatus } from '@/lib/projectTypes';
 import type { ProfileFile } from '@/lib/profileSchema';
-import { ProjectConfigEditor } from './ProjectConfigEditor';
 import { SwitchTemplateDialog } from './SwitchTemplateDialog';
+
+// ProjectConfigEditor pulls in CodeMirror + the layered settings editor;
+// lazy-loading it keeps the App entry chunk small. The Suspense fallback is
+// an unlabeled muted box — a short flash is better than text that hints at
+// trouble.
+const ProjectConfigEditor = lazy(() =>
+  import('./ProjectConfigEditor').then((m) => ({ default: m.ProjectConfigEditor })),
+);
+
+function EditorSkeleton() {
+  return (
+    <div
+      className="h-full w-full rounded-lg"
+      style={{ background: 'var(--ds-bg-inset)', border: '0.5px solid var(--ds-line)' }}
+    />
+  );
+}
 
 export function ProjectDetail() {
   const { t } = useTranslation();
@@ -223,7 +239,9 @@ function Detail({ project }: { project: Project }) {
         className="flex-1 min-h-0"
         style={{ width: '100%', maxWidth: 1400, margin: '0 auto', padding: '20px 40px 40px' }}
       >
-        <ProjectConfigEditor key={editorReloadKey} projectPath={project.path} />
+        <Suspense fallback={<EditorSkeleton />}>
+          <ProjectConfigEditor key={editorReloadKey} projectPath={project.path} />
+        </Suspense>
       </div>
 
       <SwitchTemplateDialog
