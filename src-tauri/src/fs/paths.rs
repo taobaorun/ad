@@ -87,6 +87,24 @@ pub fn theme_hint_path() -> Result<PathBuf, FsError> {
     Ok(state_dir()?.join("theme"))
 }
 
+// --- Skill management (v0.5) ---
+
+pub fn skill_library_dir() -> Result<PathBuf, FsError> {
+    Ok(ad_home()?.join("skill-library"))
+}
+
+pub fn skill_sources_path() -> Result<PathBuf, FsError> {
+    Ok(state_dir()?.join("skill_sources.json"))
+}
+
+pub fn project_skills_dir() -> Result<PathBuf, FsError> {
+    Ok(state_dir()?.join("project_skills"))
+}
+
+pub fn claude_skills_dir() -> Result<PathBuf, FsError> {
+    Ok(claude_dir()?.join("skills"))
+}
+
 // --- Legacy v0.1 paths (only referenced by migrate_data_dir_to_home) ---
 
 /// v0.1 location of AD's data (under ~/.claude/ad/). Migrated to `ad_home()`.

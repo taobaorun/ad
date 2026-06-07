@@ -206,6 +206,95 @@ fn default_color() -> String {
     "#7C3AED".into()
 }
 
+// ---------------------------------------------------------------------------
+// Skill management (v0.5)
+// ---------------------------------------------------------------------------
+
+/// A configured skill source — git repo or local directory.
+/// Stored as JSON array in `~/.ad/state/skill_sources.json`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillSource {
+    pub id: String,
+    pub source_type: SkillSourceType,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subdirectory: Option<String>,
+    #[serde(default)]
+    pub auto_update: bool,
+    pub added_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillSourceType {
+    Git,
+    Local,
+}
+
+/// Per-project skill configuration.
+/// Stored at `~/.ad/state/project_skills/<slug>.json`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSkillConfig {
+    pub project_path: String,
+    #[serde(default)]
+    pub listed_skills: Vec<String>,
+    #[serde(default)]
+    pub mode: SkillListMode,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillListMode {
+    #[default]
+    Allowlist,
+    Blocklist,
+}
+
+/// Runtime-only: a skill visible to AD after scanning the library + externals.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillEntry {
+    pub name: String,
+    pub path: String,
+    pub source: SkillEntrySource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub scope: SkillScope,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillEntrySource {
+    Managed,
+    External,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillScope {
+    Global,
+    Project,
+    None,
+}
+
+/// Result of updating a skill source.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillUpdateResult {
+    pub source_id: String,
+    pub updated: bool,
+    pub before_version: String,
+    pub after_version: String,
+}
+
 impl ProfileLayers {
     pub fn is_empty(&self) -> bool {
         self.shared.is_none() && self.local.is_none() && self.env.is_empty()

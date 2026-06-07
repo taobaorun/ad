@@ -24,6 +24,7 @@ import { Trash2, Repeat, SquareTerminal, X as XIcon } from 'lucide-react';
 import type { Project, ProjectStatus } from '@/lib/projectTypes';
 import type { ProfileFile } from '@/lib/profileSchema';
 import { SwitchTemplateDialog } from './SwitchTemplateDialog';
+import { ProjectSkills } from './ProjectSkills';
 
 // ProjectConfigEditor pulls in CodeMirror + the layered settings editor;
 // lazy-loading it keeps the App entry chunk small. The Suspense fallback is
@@ -76,6 +77,7 @@ function Detail({ project }: { project: Project }) {
   const [launching, setLaunching] = useState(false);
   const launchingRef = useRef(false);
   const terminal = useUiSettings((s) => s.terminal);
+  const [activeTab, setActiveTab] = useState<'settings' | 'skills'>('settings');
 
   useEffect(() => {
     void (async () => {
@@ -234,14 +236,37 @@ function Detail({ project }: { project: Project }) {
         />
       </div>
 
-      {/* Inline project config editor — fills remaining vertical space */}
+      {/* Tab bar */}
+      <div
+        className="flex-shrink-0"
+        style={{ width: '100%', maxWidth: 1400, margin: '0 auto', padding: '16px 40px 0' }}
+      >
+        <div className="flex gap-0" style={{ borderBottom: '1px solid var(--ds-line)' }}>
+          <TabButton active={activeTab === 'settings'} onClick={() => setActiveTab('settings')}>
+            Settings
+          </TabButton>
+          <TabButton active={activeTab === 'skills'} onClick={() => setActiveTab('skills')}>
+            Skills
+          </TabButton>
+        </div>
+      </div>
+
+      {/* Tab content — fills remaining vertical space */}
       <div
         className="flex-1 min-h-0"
-        style={{ width: '100%', maxWidth: 1400, margin: '0 auto', padding: '20px 40px 40px' }}
+        style={{ width: '100%', maxWidth: 1400, margin: '0 auto', padding: '0 40px 40px' }}
       >
-        <Suspense fallback={<EditorSkeleton />}>
-          <ProjectConfigEditor key={editorReloadKey} projectPath={project.path} />
-        </Suspense>
+        {activeTab === 'settings' ? (
+          <div className="h-full pt-5">
+            <Suspense fallback={<EditorSkeleton />}>
+              <ProjectConfigEditor key={editorReloadKey} projectPath={project.path} />
+            </Suspense>
+          </div>
+        ) : (
+          <div className="h-full pt-2" style={{ border: '0.5px solid var(--ds-line)', borderTop: 'none', borderRadius: '0 0 8px 8px' }}>
+            <ProjectSkills projectPath={project.path} />
+          </div>
+        )}
       </div>
 
       <SwitchTemplateDialog
@@ -368,3 +393,25 @@ const dsBtn: CSSProperties = {
   color: 'var(--ds-fg-2)',
   cursor: 'pointer',
 };
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: '8px 16px',
+        fontSize: 13,
+        fontWeight: 500,
+        color: active ? 'var(--ds-clay)' : 'var(--ds-fg-3)',
+        background: 'transparent',
+        border: 'none',
+        borderBottom: active ? '2px solid var(--ds-clay)' : '2px solid transparent',
+        cursor: 'pointer',
+        marginBottom: -1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}

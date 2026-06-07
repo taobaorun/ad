@@ -8,6 +8,13 @@ import type {
   ProjectStatus,
   ScanRoot,
 } from './projectTypes';
+import type {
+  PluginInfo,
+  ProjectSkillConfig,
+  SkillEntry,
+  SkillSource,
+  SkillUpdateResult,
+} from './skillTypes';
 
 export interface ClaudeProcess {
   pid: number;
@@ -99,6 +106,29 @@ export const tauri = {
 
   openSettingsWindow: () =>
     invoke<void>('open_settings_window'),
+
+  // Skill management
+  listSkillSources: () => invoke<SkillSource[]>('list_skill_sources'),
+  addSkillSource: (source: SkillSource) =>
+    invoke<SkillSource>('add_skill_source', { source }),
+  removeSkillSource: (id: string) => invoke<void>('remove_skill_source', { id }),
+  updateSkillSource: (id: string) =>
+    invoke<SkillUpdateResult>('update_skill_source', { id }),
+  scanSkillLibrary: (projectPath?: string) =>
+    invoke<SkillEntry[]>('scan_skill_library', { projectPath: projectPath ?? null }),
+  getProjectSkills: (projectPath: string) =>
+    invoke<ProjectSkillConfig>('get_project_skills', { projectPath }),
+  toggleSkill: (projectPath: string, skillId: string, enabled: boolean) =>
+    invoke<ProjectSkillConfig>('toggle_skill', { projectPath, skillId, enabled }),
+  setSkillScope: (skillId: string, scope: string) =>
+    invoke<void>('set_skill_scope', { skillId, scope }),
+  applyProjectSkills: (projectPath: string) =>
+    invoke<string[]>('apply_project_skills', { projectPath }),
+
+  listPlugins: (projectPath?: string) =>
+    invoke<PluginInfo[]>('list_plugins', { projectPath: projectPath ?? null }),
+  togglePlugin: (projectPath: string, pluginId: string, enabled: boolean) =>
+    invoke<void>('toggle_plugin', { projectPath, pluginId, enabled }),
 };
 
 export type TerminalBackendId = 'ghostty' | 'cmux' | 'apple-terminal' | 'custom';

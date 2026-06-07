@@ -13,11 +13,12 @@ import { useTranslation } from 'react-i18next';
 import { DEFAULT_GLOBAL_SHORTCUT, useUiSettings } from '@/store/uiSettings';
 import { setLanguage, type Lang } from '@/i18n';
 import type { TerminalBackendId } from '@/lib/tauri';
-import { Keyboard, Languages, Terminal as TerminalIcon, History } from 'lucide-react';
+import { Keyboard, Languages, Terminal as TerminalIcon, History, Puzzle } from 'lucide-react';
+import { SkillSourcesSection } from '@/components/SkillSources';
 
 const TERMINAL_BACKENDS: TerminalBackendId[] = ['ghostty', 'cmux', 'apple-terminal', 'custom'];
 
-type SectionId = 'general' | 'terminal' | 'shortcuts' | 'legacy';
+type SectionId = 'general' | 'terminal' | 'skills' | 'shortcuts' | 'legacy';
 
 export function SettingsApp() {
   const { t } = useTranslation();
@@ -39,6 +40,7 @@ export function SettingsApp() {
   const nav: { id: SectionId; label: string; icon: ReactNode }[] = [
     { id: 'general', label: t('settings.nav.general'), icon: <Languages className="h-4 w-4" /> },
     { id: 'terminal', label: t('settings.nav.terminal'), icon: <TerminalIcon className="h-4 w-4" /> },
+    { id: 'skills', label: 'Skill Sources', icon: <Puzzle className="h-4 w-4" /> },
     { id: 'shortcuts', label: t('settings.nav.shortcuts'), icon: <Keyboard className="h-4 w-4" /> },
     { id: 'legacy', label: t('settings.nav.legacy'), icon: <History className="h-4 w-4" /> },
   ];
@@ -74,6 +76,7 @@ export function SettingsApp() {
         <div className="mx-auto max-w-2xl px-8 py-8">
           {section === 'general' && <GeneralSection />}
           {section === 'terminal' && <TerminalSection />}
+          {section === 'skills' && <SkillSourcesSection />}
           {section === 'shortcuts' && <ShortcutsSection />}
           {section === 'legacy' && <LegacySection />}
         </div>

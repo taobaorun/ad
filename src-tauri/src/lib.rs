@@ -9,7 +9,7 @@ mod tray;
 pub mod commands;
 
 use tauri::webview::Color;
-use tauri::{WebviewWindowBuilder, WindowEvent};
+use tauri::{Manager, WebviewWindowBuilder, WindowEvent};
 use tracing::info;
 
 fn theme_bg() -> Color {
@@ -151,7 +151,27 @@ pub fn run() {
             commands::terminal::list_terminal_backends,
             commands::shortcut::set_global_shortcut,
             commands::settings::open_settings_window,
+            // Skill management
+            commands::skills::list_skill_sources,
+            commands::skills::add_skill_source,
+            commands::skills::remove_skill_source,
+            commands::skills::update_skill_source,
+            commands::skills::scan_skill_library,
+            commands::skills::get_project_skills,
+            commands::skills::toggle_skill,
+            commands::skills::set_skill_scope,
+            commands::skills::apply_project_skills,
+            commands::skills::list_plugins,
+            commands::skills::toggle_plugin,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running ad");
+        .build(tauri::generate_context!())
+        .expect("error while building ad")
+        .run(|app, event| {
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+        });
 }

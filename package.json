@@ -1,7 +1,7 @@
 {
   "name": "ad",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "SwitchHosts-style desktop app for managing Claude Code settings.json profiles",
   "type": "module",
   "scripts": {
