@@ -218,6 +218,7 @@
       "general": "通用",
       "terminal": "终端",
       "shortcuts": "快捷键",
+      "skillSources": "Skills",
       "legacy": "遗留"
     },
     "general": {
@@ -242,6 +243,47 @@
     "legacy": {
       "title": "遗留",
       "desc": "已废弃但仍可启用的旧版入口"
+    },
+    "skills": {
+      "title": "Skills",
+      "nav": "Skills",
+      "desc": "管理 skill 仓库，控制哪些 skill 全局可用。",
+      "sourcesHeading": "Sources",
+      "addSource": "添加 Source",
+      "noSources": "暂无 skill source。可添加 git 仓库或本地目录。",
+      "branch": "branch: {{branch}}",
+      "branchDefault": "branch: default",
+      "localDir": "本地目录",
+      "subdir": "subdir: {{dir}}",
+      "autoUpdateOn": "自动更新: 开",
+      "updating": "更新中...",
+      "update": "更新",
+      "removeConfirm": "移除 source \"{{id}}\" 及其所有已安装的 skill？",
+      "globalSkills": "全局 Skills",
+      "globalSkillsDesc": "启用的 skill 会软链接到 ~/.claude/skills/，对所有项目可见。",
+      "skillCount": "{{count}} 个 skill",
+      "addDialog": {
+        "title": "添加 Skill Source",
+        "name": "名称",
+        "namePlaceholder": "例如 my-team-skills",
+        "type": "类型",
+        "typeGit": "Git 仓库",
+        "typeLocal": "本地目录",
+        "gitUrl": "Git URL",
+        "gitUrlPlaceholder": "git@github.com:org/skills.git",
+        "path": "路径",
+        "pathPlaceholder": "/Users/me/my-skills",
+        "branch": "Branch（可选）",
+        "branchPlaceholder": "main",
+        "subdirectory": "子目录（可选）",
+        "subdirectoryPlaceholder": "例如 skills/",
+        "autoUpdate": "AD 启动时自动更新",
+        "cancel": "取消",
+        "submit": "添加并扫描",
+        "submitting": "添加中…",
+        "cloningGit": "正在克隆仓库…",
+        "addingSource": "正在添加 source…"
+      }
     }
   }
 }

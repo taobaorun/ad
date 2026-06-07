@@ -1,8 +1,8 @@
 [package]
 name = "ad"
-version = "1.0.0"
+version = "1.0.1"
 description = "SwitchHosts-style desktop app for managing Claude Code settings.json profiles"
-authors = ["yuanxuan"]
+authors = ["taobaorun"]
 edition = "2021"
 rust-version = "1.77"
 default-run = "ad"

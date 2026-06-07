@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSkills } from '@/store/skills';
 import type { SkillEntry } from '@/lib/skillTypes';
 import { Plus, RefreshCw, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Toggle } from './SkillToggle';
 
 export function SkillSourcesSection() {
+  const { t } = useTranslation();
   const sources = useSkills((s) => s.sources);
   const entries = useSkills((s) => s.entries);
   const loadSources = useSkills((s) => s.loadSources);
@@ -42,35 +44,35 @@ export function SkillSourcesSection() {
   }
 
   async function handleRemove(id: string) {
-    if (!confirm(`Remove source "${id}" and all its installed skills?`)) return;
+    if (!confirm(t('settings.skills.removeConfirm', { id }))) return;
     await removeSource(id);
   }
 
   return (
     <>
       <header className="mb-5">
-        <h1 className="text-xl font-semibold leading-tight">Skill Sources</h1>
+        <h1 className="text-xl font-semibold leading-tight">{t('settings.skills.title')}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage skill repositories and control which skills are globally available.
+          {t('settings.skills.desc')}
         </p>
       </header>
 
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Sources
+          {t('settings.skills.sourcesHeading')}
         </h2>
         <button
           type="button"
           onClick={() => setAddOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-md border border-clay bg-clay/10 px-2.5 py-1 text-xs text-clay hover:bg-clay/20"
         >
-          <Plus className="h-3 w-3" /> Add Source
+          <Plus className="h-3 w-3" /> {t('settings.skills.addSource')}
         </button>
       </div>
 
       {sources.length === 0 && (
         <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-          No skill sources configured. Add a git repository or local directory.
+          {t('settings.skills.noSources')}
         </div>
       )}
 
@@ -81,9 +83,11 @@ export function SkillSourcesSection() {
               <div className="text-sm font-medium">{s.id}</div>
               <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">{s.url}</div>
               <div className="mt-0.5 text-[11px] text-muted-foreground">
-                {s.sourceType === 'git' ? `branch: ${s.branch ?? 'default'}` : 'Local directory'}
-                {s.subdirectory ? ` · subdir: ${s.subdirectory}` : ''}
-                {s.autoUpdate ? ' · Auto-update: on' : ''}
+                {s.sourceType === 'git'
+                  ? (s.branch ? t('settings.skills.branch', { branch: s.branch }) : t('settings.skills.branchDefault'))
+                  : t('settings.skills.localDir')}
+                {s.subdirectory ? ` · ${t('settings.skills.subdir', { dir: s.subdirectory })}` : ''}
+                {s.autoUpdate ? ` · ${t('settings.skills.autoUpdateOn')}` : ''}
               </div>
             </div>
             <div className="flex gap-1.5">
@@ -93,7 +97,7 @@ export function SkillSourcesSection() {
                   disabled={updating === s.id}
                 >
                   <RefreshCw className={`h-3 w-3 ${updating === s.id ? 'animate-spin' : ''}`} />
-                  {updating === s.id ? 'Updating...' : 'Update'}
+                  {updating === s.id ? t('settings.skills.updating') : t('settings.skills.update')}
                 </SmallBtn>
               )}
               <SmallBtn onClick={() => void handleRemove(s.id)} danger>
@@ -131,8 +135,10 @@ function AddSourceDialog({
   onClose: () => void;
   onAdded: () => void;
 }) {
+  const { t } = useTranslation();
   const addSource = useSkills((s) => s.addSource);
   const [id, setId] = useState('');
+  const [idManual, setIdManual] = useState(false);
   const [sourceType, setSourceType] = useState<'git' | 'local'>('git');
   const [url, setUrl] = useState('');
   const [branch, setBranch] = useState('');
@@ -140,6 +146,25 @@ function AddSourceDialog({
   const [autoUpdate, setAutoUpdate] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  function extractRepoName(gitUrl: string): string {
+    const cleaned = gitUrl.replace(/\.git\s*$/, '').replace(/\/+$/, '');
+    const last = cleaned.split(/[/:]+/).pop() ?? '';
+    return last;
+  }
+
+  function handleUrlChange(val: string) {
+    setUrl(val);
+    if (!idManual) {
+      const name = sourceType === 'git' ? extractRepoName(val) : val.split('/').filter(Boolean).pop() ?? '';
+      setId(name);
+    }
+  }
+
+  function handleIdChange(val: string) {
+    setId(val);
+    setIdManual(true);
+  }
 
   async function handleSubmit() {
     setError(null);
@@ -165,61 +190,61 @@ function AddSourceDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-[440px] rounded-xl border border-border bg-background p-5 shadow-xl">
-        <h3 className="mb-4 text-base font-semibold">Add Skill Source</h3>
+        <h3 className="mb-4 text-base font-semibold">{t('settings.skills.addDialog.title')}</h3>
 
-        <FieldLabel label="Name">
+        <FieldLabel label={t('settings.skills.addDialog.name')}>
           <input
             type="text"
             value={id}
-            onChange={(e) => setId(e.target.value)}
-            placeholder="e.g. my-team-skills"
+            onChange={(e) => handleIdChange(e.target.value)}
+            placeholder={t('settings.skills.addDialog.namePlaceholder')}
             className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-clay"
           />
         </FieldLabel>
 
-        <FieldLabel label="Type">
+        <FieldLabel label={t('settings.skills.addDialog.type')}>
           <div className="flex gap-2">
             <TypeBtn on={sourceType === 'git'} onClick={() => setSourceType('git')}>
-              Git Repository
+              {t('settings.skills.addDialog.typeGit')}
             </TypeBtn>
             <TypeBtn on={sourceType === 'local'} onClick={() => setSourceType('local')}>
-              Local Directory
+              {t('settings.skills.addDialog.typeLocal')}
             </TypeBtn>
           </div>
         </FieldLabel>
 
-        <FieldLabel label={sourceType === 'git' ? 'Git URL' : 'Path'}>
+        <FieldLabel label={sourceType === 'git' ? t('settings.skills.addDialog.gitUrl') : t('settings.skills.addDialog.path')}>
           <input
             type="text"
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => handleUrlChange(e.target.value)}
             placeholder={
               sourceType === 'git'
-                ? 'git@github.com:org/skills.git'
-                : '/Users/me/my-skills'
+                ? t('settings.skills.addDialog.gitUrlPlaceholder')
+                : t('settings.skills.addDialog.pathPlaceholder')
             }
             className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-clay"
           />
         </FieldLabel>
 
         {sourceType === 'git' && (
-          <FieldLabel label="Branch (optional)">
+          <FieldLabel label={t('settings.skills.addDialog.branch')}>
             <input
               type="text"
               value={branch}
               onChange={(e) => setBranch(e.target.value)}
-              placeholder="main"
+              placeholder={t('settings.skills.addDialog.branchPlaceholder')}
               className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-clay"
             />
           </FieldLabel>
         )}
 
-        <FieldLabel label="Subdirectory (optional)">
+        <FieldLabel label={t('settings.skills.addDialog.subdirectory')}>
           <input
             type="text"
             value={subdirectory}
             onChange={(e) => setSubdirectory(e.target.value)}
-            placeholder="e.g. skills/"
+            placeholder={t('settings.skills.addDialog.subdirectoryPlaceholder')}
             className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-clay"
           />
         </FieldLabel>
@@ -231,7 +256,7 @@ function AddSourceDialog({
               checked={autoUpdate}
               onChange={(e) => setAutoUpdate(e.target.checked)}
             />
-            Auto-update on AD launch
+            {t('settings.skills.addDialog.autoUpdate')}
           </label>
         )}
 
@@ -241,21 +266,34 @@ function AddSourceDialog({
           </div>
         )}
 
+        {saving && (
+          <div className="mt-4 flex items-center gap-2.5 rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5">
+            <svg className="h-4 w-4 animate-spin text-primary" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="opacity-20" />
+              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+            <span className="text-xs text-primary">
+              {sourceType === 'git' ? t('settings.skills.addDialog.cloningGit') : t('settings.skills.addDialog.addingSource')}
+            </span>
+          </div>
+        )}
+
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-foreground/5"
+            disabled={saving}
+            className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-foreground/5 disabled:opacity-50"
           >
-            Cancel
+            {t('settings.skills.addDialog.cancel')}
           </button>
           <button
             type="button"
             onClick={() => void handleSubmit()}
             disabled={!id || !url || saving}
-            className="rounded-md bg-clay px-3 py-1.5 text-xs text-white hover:opacity-90 disabled:opacity-50"
+            className="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
-            {saving ? 'Adding...' : 'Add & Scan'}
+            {saving ? t('settings.skills.addDialog.submitting') : t('settings.skills.addDialog.submit')}
           </button>
         </div>
       </div>
@@ -276,6 +314,7 @@ function GlobalSkillsPanel({
   setSkillScope: (skillId: string, scope: string) => Promise<void>;
   scanLibrary: () => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [optimistic, setOptimistic] = useState<Record<string, boolean>>({});
 
   function isGlobal(entry: SkillEntry): boolean {
@@ -317,10 +356,10 @@ function GlobalSkillsPanel({
   return (
     <>
       <h2 className="mb-2 mt-6 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        Global Skills
+        {t('settings.skills.globalSkills')}
       </h2>
       <p className="mb-3 text-[11px] text-muted-foreground">
-        Enabled skills are symlinked to ~/.claude/skills/ and visible to all projects.
+        {t('settings.skills.globalSkillsDesc')}
       </p>
 
       {managedBySource.map(([sourceId, skills]) => {
@@ -344,7 +383,7 @@ function GlobalSkillsPanel({
               }
               <span className="text-[12px] font-semibold">{sourceId}</span>
               <span className="text-[11px] text-muted-foreground">
-                {skills.length} skills
+                {t('settings.skills.skillCount', { count: skills.length })}
               </span>
               <span className="ml-auto text-[11px] text-muted-foreground">
                 {globalCount}/{skills.length}
@@ -410,7 +449,7 @@ function SmallBtn({
       onClick={onClick}
       disabled={disabled}
       className={
-        'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-colors disabled:opacity-50 ' +
+        'inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2 py-1 text-[11px] transition-colors disabled:opacity-50 ' +
         (danger
           ? 'border-destructive/30 text-destructive hover:bg-destructive/10'
           : 'border-border hover:bg-foreground/5')
@@ -435,7 +474,7 @@ function TypeBtn({
       type="button"
       onClick={onClick}
       className={
-        'rounded-md border px-3 py-1.5 text-xs ' +
+        'rounded-md border px-3 py-1.5 text-xs transition-colors ' +
         (on
           ? 'border-foreground bg-foreground text-background'
           : 'border-border hover:border-clay')

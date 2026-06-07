@@ -40,7 +40,7 @@ export function SettingsApp() {
   const nav: { id: SectionId; label: string; icon: ReactNode }[] = [
     { id: 'general', label: t('settings.nav.general'), icon: <Languages className="h-4 w-4" /> },
     { id: 'terminal', label: t('settings.nav.terminal'), icon: <TerminalIcon className="h-4 w-4" /> },
-    { id: 'skills', label: 'Skill Sources', icon: <Puzzle className="h-4 w-4" /> },
+    { id: 'skills', label: t('settings.skills.nav'), icon: <Puzzle className="h-4 w-4" /> },
     { id: 'shortcuts', label: t('settings.nav.shortcuts'), icon: <Keyboard className="h-4 w-4" /> },
     { id: 'legacy', label: t('settings.nav.legacy'), icon: <History className="h-4 w-4" /> },
   ];

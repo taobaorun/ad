@@ -218,6 +218,7 @@
       "general": "General",
       "terminal": "Terminal",
       "shortcuts": "Shortcuts",
+      "skillSources": "Skills",
       "legacy": "Legacy"
     },
     "general": {
@@ -242,6 +243,47 @@
     "legacy": {
       "title": "Legacy",
       "desc": "Deprecated entry points you can re-enable"
+    },
+    "skills": {
+      "title": "Skills",
+      "nav": "Skills",
+      "desc": "Manage skill repositories and control which skills are globally available.",
+      "sourcesHeading": "Sources",
+      "addSource": "Add Source",
+      "noSources": "No skill sources configured. Add a git repository or local directory.",
+      "branch": "branch: {{branch}}",
+      "branchDefault": "branch: default",
+      "localDir": "Local directory",
+      "subdir": "subdir: {{dir}}",
+      "autoUpdateOn": "Auto-update: on",
+      "updating": "Updating...",
+      "update": "Update",
+      "removeConfirm": "Remove source \"{{id}}\" and all its installed skills?",
+      "globalSkills": "Global Skills",
+      "globalSkillsDesc": "Enabled skills are symlinked to ~/.claude/skills/ and visible to all projects.",
+      "skillCount": "{{count}} skills",
+      "addDialog": {
+        "title": "Add Skill Source",
+        "name": "Name",
+        "namePlaceholder": "e.g. my-team-skills",
+        "type": "Type",
+        "typeGit": "Git Repository",
+        "typeLocal": "Local Directory",
+        "gitUrl": "Git URL",
+        "gitUrlPlaceholder": "git@github.com:org/skills.git",
+        "path": "Path",
+        "pathPlaceholder": "/Users/me/my-skills",
+        "branch": "Branch (optional)",
+        "branchPlaceholder": "main",
+        "subdirectory": "Subdirectory (optional)",
+        "subdirectoryPlaceholder": "e.g. skills/",
+        "autoUpdate": "Auto-update on AD launch",
+        "cancel": "Cancel",
+        "submit": "Add & Scan",
+        "submitting": "Adding…",
+        "cloningGit": "Cloning repository…",
+        "addingSource": "Adding source…"
+      }
     }
   }
 }

@@ -42,4 +42,15 @@ export function setLanguage(lng: Lang): void {
   }
 }
 
+// Cross-window sync: when Settings changes the language, the main window
+// picks it up via the storage event (fires only in OTHER same-origin windows).
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key !== STORAGE_KEY || !e.newValue) return;
+    if (e.newValue === 'zh' || e.newValue === 'en') {
+      void i18n.changeLanguage(e.newValue);
+    }
+  });
+}
+
 export default i18n;
