@@ -131,23 +131,6 @@ AD is a menubar-resident desktop app for power users of [Claude Code](https://do
 
 ---
 
-## Version History
-
-| Version | Milestone | Key Changes |
-|---------|-----------|-------------|
-| **v0.1.0** | Initial release | Profile CRUD, JSON editor, one-click activation, auto-backup, operation history |
-| **v0.1.x** | System tray | Menubar icon with color ring, tray menu quick-switch, hide-to-tray |
-| **v0.2** | Layered profiles | Three-layer profile structure (Shared/Local/Env), data migration to `~/.ad/`, project rename to AD |
-| **v0.3** | UI redesign | Zinc/Indigo theme, dark mode, two-column layout, Chinese/English i18n |
-| **v0.4** | Per-project config | Project as source of truth, template system, inline editor, conflict resolver, auto-discovery, Command Palette |
-| **v0.5** | Terminal integration | 4 terminal backends (Ghostty/cmux/Terminal.app/Custom), one-click launch |
-| **v0.6** | UX polish | Auto-jump on add, global hotkey, search prominence, splash screen |
-| **v0.7** | Editor upgrade | Monaco to CodeMirror 6, WKWebView fix, lazy loading |
-| **v1.0.0** | Skill management | Skill source CRUD, git clone, global/project skill toggles, batch operations |
-| **v1.0.1** | Polish | Auto-name from URL, clone loading indicator, full i18n for Skills, cross-window language sync, rounded icon |
-
----
-
 ## Data Layout
 
 ```
