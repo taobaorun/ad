@@ -119,6 +119,10 @@ pub struct Project {
     pub current_profile_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_applied: Option<LastApplied>,
+    /// User-pinned projects sort to the top of the sidebar. Defaults to false
+    /// so pre-existing registry entries deserialize without a `pinned` key.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

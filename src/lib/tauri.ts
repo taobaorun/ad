@@ -58,6 +58,8 @@ export const tauri = {
   removeProject: (path: string) => invoke<void>('remove_project', { path }),
   renameProject: (path: string, displayName: string) =>
     invoke<Project>('rename_project', { path, displayName }),
+  setProjectPinned: (path: string, pinned: boolean) =>
+    invoke<Project>('set_project_pinned', { path, pinned }),
   getProjectStatus: (path: string) => invoke<ProjectStatus>('get_project_status', { path }),
   readProjectSettings: (projectPath: string, layer: 'shared' | 'local') =>
     invoke<string>('read_project_settings', { projectPath, layer }),

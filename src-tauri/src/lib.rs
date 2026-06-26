@@ -137,6 +137,7 @@ pub fn run() {
             commands::projects::add_project,
             commands::projects::remove_project,
             commands::projects::rename_project,
+            commands::projects::set_project_pinned,
             commands::projects::get_project_status,
             commands::projects::read_project_settings,
             commands::projects::write_project_settings,

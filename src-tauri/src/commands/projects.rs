@@ -67,7 +67,12 @@ fn canonicalize_existing(input: &str) -> CmdResult<PathBuf> {
 
 #[tauri::command]
 pub fn list_projects() -> CmdResult<Vec<Project>> {
-    load()
+    let mut projects = load()?;
+    // Pinned projects sort to the top; within each group the original
+    // insertion order is preserved (stable sort). This order also drives the
+    // ⌘1-8 jump shortcuts, so display and shortcuts stay consistent.
+    projects.sort_by_key(|p| !p.pinned);
+    Ok(projects)
 }
 
 #[tauri::command]
@@ -96,6 +101,7 @@ pub fn add_project(path: String) -> CmdResult<Project> {
         added_at: Utc::now(),
         current_profile_id: None,
         last_applied: None,
+        pinned: false,
     };
     projects.push(project.clone());
     save(&projects)?;
@@ -127,6 +133,20 @@ pub fn rename_project(path: String, display_name: String) -> CmdResult<Project> 
         .find(|p| target.iter().any(|t| t == &p.path))
         .ok_or_else(|| CommandError::Generic(format!("project not found: {path}")))?;
     p.display_name = display_name;
+    let updated = p.clone();
+    save(&projects)?;
+    Ok(updated)
+}
+
+#[tauri::command]
+pub fn set_project_pinned(path: String, pinned: bool) -> CmdResult<Project> {
+    let mut projects = load()?;
+    let target = path_match_target(&path);
+    let p = projects
+        .iter_mut()
+        .find(|p| target.iter().any(|t| t == &p.path))
+        .ok_or_else(|| CommandError::Generic(format!("project not found: {path}")))?;
+    p.pinned = pinned;
     let updated = p.clone();
     save(&projects)?;
     Ok(updated)
@@ -346,6 +366,52 @@ mod tests {
         // Path unchanged.
         let canonical = std::fs::canonicalize(&p).unwrap();
         assert_eq!(renamed.path, canonical.to_string_lossy());
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn pin_persists_and_sorts_to_top() {
+        let g = setup_home();
+        let a = make_project_dir(g.path(), "alpha");
+        let b = make_project_dir(g.path(), "beta");
+        let c = make_project_dir(g.path(), "gamma");
+        add_project(a.to_string_lossy().into_owned()).unwrap();
+        add_project(b.to_string_lossy().into_owned()).unwrap();
+        add_project(c.to_string_lossy().into_owned()).unwrap();
+
+        // Newly added projects are unpinned and keep insertion order.
+        let names: Vec<_> = list_projects()
+            .unwrap()
+            .into_iter()
+            .map(|p| p.display_name)
+            .collect();
+        assert_eq!(names, ["alpha", "beta", "gamma"]);
+
+        // Pin the last one; it sorts to the top, others keep relative order.
+        let updated = set_project_pinned("~/gamma".into(), true).unwrap();
+        assert!(updated.pinned);
+        let names: Vec<_> = list_projects()
+            .unwrap()
+            .into_iter()
+            .map(|p| p.display_name)
+            .collect();
+        assert_eq!(names, ["gamma", "alpha", "beta"]);
+
+        // Unpin returns it to insertion order.
+        set_project_pinned("~/gamma".into(), false).unwrap();
+        let names: Vec<_> = list_projects()
+            .unwrap()
+            .into_iter()
+            .map(|p| p.display_name)
+            .collect();
+        assert_eq!(names, ["alpha", "beta", "gamma"]);
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn pin_rejects_unknown_project() {
+        let _g = setup_home();
+        assert!(set_project_pinned("/no/such/path".into(), true).is_err());
     }
 
     #[test]

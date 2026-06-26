@@ -23,6 +23,7 @@ interface State {
   addProject: (path: string) => Promise<Project>;
   removeProject: (path: string) => Promise<void>;
   renameProject: (path: string, displayName: string) => Promise<Project>;
+  setPinned: (path: string, pinned: boolean) => Promise<void>;
 
   openDetectedModal: () => Promise<void>;
   closeDetectedModal: () => void;
@@ -76,6 +77,11 @@ export const useProjects = create<State>((set, get) => ({
     const updated = await tauri.renameProject(path, displayName);
     await get().loadAll();
     return updated;
+  },
+
+  setPinned: async (path, pinned) => {
+    await tauri.setProjectPinned(path, pinned);
+    await get().loadAll();
   },
 
   openDetectedModal: async () => {

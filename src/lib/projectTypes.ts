@@ -12,6 +12,8 @@ export interface Project {
   addedAt: string;
   currentProfileId?: string | null;
   lastApplied?: LastApplied | null;
+  /** Pinned projects sort to the top of the sidebar. */
+  pinned?: boolean;
 }
 
 export interface LastApplied {

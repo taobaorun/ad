@@ -39,7 +39,13 @@
     "detectedCount": "{{count}} detected",
     "review": "Review →",
     "pathNotFound": "path not found",
-    "profileAria": "Profile {{name}}"
+    "profileAria": "Profile {{name}}",
+    "searchPlaceholder": "Search projects…",
+    "searchClear": "Clear search",
+    "noMatch": "No projects match “{{query}}”.",
+    "pin": "Pin to top",
+    "unpin": "Unpin",
+    "pinnedAria": "Pinned"
   },
   "detail": {
     "selectPrefix": "Select a project from the sidebar (or press ",

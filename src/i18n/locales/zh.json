@@ -39,7 +39,13 @@
     "detectedCount": "{{count}} 个已发现",
     "review": "查看 →",
     "pathNotFound": "路径不存在",
-    "profileAria": "Profile {{name}}"
+    "profileAria": "Profile {{name}}",
+    "searchPlaceholder": "搜索项目…",
+    "searchClear": "清空搜索",
+    "noMatch": "没有匹配「{{query}}」的项目。",
+    "pin": "固定到顶部",
+    "unpin": "取消固定",
+    "pinnedAria": "已固定"
   },
   "detail": {
     "selectPrefix": "从侧栏选择一个项目（或按 ",
