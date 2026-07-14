@@ -61,8 +61,14 @@ mod tests {
 
         let registry = builtin_registry();
         let metadata = registry.metadata();
-        let claude = metadata.iter().find(|item| item.id == "claude-code").unwrap();
-        let codex = metadata.iter().find(|item| item.id == "codex").unwrap();
+        let claude = metadata
+            .iter()
+            .find(|item| item.id.as_str() == "claude-code")
+            .unwrap();
+        let codex = metadata
+            .iter()
+            .find(|item| item.id.as_str() == "codex")
+            .unwrap();
 
         assert_eq!(claude.capabilities, codex.capabilities);
         assert_eq!(registry.discover().len(), 2);

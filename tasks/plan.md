@@ -32,7 +32,7 @@ Claude ports + Codex ports + ExecutionEngine
 
 ### Phase 1: v1 Contract
 
-- [ ] Task 1: Typed identities and core context models
+- [x] Task 1: Typed identities and core context models
 - [ ] Task 2: Resource, plan, receipt and structured error contracts
 - [ ] Task 3: Capability ports and derived descriptors
 - [ ] Task 4: TypeScript IPC schemas for v1 read models

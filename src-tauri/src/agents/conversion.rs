@@ -85,7 +85,7 @@ pub fn convert_claude_profile_to_codex(profile: &ProfileFile) -> ConversionPrevi
         .unwrap_or_else(|err| format!("# Conversion failed: {err}\n"));
 
     ConversionPreview {
-        source_agent_id: profile.agent_id.clone(),
+        source_agent_id: profile.agent_id.clone().into(),
         target_agent_id: "codex".into(),
         target_format: "toml".into(),
         target_content,
@@ -142,7 +142,7 @@ mod tests {
 
         let preview = convert_claude_profile_to_codex(&profile);
 
-        assert_eq!(preview.target_agent_id, "codex");
+        assert_eq!(preview.target_agent_id.as_str(), "codex");
         assert_eq!(preview.target_format, "toml");
         assert!(preview.target_content.contains("model = \"claude-opus-4-7\""));
         assert!(preview

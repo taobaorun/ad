@@ -2,7 +2,7 @@
 
 ## Phase 1: v1 Contract
 
-- [ ] Task 1: Define typed identities and Agent context
+- [x] Task 1: Define typed identities and Agent context
   - Acceptance: AgentId, InstallationId, ProfileId, PlanId and ReceiptId are distinct newtypes; AgentDefinition, AgentInstallation and AgentContext round-trip through serde.
   - Verify: failing-first Rust tests prove IDs are serialized predictably and context preserves optional project scope.
   - Files: `src-tauri/src/agents/types.rs`, `src-tauri/src/agents/mod.rs`

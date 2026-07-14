@@ -42,7 +42,7 @@ impl AdapterRegistry {
     pub fn adapter(&self, agent_id: &str) -> Option<&dyn AgentAdapter> {
         self.adapters
             .iter()
-            .find(|adapter| adapter.metadata().id == agent_id)
+            .find(|adapter| adapter.metadata().id.as_str() == agent_id)
             .map(|adapter| adapter.as_ref())
     }
 }
