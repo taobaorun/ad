@@ -46,6 +46,23 @@ fn profile_path(id: &str) -> CmdResult<PathBuf> {
     Ok(profiles_dir()?.join(format!("{id}.json")))
 }
 
+fn validate_agent_id(agent_id: &str) -> CmdResult<()> {
+    if agent_id != "claude-code" && agent_id != "codex" {
+        return Err(CommandError::Generic(format!(
+            "unknown built-in agent id: {agent_id}"
+        )));
+    }
+    Ok(())
+}
+
+fn agent_profile_path(agent_id: &str, id: &str) -> CmdResult<PathBuf> {
+    validate_agent_id(agent_id)?;
+    validate_id(id)?;
+    Ok(profiles_dir()?
+        .join(agent_id)
+        .join(format!("{id}.json")))
+}
+
 /// Returns true if a profile with the given id (case-insensitive) already
 /// exists on disk. Used to refuse case-collisions on APFS-CI volumes.
 fn id_collides_existing(id: &str) -> CmdResult<bool> {
@@ -150,6 +167,77 @@ pub fn delete_profile(id: String) -> CmdResult<()> {
 }
 
 #[tauri::command]
+pub fn list_agent_profiles(agent_id: String) -> CmdResult<Vec<ProfileFile>> {
+    validate_agent_id(&agent_id)?;
+    let dir = profiles_dir()?.join(&agent_id);
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(&dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let bytes = std::fs::read(&path)?;
+        match serde_json::from_slice::<ProfileFile>(&bytes) {
+            Ok(profile) if profile.agent_id == agent_id => out.push(profile),
+            Ok(_) => tracing::warn!(path = %path.display(), "skipping profile with mismatched agent id"),
+            Err(err) => tracing::warn!(path = %path.display(), error = %err, "skipping unreadable Agent profile"),
+        }
+    }
+    out.sort_by(|a, b| a.display_name.cmp(&b.display_name));
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn get_agent_profile(agent_id: String, id: String) -> CmdResult<ProfileFile> {
+    let path = agent_profile_path(&agent_id, &id)?;
+    let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+    let profile: ProfileFile = serde_json::from_slice(&bytes)?;
+    if profile.agent_id != agent_id {
+        return Err(CommandError::Generic(format!(
+            "profile agent mismatch: expected {agent_id}, found {}",
+            profile.agent_id
+        )));
+    }
+    Ok(profile)
+}
+
+#[tauri::command]
+pub fn save_agent_profile(profile: ProfileFile) -> CmdResult<ProfileFile> {
+    validate_agent_id(&profile.agent_id)?;
+    let path = agent_profile_path(&profile.agent_id, &profile.id)?;
+    ensure_dir(path.parent().unwrap())?;
+    let mut profile = profile;
+    if path.exists() {
+        let prev_bytes = std::fs::read(&path)?;
+        if let Ok(prev) = serde_json::from_slice::<ProfileFile>(&prev_bytes) {
+            if prev.updated_at > profile.updated_at {
+                return Err(CommandError::Generic(format!(
+                    "conflict: on-disk {} is newer ({} > {})",
+                    profile.id, prev.updated_at, profile.updated_at
+                )));
+            }
+            profile.created_at = prev.created_at;
+        }
+    }
+    profile.updated_at = Utc::now();
+    write_atomic(&path, &serde_json::to_vec_pretty(&profile)?)?;
+    Ok(profile)
+}
+
+#[tauri::command]
+pub fn delete_agent_profile(agent_id: String, id: String) -> CmdResult<()> {
+    let path = agent_profile_path(&agent_id, &id)?;
+    if path.exists() {
+        std::fs::remove_file(&path).with_context(|| format!("delete {}", path.display()))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_active_profile_id() -> CmdResult<Option<String>> {
     let path = active_pointer_path()?;
     if !path.exists() {
@@ -198,6 +286,37 @@ mod tests {
 
         let one = get_profile("sample".into()).unwrap();
         assert_eq!(one.display_name, "Sample");
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn agent_profiles_are_stored_under_agent_specific_directory() {
+        let _g = setup_home();
+        let mut profile = ProfileFile::sample();
+        profile.agent_id = "codex".into();
+        profile.id = "default".into();
+
+        save_agent_profile(profile.clone()).unwrap();
+
+        let listed = list_agent_profiles("codex".into()).unwrap();
+        assert_eq!(listed.len(), 1);
+        let loaded = get_agent_profile("codex".into(), "default".into()).unwrap();
+        assert_eq!(loaded.agent_id, profile.agent_id);
+        assert_eq!(loaded.id, profile.id);
+        assert_eq!(loaded.settings, profile.settings);
+        assert!(profiles_dir().unwrap().join("codex/default.json").exists());
+        assert!(list_agent_profiles("claude-code".into()).unwrap().is_empty());
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn agent_profile_rejects_unknown_agent() {
+        let _g = setup_home();
+        let mut profile = ProfileFile::sample();
+        profile.agent_id = "unknown".into();
+
+        assert!(save_agent_profile(profile).is_err());
+        assert!(list_agent_profiles("unknown".into()).is_err());
     }
 
     #[test]

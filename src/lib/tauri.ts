@@ -41,6 +41,14 @@ export const tauri = {
   discoverAgents: () => invoke<AgentInstallation[]>('discover_agents'),
 
   listProfiles: () => invoke<ProfileFile[]>('list_profiles'),
+  listAgentProfiles: (agentId: string) =>
+    invoke<ProfileFile[]>('list_agent_profiles', { agentId }),
+  getAgentProfile: (agentId: string, id: string) =>
+    invoke<ProfileFile>('get_agent_profile', { agentId, id }),
+  saveAgentProfile: (profile: ProfileFile) =>
+    invoke<ProfileFile>('save_agent_profile', { profile }),
+  deleteAgentProfile: (agentId: string, id: string) =>
+    invoke<void>('delete_agent_profile', { agentId, id }),
   getProfile: (id: string) => invoke<ProfileFile>('get_profile', { id }),
   saveProfile: (profile: ProfileFile) => invoke<ProfileFile>('save_profile', { profile }),
   deleteProfile: (id: string) => invoke<void>('delete_profile', { id }),
