@@ -5,6 +5,7 @@ import type { ProfileFile } from '@/lib/profileSchema';
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(async (cmd: string, args?: Record<string, unknown>) => {
     const fixture: ProfileFile = {
+      agentId: 'claude-code',
       id: 'homi',
       displayName: 'Homi',
       description: null,

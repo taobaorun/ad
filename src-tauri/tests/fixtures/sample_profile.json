@@ -2,6 +2,7 @@
   "id": "sample",
   "displayName": "Sample",
   "description": "Schema parity fixture",
+  "agentId": "claude-code",
   "color": "#7C3AED",
   "createdAt": "2026-05-13T22:55:00Z",
   "updatedAt": "2026-05-13T22:55:00Z",

@@ -22,6 +22,7 @@ export const ProfileLayersSchema = z.object({
 });
 
 export const ProfileFileSchema = z.object({
+  agentId: z.string().min(1, 'agentId is required').default('claude-code'),
   id: z
     .string()
     .min(1, 'id is required')
@@ -63,6 +64,7 @@ export function parseProfileFile(
 export function blankProfile(id: string): ProfileFile {
   const now = new Date().toISOString();
   return {
+    agentId: 'claude-code',
     id,
     displayName: id,
     description: null,

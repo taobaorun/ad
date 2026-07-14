@@ -78,7 +78,17 @@ describe('ProfileFileSchema', () => {
     expect(r.success).toBe(true);
     if (r.success) {
       expect(r.data.layers).toEqual({ env: {} });
+      expect(r.data.agentId).toBe('claude-code');
     }
+  });
+
+  it('keeps profile identity scoped to an Agent', () => {
+    const r = ProfileFileSchema.parse({
+      ...blankProfile('default'),
+      agentId: 'codex',
+    });
+
+    expect(r.agentId).toBe('codex');
   });
 
   it('parses v0.2 profiles with layers populated', () => {

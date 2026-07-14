@@ -22,6 +22,8 @@ pub struct ProfileFile {
     pub display_name: String,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(default = "default_agent_id")]
+    pub agent_id: String,
     #[serde(default = "default_color")]
     pub color: String,
     pub created_at: DateTime<Utc>,
@@ -210,6 +212,10 @@ fn default_color() -> String {
     "#7C3AED".into()
 }
 
+fn default_agent_id() -> String {
+    "claude-code".into()
+}
+
 // ---------------------------------------------------------------------------
 // Skill management (v0.5)
 // ---------------------------------------------------------------------------
@@ -332,6 +338,7 @@ impl ProfileFile {
             id: "sample".into(),
             display_name: "Sample".into(),
             description: Some("Schema parity fixture".into()),
+            agent_id: default_agent_id(),
             color: default_color(),
             created_at: now,
             updated_at: now,
@@ -412,6 +419,7 @@ mod tests {
         });
         let p: ProfileFile = serde_json::from_value(v1).unwrap();
         assert_eq!(p.id, "old");
+        assert_eq!(p.agent_id, "claude-code");
         assert_eq!(p.settings.env.get("K").map(String::as_str), Some("V"));
         assert!(p.layers.shared.is_none());
         assert!(p.layers.local.is_none());
@@ -437,6 +445,7 @@ mod tests {
             id: "layered".into(),
             display_name: "Layered".into(),
             description: None,
+            agent_id: "codex".into(),
             color: "#7C3AED".into(),
             created_at: now,
             updated_at: now,
