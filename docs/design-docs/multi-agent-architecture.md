@@ -1,6 +1,6 @@
 # 多 Agent 抽象架构
 
-> 状态：设计重开草案，待评审
+> 状态：已批准（2026-07-15，用户 LGTM）
 >
 > 范围：Claude Code、Codex，以及未来由 AD 内置代码接入的 Agent
 >
@@ -355,13 +355,12 @@ Codex adapter 必须遵守以下已核验事实，且将版本变化隔离在 ad
 
 否决。当前需求明确只允许内置 adapter；动态代码、权限和 schema 兼容成本不符合 AD 的“简单 > 灵活”。
 
-## 评审门槛
+## 批准状态
 
-本设计确认前：
+本设计已于 2026-07-15 获用户 LGTM。实施约束：
 
-- 不继续实现 Codex 目标写入、备份和回滚；
-- 不删除现有 v0 类型或已提交兼容行为；
-- 不修改已冻结的 ExecPlan HTML；
-- 允许更新 ExecPlan MD，记录设计重开和后续迁移步骤。
-
-确认后，应先修订 product spec 的领域模型和 active ExecPlan 的里程碑，再进入 v1 contract 的测试驱动实现。
+- 先修订 product spec 的领域模型和 active ExecPlan 的里程碑；
+- 从 v1 contract 的测试驱动实现开始，不继续扩展 v0 conversion apply；
+- 不删除现有 v0 类型或已提交兼容行为，直到迁移测试通过；
+- 不修改已冻结的 ExecPlan HTML，执行进展只更新 ExecPlan MD；
+- 结构性实现偏差必须先回写本设计文档，再继续编码。
