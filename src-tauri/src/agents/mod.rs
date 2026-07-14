@@ -1,3 +1,4 @@
+mod conversion;
 mod claude;
 mod codex;
 mod registry;
@@ -5,6 +6,7 @@ mod types;
 
 pub use claude::ClaudeAdapter;
 pub use codex::CodexAdapter;
+pub use conversion::convert_claude_profile_to_codex;
 pub use registry::*;
 pub use types::*;
 

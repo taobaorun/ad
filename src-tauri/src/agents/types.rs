@@ -53,6 +53,32 @@ pub struct AgentProfileRef {
     pub profile_id: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConversionIssueKind {
+    Unsupported,
+    RequiresConfirmation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionIssue {
+    pub path: String,
+    pub kind: ConversionIssueKind,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionPreview {
+    pub source_agent_id: AgentId,
+    pub target_agent_id: AgentId,
+    pub target_format: String,
+    pub target_content: String,
+    #[serde(default)]
+    pub issues: Vec<ConversionIssue>,
+}
+
 impl AgentProfileRef {
     pub fn new(agent_id: impl Into<AgentId>, profile_id: impl Into<String>) -> Self {
         Self {
@@ -86,4 +112,3 @@ pub fn deduplicate_installations(
     }
     result
 }
-

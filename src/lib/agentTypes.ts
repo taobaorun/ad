@@ -27,11 +27,27 @@ export const AgentProfileRefSchema = z.object({
   profileId: z.string().min(1, 'profileId is required'),
 });
 
+export const ConversionIssueSchema = z.object({
+  path: z.string(),
+  kind: z.enum(['unsupported', 'requires_confirmation']),
+  message: z.string(),
+});
+
+export const ConversionPreviewSchema = z.object({
+  sourceAgentId: AgentIdSchema,
+  targetAgentId: AgentIdSchema,
+  targetFormat: z.string(),
+  targetContent: z.string(),
+  issues: z.array(ConversionIssueSchema).default([]),
+});
+
 export type AgentId = z.infer<typeof AgentIdSchema>;
 export type Capability = z.infer<typeof CapabilitySchema>;
 export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
 export type AgentInstallation = z.infer<typeof AgentInstallationSchema>;
 export type AgentProfileRef = z.infer<typeof AgentProfileRefSchema>;
+export type ConversionIssue = z.infer<typeof ConversionIssueSchema>;
+export type ConversionPreview = z.infer<typeof ConversionPreviewSchema>;
 
 export function parseAgentInstallation(
   input: unknown,

@@ -52,7 +52,7 @@
 - [x] (2026-07-14) 建立 agent-neutral model、registry、capability、内置 Claude/Codex discovery 和 IPC 基础；旧 profile migration 仍在后续 Claude adapter slice 完成
 - [ ] (进行中) 将现有 Claude Code 行为包入 Claude adapter，保持回归兼容；当前已完成 Agent-scoped profile identity、Agent-specific profile storage 与 built-in discovery
 - [ ] (待开始) 实现 Codex adapter 的 discovery、配置、Skills、Plugins、进程探测和终端启动
-- [ ] (待开始) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚
+- [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 TOML preview contract、model 映射和 unsupported 字段报告，目标写入/回滚仍待实现
 - [ ] (进行中) 接入 Agent-aware store、UI、i18n 和 IPC；当前已完成 Agent store、selector、双语文案、discovery IPC 与按 Agent profile 加载/保存
 - [ ] (待开始) 完成单元、集成、行为测试及架构文档更新
 - [ ] (待开始) 完成发布前 build 和人工验收
