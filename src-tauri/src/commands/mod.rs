@@ -1,4 +1,5 @@
 pub mod activate;
+pub mod agents;
 pub mod apply;
 pub mod discover;
 pub mod history;

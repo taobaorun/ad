@@ -15,6 +15,7 @@ import type {
   SkillSource,
   SkillUpdateResult,
 } from './skillTypes';
+import type { AgentInstallation, AgentMetadata } from './agentTypes';
 
 export interface ClaudeProcess {
   pid: number;
@@ -35,6 +36,9 @@ export interface ActivationLogEntry {
 }
 
 export const tauri = {
+  listAgents: () => invoke<AgentMetadata[]>('list_agents'),
+  discoverAgents: () => invoke<AgentInstallation[]>('discover_agents'),
+
   listProfiles: () => invoke<ProfileFile[]>('list_profiles'),
   getProfile: (id: string) => invoke<ProfileFile>('get_profile', { id }),
   saveProfile: (profile: ProfileFile) => invoke<ProfileFile>('save_profile', { profile }),

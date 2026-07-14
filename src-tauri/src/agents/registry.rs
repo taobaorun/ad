@@ -38,6 +38,13 @@ impl AdapterRegistry {
             .collect::<Vec<_>>();
         deduplicate_installations(installations)
     }
+
+    pub fn adapter(&self, agent_id: &str) -> Option<&dyn AgentAdapter> {
+        self.adapters
+            .iter()
+            .find(|adapter| adapter.metadata().id == agent_id)
+            .map(|adapter| adapter.as_ref())
+    }
 }
 
 #[cfg(test)]

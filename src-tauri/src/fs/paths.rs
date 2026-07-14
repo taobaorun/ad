@@ -27,6 +27,30 @@ pub fn claude_dir() -> Result<PathBuf, FsError> {
     Ok(home()?.join(".claude"))
 }
 
+pub fn codex_dir() -> Result<PathBuf, FsError> {
+    Ok(home()?.join(".codex"))
+}
+
+pub fn codex_config_path() -> Result<PathBuf, FsError> {
+    Ok(codex_dir()?.join("config.toml"))
+}
+
+pub fn codex_agents_path() -> Result<PathBuf, FsError> {
+    Ok(codex_dir()?.join("AGENTS.md"))
+}
+
+pub fn codex_skills_dir() -> Result<PathBuf, FsError> {
+    Ok(codex_dir()?.join("skills"))
+}
+
+pub fn codex_plugins_dir() -> Result<PathBuf, FsError> {
+    Ok(codex_dir()?.join("plugins"))
+}
+
+pub fn codex_rules_dir() -> Result<PathBuf, FsError> {
+    Ok(codex_dir()?.join("rules"))
+}
+
 pub fn claude_settings_path() -> Result<PathBuf, FsError> {
     Ok(claude_dir()?.join("settings.json"))
 }
@@ -151,6 +175,9 @@ mod tests {
                 home.join(".claude/settings.json")
             );
             assert_eq!(cc_projects_dir().unwrap(), home.join(".claude/projects"));
+            assert_eq!(codex_dir().unwrap(), home.join(".codex"));
+            assert_eq!(codex_config_path().unwrap(), home.join(".codex/config.toml"));
+            assert_eq!(codex_agents_path().unwrap(), home.join(".codex/AGENTS.md"));
 
             // AD's own data lives under ~/.ad/
             assert_eq!(ad_home().unwrap(), home.join(".ad"));

@@ -129,6 +129,8 @@ pub fn run() {
             commands::settings::write_theme_hint,
             commands::activate::activate_profile,
             commands::activate::detect_claude_processes,
+            commands::agents::list_agents,
+            commands::agents::discover_agents,
             commands::history::read_history,
             commands::history::restore_backup,
             commands::importers::import_from_file,
