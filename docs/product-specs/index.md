@@ -12,7 +12,7 @@
 
 | 文档 | 功能名称 | 优先级 | 状态 | 摘要 |
 |---|---|---|---|---|
-| _(暂无具体规格文档)_ | — | — | — | — |
+| [multi-agent-support.html](multi-agent-support.html) | 多 Agent 支持基础 | P0 | Specify 已确认，待 Plan | 以 Agent Adapter 为边界，支持 Claude Code、Codex 及未来 Agent |
 
 ## 优先级定义
 
