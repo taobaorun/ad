@@ -11,6 +11,7 @@ import { useProfiles } from './store/profiles';
 import { useProjects } from './store/projects';
 import { useUiState } from './store/ui';
 import { useUiSettings } from './store/uiSettings';
+import { AgentSelector, useLoadAgents } from './components/AgentSelector';
 
 // Heavy dialogs/drawers are lazy-loaded so they don't sit in the first-paint
 // chunk. Each is wrapped in a tiny "gate" below that only mounts the lazy
@@ -51,6 +52,7 @@ export function App() {
   const openPalette = useUiState((s) => s.openPalette);
   const darkMode = useUiSettings((s) => s.darkMode);
   const setDarkMode = useUiSettings((s) => s.setDarkMode);
+  useLoadAgents();
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -209,6 +211,7 @@ function Titlebar({ onOpenPalette, dark, onToggleDark }: { onOpenPalette: () => 
           </svg>
         </button>
         <AdvancedSettingsButton />
+        <AgentSelector />
         <button
           type="button"
           onClick={onToggleDark}
