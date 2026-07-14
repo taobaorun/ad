@@ -12,6 +12,7 @@
 
 - [x] **用户已确认** — 评审 HTML 路径：docs/exec-plans/active/multi-agent-support.html
 - [x] 用户已确认，开始执行（2026-07-14 Asia/Shanghai）
+- [ ] **设计重开，实施暂停** — 评审新架构：docs/design-docs/multi-agent-architecture.html（2026-07-14 Asia/Shanghai）
 
 ## 假设
 
@@ -50,6 +51,7 @@
 
 - [x] (2026-07-14) 评审多 Agent 产品规格和本 ExecPlan
 - [x] (2026-07-14) 建立 agent-neutral model、registry、capability、内置 Claude/Codex discovery 和 IPC 基础；旧 profile migration 仍在后续 Claude adapter slice 完成
+- [ ] (设计重开) 当前 foundation 被重新归类为 v0 兼容性实验；暂停 Codex 目标写入/回滚，待 `docs/design-docs/multi-agent-architecture.md` 评审后按 v1 contracts 迁移
 - [ ] (进行中) 将现有 Claude Code 行为包入 Claude adapter，保持回归兼容；当前已完成 Agent-scoped profile identity、Agent-specific profile storage 与 built-in discovery
 - [ ] (待开始) 实现 Codex adapter 的 discovery、配置、Skills、Plugins、进程探测和终端启动
 - [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 TOML preview contract、model 映射和 unsupported 字段报告，目标写入/回滚仍待实现
@@ -62,8 +64,20 @@
 - 当前 Claude Code 逻辑分布在 models.rs、commands/settings.rs、commands/skills.rs、commands/activate.rs、fs/paths.rs、多个 store 和 UI 组件中，不是单一模块。
 - 本机同时存在 ~/.claude 和 ~/.codex 配置根；Codex 目录包含 config.toml、AGENTS.md、hooks.json 等文件。实现前必须逐项确认哪些文件属于可管理配置，避免误读 state、auth 或日志文件。
 - 当前产品规格目录要求 HTML 规格；因此本计划同时提供 MD 活文档和 HTML 评审基线。
+- 当前 `AgentAdapter` 只有 metadata/discover，capability 声明与 settings/skills/plugins/process/launch 的可调用实现没有类型关系；两个 capability set 相等不能证明能力对等。
+- 当前 `ProfileFile` 增加 agentId 后仍持有 ClaudeSettings/ProfileLayers，Codex profile 会被迫伪装成 Claude payload。
+- Codex 支持 `CODEX_HOME`，当前 `~/.codex` 固定路径与 `agentId + rootPath` lexical 去重无法表达多个配置实例；canonical identity 应由 adapter 按有效配置 home 判定。
+- 多文件转换不能承诺原子事务；正确保证是写前全量备份、逐文件原子写、digest 并发检查和带 partial 状态的补偿式回滚。
 
 ## 决策日志
+
+- 决策：暂停在 v0 foundation 上继续实现 Codex apply/rollback，重新评审多 Agent 核心抽象。
+  理由：当前通用模型仍泄漏 Claude schema，capability 声明不可由实现验证，继续扩展会放大迁移成本。
+  日期/作者：2026-07-14 / Codex
+
+- 决策（待评审）：以 AgentDefinition / AgentInstallation / AgentContext、capability ports、ResourceSnapshot、MutationPlan/Receipt 和共享 ExecutionEngine 作为 v1 核心。
+  理由：把 Agent-specific 解析与通用数据安全执行分离，并让 parity 在 operation contract 层可验证。
+  日期/作者：2026-07-14 / Codex
 
 - 决策：只保留 canonical installation，不保留 aliases。
   理由：用户明确要求发现结果去重后只保留 canonical installation。
