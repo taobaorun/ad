@@ -40,7 +40,7 @@
   - Files: `src-tauri/src/agents/discovery.rs`, `src-tauri/src/agents/registry.rs`, `src-tauri/src/agents/{claude,codex}.rs`
   - Dependencies: Task 3
 
-- [ ] Task 6: Expose and persist AgentContext
+- [x] Task 6: Expose and persist AgentContext
   - Acceptance: IPC and Zustand select installation + optional project while migrating legacy `activeAgentId` state.
   - Verify: Rust command tests, store tests and typecheck.
   - Files: `src-tauri/src/commands/agents.rs`, `src/lib/tauri.ts`, `src/store/agents.ts`, `tests/store/agents.test.ts`

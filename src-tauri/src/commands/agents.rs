@@ -1,6 +1,6 @@
 use crate::agents::{
-    builtin_registry, convert_claude_profile_to_codex, AgentInstallation, AgentMetadata,
-    ConversionPreview,
+    builtin_registry, convert_claude_profile_to_codex, AgentContext, AgentInstallation,
+    AgentMetadata, ConversionPreview, InstallationId,
 };
 use crate::models::ProfileFile;
 
@@ -14,6 +14,41 @@ pub fn list_agents() -> CmdResult<Vec<AgentMetadata>> {
 #[tauri::command]
 pub fn discover_agents() -> CmdResult<Vec<AgentInstallation>> {
     Ok(builtin_registry().discover())
+}
+
+#[tauri::command]
+pub fn resolve_agent_context(
+    installation_id: InstallationId,
+    project_path: Option<String>,
+) -> CmdResult<AgentContext> {
+    let installation_exists = builtin_registry()
+        .discover()
+        .iter()
+        .any(|installation| installation.id == installation_id);
+    if !installation_exists {
+        return Err(super::CommandError::Generic(format!(
+            "unknown Agent installation: {installation_id}"
+        )));
+    }
+
+    let project_path = project_path
+        .map(|path| {
+            let canonical = std::fs::canonicalize(&path).map_err(|error| {
+                super::CommandError::Generic(format!("invalid project path {path}: {error}"))
+            })?;
+            if !canonical.is_dir() {
+                return Err(super::CommandError::Generic(format!(
+                    "project path is not a directory: {path}"
+                )));
+            }
+            Ok(canonical.to_string_lossy().into_owned())
+        })
+        .transpose()?;
+
+    Ok(AgentContext {
+        installation_id,
+        project_path,
+    })
 }
 
 #[tauri::command]
@@ -38,5 +73,40 @@ mod tests {
             "claude-code",
             "codex",
         ]);
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn resolves_a_discovered_installation_context() {
+        let temp = tempfile::tempdir().unwrap();
+        let claude_home = temp.path().join(".claude");
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(&claude_home).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        let previous_home = std::env::var("AD_HOME").ok();
+        let previous_codex_home = std::env::var("CODEX_HOME").ok();
+        std::env::set_var("AD_HOME", temp.path());
+        std::env::remove_var("CODEX_HOME");
+
+        let installation = discover_agents().unwrap().remove(0);
+        let context = resolve_agent_context(
+            installation.id,
+            Some(project.to_string_lossy().into_owned()),
+        )
+        .unwrap();
+
+        let expected_project = std::fs::canonicalize(project)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        match previous_home {
+            Some(value) => std::env::set_var("AD_HOME", value),
+            None => std::env::remove_var("AD_HOME"),
+        }
+        match previous_codex_home {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+        assert_eq!(context.project_path.as_deref(), Some(expected_project.as_str()));
     }
 }

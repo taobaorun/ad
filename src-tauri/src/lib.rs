@@ -135,6 +135,7 @@ pub fn run() {
             commands::activate::detect_claude_processes,
             commands::agents::list_agents,
             commands::agents::discover_agents,
+            commands::agents::resolve_agent_context,
             commands::agents::preview_claude_to_codex,
             commands::history::read_history,
             commands::history::restore_backup,

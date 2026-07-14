@@ -15,7 +15,14 @@ import type {
   SkillSource,
   SkillUpdateResult,
 } from './skillTypes';
-import type { AgentInstallation, AgentMetadata, ConversionPreview } from './agentTypes';
+import {
+  AgentContextSchema,
+  AgentInstallationSchema,
+  AgentMetadataSchema,
+  ConversionPreviewSchema,
+  type ConversionPreview,
+  type InstallationId,
+} from './agentTypes';
 
 export interface ClaudeProcess {
   pid: number;
@@ -37,10 +44,15 @@ export interface ActivationLogEntry {
 }
 
 export const tauri = {
-  listAgents: () => invoke<AgentMetadata[]>('list_agents'),
-  discoverAgents: () => invoke<AgentInstallation[]>('discover_agents'),
-  previewClaudeToCodex: (profile: ProfileFile) =>
-    invoke<ConversionPreview>('preview_claude_to_codex', { profile }),
+  listAgents: async () => AgentMetadataSchema.array().parse(await invoke<unknown>('list_agents')),
+  discoverAgents: async () =>
+    AgentInstallationSchema.array().parse(await invoke<unknown>('discover_agents')),
+  resolveAgentContext: async (installationId: InstallationId, projectPath?: string) =>
+    AgentContextSchema.parse(
+      await invoke<unknown>('resolve_agent_context', { installationId, projectPath }),
+    ),
+  previewClaudeToCodex: async (profile: ProfileFile): Promise<ConversionPreview> =>
+    ConversionPreviewSchema.parse(await invoke<unknown>('preview_claude_to_codex', { profile })),
 
   listProfiles: () => invoke<ProfileFile[]>('list_profiles'),
   listAgentProfiles: (agentId: string) =>

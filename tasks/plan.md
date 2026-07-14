@@ -46,12 +46,12 @@ Claude ports + Codex ports + ExecutionEngine
 ### Phase 2: Canonical Context
 
 - [x] Task 5: Adapter-owned canonical installation discovery
-- [ ] Task 6: AgentContext IPC and backward-compatible frontend selection
+- [x] Task 6: AgentContext IPC and backward-compatible frontend selection
 
 ### Checkpoint B
 
-- [ ] Duplicate discovery sources expose one canonical installation
-- [ ] Different effective config homes remain separate
+- [x] Duplicate discovery sources expose one canonical installation
+- [x] Different effective config homes remain separate
 
 ### Phase 3: Safe Execution
 

@@ -1,30 +1,68 @@
 import { create } from 'zustand';
 import { tauri } from '@/lib/tauri';
-import type { AgentInstallation, AgentMetadata } from '@/lib/agentTypes';
+import {
+  AgentContextSchema,
+  AgentIdSchema,
+  InstallationIdSchema,
+  type AgentContext,
+  type AgentInstallation,
+  type AgentMetadata,
+} from '@/lib/agentTypes';
+import { z } from 'zod';
 
-const STORAGE_KEY = 'ad.agent-state.v1';
+const LEGACY_STORAGE_KEY = 'ad.agent-state.v1';
+const STORAGE_KEY = 'ad.agent-context.v2';
 const DEFAULT_AGENT_ID = 'claude-code';
+
+const PersistedContextSchema = z
+  .object({
+    agentId: AgentIdSchema,
+    installationId: InstallationIdSchema,
+    projectPath: z.string().min(1).optional(),
+  })
+  .strict();
+
+type ContextInput = z.input<typeof AgentContextSchema>;
 
 interface State {
   agents: AgentMetadata[];
   installations: AgentInstallation[];
+  activeContext: AgentContext | null;
   activeAgentId: string;
   loading: boolean;
   loadAll: () => Promise<void>;
   select: (agentId: string) => void;
+  selectContext: (context: ContextInput) => void;
 }
 
-function loadSelectedAgent(): string {
+function loadPersistedSelection(): { agentId: string; context: AgentContext | null } {
   try {
-    return window.localStorage.getItem(STORAGE_KEY) || DEFAULT_AGENT_ID;
+    const current = window.localStorage.getItem(STORAGE_KEY);
+    if (current) {
+      const parsed = PersistedContextSchema.safeParse(JSON.parse(current));
+      if (parsed.success) {
+        return {
+          agentId: parsed.data.agentId,
+          context: AgentContextSchema.parse({
+            installationId: parsed.data.installationId,
+            projectPath: parsed.data.projectPath,
+          }),
+        };
+      }
+    }
+    return {
+      agentId: window.localStorage.getItem(LEGACY_STORAGE_KEY) || DEFAULT_AGENT_ID,
+      context: null,
+    };
   } catch {
-    return DEFAULT_AGENT_ID;
+    return { agentId: DEFAULT_AGENT_ID, context: null };
   }
 }
 
-function saveSelectedAgent(agentId: string): void {
+function saveSelectedContext(agentId: string, context: AgentContext): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, agentId);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ agentId, ...context }));
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
   } catch {
     // Ignore storage failures; the current selection remains in memory.
   }
@@ -35,7 +73,8 @@ let inflightLoadAll: Promise<void> | null = null;
 export const useAgents = create<State>((set, get) => ({
   agents: [],
   installations: [],
-  activeAgentId: loadSelectedAgent(),
+  activeContext: null,
+  activeAgentId: DEFAULT_AGENT_ID,
   loading: false,
 
   loadAll: async () => {
@@ -47,11 +86,27 @@ export const useAgents = create<State>((set, get) => ({
           tauri.listAgents(),
           tauri.discoverAgents(),
         ]);
-        const selected = agents.some((agent) => agent.id === get().activeAgentId)
-          ? get().activeAgentId
-          : agents[0]?.id ?? DEFAULT_AGENT_ID;
-        set({ agents, installations, activeAgentId: selected });
-        saveSelectedAgent(selected);
+        const persisted = loadPersistedSelection();
+        const persistedInstallation = persisted.context
+          ? installations.find(
+              (installation) =>
+                installation.id === persisted.context?.installationId &&
+                installation.agentId === persisted.agentId,
+            )
+          : undefined;
+        const selectedInstallation =
+          persistedInstallation ??
+          installations.find((installation) => installation.agentId === persisted.agentId) ??
+          installations[0];
+        const activeAgentId = selectedInstallation?.agentId ?? agents[0]?.id ?? DEFAULT_AGENT_ID;
+        const activeContext = selectedInstallation
+          ? AgentContextSchema.parse({
+              installationId: selectedInstallation.id,
+              projectPath: persistedInstallation ? persisted.context?.projectPath : undefined,
+            })
+          : null;
+        set({ agents, installations, activeAgentId, activeContext });
+        if (activeContext) saveSelectedContext(activeAgentId, activeContext);
       } finally {
         set({ loading: false });
         inflightLoadAll = null;
@@ -63,7 +118,20 @@ export const useAgents = create<State>((set, get) => ({
 
   select: (agentId) => {
     if (!get().agents.some((agent) => agent.id === agentId)) return;
-    set({ activeAgentId: agentId });
-    saveSelectedAgent(agentId);
+    const installation = get().installations.find((item) => item.agentId === agentId);
+    const activeContext = installation
+      ? AgentContextSchema.parse({ installationId: installation.id })
+      : null;
+    set({ activeAgentId: agentId, activeContext });
+    if (activeContext) saveSelectedContext(agentId, activeContext);
+  },
+
+  selectContext: (input) => {
+    const parsed = AgentContextSchema.safeParse(input);
+    if (!parsed.success) return;
+    const installation = get().installations.find((item) => item.id === parsed.data.installationId);
+    if (!installation) return;
+    set({ activeAgentId: installation.agentId, activeContext: parsed.data });
+    saveSelectedContext(installation.agentId, parsed.data);
   },
 }));
