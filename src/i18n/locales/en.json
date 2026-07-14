@@ -291,5 +291,13 @@
         "addingSource": "Adding source…"
       }
     }
+  },
+  "projectSkills": {
+    "demote": {
+      "title": "Demote \"{{skillName}}\" from global to project scope",
+      "description": "It will no longer be visible to all projects. You will need to enable this skill manually in each project.",
+      "cancel": "Cancel",
+      "confirm": "Confirm"
+    }
   }
 }

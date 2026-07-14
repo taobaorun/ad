@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSkills } from '@/store/skills';
 import type { SkillEntry } from '@/lib/skillTypes';
 import { Search, ChevronDown, ChevronRight } from 'lucide-react';
@@ -395,17 +396,19 @@ function DemoteDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div
         className="w-[400px] rounded-xl p-5"
-        style={{ background: 'var(--ds-bg-panel)', border: '1px solid var(--ds-line)' }}
+        style={{ background: 'var(--ds-bg-card)', border: '1px solid var(--ds-line)' }}
       >
         <h3 className="mb-3 text-sm font-semibold">
-          将 "{skillName}" 从全局降为项目级
+          {t('projectSkills.demote.title', { skillName })}
         </h3>
         <p className="mb-4 text-xs" style={{ color: 'var(--ds-fg-3)' }}>
-          移除后将不再对所有项目可见。你需要在各项目中手动启用此 skill。
+          {t('projectSkills.demote.description')}
         </p>
         <div className="flex justify-end gap-2">
           <button
@@ -414,15 +417,14 @@ function DemoteDialog({
             className="rounded-md border px-3 py-1.5 text-xs"
             style={{ borderColor: 'var(--ds-line)' }}
           >
-            Cancel
+            {t('projectSkills.demote.cancel')}
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="rounded-md px-3 py-1.5 text-xs text-white"
-            style={{ background: 'var(--ds-clay)' }}
+            className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-foreground/5"
           >
-            Confirm
+            {t('projectSkills.demote.confirm')}
           </button>
         </div>
       </div>

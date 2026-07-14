@@ -291,5 +291,13 @@
         "addingSource": "正在添加 source…"
       }
     }
+  },
+  "projectSkills": {
+    "demote": {
+      "title": "将 \"{{skillName}}\" 从全局降为项目级",
+      "description": "移除后将不再对所有项目可见。你需要在各项目中手动启用此 skill。",
+      "cancel": "取消",
+      "confirm": "确认"
+    }
   }
 }
