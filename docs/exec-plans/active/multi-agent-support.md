@@ -173,6 +173,10 @@
 - 新增 adapter registry 前先确认是否可用静态 Rust registry，避免动态插件系统。
 - 关键接口必须在 Phase 1 完成后存在：AgentAdapter、AdapterRegistry、ConversionPreview、ConversionIssue、CanonicalInstallation。
 
+## 待确认依赖
+
+- Codex 配置使用 TOML；Claude Code → Codex 的可靠转换需要 TOML parser/serializer。项目边界要求新增依赖先确认，当前转换实现暂停在此处，未采用字符串拼接。
+
 ## 里程碑规划
 
 - M1 Contract：模型、registry、migration、去重测试。
