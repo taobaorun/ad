@@ -1,26 +1,17 @@
-use std::collections::BTreeSet;
-
 use crate::fs::paths::codex_dir;
 
-use super::{AgentAdapter, AgentInstallation, AgentMetadata, Capability};
+use super::{AgentAdapter, AgentDefinition, AgentInstallation};
 
 #[derive(Debug, Default)]
 pub struct CodexAdapter;
 
 impl AgentAdapter for CodexAdapter {
-    fn metadata(&self) -> &AgentMetadata {
-        static METADATA: std::sync::OnceLock<AgentMetadata> = std::sync::OnceLock::new();
-        METADATA.get_or_init(|| AgentMetadata {
+    fn definition(&self) -> &AgentDefinition {
+        static DEFINITION: std::sync::OnceLock<AgentDefinition> = std::sync::OnceLock::new();
+        DEFINITION.get_or_init(|| AgentDefinition {
             id: "codex".into(),
             display_name: "Codex".into(),
-            capabilities: BTreeSet::from([
-                Capability::Settings,
-                Capability::Skills,
-                Capability::Plugins,
-                Capability::ProcessDetection,
-                Capability::TerminalLaunch,
-                Capability::Conversion,
-            ]),
+            adapter_version: 1,
         })
     }
 
@@ -35,4 +26,3 @@ impl AgentAdapter for CodexAdapter {
         }
     }
 }
-

@@ -14,7 +14,7 @@
   - Files: `src-tauri/src/agents/types.rs`, `src-tauri/src/agents/operations.rs`
   - Dependencies: Task 1
 
-- [ ] Task 3: Replace declared capabilities with capability ports
+- [x] Task 3: Replace declared capabilities with capability ports
   - Acceptance: AgentAdapter exposes optional Settings/Skills/Plugins/Process/Launch ports; public descriptors are derived from present ports.
   - Verify: a fake adapter cannot expose a capability descriptor without returning its port; scope/operation descriptors round-trip.
   - Files: `src-tauri/src/agents/registry.rs`, `src-tauri/src/agents/capabilities.rs`, `src-tauri/src/agents/{claude,codex}.rs`

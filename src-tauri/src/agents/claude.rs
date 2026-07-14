@@ -1,26 +1,17 @@
-use std::collections::BTreeSet;
-
 use crate::fs::paths::claude_dir;
 
-use super::{AgentAdapter, AgentInstallation, AgentMetadata, Capability};
+use super::{AgentAdapter, AgentDefinition, AgentInstallation};
 
 #[derive(Debug, Default)]
 pub struct ClaudeAdapter;
 
 impl AgentAdapter for ClaudeAdapter {
-    fn metadata(&self) -> &AgentMetadata {
-        static METADATA: std::sync::OnceLock<AgentMetadata> = std::sync::OnceLock::new();
-        METADATA.get_or_init(|| AgentMetadata {
+    fn definition(&self) -> &AgentDefinition {
+        static DEFINITION: std::sync::OnceLock<AgentDefinition> = std::sync::OnceLock::new();
+        DEFINITION.get_or_init(|| AgentDefinition {
             id: "claude-code".into(),
             display_name: "Claude Code".into(),
-            capabilities: BTreeSet::from([
-                Capability::Settings,
-                Capability::Skills,
-                Capability::Plugins,
-                Capability::ProcessDetection,
-                Capability::TerminalLaunch,
-                Capability::Conversion,
-            ]),
+            adapter_version: 1,
         })
     }
 
@@ -29,10 +20,12 @@ impl AgentAdapter for ClaudeAdapter {
             return Vec::new();
         };
         if root.is_dir() {
-            vec![AgentInstallation::new("claude-code", root.to_string_lossy())]
+            vec![AgentInstallation::new(
+                "claude-code",
+                root.to_string_lossy(),
+            )]
         } else {
             Vec::new()
         }
     }
 }
-

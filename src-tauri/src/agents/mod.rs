@@ -1,3 +1,4 @@
+mod capabilities;
 mod claude;
 mod codex;
 mod conversion;
@@ -5,6 +6,7 @@ mod operations;
 mod registry;
 mod types;
 
+pub use capabilities::*;
 pub use claude::ClaudeAdapter;
 pub use codex::CodexAdapter;
 pub use conversion::convert_claude_profile_to_codex;
@@ -55,7 +57,7 @@ mod tests {
 
     #[test]
     #[serial_test::serial(home_env)]
-    fn builtins_expose_the_same_parity_capabilities() {
+    fn builtin_legacy_metadata_is_derived_from_v1_ports() {
         let temp = tempfile::tempdir().unwrap();
         std::env::set_var("AD_HOME", temp.path());
         std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
@@ -72,7 +74,17 @@ mod tests {
             .find(|item| item.id.as_str() == "codex")
             .unwrap();
 
-        assert_eq!(claude.capabilities, codex.capabilities);
+        assert_eq!(
+            claude.capabilities.len(),
+            registry
+                .capability_descriptors("claude-code")
+                .unwrap()
+                .len()
+        );
+        assert_eq!(
+            codex.capabilities.len(),
+            registry.capability_descriptors("codex").unwrap().len()
+        );
         assert_eq!(registry.discover().len(), 2);
 
         std::env::remove_var("AD_HOME");
