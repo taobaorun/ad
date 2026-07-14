@@ -8,7 +8,7 @@
   - Files: `src-tauri/src/agents/types.rs`, `src-tauri/src/agents/mod.rs`
   - Dependencies: None
 
-- [ ] Task 2: Define resource and operation contracts
+- [x] Task 2: Define resource and operation contracts
   - Acceptance: ResourceRef/Snapshot, MutationPlan, OperationReceipt and AgentError represent read/write preconditions and partial outcomes without Agent-specific fields.
   - Verify: Rust round-trip tests and invariant tests for source/read-only resources.
   - Files: `src-tauri/src/agents/types.rs`, `src-tauri/src/agents/operations.rs`
