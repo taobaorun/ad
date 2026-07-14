@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { emit } from '@tauri-apps/api/event';
 import { tauri, type ActivationResult, type ClaudeProcess } from '@/lib/tauri';
 import { type ProfileFile, blankProfile } from '@/lib/profileSchema';
+import { useAgents } from '@/store/agents';
 
 /// Frontend → backend event fired after any profile mutation. Tray subscribes
 /// to it so the menubar ring color updates live when a user edits the active
@@ -32,6 +33,7 @@ interface State {
   importOpen: boolean;
   toasts: ToastPayload[];
   loading: boolean;
+  agentId: string;
 
   loadAll: () => Promise<void>;
   select: (id: string | null) => void;
@@ -66,18 +68,20 @@ export const useProfiles = create<State>((set, get) => ({
   importOpen: false,
   toasts: [],
   loading: false,
+  agentId: 'claude-code',
 
   loadAll: async () => {
     if (inflightLoadAll) return inflightLoadAll;
     const promise = (async () => {
       set({ loading: true });
       try {
+        const agentId = useAgents.getState().activeAgentId;
         const [profiles, activeId] = await Promise.all([
-          tauri.listProfiles(),
-          tauri.getActiveProfileId(),
+          tauri.listAgentProfiles(agentId),
+          agentId === 'claude-code' ? tauri.getActiveProfileId() : Promise.resolve(null),
         ]);
         const selectedId = get().selectedId ?? activeId ?? profiles[0]?.id ?? null;
-        set({ profiles, activeId, selectedId });
+        set({ profiles, activeId, selectedId, agentId });
       } finally {
         set({ loading: false });
         inflightLoadAll = null;
@@ -94,7 +98,10 @@ export const useProfiles = create<State>((set, get) => ({
 
   createNew: async () => {
     const id = nextUntitledId(get().profiles);
-    const created = await tauri.saveProfile(blankProfile(id));
+    const created = await tauri.saveAgentProfile({
+      ...blankProfile(id),
+      agentId: get().agentId,
+    });
     await get().loadAll();
     set({ selectedId: created.id });
     await notifyProfilesChanged();
@@ -102,13 +109,13 @@ export const useProfiles = create<State>((set, get) => ({
   },
 
   save: async (profile) => {
-    await tauri.saveProfile({ ...profile, updatedAt: new Date().toISOString() });
+    await tauri.saveAgentProfile({ ...profile, updatedAt: new Date().toISOString() });
     await get().loadAll();
     await notifyProfilesChanged();
   },
 
   remove: async (id) => {
-    await tauri.deleteProfile(id);
+    await tauri.deleteAgentProfile(get().agentId, id);
     const remaining = get().profiles.filter((p) => p.id !== id);
     set({
       profiles: remaining,
@@ -118,6 +125,9 @@ export const useProfiles = create<State>((set, get) => ({
   },
 
   activate: async (id) => {
+    if (get().agentId !== 'claude-code') {
+      throw new Error('profile activation is not implemented for this Agent');
+    }
     const res = await tauri.activateProfile(id);
     const profile = get().profiles.find((p) => p.id === res.activatedId);
     const toast: ToastPayload = {

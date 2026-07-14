@@ -12,6 +12,7 @@ import { useProjects } from './store/projects';
 import { useUiState } from './store/ui';
 import { useUiSettings } from './store/uiSettings';
 import { AgentSelector, useLoadAgents } from './components/AgentSelector';
+import { useAgents } from './store/agents';
 
 // Heavy dialogs/drawers are lazy-loaded so they don't sit in the first-paint
 // chunk. Each is wrapped in a tiny "gate" below that only mounts the lazy
@@ -52,6 +53,8 @@ export function App() {
   const openPalette = useUiState((s) => s.openPalette);
   const darkMode = useUiSettings((s) => s.darkMode);
   const setDarkMode = useUiSettings((s) => s.setDarkMode);
+  const activeAgentId = useAgents((s) => s.activeAgentId);
+  const reloadProfiles = useProfiles((s) => s.loadAll);
   useLoadAgents();
 
   useEffect(() => {
@@ -62,6 +65,10 @@ export function App() {
     void loadAll();
     void loadProjects();
   }, [loadAll, loadProjects]);
+
+  useEffect(() => {
+    void reloadProfiles();
+  }, [activeAgentId, reloadProfiles]);
 
   useEffect(() => {
     requestAnimationFrame(() => {

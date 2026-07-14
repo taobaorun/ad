@@ -18,11 +18,17 @@ vi.mock('@tauri-apps/api/core', () => ({
     switch (cmd) {
       case 'list_profiles':
         return [fixture];
+      case 'list_agent_profiles':
+        return [fixture];
       case 'get_active_profile_id':
         return 'homi';
       case 'save_profile':
         return args?.profile;
+      case 'save_agent_profile':
+        return args?.profile;
       case 'delete_profile':
+        return undefined;
+      case 'delete_agent_profile':
         return undefined;
       case 'activate_profile':
         return { activatedId: (args as { id: string }).id, backupPath: null, detectedPids: [] };
@@ -42,6 +48,7 @@ describe('useProfiles store', () => {
       importOpen: false,
       toasts: [],
       loading: false,
+      agentId: 'claude-code',
     });
   });
 

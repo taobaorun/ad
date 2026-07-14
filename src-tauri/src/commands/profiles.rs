@@ -169,6 +169,12 @@ pub fn delete_profile(id: String) -> CmdResult<()> {
 #[tauri::command]
 pub fn list_agent_profiles(agent_id: String) -> CmdResult<Vec<ProfileFile>> {
     validate_agent_id(&agent_id)?;
+    if agent_id == "claude-code" {
+        return Ok(list_profiles()?
+            .into_iter()
+            .filter(|profile| profile.agent_id == agent_id)
+            .collect());
+    }
     let dir = profiles_dir()?.join(&agent_id);
     if !dir.exists() {
         return Ok(Vec::new());
@@ -193,6 +199,10 @@ pub fn list_agent_profiles(agent_id: String) -> CmdResult<Vec<ProfileFile>> {
 
 #[tauri::command]
 pub fn get_agent_profile(agent_id: String, id: String) -> CmdResult<ProfileFile> {
+    validate_agent_id(&agent_id)?;
+    if agent_id == "claude-code" {
+        return get_profile(id);
+    }
     let path = agent_profile_path(&agent_id, &id)?;
     let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
     let profile: ProfileFile = serde_json::from_slice(&bytes)?;
@@ -208,6 +218,9 @@ pub fn get_agent_profile(agent_id: String, id: String) -> CmdResult<ProfileFile>
 #[tauri::command]
 pub fn save_agent_profile(profile: ProfileFile) -> CmdResult<ProfileFile> {
     validate_agent_id(&profile.agent_id)?;
+    if profile.agent_id == "claude-code" {
+        return save_profile(profile);
+    }
     let path = agent_profile_path(&profile.agent_id, &profile.id)?;
     ensure_dir(path.parent().unwrap())?;
     let mut profile = profile;
@@ -230,6 +243,10 @@ pub fn save_agent_profile(profile: ProfileFile) -> CmdResult<ProfileFile> {
 
 #[tauri::command]
 pub fn delete_agent_profile(agent_id: String, id: String) -> CmdResult<()> {
+    validate_agent_id(&agent_id)?;
+    if agent_id == "claude-code" {
+        return delete_profile(id);
+    }
     let path = agent_profile_path(&agent_id, &id)?;
     if path.exists() {
         std::fs::remove_file(&path).with_context(|| format!("delete {}", path.display()))?;
