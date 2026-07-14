@@ -35,13 +35,13 @@ Claude ports + Codex ports + ExecutionEngine
 - [x] Task 1: Typed identities and core context models
 - [x] Task 2: Resource, plan, receipt and structured error contracts
 - [x] Task 3: Capability ports and derived descriptors
-- [ ] Task 4: TypeScript IPC schemas for v1 read models
+- [x] Task 4: TypeScript IPC schemas for v1 read models
 
 ### Checkpoint A
 
-- [ ] Targeted Rust tests and frontend schema tests pass
-- [ ] Existing v0 commands and profiles remain compatible
-- [ ] No v1 code writes user files
+- [x] Targeted Rust tests and frontend schema tests pass
+- [x] Existing v0 commands and profiles remain compatible
+- [x] No v1 code writes user files
 
 ### Phase 2: Canonical Context
 

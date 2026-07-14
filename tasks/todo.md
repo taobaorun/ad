@@ -20,7 +20,7 @@
   - Files: `src-tauri/src/agents/registry.rs`, `src-tauri/src/agents/capabilities.rs`, `src-tauri/src/agents/{claude,codex}.rs`
   - Dependencies: Tasks 1-2
 
-- [ ] Task 4: Add v1 TypeScript boundary schemas
+- [x] Task 4: Add v1 TypeScript boundary schemas
   - Acceptance: frontend validates identities, contexts, resources, descriptors, plan views, receipts and structured errors without using unsafe casts.
   - Verify: `pnpm test -- tests/lib/agentTypes.test.ts` and `pnpm typecheck`.
   - Files: `src/lib/agentTypes.ts`, `tests/lib/agentTypes.test.ts`
@@ -28,9 +28,9 @@
 
 ### Checkpoint A
 
-- [ ] Targeted Rust and TypeScript tests pass.
-- [ ] Existing v0 commands and profile fixtures still pass.
-- [ ] No v1 operation writes user files.
+- [x] Targeted Rust and TypeScript tests pass.
+- [x] Existing v0 commands and profile fixtures still pass.
+- [x] No v1 operation writes user files.
 
 ## Phase 2: Canonical Context
 

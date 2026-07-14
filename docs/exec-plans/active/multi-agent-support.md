@@ -53,10 +53,11 @@
 - [x] (2026-07-14) 评审多 Agent 产品规格和本 ExecPlan
 - [x] (2026-07-14) 建立 agent-neutral model、registry、capability、内置 Claude/Codex discovery 和 IPC 基础；旧 profile migration 仍在后续 Claude adapter slice 完成
 - [x] (2026-07-15) 多 Agent v1 架构获用户 LGTM；当前 foundation 归类为 v0 兼容性实验，恢复实施但不继续扩展 v0 conversion apply
-- [ ] (进行中) 建立 v1 typed identity、AgentContext、capability ports、ResourceSnapshot、MutationPlan/Receipt 与结构化错误契约
+- [x] (2026-07-15) 建立 v1 typed identity、AgentContext、capability ports、ResourceSnapshot、MutationPlan/Receipt 与结构化错误契约
   - [x] (2026-07-15) AgentId、InstallationId、ProfileId、PlanId、ReceiptId 已改为透明 newtype；AgentDefinition/AgentContext serde contract 已通过新增测试，v0 JSON 形状不变
   - [x] (2026-07-15) 完成 Agent-neutral ResourceRef/Snapshot、MutationPlan、OperationReceipt 与 AgentError 契约；只读资源不变量和部分失败 IPC contract 已通过测试
   - [x] (2026-07-15) AgentAdapter 已改为五类可调用 capability ports；registry 只从实际返回的 port 推导 scope、operation、availability、limitations descriptor，并同步生成 legacy metadata façade
+  - [x] (2026-07-15) TypeScript 已增加 branded identities、context/resource/descriptor/plan view/receipt/error 严格 Zod schemas；Phase 1 Rust、schema、旧 profile/store 回归全部通过且无 v1 写盘路径
 - [ ] (进行中) 将现有 Claude Code 行为包入 Claude adapter，保持回归兼容；当前已完成 Agent-scoped profile identity、Agent-specific profile storage 与 built-in discovery
 - [ ] (待开始) 实现 Codex adapter 的 discovery、配置、Skills、Plugins、进程探测和终端启动
 - [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 TOML preview contract、model 映射和 unsupported 字段报告，目标写入/回滚仍待实现
