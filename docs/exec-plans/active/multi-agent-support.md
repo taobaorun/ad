@@ -50,7 +50,7 @@
 
 - [x] (2026-07-14) 评审多 Agent 产品规格和本 ExecPlan
 - [x] (2026-07-14) 建立 agent-neutral model、registry、capability、内置 Claude/Codex discovery 和 IPC 基础；旧 profile migration 仍在后续 Claude adapter slice 完成
-- [ ] (待开始) 将现有 Claude Code 行为包入 Claude adapter，保持回归兼容
+- [ ] (进行中) 将现有 Claude Code 行为包入 Claude adapter，保持回归兼容；当前已完成 Agent-scoped profile identity 兼容字段与 built-in discovery
 - [ ] (待开始) 实现 Codex adapter 的 discovery、配置、Skills、Plugins、进程探测和终端启动
 - [ ] (待开始) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚
 - [ ] (待开始) 接入 Agent-aware store、UI、i18n 和 IPC
