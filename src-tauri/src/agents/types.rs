@@ -102,18 +102,7 @@ pub struct AgentInstallation {
 }
 
 impl AgentInstallation {
-    pub fn new(agent_id: impl Into<AgentId>, root_path: impl Into<String>) -> Self {
-        let agent_id = agent_id.into();
-        let root_path = normalize_root_path(&root_path.into());
-        let id = InstallationId::from(format!("{}:{root_path}", agent_id.as_str()));
-        Self {
-            id,
-            agent_id,
-            root_path,
-        }
-    }
-
-    pub fn with_id(
+    pub(crate) fn with_id(
         id: impl Into<InstallationId>,
         agent_id: impl Into<AgentId>,
         root_path: impl Into<String>,
@@ -179,21 +168,6 @@ fn normalize_root_path(path: &str) -> String {
     normalized
 }
 
-/// Keeps the first installation for each Agent + normalized root identity.
-pub fn deduplicate_installations(
-    installations: impl IntoIterator<Item = AgentInstallation>,
-) -> Vec<AgentInstallation> {
-    let mut seen = BTreeSet::new();
-    let mut result = Vec::new();
-    for installation in installations {
-        let key = (installation.agent_id.clone(), installation.root_path.clone());
-        if seen.insert(key) {
-            result.push(installation);
-        }
-    }
-    result
-}
-
 #[cfg(test)]
 mod v1_contract_tests {
     use super::*;
@@ -242,7 +216,8 @@ mod v1_contract_tests {
 
     #[test]
     fn discovered_installation_exposes_an_installation_id() {
-        let installation = AgentInstallation::new("codex", "/Users/test/.codex");
+        let installation =
+            AgentInstallation::with_id("codex:/Users/test/.codex", "codex", "/Users/test/.codex");
 
         let json = serde_json::to_value(&installation).unwrap();
         assert_eq!(json["id"], installation.id.as_str());

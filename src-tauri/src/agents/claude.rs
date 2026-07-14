@@ -1,6 +1,6 @@
 use crate::fs::paths::claude_dir;
 
-use super::{AgentAdapter, AgentDefinition, AgentInstallation};
+use super::{AgentAdapter, AgentDefinition, DiscoveryEvidence, InstallationCandidate};
 
 #[derive(Debug, Default)]
 pub struct ClaudeAdapter;
@@ -15,17 +15,16 @@ impl AgentAdapter for ClaudeAdapter {
         })
     }
 
-    fn discover(&self) -> Vec<AgentInstallation> {
+    fn discover(&self) -> Vec<InstallationCandidate> {
         let Ok(root) = claude_dir() else {
             return Vec::new();
         };
-        if root.is_dir() {
-            vec![AgentInstallation::new(
-                "claude-code",
-                root.to_string_lossy(),
-            )]
-        } else {
-            Vec::new()
-        }
+        InstallationCandidate::from_existing_home(
+            "claude-code",
+            root,
+            DiscoveryEvidence::DefaultHome,
+        )
+        .into_iter()
+        .collect()
     }
 }

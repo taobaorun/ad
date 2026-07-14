@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 
 use super::{
-    deduplicate_installations, launch_descriptor, plugins_descriptor, process_descriptor,
-    settings_descriptor, skills_descriptor, AgentDefinition, AgentInstallation, AgentMetadata,
-    Capability, CapabilityDescriptor, CapabilityKind, LaunchPort, PluginsPort, ProcessPort,
-    SettingsPort, SkillsPort,
+    launch_descriptor, plugins_descriptor, process_descriptor, settings_descriptor,
+    skills_descriptor, AgentDefinition, AgentInstallation, AgentMetadata, Capability,
+    CapabilityDescriptor, CapabilityKind, InstallationCandidate, LaunchPort, PluginsPort,
+    ProcessPort, SettingsPort, SkillsPort,
 };
 
 /// Built-in adapter boundary. User-defined adapters are intentionally not
@@ -12,7 +12,7 @@ use super::{
 pub trait AgentAdapter: Send + Sync {
     fn definition(&self) -> &AgentDefinition;
 
-    fn discover(&self) -> Vec<AgentInstallation>;
+    fn discover(&self) -> Vec<InstallationCandidate>;
 
     fn settings(&self) -> Option<&dyn SettingsPort> {
         None
@@ -73,12 +73,14 @@ impl AdapterRegistry {
     }
 
     pub fn discover(&self) -> Vec<AgentInstallation> {
-        let installations = self
-            .adapters
-            .iter()
-            .flat_map(|adapter| adapter.discover())
-            .collect::<Vec<_>>();
-        deduplicate_installations(installations)
+        let mut seen = BTreeSet::new();
+        let mut installations = Vec::new();
+        for candidate in self.adapters.iter().flat_map(|adapter| adapter.discover()) {
+            if seen.insert(candidate.canonical_key().clone()) {
+                installations.push(candidate.into_installation());
+            }
+        }
+        installations
     }
 
     pub fn adapter(&self, agent_id: &str) -> Option<&dyn AgentAdapter> {
@@ -125,9 +127,9 @@ mod tests {
 
     use super::{AdapterRegistry, AgentAdapter};
     use crate::agents::{
-        AgentContext, AgentDefinition, AgentError, AgentInstallation, CapabilityAvailability,
-        CapabilityOperation, MutationPlan, ResourceScope, ResourceSnapshot, SettingsEdit,
-        SettingsPort,
+        AgentContext, AgentDefinition, AgentError, CapabilityAvailability, CapabilityOperation,
+        DiscoveryEvidence, InstallationCandidate, MutationPlan, ResourceScope, ResourceSnapshot,
+        SettingsEdit, SettingsPort,
     };
 
     struct FakeSettingsPort;
@@ -160,7 +162,7 @@ mod tests {
 
     struct FakeAdapter {
         definition: AgentDefinition,
-        installations: Vec<AgentInstallation>,
+        candidates: Vec<InstallationCandidate>,
         settings: Option<FakeSettingsPort>,
     }
 
@@ -169,8 +171,8 @@ mod tests {
             &self.definition
         }
 
-        fn discover(&self) -> Vec<AgentInstallation> {
-            self.installations.clone()
+        fn discover(&self) -> Vec<InstallationCandidate> {
+            self.candidates.clone()
         }
 
         fn settings(&self) -> Option<&dyn SettingsPort> {
@@ -178,33 +180,52 @@ mod tests {
         }
     }
 
-    fn fake_adapter(id: &str, root: &str, settings: bool) -> FakeAdapter {
+    fn fake_adapter(id: &str, settings: bool) -> FakeAdapter {
         FakeAdapter {
             definition: AgentDefinition {
                 id: id.into(),
                 display_name: id.into(),
                 adapter_version: 1,
             },
-            installations: vec![AgentInstallation::new(id, root)],
+            candidates: Vec::new(),
             settings: settings.then_some(FakeSettingsPort),
         }
     }
 
     #[test]
     fn registry_exposes_metadata_and_deduplicated_installations() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_home = temp.path().join("codex");
+        std::fs::create_dir_all(&config_home).unwrap();
+        let direct = InstallationCandidate::from_existing_home(
+            "codex",
+            &config_home,
+            DiscoveryEvidence::DefaultHome,
+        )
+        .unwrap();
+        let trailing = InstallationCandidate::from_existing_home(
+            "codex",
+            format!("{}/", config_home.display()),
+            DiscoveryEvidence::Environment,
+        )
+        .unwrap();
         let mut registry = AdapterRegistry::new();
-        registry.register(Box::new(fake_adapter("codex", "/tmp/codex", false)));
-        registry.register(Box::new(fake_adapter("codex", "/tmp/codex/", false)));
+        let mut adapter = fake_adapter("codex", false);
+        adapter.candidates = vec![direct, trailing];
+        registry.register(Box::new(adapter));
 
-        assert_eq!(registry.metadata().len(), 2);
+        assert_eq!(registry.metadata().len(), 1);
         assert_eq!(registry.discover().len(), 1);
+        assert!(serde_json::to_value(registry.discover()).unwrap()[0]
+            .get("evidence")
+            .is_none());
     }
 
     #[test]
     fn descriptors_are_derived_from_returned_ports() {
         let mut registry = AdapterRegistry::new();
-        registry.register(Box::new(fake_adapter("without-port", "/tmp/none", false)));
-        registry.register(Box::new(fake_adapter("with-port", "/tmp/settings", true)));
+        registry.register(Box::new(fake_adapter("without-port", false)));
+        registry.register(Box::new(fake_adapter("with-port", true)));
 
         assert!(registry
             .capability_descriptors("without-port")

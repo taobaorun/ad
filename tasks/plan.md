@@ -45,7 +45,7 @@ Claude ports + Codex ports + ExecutionEngine
 
 ### Phase 2: Canonical Context
 
-- [ ] Task 5: Adapter-owned canonical installation discovery
+- [x] Task 5: Adapter-owned canonical installation discovery
 - [ ] Task 6: AgentContext IPC and backward-compatible frontend selection
 
 ### Checkpoint B

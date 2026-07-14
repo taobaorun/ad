@@ -2,6 +2,7 @@ mod capabilities;
 mod claude;
 mod codex;
 mod conversion;
+mod discovery;
 mod operations;
 mod registry;
 mod types;
@@ -10,6 +11,7 @@ pub use capabilities::*;
 pub use claude::ClaudeAdapter;
 pub use codex::CodexAdapter;
 pub use conversion::convert_claude_profile_to_codex;
+pub use discovery::*;
 pub use operations::*;
 pub use registry::*;
 pub use types::*;
@@ -24,17 +26,6 @@ pub fn builtin_registry() -> AdapterRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn canonical_installations_deduplicate_equivalent_paths() {
-        let installations = deduplicate_installations(vec![
-            AgentInstallation::new("codex", "/Users/test/.codex"),
-            AgentInstallation::new("codex", "/Users/test/.codex/"),
-        ]);
-
-        assert_eq!(installations.len(), 1);
-        assert_eq!(installations[0].root_path, "/Users/test/.codex");
-    }
 
     #[test]
     fn profile_identity_includes_agent_id() {
@@ -59,7 +50,10 @@ mod tests {
     #[serial_test::serial(home_env)]
     fn builtin_legacy_metadata_is_derived_from_v1_ports() {
         let temp = tempfile::tempdir().unwrap();
+        let previous_home = std::env::var("AD_HOME").ok();
+        let previous_codex_home = std::env::var("CODEX_HOME").ok();
         std::env::set_var("AD_HOME", temp.path());
+        std::env::remove_var("CODEX_HOME");
         std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
         std::fs::create_dir_all(temp.path().join(".codex")).unwrap();
 
@@ -87,6 +81,13 @@ mod tests {
         );
         assert_eq!(registry.discover().len(), 2);
 
-        std::env::remove_var("AD_HOME");
+        match previous_home {
+            Some(value) => std::env::set_var("AD_HOME", value),
+            None => std::env::remove_var("AD_HOME"),
+        }
+        match previous_codex_home {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
     }
 }

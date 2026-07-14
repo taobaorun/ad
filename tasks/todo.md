@@ -34,7 +34,7 @@
 
 ## Phase 2: Canonical Context
 
-- [ ] Task 5: Move canonical identity into adapters
+- [x] Task 5: Move canonical identity into adapters
   - Acceptance: candidates sharing an effective config home deduplicate; different config homes remain distinct; aliases are not persisted.
   - Verify: AD_HOME fixtures for default home, CODEX_HOME, trailing separators and duplicate discovery evidence.
   - Files: `src-tauri/src/agents/discovery.rs`, `src-tauri/src/agents/registry.rs`, `src-tauri/src/agents/{claude,codex}.rs`
