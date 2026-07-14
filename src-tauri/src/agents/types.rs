@@ -96,13 +96,30 @@ pub struct AgentMetadata {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentInstallation {
+    pub id: InstallationId,
     pub agent_id: AgentId,
     pub root_path: String,
 }
 
 impl AgentInstallation {
     pub fn new(agent_id: impl Into<AgentId>, root_path: impl Into<String>) -> Self {
+        let agent_id = agent_id.into();
+        let root_path = normalize_root_path(&root_path.into());
+        let id = InstallationId::from(format!("{}:{root_path}", agent_id.as_str()));
         Self {
+            id,
+            agent_id,
+            root_path,
+        }
+    }
+
+    pub fn with_id(
+        id: impl Into<InstallationId>,
+        agent_id: impl Into<AgentId>,
+        root_path: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
             agent_id: agent_id.into(),
             root_path: normalize_root_path(&root_path.into()),
         }
@@ -221,5 +238,15 @@ mod v1_contract_tests {
 
         assert_eq!(definition.adapter_version, 1);
         assert_eq!(definition.id.as_str(), "claude-code");
+    }
+
+    #[test]
+    fn discovered_installation_exposes_an_installation_id() {
+        let installation = AgentInstallation::new("codex", "/Users/test/.codex");
+
+        let json = serde_json::to_value(&installation).unwrap();
+        assert_eq!(json["id"], installation.id.as_str());
+        assert_eq!(json["agentId"], "codex");
+        assert_eq!(json["rootPath"], "/Users/test/.codex");
     }
 }
