@@ -69,6 +69,7 @@ pub fn activate_profile_inner(id: String) -> CmdResult<ActivationResult> {
     // 4. Append to history (per-file, crash-safe via write_atomic).
     write_history_entry(&ActivationLogEntry {
         ts: Utc::now(),
+        agent_id: profile.agent_id.clone(),
         from: from.clone(),
         to: profile.id.clone(),
         backup_path: backup_path.as_ref().map(|p| p.display().to_string()),

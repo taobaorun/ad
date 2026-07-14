@@ -102,6 +102,8 @@ pub struct ClaudeProcess {
 #[serde(rename_all = "camelCase")]
 pub struct ActivationLogEntry {
     pub ts: DateTime<Utc>,
+    #[serde(default = "default_agent_id")]
+    pub agent_id: String,
     pub from: Option<String>,
     pub to: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -424,6 +426,18 @@ mod tests {
         assert!(p.layers.shared.is_none());
         assert!(p.layers.local.is_none());
         assert!(p.layers.env.is_empty());
+    }
+
+    #[test]
+    fn old_activation_history_defaults_to_claude_code() {
+        let raw = serde_json::json!({
+            "ts": "2026-01-01T00:00:00Z",
+            "from": null,
+            "to": "default"
+        });
+        let entry: ActivationLogEntry = serde_json::from_value(raw).unwrap();
+
+        assert_eq!(entry.agent_id, "claude-code");
     }
 
     #[test]

@@ -30,6 +30,7 @@ export interface ActivationResult {
 
 export interface ActivationLogEntry {
   ts: string;
+  agentId: string;
   from: string | null;
   to: string;
   backupPath?: string | null;
