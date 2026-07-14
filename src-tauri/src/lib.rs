@@ -1,6 +1,7 @@
 // ad library entry — composes filesystem primitives, commands, and the tray.
 
 pub mod fs;
+pub mod agents;
 mod migration;
 mod models;
 mod terminal;
