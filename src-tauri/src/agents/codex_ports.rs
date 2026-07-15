@@ -38,6 +38,7 @@ impl SettingsPort for CodexSettingsPort {
             CapabilityOperation::Edit,
             CapabilityOperation::Preview,
             CapabilityOperation::Apply,
+            CapabilityOperation::Rollback,
         ])
     }
 

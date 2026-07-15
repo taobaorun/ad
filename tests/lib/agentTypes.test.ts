@@ -6,6 +6,7 @@ import {
   AgentProfileRefSchema,
   CapabilityDescriptorSchema,
   CapabilitySchema,
+  ConversionRoutePreviewSchema,
   MutationPlanViewSchema,
   OperationReceiptSchema,
   ResourceSnapshotSchema,
@@ -137,6 +138,19 @@ describe('Agent schemas', () => {
         status: 'partial_failure',
         appliedResources: [],
         backupPaths: ['/Users/test/.ad/backups/config.toml'],
+        postApplyStates: [
+          {
+            resource: {
+              installationId: 'codex:default',
+              kind: 'settings',
+              scope: 'user',
+              logicalId: 'user-config',
+            },
+            kind: 'file',
+            digest: 'sha256:after',
+          },
+        ],
+        manifestDigest: 'sha256:manifest',
         message: 'A compensation write failed',
       }).status,
     ).toBe('partial_failure');
@@ -149,5 +163,35 @@ describe('Agent schemas', () => {
         retryable: true,
       }).retryable,
     ).toBe(true);
+  });
+
+  it('validates artifact conversion previews without mutation content', () => {
+    const preview = ConversionRoutePreviewSchema.parse({
+      sourceAgentId: 'claude-code',
+      targetAgentId: 'codex',
+      artifacts: [
+        {
+          id: 'user-settings:model',
+          kind: 'settings',
+          source: {
+            installationId: 'claude-code:default',
+            kind: 'settings',
+            scope: 'user',
+            logicalId: 'user-settings',
+          },
+          target: {
+            installationId: 'codex:default',
+            kind: 'settings',
+            scope: 'user',
+            logicalId: 'user-config',
+          },
+          disposition: 'mapped',
+          message: 'Model key maps to Codex',
+        },
+      ],
+    });
+
+    expect(preview.artifacts.at(0)?.disposition).toBe('mapped');
+    expect(preview.plan).toBeUndefined();
   });
 });

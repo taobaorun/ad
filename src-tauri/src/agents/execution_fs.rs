@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use super::{AgentError, AgentErrorCode, ContentDigest, ManagedResourceTarget, PlannedMutation};
+use super::{
+    AgentError, AgentErrorCode, ContentDigest, ManagedResourceTarget, PlannedMutation,
+    ResourceStateKind,
+};
 
 #[derive(Clone)]
 pub(super) enum TargetState {
@@ -10,6 +13,14 @@ pub(super) enum TargetState {
 }
 
 impl TargetState {
+    pub(super) fn kind(&self) -> ResourceStateKind {
+        match self {
+            Self::Missing => ResourceStateKind::Missing,
+            Self::File(_) => ResourceStateKind::File,
+            Self::Symlink(_) => ResourceStateKind::Symlink,
+        }
+    }
+
     pub(super) fn digest(&self) -> Option<ContentDigest> {
         match self {
             Self::Missing => None,

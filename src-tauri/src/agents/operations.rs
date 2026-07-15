@@ -216,6 +216,23 @@ pub enum OperationStatus {
     PartialFailure,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceStateKind {
+    Missing,
+    File,
+    Symlink,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppliedResourceState {
+    pub resource: ResourceRef,
+    pub kind: ResourceStateKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<ContentDigest>,
+}
+
 /// Durable outcome of applying a mutation plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -227,6 +244,10 @@ pub struct OperationReceipt {
     pub applied_resources: Vec<ResourceRef>,
     #[serde(default)]
     pub backup_paths: Vec<String>,
+    #[serde(default)]
+    pub post_apply_states: Vec<AppliedResourceState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_digest: Option<ContentDigest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
@@ -370,6 +391,12 @@ mod tests {
             status: OperationStatus::PartialFailure,
             applied_resources: vec![settings_resource()],
             backup_paths: vec!["/Users/test/.ad/backups/config.toml".into()],
+            post_apply_states: vec![AppliedResourceState {
+                resource: settings_resource(),
+                kind: ResourceStateKind::File,
+                digest: Some(ContentDigest::from("sha256:after")),
+            }],
+            manifest_digest: Some(ContentDigest::from("sha256:manifest")),
             message: Some("A compensation write failed".into()),
         };
 

@@ -25,14 +25,17 @@ import {
   AgentInstallationSchema,
   AgentMetadataSchema,
   ConversionPreviewSchema,
+  ConversionRoutePreviewSchema,
   MutationPlanViewSchema,
   OperationReceiptSchema,
   type AgentContext,
   type ConversionPreview,
+  type ConversionRoutePreview,
   type InstallationId,
   type MutationPlanView,
   type OperationReceipt,
   type PlanId,
+  type ReceiptId,
   type ResourceRef,
 } from './agentTypes';
 
@@ -71,6 +74,16 @@ export const tauri = {
     ),
   previewClaudeToCodex: async (profile: ProfileFile): Promise<ConversionPreview> =>
     ConversionPreviewSchema.parse(await invoke<unknown>('preview_claude_to_codex', { profile })),
+  previewClaudeToCodexRoute: async (
+    sourceContext: AgentContext,
+    targetContext: AgentContext,
+  ): Promise<ConversionRoutePreview> =>
+    ConversionRoutePreviewSchema.parse(
+      await invoke<unknown>('preview_claude_to_codex_route', {
+        sourceContext,
+        targetContext,
+      }),
+    ),
   previewAgentSettingsEdit: async (
     context: AgentContext,
     edit: AgentSettingsEdit,
@@ -80,6 +93,17 @@ export const tauri = {
     ),
   applyAgentPlan: async (planId: PlanId): Promise<OperationReceipt> =>
     OperationReceiptSchema.parse(await invoke<unknown>('apply_agent_plan', { planId })),
+  applyConversionPlan: async (planId: PlanId, confirmed: boolean): Promise<OperationReceipt> =>
+    OperationReceiptSchema.parse(
+      await invoke<unknown>('apply_conversion_plan', { planId, confirmed }),
+    ),
+  rollbackAgentReceipt: async (
+    receiptId: ReceiptId,
+    confirmed: boolean,
+  ): Promise<OperationReceipt> =>
+    OperationReceiptSchema.parse(
+      await invoke<unknown>('rollback_agent_receipt', { receiptId, confirmed }),
+    ),
 
   listProfiles: () => invoke<ProfileFile[]>('list_profiles'),
   listAgentProfiles: (agentId: string) =>

@@ -42,6 +42,7 @@ impl SkillsPort for CodexSkillsPort {
             CapabilityOperation::Disable,
             CapabilityOperation::Preview,
             CapabilityOperation::Apply,
+            CapabilityOperation::Rollback,
         ])
     }
 

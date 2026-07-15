@@ -109,9 +109,6 @@ fn assert_required_journeys(
 
     let settings = adapter.settings().expect("settings port");
     assert_eq!(settings.availability(), CapabilityAvailability::Available);
-    assert!(!settings
-        .operations()
-        .contains(&CapabilityOperation::Rollback));
     assert_operations(
         settings.operations(),
         &[
@@ -119,6 +116,7 @@ fn assert_required_journeys(
             CapabilityOperation::Edit,
             CapabilityOperation::Preview,
             CapabilityOperation::Apply,
+            CapabilityOperation::Rollback,
         ],
     );
     let settings_snapshot = settings
@@ -143,7 +141,6 @@ fn assert_required_journeys(
 
     let skills = adapter.skills().expect("skills port");
     assert_eq!(skills.availability(), expected.skills_availability);
-    assert!(!skills.operations().contains(&CapabilityOperation::Rollback));
     if skills.availability() == CapabilityAvailability::Degraded {
         assert!(!skills.limitations().is_empty());
     }
@@ -156,6 +153,7 @@ fn assert_required_journeys(
             CapabilityOperation::Disable,
             CapabilityOperation::Preview,
             CapabilityOperation::Apply,
+            CapabilityOperation::Rollback,
         ],
     );
     skills.list(context).unwrap();
@@ -178,9 +176,6 @@ fn assert_required_journeys(
 
     let plugins = adapter.plugins().expect("plugins port");
     assert_eq!(plugins.availability(), CapabilityAvailability::Degraded);
-    assert!(!plugins
-        .operations()
-        .contains(&CapabilityOperation::Rollback));
     assert!(!plugins.limitations().is_empty());
     assert_operations(
         plugins.operations(),
@@ -190,6 +185,7 @@ fn assert_required_journeys(
             CapabilityOperation::Disable,
             CapabilityOperation::Preview,
             CapabilityOperation::Apply,
+            CapabilityOperation::Rollback,
         ],
     );
     let plugin = plugins

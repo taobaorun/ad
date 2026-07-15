@@ -9,8 +9,13 @@ use super::{
 
 #[derive(Default)]
 struct PlanState {
-    active: HashMap<PlanId, MutationPlan>,
+    active: HashMap<PlanId, StoredPlan>,
     consumed: HashSet<PlanId>,
+}
+
+struct StoredPlan {
+    plan: MutationPlan,
+    confirmation_required: bool,
 }
 
 /// In-memory owner of mutation plans. Callers outside the backend only receive plan views.
@@ -24,6 +29,13 @@ impl PlanStore {
         self.insert_at(plan, Utc::now())
     }
 
+    pub fn insert_confirmation_required(
+        &self,
+        plan: MutationPlan,
+    ) -> Result<MutationPlanView, AgentError> {
+        self.insert_confirmation_required_at(plan, Utc::now())
+    }
+
     pub fn claim_validated<F>(
         &self,
         plan_id: &PlanId,
@@ -35,10 +47,38 @@ impl PlanStore {
         self.claim_validated_at(plan_id, Utc::now(), observe_digest)
     }
 
+    pub fn claim_confirmed<F>(
+        &self,
+        plan_id: &PlanId,
+        observe_digest: F,
+    ) -> Result<MutationPlan, AgentError>
+    where
+        F: FnMut(&ResourceRef) -> Result<Option<ContentDigest>, AgentError>,
+    {
+        self.claim_confirmed_at(plan_id, Utc::now(), observe_digest)
+    }
+
     fn insert_at(
         &self,
         plan: MutationPlan,
         now: DateTime<Utc>,
+    ) -> Result<MutationPlanView, AgentError> {
+        self.insert_with_confirmation_at(plan, now, false)
+    }
+
+    fn insert_confirmation_required_at(
+        &self,
+        plan: MutationPlan,
+        now: DateTime<Utc>,
+    ) -> Result<MutationPlanView, AgentError> {
+        self.insert_with_confirmation_at(plan, now, true)
+    }
+
+    fn insert_with_confirmation_at(
+        &self,
+        plan: MutationPlan,
+        now: DateTime<Utc>,
+        confirmation_required: bool,
     ) -> Result<MutationPlanView, AgentError> {
         plan.validate()?;
         if plan.expires_at <= now {
@@ -61,7 +101,13 @@ impl PlanStore {
                 false,
             ));
         }
-        state.active.insert(plan.id.clone(), plan);
+        state.active.insert(
+            plan.id.clone(),
+            StoredPlan {
+                plan,
+                confirmation_required,
+            },
+        );
         Ok(view)
     }
 
@@ -69,6 +115,31 @@ impl PlanStore {
         &self,
         plan_id: &PlanId,
         now: DateTime<Utc>,
+        observe_digest: F,
+    ) -> Result<MutationPlan, AgentError>
+    where
+        F: FnMut(&ResourceRef) -> Result<Option<ContentDigest>, AgentError>,
+    {
+        self.claim_with_confirmation_at(plan_id, now, false, observe_digest)
+    }
+
+    fn claim_confirmed_at<F>(
+        &self,
+        plan_id: &PlanId,
+        now: DateTime<Utc>,
+        observe_digest: F,
+    ) -> Result<MutationPlan, AgentError>
+    where
+        F: FnMut(&ResourceRef) -> Result<Option<ContentDigest>, AgentError>,
+    {
+        self.claim_with_confirmation_at(plan_id, now, true, observe_digest)
+    }
+
+    fn claim_with_confirmation_at<F>(
+        &self,
+        plan_id: &PlanId,
+        now: DateTime<Utc>,
+        confirmed: bool,
         mut observe_digest: F,
     ) -> Result<MutationPlan, AgentError>
     where
@@ -85,7 +156,7 @@ impl PlanStore {
                     false,
                 ));
             }
-            let plan = state.active.remove(plan_id).ok_or_else(|| {
+            let stored = state.active.get(plan_id).ok_or_else(|| {
                 plan_error(
                     AgentErrorCode::InvalidPlan,
                     None,
@@ -94,6 +165,20 @@ impl PlanStore {
                     false,
                 )
             })?;
+            if stored.confirmation_required && !confirmed {
+                return Err(plan_error(
+                    AgentErrorCode::PermissionDenied,
+                    Some(&stored.plan),
+                    None,
+                    "Mutation plan requires explicit confirmation",
+                    false,
+                ));
+            }
+            let plan = state
+                .active
+                .remove(plan_id)
+                .expect("plan existence checked")
+                .plan;
             state.consumed.insert(plan_id.clone());
             plan
         };
@@ -338,5 +423,29 @@ mod tests {
             error.resource.unwrap().logical_id,
             "conversion-source".to_string()
         );
+    }
+
+    #[test]
+    fn conversion_plan_requires_the_confirmed_claim_path() {
+        let now = Utc::now();
+        let store = PlanStore::default();
+        store
+            .insert_confirmation_required_at(plan(now), now)
+            .unwrap();
+
+        let unconfirmed = store
+            .claim_validated_at(&PlanId::from("plan-1"), now, |_| {
+                Ok(Some(ContentDigest::from("sha256:before")))
+            })
+            .unwrap_err();
+        let confirmed = store
+            .claim_confirmed_at(&PlanId::from("plan-1"), now, |_| {
+                Ok(Some(ContentDigest::from("sha256:before")))
+            })
+            .unwrap();
+
+        assert_eq!(unconfirmed.code, AgentErrorCode::PermissionDenied);
+        assert!(unconfirmed.message.contains("confirmation"));
+        assert_eq!(confirmed.id.as_str(), "plan-1");
     }
 }

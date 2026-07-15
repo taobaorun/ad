@@ -171,6 +171,16 @@ export const MutationPlanViewSchema = z
 
 export const OperationStatusSchema = z.enum(['complete', 'compensated', 'partial_failure']);
 
+export const ResourceStateKindSchema = z.enum(['missing', 'file', 'symlink']);
+
+export const AppliedResourceStateSchema = z
+  .object({
+    resource: ResourceRefSchema,
+    kind: ResourceStateKindSchema,
+    digest: ContentDigestSchema.optional(),
+  })
+  .strict();
+
 export const OperationReceiptSchema = z
   .object({
     id: ReceiptIdSchema,
@@ -178,6 +188,8 @@ export const OperationReceiptSchema = z
     status: OperationStatusSchema,
     appliedResources: z.array(ResourceRefSchema).default([]),
     backupPaths: z.array(z.string().min(1)).default([]),
+    postApplyStates: z.array(AppliedResourceStateSchema).default([]),
+    manifestDigest: ContentDigestSchema.optional(),
     message: z.string().optional(),
   })
   .strict();
@@ -222,6 +234,35 @@ export const ConversionPreviewSchema = z
   })
   .strict();
 
+export const ArtifactDispositionSchema = z.enum([
+  'exact',
+  'mapped',
+  'requires_input',
+  'unsupported',
+  'conflict',
+  'unchanged',
+]);
+
+export const ConversionArtifactSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: ResourceKindSchema,
+    source: ResourceRefSchema,
+    target: ResourceRefSchema.optional(),
+    disposition: ArtifactDispositionSchema,
+    message: z.string().min(1),
+  })
+  .strict();
+
+export const ConversionRoutePreviewSchema = z
+  .object({
+    sourceAgentId: AgentIdSchema,
+    targetAgentId: AgentIdSchema,
+    artifacts: z.array(ConversionArtifactSchema),
+    plan: MutationPlanViewSchema.optional(),
+  })
+  .strict();
+
 export type AgentId = z.infer<typeof AgentIdSchema>;
 export type InstallationId = z.infer<typeof InstallationIdSchema>;
 export type ProfileId = z.infer<typeof ProfileIdSchema>;
@@ -249,10 +290,14 @@ export type MutationPlanChangeView = z.infer<typeof MutationPlanChangeViewSchema
 export type MutationPlanView = z.infer<typeof MutationPlanViewSchema>;
 export type OperationStatus = z.infer<typeof OperationStatusSchema>;
 export type OperationReceipt = z.infer<typeof OperationReceiptSchema>;
+export type AppliedResourceState = z.infer<typeof AppliedResourceStateSchema>;
 export type AgentErrorCode = z.infer<typeof AgentErrorCodeSchema>;
 export type AgentError = z.infer<typeof AgentErrorSchema>;
 export type ConversionIssue = z.infer<typeof ConversionIssueSchema>;
 export type ConversionPreview = z.infer<typeof ConversionPreviewSchema>;
+export type ArtifactDisposition = z.infer<typeof ArtifactDispositionSchema>;
+export type ConversionArtifact = z.infer<typeof ConversionArtifactSchema>;
+export type ConversionRoutePreview = z.infer<typeof ConversionRoutePreviewSchema>;
 
 export function parseAgentInstallation(
   input: unknown,

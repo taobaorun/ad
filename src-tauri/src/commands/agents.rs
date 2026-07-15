@@ -1,7 +1,8 @@
 use crate::agents::{
     builtin_registry, convert_claude_profile_to_codex, AgentContext, AgentError, AgentErrorCode,
-    AgentInstallation, AgentMetadata, ConversionPreview, ExecutionEngine, InstallationId,
-    MutationPlanView, OperationReceipt, PlanId, PlanStore, SettingsEdit,
+    AgentInstallation, AgentMetadata, ClaudeToCodexRoute, ConversionPreview, ConversionRoute,
+    ConversionRoutePreview, ExecutionEngine, InstallationId, MutationPlanView, OperationReceipt,
+    PlanId, PlanStore, ReceiptId, SettingsEdit,
 };
 use crate::models::ProfileFile;
 use tauri::State;
@@ -64,6 +65,26 @@ pub fn preview_claude_to_codex(profile: ProfileFile) -> CmdResult<ConversionPrev
 }
 
 #[tauri::command]
+pub fn preview_claude_to_codex_route(
+    source_context: AgentContext,
+    target_context: AgentContext,
+    plans: State<'_, PlanStore>,
+) -> Result<ConversionRoutePreview, AgentError> {
+    let result = ClaudeToCodexRoute.preview(&source_context, &target_context)?;
+    let plan = if result.plan.mutations.is_empty() {
+        None
+    } else {
+        Some(plans.insert_confirmation_required(result.plan)?)
+    };
+    Ok(ConversionRoutePreview {
+        source_agent_id: result.source_agent_id,
+        target_agent_id: result.target_agent_id,
+        artifacts: result.artifacts,
+        plan,
+    })
+}
+
+#[tauri::command]
 pub fn preview_agent_settings_edit(
     context: AgentContext,
     edit: SettingsEdit,
@@ -78,6 +99,25 @@ pub fn apply_agent_plan(
     plans: State<'_, PlanStore>,
 ) -> Result<OperationReceipt, AgentError> {
     ExecutionEngine.apply(&plan_id, plans.inner())
+}
+
+#[tauri::command]
+pub fn apply_conversion_plan(
+    plan_id: PlanId,
+    confirmed: bool,
+    plans: State<'_, PlanStore>,
+) -> Result<OperationReceipt, AgentError> {
+    require_confirmation(confirmed, "Conversion apply requires explicit confirmation")?;
+    ExecutionEngine.apply_confirmed(&plan_id, plans.inner())
+}
+
+#[tauri::command]
+pub fn rollback_agent_receipt(
+    receipt_id: ReceiptId,
+    confirmed: bool,
+) -> Result<OperationReceipt, AgentError> {
+    require_confirmation(confirmed, "Rollback requires explicit confirmation")?;
+    ExecutionEngine.rollback(&receipt_id)
 }
 
 fn preview_agent_settings_edit_inner(
@@ -111,6 +151,21 @@ fn context_error(context: &AgentContext, message: impl Into<String>) -> AgentErr
         retryable: false,
         details: None,
     }
+}
+
+fn require_confirmation(confirmed: bool, message: &str) -> Result<(), AgentError> {
+    if confirmed {
+        return Ok(());
+    }
+    Err(AgentError {
+        code: AgentErrorCode::PermissionDenied,
+        message: message.into(),
+        agent_id: None,
+        installation_id: None,
+        resource: None,
+        retryable: false,
+        details: None,
+    })
 }
 
 #[cfg(test)]

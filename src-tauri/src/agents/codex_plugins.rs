@@ -40,6 +40,7 @@ impl PluginsPort for CodexPluginsPort {
             CapabilityOperation::Disable,
             CapabilityOperation::Preview,
             CapabilityOperation::Apply,
+            CapabilityOperation::Rollback,
         ])
     }
 

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use chrono::{Duration, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::conversion::{
@@ -9,9 +10,19 @@ use super::conversion::{
 };
 use super::{
     builtin_registry, AdapterRegistry, AgentAdapter, AgentContext, AgentError, AgentErrorCode,
-    AgentId, ContentDigest, MutationPlan, PlanId, ReadPrecondition, ResourceKind, ResourceRef,
-    ResourceScope, ResourceSnapshot, SettingsEdit, WritePolicy,
+    AgentId, ContentDigest, MutationPlan, MutationPlanView, PlanId, ReadPrecondition, ResourceKind,
+    ResourceRef, ResourceScope, ResourceSnapshot, SettingsEdit, WritePolicy,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionRoutePreview {
+    pub source_agent_id: AgentId,
+    pub target_agent_id: AgentId,
+    pub artifacts: Vec<ConversionArtifact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<MutationPlanView>,
+}
 
 /// Backend-owned conversion result. The mutation content remains private until
 /// Task 16 stores the plan and returns only a public plan view.
