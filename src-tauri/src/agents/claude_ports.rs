@@ -8,12 +8,12 @@ use super::{
     AgentContext, AgentError, AgentErrorCode, AgentId, CapabilityAvailability,
     CapabilityLimitation, CapabilityOperation, CollectionInstallRequest, ContentDigest,
     DiscoveryEvidence, InstallationCandidate, LaunchPort, LaunchRecipe, MutationKind, MutationPlan,
-    PlanId, PlannedMutation, ProcessObservation, ProcessPort, ReadPrecondition, ResourceKind,
-    ResourceLocation, ResourceOrigin, ResourceRef, ResourceScope, ResourceSnapshot, SettingsEdit,
-    SettingsPort, SkillsPort, WritePolicy,
+    PlanId, PlannedMutation, PluginsPort, ProcessObservation, ProcessPort, ReadPrecondition,
+    ResourceKind, ResourceLocation, ResourceOrigin, ResourceRef, ResourceScope, ResourceSnapshot,
+    SettingsEdit, SettingsPort, SkillsPort, WritePolicy,
 };
 use crate::commands::activate::detect_claude_processes_inner;
-use crate::commands::skills::{is_ad_managed_symlink, scan_skill_library_read_only};
+use crate::commands::skills::{is_ad_managed_symlink, list_plugins, scan_skill_library_read_only};
 use crate::fs::paths::claude_dir;
 use crate::models::{SkillEntry, SkillScope};
 
@@ -22,6 +22,9 @@ pub(crate) struct ClaudeSettingsPort;
 
 #[derive(Debug, Default)]
 pub(crate) struct ClaudeSkillsPort;
+
+#[derive(Debug, Default)]
+pub(crate) struct ClaudePluginsPort;
 
 #[derive(Debug, Default)]
 pub(crate) struct ClaudeProcessPort;
@@ -260,6 +263,211 @@ impl SkillsPort for ClaudeSkillsPort {
             None
         };
         plan_skill_toggle(context, &resource.logical_id, source, enabled)
+    }
+}
+
+impl PluginsPort for ClaudePluginsPort {
+    fn scopes(&self) -> BTreeSet<ResourceScope> {
+        BTreeSet::from([ResourceScope::User, ResourceScope::Project])
+    }
+
+    fn operations(&self) -> BTreeSet<CapabilityOperation> {
+        BTreeSet::from([
+            CapabilityOperation::List,
+            CapabilityOperation::Enable,
+            CapabilityOperation::Disable,
+            CapabilityOperation::Preview,
+            CapabilityOperation::Apply,
+            CapabilityOperation::Rollback,
+        ])
+    }
+
+    fn availability(&self) -> CapabilityAvailability {
+        CapabilityAvailability::Degraded
+    }
+
+    fn limitations(&self) -> Vec<CapabilityLimitation> {
+        vec![CapabilityLimitation {
+            code: "plugin_install_not_managed".into(),
+            message_key: "agents.capabilities.pluginInstallNotManaged".into(),
+        }]
+    }
+
+    fn list(&self, context: &AgentContext) -> Result<Vec<ResourceSnapshot>, AgentError> {
+        let claude_home = resolve_claude_home(context)?;
+        let (scope, project_path, location, origin) =
+            if let Some(project_path) = &context.project_path {
+                let project = validate_project_path(context, project_path)?;
+                (
+                    ResourceScope::Project,
+                    Some(project_path.clone()),
+                    project.join(".claude/settings.local.json"),
+                    ResourceOrigin::Project,
+                )
+            } else {
+                (
+                    ResourceScope::User,
+                    None,
+                    claude_home.join("settings.json"),
+                    ResourceOrigin::User,
+                )
+            };
+        let plugins = list_plugins(context.project_path.clone()).map_err(|error| {
+            agent_error(
+                AgentErrorCode::Io,
+                context,
+                None,
+                format!("Failed to inspect Claude plugins: {error}"),
+            )
+        })?;
+        plugins
+            .into_iter()
+            .map(|plugin| {
+                let content = serde_json::to_value(&plugin).map_err(|error| {
+                    agent_error(
+                        AgentErrorCode::Io,
+                        context,
+                        None,
+                        format!("Failed to serialize Claude plugin {}: {error}", plugin.id),
+                    )
+                })?;
+                let bytes = serde_json::to_vec(&content).map_err(|error| {
+                    agent_error(
+                        AgentErrorCode::Io,
+                        context,
+                        None,
+                        format!("Failed to digest Claude plugin {}: {error}", plugin.id),
+                    )
+                })?;
+                Ok(ResourceSnapshot {
+                    resource: ResourceRef {
+                        installation_id: context.installation_id.clone(),
+                        project_path: project_path.clone(),
+                        kind: ResourceKind::Plugins,
+                        scope,
+                        logical_id: plugin.id,
+                    },
+                    location: ResourceLocation {
+                        path: location.to_string_lossy().into_owned(),
+                        origin,
+                    },
+                    media_type: "application/vnd.ad.plugin+json".into(),
+                    content,
+                    digest: ContentDigest::sha256(&bytes),
+                    observed_at: Utc::now(),
+                })
+            })
+            .collect()
+    }
+
+    fn plan_install(
+        &self,
+        context: &AgentContext,
+        _request: CollectionInstallRequest,
+    ) -> Result<MutationPlan, AgentError> {
+        Err(agent_error(
+            AgentErrorCode::Unsupported,
+            context,
+            None,
+            "Claude plugin installation is not managed by AD",
+        ))
+    }
+
+    fn plan_set_enabled(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
+        enabled: bool,
+    ) -> Result<MutationPlan, AgentError> {
+        if resource.installation_id != context.installation_id
+            || resource.kind != ResourceKind::Plugins
+        {
+            return Err(agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                Some(resource.clone()),
+                "Plugin resource does not belong to the active Agent context",
+            ));
+        }
+        let project_path = context.project_path.as_deref().ok_or_else(|| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                Some(resource.clone()),
+                "Claude plugin override requires a project context",
+            )
+        })?;
+        let project = validate_project_path(context, project_path)?;
+        let target = project.join(".claude/settings.local.json");
+        let existing = read_optional(&target, context, Some(resource.clone()))?;
+        let expected_digest = existing.as_deref().map(ContentDigest::sha256);
+        let mut content = match existing.as_deref() {
+            Some(bytes) => serde_json::from_slice(bytes).map_err(|error| {
+                agent_error(
+                    AgentErrorCode::InvalidPlan,
+                    context,
+                    Some(resource.clone()),
+                    format!(
+                        "Invalid project settings JSON at {}: {error}",
+                        target.display()
+                    ),
+                )
+            })?,
+            None => serde_json::json!({}),
+        };
+        let object = content.as_object_mut().ok_or_else(|| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                Some(resource.clone()),
+                "Project settings JSON must be an object",
+            )
+        })?;
+        let plugins = object
+            .entry("enabledPlugins")
+            .or_insert_with(|| serde_json::json!({}))
+            .as_object_mut()
+            .ok_or_else(|| {
+                agent_error(
+                    AgentErrorCode::InvalidPlan,
+                    context,
+                    Some(resource.clone()),
+                    "enabledPlugins must be a JSON object",
+                )
+            })?;
+        plugins.insert(
+            resource.logical_id.clone(),
+            serde_json::Value::Bool(enabled),
+        );
+        let read_set = expected_digest
+            .clone()
+            .map(|digest| {
+                vec![ReadPrecondition {
+                    resource: resource.clone(),
+                    expected_digest: digest,
+                    write_policy: WritePolicy::Mutable,
+                }]
+            })
+            .unwrap_or_default();
+
+        Ok(MutationPlan {
+            id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+            agent_id: AgentId::from("claude-code"),
+            context: context.clone(),
+            read_set,
+            mutations: vec![PlannedMutation {
+                resource: resource.clone(),
+                kind: if expected_digest.is_some() {
+                    MutationKind::Replace
+                } else {
+                    MutationKind::Create
+                },
+                expected_digest,
+                media_type: "application/json".into(),
+                content: Some(content),
+            }],
+            expires_at: Utc::now() + Duration::minutes(5),
+        })
     }
 }
 
@@ -900,5 +1108,44 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(error.code, AgentErrorCode::PermissionDenied);
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn plugins_port_lists_and_plans_project_override_without_writing() {
+        let (temp, mut context, _) = setup();
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(
+            temp.path().join(".claude/settings.json"),
+            br#"{"enabledPlugins":{"demo":true}}"#,
+        )
+        .unwrap();
+        context.project_path = Some(
+            std::fs::canonicalize(&project)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+        );
+        let registry = builtin_registry();
+        let port = registry.adapter("claude-code").unwrap().plugins().unwrap();
+
+        let plugin = port
+            .list(&context)
+            .unwrap()
+            .into_iter()
+            .find(|snapshot| snapshot.resource.logical_id == "demo")
+            .unwrap();
+        let plan = port
+            .plan_set_enabled(&context, &plugin.resource, false)
+            .unwrap();
+
+        assert_eq!(plan.mutations.len(), 1);
+        assert_eq!(plan.mutations[0].kind, MutationKind::Create);
+        assert_eq!(
+            plan.mutations[0].content.as_ref().unwrap()["enabledPlugins"]["demo"],
+            false
+        );
+        assert!(!project.join(".claude/settings.local.json").exists());
     }
 }
