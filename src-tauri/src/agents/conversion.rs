@@ -3,7 +3,10 @@ use serde_json::Value;
 
 use crate::models::ProfileFile;
 
-use super::{ConversionIssue, ConversionIssueKind, ConversionPreview, ResourceKind, ResourceRef};
+use super::{
+    AgentContext, ConversionIssue, ConversionIssueKind, ConversionPreview, ResourceKind,
+    ResourceRef, ResourceScope, ResourceSnapshot,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -154,6 +157,111 @@ pub(super) fn map_claude_setting(field: &str, value: &Value) -> Option<FieldMapp
             message: format!("Claude Code field has no confirmed Codex equivalent: {field}"),
         }),
     }
+}
+
+pub(super) fn map_skill_artifact(
+    source: &ResourceSnapshot,
+    target_context: &AgentContext,
+    target: Option<&ResourceSnapshot>,
+) -> Option<ConversionArtifact> {
+    let scope = source.content.get("scope").and_then(Value::as_str)?;
+    if scope == "none" {
+        return None;
+    }
+    let name = source.content.get("name").and_then(Value::as_str)?;
+    let target_resource = target
+        .map(|snapshot| snapshot.resource.clone())
+        .unwrap_or_else(|| {
+            collection_target(
+                target_context,
+                ResourceKind::Skills,
+                source.resource.scope,
+                name,
+            )
+        });
+    let (disposition, message) = match target {
+        Some(target) if locations_are_equivalent(source, target) => (
+            ArtifactDisposition::Unchanged,
+            "Target already references the same Skill source".into(),
+        ),
+        Some(_) => (
+            ArtifactDisposition::Conflict,
+            "Target already has a Skill with this name from a different source".into(),
+        ),
+        None => (
+            ArtifactDisposition::RequiresInput,
+            "Skill source must be confirmed before Codex installation".into(),
+        ),
+    };
+    Some(ConversionArtifact {
+        id: format!("skill:{name}"),
+        kind: ResourceKind::Skills,
+        source: source.resource.clone(),
+        target: Some(target_resource),
+        disposition,
+        message,
+    })
+}
+
+pub(super) fn map_plugin_artifact(
+    source: &ResourceSnapshot,
+    target_context: &AgentContext,
+    target: Option<&ResourceSnapshot>,
+) -> ConversionArtifact {
+    let target_resource = target
+        .map(|snapshot| snapshot.resource.clone())
+        .or_else(|| {
+            (source.resource.scope == ResourceScope::User).then(|| {
+                collection_target(
+                    target_context,
+                    ResourceKind::Plugins,
+                    ResourceScope::User,
+                    &source.resource.logical_id,
+                )
+            })
+        });
+    let (disposition, message) = if target.is_some() {
+        (
+            ArtifactDisposition::Conflict,
+            "Target plugin identity exists but marketplace equivalence is not confirmed".into(),
+        )
+    } else {
+        (
+            ArtifactDisposition::RequiresInput,
+            "Plugin marketplace source and authorization must be selected".into(),
+        )
+    };
+    ConversionArtifact {
+        id: format!("plugin:{}", source.resource.logical_id),
+        kind: ResourceKind::Plugins,
+        source: source.resource.clone(),
+        target: target_resource,
+        disposition,
+        message,
+    }
+}
+
+fn collection_target(
+    context: &AgentContext,
+    kind: ResourceKind,
+    scope: ResourceScope,
+    logical_id: &str,
+) -> ResourceRef {
+    ResourceRef {
+        installation_id: context.installation_id.clone(),
+        project_path: (scope == ResourceScope::Project)
+            .then(|| context.project_path.clone())
+            .flatten(),
+        kind,
+        scope,
+        logical_id: logical_id.into(),
+    }
+}
+
+fn locations_are_equivalent(left: &ResourceSnapshot, right: &ResourceSnapshot) -> bool {
+    let left = std::fs::canonicalize(&left.location.path);
+    let right = std::fs::canonicalize(&right.location.path);
+    matches!((left, right), (Ok(left), Ok(right)) if left == right)
 }
 
 fn is_exact_codex_field(field: &str) -> bool {

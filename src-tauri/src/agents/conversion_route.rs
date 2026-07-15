@@ -3,7 +3,10 @@ use std::collections::BTreeMap;
 use chrono::{Duration, Utc};
 use serde_json::Value;
 
-use super::conversion::{map_claude_setting, ArtifactDisposition, ConversionArtifact};
+use super::conversion::{
+    map_claude_setting, map_plugin_artifact, map_skill_artifact, ArtifactDisposition,
+    ConversionArtifact,
+};
 use super::{
     builtin_registry, AdapterRegistry, AgentAdapter, AgentContext, AgentError, AgentErrorCode,
     AgentId, ContentDigest, MutationPlan, PlanId, ReadPrecondition, ResourceKind, ResourceRef,
@@ -65,17 +68,63 @@ impl ConversionRoute for ClaudeToCodexRoute {
         let target_settings = target_adapter
             .settings()
             .ok_or_else(|| route_error(target_context, "Target Agent does not expose settings"))?;
-        let sources = source_settings.inspect(source_context)?;
-        let targets = target_settings.inspect(target_context)?;
-
-        build_settings_route(
+        let mut result = build_settings_route(
             source_context,
             target_context,
             target_settings,
-            sources,
-            targets,
-        )
+            source_settings.inspect(source_context)?,
+            target_settings.inspect(target_context)?,
+        )?;
+        append_collection_artifacts(
+            source_adapter,
+            target_adapter,
+            source_context,
+            target_context,
+            &mut result.artifacts,
+        )?;
+        validate_route_plan(&result, source_context, target_context)?;
+        Ok(result)
     }
+}
+
+fn append_collection_artifacts(
+    source_adapter: &dyn AgentAdapter,
+    target_adapter: &dyn AgentAdapter,
+    source_context: &AgentContext,
+    target_context: &AgentContext,
+    artifacts: &mut Vec<ConversionArtifact>,
+) -> Result<(), AgentError> {
+    if let (Some(source_port), Some(target_port)) =
+        (source_adapter.skills(), target_adapter.skills())
+    {
+        let targets = target_port.list(target_context)?;
+        for source in source_port.list(source_context)? {
+            let name = source.content.get("name").and_then(Value::as_str);
+            let target = name.and_then(|name| {
+                targets.iter().find(|target| {
+                    target.resource.scope == source.resource.scope
+                        && target.resource.logical_id == name
+                })
+            });
+            if let Some(artifact) = map_skill_artifact(&source, target_context, target) {
+                artifacts.push(artifact);
+            }
+        }
+    }
+    if let (Some(source_port), Some(target_port)) =
+        (source_adapter.plugins(), target_adapter.plugins())
+    {
+        let targets = target_port.list(target_context)?;
+        for source in source_port.list(source_context)? {
+            let target = targets.iter().find(|target| {
+                target.resource.logical_id == source.resource.logical_id
+                    && target.resource.scope == source.resource.scope
+            });
+            artifacts.push(map_plugin_artifact(&source, target_context, target));
+        }
+    }
+    artifacts.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(())
 }
 
 fn adapter_for_context<'a>(

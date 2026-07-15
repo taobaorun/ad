@@ -13,6 +13,7 @@ fn route_reports_artifact_dispositions_and_builds_a_target_only_plan() {
     let codex_home = home.path().join(".codex");
     std::fs::create_dir_all(&claude_home).unwrap();
     std::fs::create_dir_all(&codex_home).unwrap();
+    create_enabled_claude_skill(home.path(), &claude_home);
     let source_bytes = include_bytes!("fixtures/conversion/claude-settings.json");
     let target_bytes = include_bytes!("fixtures/conversion/codex-config.toml");
     std::fs::write(claude_home.join("settings.json"), source_bytes).unwrap();
@@ -57,6 +58,13 @@ fn route_reports_artifact_dispositions_and_builds_a_target_only_plan() {
             ArtifactDisposition::Unchanged,
         ])
     );
+    let skill = result
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.id == "skill:review")
+        .unwrap();
+    assert_eq!(skill.disposition, ArtifactDisposition::RequiresInput);
+    assert_eq!(skill.kind, ad_lib::agents::ResourceKind::Skills);
 
     assert!(result.plan.read_set.iter().any(|precondition| {
         precondition.resource.installation_id == source.installation_id
@@ -93,6 +101,34 @@ fn route_reports_artifact_dispositions_and_builds_a_target_only_plan() {
         std::fs::read(codex_home.join("config.toml")).unwrap(),
         target_bytes
     );
+}
+
+fn create_enabled_claude_skill(home: &std::path::Path, claude_home: &std::path::Path) {
+    let source_root = home.join(".ad/skill-library/local");
+    let skill = source_root.join("review");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: review\ndescription: Review changes\n---\n",
+    )
+    .unwrap();
+    let state = home.join(".ad/state");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(
+        state.join("skill_sources.json"),
+        serde_json::to_vec(&serde_json::json!([{
+            "id": "local",
+            "sourceType": "local",
+            "url": source_root,
+            "autoUpdate": false,
+            "addedAt": "2026-07-15T00:00:00Z"
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    let skills = claude_home.join("skills");
+    std::fs::create_dir_all(&skills).unwrap();
+    std::os::unix::fs::symlink(skill, skills.join("review")).unwrap();
 }
 
 fn restore_env(previous_home: Option<String>, previous_codex_home: Option<String>) {
