@@ -81,7 +81,12 @@
   - [x] Plugins 从用户 `config.toml` 的 `[plugins."<id>"]` 列表与规划 enabled 状态，完整保留其他 TOML 字段
   - [x] Plugin install 涉及 marketplace snapshot、cache 和可能的工作区授权，当前 port 标记 degraded 并返回结构化 Unsupported，不模拟不完整安装
   - [x] 6 个 Codex 测试及 47 个 Agent 回归测试、cargo check 通过
-- [ ] (待开始) 实现 Codex adapter 的 discovery、配置、Skills、Plugins、进程探测和终端启动
+- [x] (2026-07-15) 通用化进程探测与终端启动，并完成 Codex runtime ports
+  - [x] ProcessPort 由 adapter 返回 executable match spec，共享 runtime service 统一扫描并输出 ProcessObservation；Claude 与 Codex 不再各自维护扫描逻辑
+  - [x] Codex 提供 `codex`/`codex-cli` 进程规格和 adapter-owned LaunchRecipe；终端 IPC 改为 AgentContext，不再接收 projectPath/claudeBin 等 Claude 专属参数
+  - [x] Ghostty、cmux、Terminal.app 和 custom backend 统一消费 program/args/env/cwd，逐项 shell quote；旧 Claude binary UI 设置已移除并从 localStorage hydration 过滤
+  - [x] 49 个 Agent 测试、15 个终端测试、27 个前端测试、typecheck、cargo check 和变更文件 ESLint 通过；全仓 lint 仅剩既有 ProjectSidebar/SkillSources 错误
+- [x] (2026-07-15) 实现 Codex adapter 的 discovery、配置、Skills、Plugins、进程探测和终端启动
 - [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 TOML preview contract、model 映射和 unsupported 字段报告，目标写入/回滚仍待实现
 - [ ] (进行中) 接入 Agent-aware store、UI、i18n 和 IPC；当前已完成 Agent store、selector、双语文案、discovery IPC 与按 Agent profile 加载/保存
 - [ ] (待开始) 完成单元、集成、行为测试及架构文档更新

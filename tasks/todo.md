@@ -80,7 +80,7 @@
   - Files: `src-tauri/src/agents/codex_skills.rs`, `src-tauri/src/agents/codex_plugins.rs`, `src-tauri/tests/codex_extensions.rs`
   - Dependencies: Tasks 5, 9
 
-- [ ] Task 12: Generalize process detection and terminal launch
+- [x] Task 12: Generalize process detection and terminal launch
   - Acceptance: adapters return process match specs and launch recipes; terminal command has no Claude-specific parameters.
   - Verify: process matcher unit tests and terminal backend tests.
   - Files: `src-tauri/src/agents/runtime.rs`, `src-tauri/src/commands/terminal.rs`, `src-tauri/src/terminal/`

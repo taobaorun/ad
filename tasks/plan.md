@@ -68,7 +68,7 @@ Claude ports + Codex ports + ExecutionEngine
 
 - [x] Task 10: Codex resource allowlist and settings port
 - [x] Task 11: Codex skills and plugins ports
-- [ ] Task 12: Shared process service and launch recipes
+- [x] Task 12: Shared process service and launch recipes
 - [ ] Task 13: Claude/Codex operation-level parity contract tests
 
 ### Checkpoint D
