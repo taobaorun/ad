@@ -6,13 +6,13 @@
 
 ## 产品愿景
 
-给 Claude Code 重度用户的 macOS 配置管理器：管理多个 settings profile、一键切换、永不丢数据。
+面向多种 coding Agent 的 macOS 配置管理器：在统一、安全、可恢复的工作流中管理配置、Profiles 和扩展能力。
 
 ## 功能规格列表
 
 | 文档 | 功能名称 | 优先级 | 状态 | 摘要 |
 |---|---|---|---|---|
-| [multi-agent-support.md](multi-agent-support.md) / [HTML](multi-agent-support.html) | 多 Agent 支持基础 | P0 | v1 架构已批准，实施中 | 支持 Claude Code、Codex 及未来内置 Agent；新抽象见 [设计文档](../design-docs/multi-agent-architecture.md) |
+| [multi-agent-support.md](multi-agent-support.md) / [HTML](multi-agent-support.html) | 多 Agent 支持基础 | P0 | 已实现 | 支持 Claude Code、Codex 及未来内置 Agent；新抽象见 [设计文档](../design-docs/multi-agent-architecture.md) |
 
 ## 优先级定义
 

@@ -1,14 +1,14 @@
 # 多 Agent 抽象架构
 
-> 状态：已批准（2026-07-15，用户 LGTM）
+> 状态：已实现（2026-07-15；设计已获用户 LGTM）
 >
 > 范围：Claude Code、Codex，以及未来由 AD 内置代码接入的 Agent
 >
-> 关联计划：`docs/exec-plans/active/multi-agent-support.md`
+> 关联计划：`docs/exec-plans/completed/multi-agent-support.md`
 
 ## 结论
 
-当前实现不能作为多 Agent 架构继续扩展。它已经证明了 `agentId` 隔离、内置 registry 和 discovery IPC 可以落地，但核心抽象仍然是 Claude Code 模型：
+设计重开时的 v0 实现不能作为多 Agent 架构继续扩展。它虽然证明了 `agentId` 隔离、内置 registry 和 discovery IPC 可以落地，但核心抽象仍然是 Claude Code 模型：
 
 - `ProfileFile` 即使增加了 `agentId`，payload 仍是 `ClaudeSettings + ProfileLayers`。
 - `AgentAdapter` 只有 `metadata()` 和 `discover()`，却能在 metadata 中声明 settings、skills、plugins、进程探测和终端启动；声明与实现没有类型约束。
@@ -17,7 +17,16 @@
 - 转换直接接受 Claude profile 并生成 TOML 字符串，绕过了目标快照、并发修改检查、多文件备份和可恢复执行。
 - 前端只保存 `activeAgentId`，无法表达同一个 Agent 的多个配置 home 或当前项目上下文。
 
-因此，现有 `src-tauri/src/agents/` 应视为 v0 契约。后续先并行引入 v1 契约，再迁移 Claude 和 Codex，不在 v0 上继续实现目标写入和回滚。
+该判断已落实：`src-tauri/src/agents/` 现在以 v1 contract 为核心，Claude 和 Codex 都通过 capability ports、ResourceSnapshot、MutationPlan 和共享 ExecutionEngine 工作。旧 Claude IPC/ProfileFile façade 仅作为受 policy 控制的兼容层保留，不再作为新 Agent 的扩展点。
+
+## As-built 状态
+
+- typed IDs 和 `AgentContext` 已贯穿 Rust、IPC、Zustand 与前端严格 schema；Agent discovery 按 adapter-owned canonical key 去重，仅返回 canonical installation。
+- Claude Code 与 Codex 已实现 Settings、Skills、Plugins、Process、Launch ports，descriptor 从真实 port operation 推导，并由共享 parity contract 验证。
+- `AgentProfile` envelope 已按 `(agentId, profileId)` 持久化；adapter 负责 payload 验证和 Profile→Settings 内容转换，应用仍经过安全 plan、receipt 和 rollback。
+- `ExecutionEngine` 提供 digest precondition、写前全量备份、APFS 单文件原子写、失败补偿、history 和防覆盖 rollback。
+- Claude Code → Codex 已实现 artifact route；source 只进入 read-set，target plan 必须显式确认，冲突和无法映射字段逐项展示。
+- Plugin install 仅在真实实现存在时声明。当前 Claude 不声明 install；Codex 因 marketplace/cache/授权流程未纳入安全执行而标记 degraded，并返回结构化 `Unsupported`。
 
 ## 目标与非目标
 
@@ -320,18 +329,17 @@ Codex adapter 必须遵守以下已核验事实，且将版本变化隔离在 ad
 - [Build Codex plugins](https://learn.chatgpt.com/docs/build-plugins)
 - [Import from another agent](https://learn.chatgpt.com/docs/import)
 
-## 迁移策略
+## 已执行的迁移策略
 
-现有提交不回滚、不破坏用户数据，按并行替换迁移：
+迁移遵循“不回滚既有提交、不破坏用户数据”的并行替换方式，已完成以下阶段：
 
-1. 冻结 v0：停止新增 Codex apply/rollback；保留现有 discovery、agent selector 和 profile compatibility 行为。
-2. 建立 v1 contracts：newtypes、definition/installation/context、resource snapshot、capability ports、plan/receipt/error。
-3. Claude vertical slice：把现有 Claude 行为接入 v1，同时保持旧 IPC façade 和旧 profile reader。
-4. Execution Engine：先用 Claude 的单文件/项目 apply 验证 backup、digest、receipt、rollback。
-5. Codex vertical slice：基于实际 scopes 和 allowlist 接入 settings、skills、plugins、process、launch。
-6. Conversion route：在两个 adapter 和 execution engine 都稳定后实现 artifact-level Claude → Codex。
-7. 前端迁移：切换为 AgentContext、capability descriptors 和 plan views；删除散落的 Agent 分支。
-8. 清理 v0：仅在迁移测试和真实 macOS 验收通过后删除旧类型与 IPC。
+1. 冻结 v0，不在 Claude 专属模型上继续扩展 Codex 写入。
+2. 引入 v1 typed contract、canonical discovery 和 AgentContext。
+3. 迁移 Claude vertical，建立共享 ExecutionEngine。
+4. 实现 Codex vertical，并通过 operation-level parity contract。
+5. 引入 Profile envelope、artifact conversion 和 digest-protected rollback。
+6. 前端切换为 AgentContext、capability descriptors 和 plan views。
+7. 保留仍被 legacy Claude 流程调用的 façade；待独立迁移任务证明无调用后再删除，不在本次架构落地中冒险清理兼容路径。
 
 ## 被否决的方案
 
@@ -355,12 +363,11 @@ Codex adapter 必须遵守以下已核验事实，且将版本变化隔离在 ad
 
 否决。当前需求明确只允许内置 adapter；动态代码、权限和 schema 兼容成本不符合 AD 的“简单 > 灵活”。
 
-## 批准状态
+## 实施状态
 
-本设计已于 2026-07-15 获用户 LGTM。实施约束：
+本设计已于 2026-07-15 获用户 LGTM，并在同日完成首期实现。持续约束：
 
-- 先修订 product spec 的领域模型和 active ExecPlan 的里程碑；
-- 从 v1 contract 的测试驱动实现开始，不继续扩展 v0 conversion apply；
-- 不删除现有 v0 类型或已提交兼容行为，直到迁移测试通过；
+- 新 Agent 从 v1 contract 和 contract tests 接入，不扩展 v0 compatibility façade；
+- 不删除仍有调用的 v0 类型或兼容行为，清理必须有独立迁移测试；
 - 不修改已冻结的 ExecPlan HTML，执行进展只更新 ExecPlan MD；
 - 结构性实现偏差必须先回写本设计文档，再继续编码。

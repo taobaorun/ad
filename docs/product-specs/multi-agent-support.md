@@ -1,6 +1,6 @@
 # 多 Agent 支持产品规格
 
-> 状态：已批准，v1 架构实施中
+> 状态：已实现，发布门禁验证中（2026-07-15）
 >
 > 设计依据：`docs/design-docs/multi-agent-architecture.md`
 
@@ -17,6 +17,14 @@
 - Claude Code setup 非破坏性转换为 Codex setup。
 
 成功体验：用户选择一个 canonical Agent installation 和项目后，可以看到该上下文的真实配置来源、可执行能力和限制；任何写操作都先预览，写前备份，失败有明确结果且可恢复。
+
+## Implementation Status
+
+- Claude Code 与 Codex 的 Settings、Profiles、Skills、Plugins、进程探测和终端入口已统一到 AgentContext/capability-driven UI。
+- Profile 创建、编辑、应用、history 和 rollback 使用 adapter-owned payload 与共享安全执行路径。
+- Claude Code → Codex 转换逐 artifact 展示无法转换、需确认和冲突项，source 保持只读，target 支持 backup 和 rollback。
+- Plugin install 不做能力伪装：Claude 当前无 install operation；Codex marketplace/cache/授权尚未纳入安全 MutationPlan，因此 descriptor 标记 degraded，调用返回结构化 `Unsupported`。列表和 enable/disable 已实现。
+- legacy Claude template/import/shortcut façade 仍保留给兼容入口，不属于未来 Agent 扩展面。
 
 ## User Stories
 
@@ -96,9 +104,9 @@ adapter allowlist 中的配置对象，例如 settings、instructions、skills�
 | 用户能力 | Claude Code | Codex | 验收要求 |
 |---|---|---|---|
 | Settings | P0 | P0 | user/project 读取、编辑、预览、apply、backup、history、rollback，未知字段保留 |
-| Profiles | P0 | P0 | `(agentId, profileId)` 隔离，adapter-owned payload |
+| Profiles | P0 | P0 | `(agentId, profileId)` 隔离，adapter-owned payload；创建、编辑、plan/apply、history、rollback |
 | Skills | P0 | P0 | 列表、来源识别、安装/启用/禁用及真实 scope |
-| Plugins | P0 | P0 | 列表、来源识别、安装/启用/禁用；授权差异显式提示 |
+| Plugins | P0 | P0 | 列表和启用/禁用对等；install 只在真实安全实现存在时声明，否则 degraded/unsupported |
 | Process detection | P0 | P0 | 不误报另一个 Agent 或 config instance |
 | Terminal launch | P0 | P0 | 正确 launcher、env、cwd 和 terminal backend |
 | Conversion source | P0 | 不适用 | Claude setup 只读 |
@@ -162,7 +170,7 @@ pnpm build
 - 双窗口状态同步；
 - Claude/Codex 同时存在及多个 Codex config home；
 - Ghostty、cmux、Terminal.app、Custom launcher；
-- 真实临时项目完成 inspect → preview → apply → rollback。
+- 隔离临时 home/project 完成 inspect → preview → apply → rollback；安装包在真实 macOS 上完成只读启动与导航验收。
 
 ## Boundaries
 
@@ -202,4 +210,4 @@ pnpm build
 
 ## Open Questions
 
-当前无阻塞性开放问题。Codex 具体 resource path、scope 和 operation 随官方版本变化时只更新 Codex adapter，不改变通用 contract。
+当前无阻塞性开放问题。后续可独立规划 Claude/Codex Plugin acquisition 安全执行与 legacy façade 清理；在完成前维持当前 degraded/compatibility 状态。Codex 具体 resource path、scope 和 operation 随官方版本变化时只更新 Codex adapter，不改变通用 contract。
