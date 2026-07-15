@@ -48,8 +48,8 @@
 - [x] (2026-07-15) 同步中英文文案及 multi-agent 设计/产品文档（验证标准：i18n key parity 与 MD/HTML 内容一致）。
 - [x] (2026-07-15) 修复真实 Project 配置“预览无可写变更”问题（验证标准：`maxContextTokens` 安全映射；Claude 模型不误写；模型/权限人工决策可生成计划；无变更原因明确可见）。
 - [x] (2026-07-15) 运行全量质量门禁（验证标准：typecheck、lint、54 个前端测试/build、205+7 个 Rust 测试、check、clippy 全部通过；4 个既有 ignored）。
-- [ ] 构建、备份并安装 AD.app，完成只读原生验收（验证标准：签名校验通过；Project 作用域入口和当前项目目标可见；不对真实配置执行 apply）。
-- [ ] 填写结果回顾并将本计划 MD + 冻结 HTML 一起归档到 `docs/exec-plans/completed/`。
+- [x] (2026-07-15) 构建、备份并安装 AD.app，完成只读原生验收（验证标准：签名校验通过；真实 `sofampy` Project 预览生成 plan；源/目标 preview 前后 digest 不变，未执行 apply）。
+- [x] (2026-07-15) 填写结果回顾并将本计划 MD + 冻结 HTML 一起归档到 `docs/exec-plans/completed/`。
 
 ## 意外发现
 
@@ -67,6 +67,8 @@
   证据：`map_claude_setting("model", ...)` 对任意字符串返回 Mapped；官方 Codex Configuration Reference 将 `model` 定义为 Codex 模型名，并确认 `model_context_window`、`approval_policy`、`sandbox_mode` 是有效字段。
 - 发现：定向调用 `cargo fmt` 仍按整个 crate 格式化并触碰无关文件。
   证据：Git diff 出现 10 个不在本任务影响范围的纯格式文件；已逐项通过 apply_patch 恢复，随后改用带 `skip_children=true` 的 rustfmt 对修改文件做定向检查。
+- 发现：安装后的真实 `sofampy` Project 预览包含 18 个 artifact；`project-local:maxContextTokens` 已映射并使 Apply 可用，model/permissions 被准确标为需要输入，其余未确认字段和 marketplace/plugin 继续显式报告。
+  证据：原生 AX 验收读取到 canonical 项目路径和 artifact dispositions；preview 前后 `.claude/settings.local.json` 与 `.codex/config.toml` SHA-256 分别保持 `7f81c562…` 与 `55c869c4…` 不变。
 
 ## 决策日志
 
@@ -79,7 +81,11 @@
 
 ## 结果回顾
 
-待完成后填写。
+已完成 User / Project 单作用域转换、真实 Project local 配置映射和安全决策闭环。Project route 现在会将 `maxContextTokens` 自动转换为 Codex `model_context_window`；Claude 原生 model 不再被误当成 Codex model，用户可显式提供 Codex model；permissions 只能从内置安全预设中选择，危险的 bypass 对等模式有明确警告。空计划会说明 source 已读取及受阻项数量，不再表现为静默无效。
+
+验证覆盖真实临时目录 apply/backup/rollback、`sofampy` 形状 local fixture、前端决策传递和无变更说明。全量结果：14 个前端文件 / 54 tests 通过；Rust 205 unit tests + 7 integration/contract tests 通过，4 个既有 ignored；typecheck、lint、frontend build、cargo check 和 strict clippy 通过。生产 `AD.app` / DMG 构建成功，已将旧应用备份到 `~/.ad/app-backups/AD-20260715-212815-pre-project-conversion-fix.app`，安装的 `com.jiaxy.ad` 1.0.1 通过 deep/strict 签名校验。
+
+真实 `sofampy` 仅执行预览：确认 canonical Project、mapped context window、requires-input model/permissions 和可用 Apply plan；源与目标文件 digest 均未变化。未在真实项目上执行 Apply，保留给用户最终确认。
 
 ## 上下文和方向
 
