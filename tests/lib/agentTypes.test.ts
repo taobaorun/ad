@@ -9,6 +9,7 @@ import {
   ConversionRoutePreviewSchema,
   MutationPlanViewSchema,
   OperationReceiptSchema,
+  ProcessObservationSchema,
   ResourceSnapshotSchema,
   parseAgentInstallation,
 } from '@/lib/agentTypes';
@@ -103,6 +104,22 @@ describe('Agent schemas', () => {
     });
 
     expect(descriptor.operations).toContain('install');
+  });
+
+  it('validates installation-scoped process observations', () => {
+    expect(
+      ProcessObservationSchema.parse({
+        pid: 42,
+        installationId: 'codex:default',
+        executable: 'codex',
+        cwd: '/Users/test/project',
+      }),
+    ).toEqual({
+      pid: 42,
+      installationId: 'codex:default',
+      executable: 'codex',
+      cwd: '/Users/test/project',
+    });
   });
 
   it('keeps mutation content out of the frontend plan view', () => {

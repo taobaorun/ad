@@ -22,27 +22,41 @@ import type {
 } from './skillTypes';
 import {
   AgentContextSchema,
+  CapabilityDescriptorSchema,
   AgentInstallationSchema,
   AgentMetadataSchema,
   ConversionPreviewSchema,
   ConversionRoutePreviewSchema,
   MutationPlanViewSchema,
   OperationReceiptSchema,
+  ProcessObservationSchema,
+  ResourceSnapshotSchema,
   type AgentContext,
+  type AgentId,
+  type CapabilityDescriptor,
   type ConversionPreview,
   type ConversionRoutePreview,
   type InstallationId,
   type MutationPlanView,
   type OperationReceipt,
   type PlanId,
+  type ProcessObservation,
   type ReceiptId,
+  type ResourceKind,
   type ResourceRef,
+  type ResourceSnapshot,
+  type JsonValue,
 } from './agentTypes';
 
 export interface AgentSettingsEdit {
   resource: ResourceRef;
   mediaType: string;
   content: unknown;
+}
+
+export interface AgentCollectionInstallRequest {
+  logicalId: string;
+  source: JsonValue;
 }
 
 export interface ClaudeProcess {
@@ -68,6 +82,10 @@ export const tauri = {
   listAgents: async () => AgentMetadataSchema.array().parse(await invoke<unknown>('list_agents')),
   discoverAgents: async () =>
     AgentInstallationSchema.array().parse(await invoke<unknown>('discover_agents')),
+  listAgentCapabilities: async (agentId: AgentId): Promise<CapabilityDescriptor[]> =>
+    CapabilityDescriptorSchema.array().parse(
+      await invoke<unknown>('list_agent_capabilities', { agentId }),
+    ),
   resolveAgentContext: async (installationId: InstallationId, projectPath?: string) =>
     AgentContextSchema.parse(
       await invoke<unknown>('resolve_agent_context', { installationId, projectPath }),
@@ -90,6 +108,42 @@ export const tauri = {
   ): Promise<MutationPlanView> =>
     MutationPlanViewSchema.parse(
       await invoke<unknown>('preview_agent_settings_edit', { context, edit }),
+    ),
+  inspectAgentSettings: async (context: AgentContext): Promise<ResourceSnapshot[]> =>
+    ResourceSnapshotSchema.array().parse(
+      await invoke<unknown>('inspect_agent_settings', { context }),
+    ),
+  listAgentSkills: async (context: AgentContext): Promise<ResourceSnapshot[]> =>
+    ResourceSnapshotSchema.array().parse(
+      await invoke<unknown>('list_agent_skills', { context }),
+    ),
+  listAgentPlugins: async (context: AgentContext): Promise<ResourceSnapshot[]> =>
+    ResourceSnapshotSchema.array().parse(
+      await invoke<unknown>('list_agent_plugins', { context }),
+    ),
+  detectAgentProcesses: async (context: AgentContext): Promise<ProcessObservation[]> =>
+    ProcessObservationSchema.array().parse(
+      await invoke<unknown>('detect_agent_processes', { context }),
+    ),
+  previewAgentCollectionInstall: async (
+    context: AgentContext,
+    kind: ResourceKind,
+    request: AgentCollectionInstallRequest,
+  ): Promise<MutationPlanView> =>
+    MutationPlanViewSchema.parse(
+      await invoke<unknown>('preview_agent_collection_install', { context, kind, request }),
+    ),
+  previewAgentCollectionToggle: async (
+    context: AgentContext,
+    resource: ResourceRef,
+    enabled: boolean,
+  ): Promise<MutationPlanView> =>
+    MutationPlanViewSchema.parse(
+      await invoke<unknown>('preview_agent_collection_toggle', {
+        context,
+        resource,
+        enabled,
+      }),
     ),
   applyAgentPlan: async (planId: PlanId): Promise<OperationReceipt> =>
     OperationReceiptSchema.parse(await invoke<unknown>('apply_agent_plan', { planId })),

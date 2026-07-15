@@ -23,6 +23,17 @@ vi.mock('@tauri-apps/api/core', () => ({
         },
       ];
     }
+    if (cmd === 'list_agent_capabilities') {
+      return [
+        {
+          kind: 'settings',
+          scopes: ['user', 'project'],
+          operations: ['inspect', 'edit', 'preview', 'apply', 'rollback'],
+          availability: 'available',
+          limitations: [],
+        },
+      ];
+    }
     throw new Error(`unmocked: ${cmd}`);
   }),
 }));
@@ -35,6 +46,7 @@ describe('useAgents', () => {
       installations: [],
       activeContext: null,
       activeAgentId: 'claude-code',
+      capabilitiesByAgent: {},
       loading: false,
     });
   });
@@ -47,6 +59,9 @@ describe('useAgents', () => {
     expect(useAgents.getState().activeContext).toEqual({
       installationId: 'claude-code:/Users/test/.claude',
     });
+    expect(useAgents.getState().activeCapabilities).toEqual([
+      expect.objectContaining({ kind: 'settings', availability: 'available' }),
+    ]);
   });
 
   it('migrates a legacy Agent id to a canonical installation context', async () => {

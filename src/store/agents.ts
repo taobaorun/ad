@@ -5,6 +5,7 @@ import {
   AgentIdSchema,
   InstallationIdSchema,
   type AgentContext,
+  type CapabilityDescriptor,
   type AgentInstallation,
   type AgentMetadata,
 } from '@/lib/agentTypes';
@@ -29,6 +30,8 @@ interface State {
   installations: AgentInstallation[];
   activeContext: AgentContext | null;
   activeAgentId: string;
+  capabilitiesByAgent: Record<string, CapabilityDescriptor[]>;
+  activeCapabilities: CapabilityDescriptor[];
   loading: boolean;
   loadAll: () => Promise<void>;
   select: (agentId: string) => void;
@@ -75,6 +78,8 @@ export const useAgents = create<State>((set, get) => ({
   installations: [],
   activeContext: null,
   activeAgentId: DEFAULT_AGENT_ID,
+  capabilitiesByAgent: {},
+  activeCapabilities: [],
   loading: false,
 
   loadAll: async () => {
@@ -82,10 +87,17 @@ export const useAgents = create<State>((set, get) => ({
     const promise = (async () => {
       set({ loading: true });
       try {
-        const [agents, installations] = await Promise.all([
-          tauri.listAgents(),
+        const agents = await tauri.listAgents();
+        const [installations, descriptorEntries] = await Promise.all([
           tauri.discoverAgents(),
+          Promise.all(
+            agents.map(async (agent) => [
+              agent.id,
+              await tauri.listAgentCapabilities(agent.id),
+            ] as const),
+          ),
         ]);
+        const capabilitiesByAgent = Object.fromEntries(descriptorEntries);
         const persisted = loadPersistedSelection();
         const persistedInstallation = persisted.context
           ? installations.find(
@@ -105,7 +117,14 @@ export const useAgents = create<State>((set, get) => ({
               projectPath: persistedInstallation ? persisted.context?.projectPath : undefined,
             })
           : null;
-        set({ agents, installations, activeAgentId, activeContext });
+        set({
+          agents,
+          installations,
+          activeAgentId,
+          activeContext,
+          capabilitiesByAgent,
+          activeCapabilities: capabilitiesByAgent[activeAgentId] ?? [],
+        });
         if (activeContext) saveSelectedContext(activeAgentId, activeContext);
       } finally {
         set({ loading: false });
@@ -122,7 +141,11 @@ export const useAgents = create<State>((set, get) => ({
     const activeContext = installation
       ? AgentContextSchema.parse({ installationId: installation.id })
       : null;
-    set({ activeAgentId: agentId, activeContext });
+    set({
+      activeAgentId: agentId,
+      activeContext,
+      activeCapabilities: get().capabilitiesByAgent[agentId] ?? [],
+    });
     if (activeContext) saveSelectedContext(agentId, activeContext);
   },
 
@@ -131,7 +154,11 @@ export const useAgents = create<State>((set, get) => ({
     if (!parsed.success) return;
     const installation = get().installations.find((item) => item.id === parsed.data.installationId);
     if (!installation) return;
-    set({ activeAgentId: installation.agentId, activeContext: parsed.data });
+    set({
+      activeAgentId: installation.agentId,
+      activeContext: parsed.data,
+      activeCapabilities: get().capabilitiesByAgent[installation.agentId] ?? [],
+    });
     saveSelectedContext(installation.agentId, parsed.data);
   },
 }));

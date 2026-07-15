@@ -1,8 +1,9 @@
 use crate::agents::{
     builtin_registry, convert_claude_profile_to_codex, AgentContext, AgentError, AgentErrorCode,
-    AgentInstallation, AgentMetadata, ClaudeToCodexRoute, ConversionPreview, ConversionRoute,
-    ConversionRoutePreview, ExecutionEngine, InstallationId, MutationPlanView, OperationReceipt,
-    PlanId, PlanStore, ReceiptId, SettingsEdit,
+    AgentId, AgentInstallation, AgentMetadata, CapabilityDescriptor, ClaudeToCodexRoute,
+    CollectionInstallRequest, ConversionPreview, ConversionRoute, ConversionRoutePreview,
+    ExecutionEngine, InstallationId, MutationPlanView, OperationReceipt, PlanId, PlanStore,
+    ProcessObservation, ReceiptId, ResourceKind, ResourceRef, ResourceSnapshot, SettingsEdit,
 };
 use crate::models::ProfileFile;
 use tauri::State;
@@ -17,6 +18,55 @@ pub fn list_agents() -> CmdResult<Vec<AgentMetadata>> {
 #[tauri::command]
 pub fn discover_agents() -> CmdResult<Vec<AgentInstallation>> {
     Ok(builtin_registry().discover())
+}
+
+#[tauri::command]
+pub fn list_agent_capabilities(agent_id: AgentId) -> Result<Vec<CapabilityDescriptor>, AgentError> {
+    builtin_registry()
+        .capability_descriptors(agent_id.as_str())
+        .ok_or_else(|| agent_error_for_id(agent_id, "Unknown Agent adapter"))
+}
+
+#[tauri::command]
+pub fn inspect_agent_settings(context: AgentContext) -> Result<Vec<ResourceSnapshot>, AgentError> {
+    with_context_adapter(&context, |adapter| {
+        adapter
+            .settings()
+            .ok_or_else(|| context_error(&context, "Agent does not support settings inspection"))?
+            .inspect(&context)
+    })
+}
+
+#[tauri::command]
+pub fn list_agent_skills(context: AgentContext) -> Result<Vec<ResourceSnapshot>, AgentError> {
+    with_context_adapter(&context, |adapter| {
+        adapter
+            .skills()
+            .ok_or_else(|| context_error(&context, "Agent does not support Skill listing"))?
+            .list(&context)
+    })
+}
+
+#[tauri::command]
+pub fn list_agent_plugins(context: AgentContext) -> Result<Vec<ResourceSnapshot>, AgentError> {
+    with_context_adapter(&context, |adapter| {
+        adapter
+            .plugins()
+            .ok_or_else(|| context_error(&context, "Agent does not support Plugin listing"))?
+            .list(&context)
+    })
+}
+
+#[tauri::command]
+pub fn detect_agent_processes(
+    context: AgentContext,
+) -> Result<Vec<ProcessObservation>, AgentError> {
+    with_context_adapter(&context, |adapter| {
+        adapter
+            .processes()
+            .ok_or_else(|| context_error(&context, "Agent does not support process detection"))?
+            .detect(&context)
+    })
 }
 
 #[tauri::command]
@@ -94,6 +144,40 @@ pub fn preview_agent_settings_edit(
 }
 
 #[tauri::command]
+pub fn preview_agent_collection_install(
+    context: AgentContext,
+    kind: ResourceKind,
+    request: CollectionInstallRequest,
+    plans: State<'_, PlanStore>,
+) -> Result<MutationPlanView, AgentError> {
+    let plan = with_context_adapter(&context, |adapter| match kind {
+        ResourceKind::Skills => adapter
+            .skills()
+            .ok_or_else(|| context_error(&context, "Agent does not support Skill installation"))?
+            .plan_install(&context, request),
+        ResourceKind::Plugins => adapter
+            .plugins()
+            .ok_or_else(|| context_error(&context, "Agent does not support Plugin installation"))?
+            .plan_install(&context, request),
+        _ => Err(context_error(
+            &context,
+            "Only Skill and Plugin collections support installation",
+        )),
+    })?;
+    plans.insert(plan)
+}
+
+#[tauri::command]
+pub fn preview_agent_collection_toggle(
+    context: AgentContext,
+    resource: ResourceRef,
+    enabled: bool,
+    plans: State<'_, PlanStore>,
+) -> Result<MutationPlanView, AgentError> {
+    preview_agent_collection_toggle_inner(context, resource, enabled, plans.inner())
+}
+
+#[tauri::command]
 pub fn apply_agent_plan(
     plan_id: PlanId,
     plans: State<'_, PlanStore>,
@@ -141,12 +225,63 @@ fn preview_agent_settings_edit_inner(
     plans.insert(plan)
 }
 
+fn preview_agent_collection_toggle_inner(
+    context: AgentContext,
+    resource: ResourceRef,
+    enabled: bool,
+    plans: &PlanStore,
+) -> Result<MutationPlanView, AgentError> {
+    let plan = with_context_adapter(&context, |adapter| match resource.kind {
+        ResourceKind::Skills => adapter
+            .skills()
+            .ok_or_else(|| context_error(&context, "Agent does not support Skill toggles"))?
+            .plan_set_enabled(&context, &resource, enabled),
+        ResourceKind::Plugins => adapter
+            .plugins()
+            .ok_or_else(|| context_error(&context, "Agent does not support Plugin toggles"))?
+            .plan_set_enabled(&context, &resource, enabled),
+        _ => Err(context_error(
+            &context,
+            "Only Skill and Plugin resources support enable or disable",
+        )),
+    })?;
+    plans.insert(plan)
+}
+
+fn with_context_adapter<T>(
+    context: &AgentContext,
+    operation: impl FnOnce(&dyn crate::agents::AgentAdapter) -> Result<T, AgentError>,
+) -> Result<T, AgentError> {
+    let registry = builtin_registry();
+    let installation = registry
+        .discover()
+        .into_iter()
+        .find(|installation| installation.id == context.installation_id)
+        .ok_or_else(|| context_error(context, "Unknown Agent installation"))?;
+    let adapter = registry
+        .adapter(installation.agent_id.as_str())
+        .ok_or_else(|| context_error(context, "Unknown Agent adapter"))?;
+    operation(adapter)
+}
+
 fn context_error(context: &AgentContext, message: impl Into<String>) -> AgentError {
     AgentError {
         code: AgentErrorCode::Unsupported,
         message: message.into(),
         agent_id: None,
         installation_id: Some(context.installation_id.clone()),
+        resource: None,
+        retryable: false,
+        details: None,
+    }
+}
+
+fn agent_error_for_id(agent_id: AgentId, message: impl Into<String>) -> AgentError {
+    AgentError {
+        code: AgentErrorCode::Unsupported,
+        message: message.into(),
+        agent_id: Some(agent_id),
+        installation_id: None,
         resource: None,
         retryable: false,
         details: None,
@@ -171,6 +306,7 @@ fn require_confirmation(confirmed: bool, message: &str) -> Result<(), AgentError
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::{CapabilityKind, CapabilityOperation};
 
     #[test]
     fn lists_built_in_agents() {
@@ -266,6 +402,74 @@ mod tests {
         assert_eq!(view.changes.len(), 1);
         assert_eq!(
             std::fs::read(claude_home.join("settings.json")).unwrap(),
+            original
+        );
+
+        match previous_home {
+            Some(value) => std::env::set_var("AD_HOME", value),
+            None => std::env::remove_var("AD_HOME"),
+        }
+        match previous_codex_home {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+    }
+
+    #[test]
+    fn capability_descriptors_are_exposed_by_agent_id() {
+        let descriptors = list_agent_capabilities(AgentId::from("codex")).unwrap();
+
+        assert_eq!(descriptors.len(), 5);
+        let settings = descriptors
+            .iter()
+            .find(|descriptor| descriptor.kind == CapabilityKind::Settings)
+            .unwrap();
+        assert!(settings.operations.contains(&CapabilityOperation::Inspect));
+        assert!(settings.operations.contains(&CapabilityOperation::Apply));
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn agent_resources_are_inspected_and_toggled_without_direct_writes() {
+        let temp = tempfile::tempdir().unwrap();
+        let codex_home = temp.path().join(".codex");
+        let skill_dir = temp.path().join(".agents/skills/review");
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "# Review\n").unwrap();
+        let original = b"model = \"gpt-5.4\"\n";
+        std::fs::write(codex_home.join("config.toml"), original).unwrap();
+        let previous_home = std::env::var("AD_HOME").ok();
+        let previous_codex_home = std::env::var("CODEX_HOME").ok();
+        std::env::set_var("AD_HOME", temp.path());
+        std::env::set_var("CODEX_HOME", &codex_home);
+
+        let installation = builtin_registry()
+            .discover()
+            .into_iter()
+            .find(|item| item.agent_id.as_str() == "codex")
+            .unwrap();
+        let context = AgentContext {
+            installation_id: installation.id,
+            project_path: None,
+        };
+        let settings = inspect_agent_settings(context.clone()).unwrap();
+        let skills = list_agent_skills(context.clone()).unwrap();
+        let store = PlanStore::default();
+        let plan = preview_agent_collection_toggle_inner(
+            context,
+            skills[0].resource.clone(),
+            false,
+            &store,
+        )
+        .unwrap();
+
+        assert_eq!(settings.len(), 1);
+        assert_eq!(settings[0].media_type, "application/toml");
+        assert_eq!(skills.len(), 1);
+        assert_eq!(plan.changes.len(), 1);
+        assert_eq!(
+            std::fs::read(codex_home.join("config.toml")).unwrap(),
             original
         );
 

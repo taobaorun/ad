@@ -150,6 +150,15 @@ export const CapabilityDescriptorSchema = z
   })
   .strict();
 
+export const ProcessObservationSchema = z
+  .object({
+    pid: z.number().int().nonnegative(),
+    installationId: InstallationIdSchema,
+    executable: z.string().min(1),
+    cwd: z.string().min(1).optional(),
+  })
+  .strict();
+
 export const MutationKindSchema = z.enum(['create', 'replace', 'delete']);
 
 export const MutationPlanChangeViewSchema = z
@@ -285,6 +294,7 @@ export type CapabilityOperation = z.infer<typeof CapabilityOperationSchema>;
 export type CapabilityAvailability = z.infer<typeof CapabilityAvailabilitySchema>;
 export type CapabilityLimitation = z.infer<typeof CapabilityLimitationSchema>;
 export type CapabilityDescriptor = z.infer<typeof CapabilityDescriptorSchema>;
+export type ProcessObservation = z.infer<typeof ProcessObservationSchema>;
 export type MutationKind = z.infer<typeof MutationKindSchema>;
 export type MutationPlanChangeView = z.infer<typeof MutationPlanChangeViewSchema>;
 export type MutationPlanView = z.infer<typeof MutationPlanViewSchema>;
