@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -98,6 +99,51 @@ pub struct LaunchRecipe {
     pub cwd: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceStorage {
+    File,
+    Symlink,
+}
+
+/// Backend-only physical target returned by an Agent capability allowlist.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManagedResourceTarget {
+    path: PathBuf,
+    storage: ResourceStorage,
+}
+
+impl ManagedResourceTarget {
+    pub fn file(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            storage: ResourceStorage::File,
+        }
+    }
+
+    pub fn symlink(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            storage: ResourceStorage::Symlink,
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn storage(&self) -> ResourceStorage {
+        self.storage
+    }
+}
+
+pub trait ResourcePort {
+    fn resolve(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
+    ) -> Result<ManagedResourceTarget, AgentError>;
+}
+
 macro_rules! descriptor_fields {
     () => {
         fn scopes(&self) -> BTreeSet<ResourceScope>;
@@ -110,7 +156,7 @@ macro_rules! descriptor_fields {
     };
 }
 
-pub trait SettingsPort: Send + Sync {
+pub trait SettingsPort: ResourcePort + Send + Sync {
     descriptor_fields!();
 
     fn inspect(&self, context: &AgentContext) -> Result<Vec<ResourceSnapshot>, AgentError>;
@@ -121,7 +167,7 @@ pub trait SettingsPort: Send + Sync {
     ) -> Result<MutationPlan, AgentError>;
 }
 
-pub trait SkillsPort: Send + Sync {
+pub trait SkillsPort: ResourcePort + Send + Sync {
     descriptor_fields!();
 
     fn list(&self, context: &AgentContext) -> Result<Vec<ResourceSnapshot>, AgentError>;
@@ -138,7 +184,7 @@ pub trait SkillsPort: Send + Sync {
     ) -> Result<MutationPlan, AgentError>;
 }
 
-pub trait PluginsPort: Send + Sync {
+pub trait PluginsPort: ResourcePort + Send + Sync {
     descriptor_fields!();
 
     fn list(&self, context: &AgentContext) -> Result<Vec<ResourceSnapshot>, AgentError>;

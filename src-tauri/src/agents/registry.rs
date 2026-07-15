@@ -128,11 +128,21 @@ mod tests {
     use super::{AdapterRegistry, AgentAdapter};
     use crate::agents::{
         AgentContext, AgentDefinition, AgentError, CapabilityAvailability, CapabilityOperation,
-        DiscoveryEvidence, InstallationCandidate, MutationPlan, ResourceScope, ResourceSnapshot,
-        SettingsEdit, SettingsPort,
+        DiscoveryEvidence, InstallationCandidate, ManagedResourceTarget, MutationPlan,
+        ResourcePort, ResourceRef, ResourceScope, ResourceSnapshot, SettingsEdit, SettingsPort,
     };
 
     struct FakeSettingsPort;
+
+    impl ResourcePort for FakeSettingsPort {
+        fn resolve(
+            &self,
+            _context: &AgentContext,
+            _resource: &ResourceRef,
+        ) -> Result<ManagedResourceTarget, AgentError> {
+            unreachable!("the descriptor test does not resolve resources")
+        }
+    }
 
     impl SettingsPort for FakeSettingsPort {
         fn scopes(&self) -> BTreeSet<ResourceScope> {

@@ -10,14 +10,56 @@ use crate::models::{SkillEntry, SkillScope};
 use super::super::{
     AgentContext, AgentError, AgentErrorCode, AgentId, CapabilityAvailability,
     CapabilityLimitation, CapabilityOperation, CollectionInstallRequest, ContentDigest,
-    MutationKind, MutationPlan, PlanId, PlannedMutation, ReadPrecondition, ResourceKind,
-    ResourceLocation, ResourceOrigin, ResourceRef, ResourceScope, ResourceSnapshot, SkillsPort,
-    WritePolicy,
+    ManagedResourceTarget, MutationKind, MutationPlan, PlanId, PlannedMutation, ReadPrecondition,
+    ResourceKind, ResourceLocation, ResourceOrigin, ResourcePort, ResourceRef, ResourceScope,
+    ResourceSnapshot, SkillsPort, WritePolicy,
 };
 use super::common::{agent_error, resolve_claude_home, validate_project_path};
 
 #[derive(Debug, Default)]
 pub(crate) struct ClaudeSkillsPort;
+
+impl ResourcePort for ClaudeSkillsPort {
+    fn resolve(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
+    ) -> Result<ManagedResourceTarget, AgentError> {
+        if resource.installation_id != context.installation_id
+            || resource.kind != ResourceKind::Skills
+        {
+            return Err(agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                Some(resource.clone()),
+                "Skill resource does not belong to the active Agent context",
+            ));
+        }
+        let name = skill_name(context, &resource.logical_id)?;
+        let target = match resource.scope {
+            ResourceScope::User if resource.project_path.is_none() => {
+                resolve_claude_home(context)?.join("skills").join(name)
+            }
+            ResourceScope::Project
+                if context.project_path.is_some()
+                    && resource.project_path == context.project_path =>
+            {
+                validate_project_path(context, context.project_path.as_deref().unwrap_or_default())?
+                    .join(".claude/skills")
+                    .join(name)
+            }
+            _ => {
+                return Err(agent_error(
+                    AgentErrorCode::InvalidPlan,
+                    context,
+                    Some(resource.clone()),
+                    "Skill scope does not belong to the active Agent context",
+                ))
+            }
+        };
+        Ok(ManagedResourceTarget::symlink(target))
+    }
+}
 
 impl SkillsPort for ClaudeSkillsPort {
     fn scopes(&self) -> BTreeSet<ResourceScope> {
@@ -201,15 +243,7 @@ fn plan_skill_toggle(
     source: Option<PathBuf>,
     enabled: bool,
 ) -> Result<MutationPlan, AgentError> {
-    let name = logical_id.rsplit('/').next().unwrap_or_default();
-    if name.is_empty() || matches!(name, "." | "..") {
-        return Err(agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            "Invalid Claude skill logical id",
-        ));
-    }
+    let name = skill_name(context, logical_id)?;
     let claude_home = resolve_claude_home(context)?;
     let (scope, project_path, target) = if let Some(project_path) = &context.project_path {
         let project = validate_project_path(context, project_path)?;
@@ -331,4 +365,17 @@ fn plan_skill_toggle(
         mutations: mutation.into_iter().collect(),
         expires_at: Utc::now() + Duration::minutes(5),
     })
+}
+
+fn skill_name<'a>(context: &AgentContext, logical_id: &'a str) -> Result<&'a str, AgentError> {
+    let name = logical_id.rsplit('/').next().unwrap_or_default();
+    if name.is_empty() || matches!(name, "." | "..") {
+        return Err(agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            "Invalid Claude skill logical id",
+        ));
+    }
+    Ok(name)
 }

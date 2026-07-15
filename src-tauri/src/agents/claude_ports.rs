@@ -98,6 +98,27 @@ mod tests {
 
     #[test]
     #[serial_test::serial(home_env)]
+    fn settings_port_resolves_only_allowlisted_resource_ids() {
+        let (temp, context, _) = setup();
+        let registry = builtin_registry();
+        let port = registry.adapter("claude-code").unwrap().settings().unwrap();
+        let mut resource = port.inspect(&context).unwrap().remove(0).resource;
+
+        let target = port.resolve(&context, &resource).unwrap();
+        assert_eq!(
+            target.path(),
+            std::fs::canonicalize(temp.path().join(".claude"))
+                .unwrap()
+                .join("settings.json")
+        );
+
+        resource.logical_id = "../../auth".into();
+        let error = port.resolve(&context, &resource).unwrap_err();
+        assert_eq!(error.code, AgentErrorCode::InvalidPlan);
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
     fn settings_port_plans_an_edit_without_writing_source() {
         let (temp, context, original) = setup();
         let registry = builtin_registry();

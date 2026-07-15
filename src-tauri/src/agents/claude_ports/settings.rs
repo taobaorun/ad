@@ -5,14 +5,26 @@ use chrono::{Duration, Utc};
 
 use super::super::{
     AgentContext, AgentError, AgentErrorCode, AgentId, CapabilityAvailability, CapabilityOperation,
-    ContentDigest, MutationKind, MutationPlan, PlanId, PlannedMutation, ReadPrecondition,
-    ResourceKind, ResourceLocation, ResourceOrigin, ResourceRef, ResourceScope, ResourceSnapshot,
-    SettingsEdit, SettingsPort, WritePolicy,
+    ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan, PlanId, PlannedMutation,
+    ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin, ResourcePort, ResourceRef,
+    ResourceScope, ResourceSnapshot, SettingsEdit, SettingsPort, WritePolicy,
 };
 use super::common::{agent_error, read_optional, resolve_claude_home, validate_project_path};
 
 #[derive(Debug, Default)]
 pub(crate) struct ClaudeSettingsPort;
+
+impl ResourcePort for ClaudeSettingsPort {
+    fn resolve(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
+    ) -> Result<ManagedResourceTarget, AgentError> {
+        Ok(ManagedResourceTarget::file(resolve_settings_path(
+            context, resource,
+        )?))
+    }
+}
 
 impl SettingsPort for ClaudeSettingsPort {
     fn scopes(&self) -> BTreeSet<ResourceScope> {

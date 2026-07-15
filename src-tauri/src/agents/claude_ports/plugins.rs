@@ -7,14 +7,54 @@ use crate::commands::skills::list_plugins;
 use super::super::{
     AgentContext, AgentError, AgentErrorCode, AgentId, CapabilityAvailability,
     CapabilityLimitation, CapabilityOperation, CollectionInstallRequest, ContentDigest,
-    MutationKind, MutationPlan, PlanId, PlannedMutation, PluginsPort, ReadPrecondition,
-    ResourceKind, ResourceLocation, ResourceOrigin, ResourceRef, ResourceScope, ResourceSnapshot,
-    WritePolicy,
+    ManagedResourceTarget, MutationKind, MutationPlan, PlanId, PlannedMutation, PluginsPort,
+    ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin, ResourcePort, ResourceRef,
+    ResourceScope, ResourceSnapshot, WritePolicy,
 };
 use super::common::{agent_error, read_optional, resolve_claude_home, validate_project_path};
 
 #[derive(Debug, Default)]
 pub(crate) struct ClaudePluginsPort;
+
+impl ResourcePort for ClaudePluginsPort {
+    fn resolve(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
+    ) -> Result<ManagedResourceTarget, AgentError> {
+        if resource.installation_id != context.installation_id
+            || resource.kind != ResourceKind::Plugins
+        {
+            return Err(agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                Some(resource.clone()),
+                "Plugin resource does not belong to the active Agent context",
+            ));
+        }
+        let path = match resource.scope {
+            ResourceScope::User if resource.project_path.is_none() => {
+                resolve_claude_home(context)?.join("settings.json")
+            }
+            ResourceScope::Project
+                if context.project_path.is_some()
+                    && resource.project_path == context.project_path =>
+            {
+                validate_project_path(context, context.project_path.as_deref().unwrap_or_default())?
+                    .join(".claude/settings.local.json")
+            }
+            _ => {
+                return Err(agent_error(
+                    AgentErrorCode::InvalidPlan,
+                    context,
+                    Some(resource.clone()),
+                    "Plugin scope does not belong to the active Agent context",
+                ))
+            }
+        };
+        Ok(ManagedResourceTarget::file(path))
+    }
+}
 
 impl PluginsPort for ClaudePluginsPort {
     fn scopes(&self) -> BTreeSet<ResourceScope> {
