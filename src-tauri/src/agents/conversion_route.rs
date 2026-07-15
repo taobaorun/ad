@@ -73,6 +73,7 @@ impl ConversionRoute for ClaudeToCodexRoute {
                 "Source and target project contexts must match",
             ));
         }
+        let scope = conversion_scope(source_context);
         let source_settings = source_adapter
             .settings()
             .ok_or_else(|| route_error(source_context, "Source Agent does not expose settings"))?;
@@ -83,14 +84,15 @@ impl ConversionRoute for ClaudeToCodexRoute {
             source_context,
             target_context,
             target_settings,
-            source_settings.inspect(source_context)?,
-            target_settings.inspect(target_context)?,
+            snapshots_in_scope(source_settings.inspect(source_context)?, scope),
+            snapshots_in_scope(target_settings.inspect(target_context)?, scope),
         )?;
         append_collection_artifacts(
             source_adapter,
             target_adapter,
             source_context,
             target_context,
+            scope,
             &mut result.artifacts,
         )?;
         validate_route_plan(&result, source_context, target_context)?;
@@ -103,13 +105,14 @@ fn append_collection_artifacts(
     target_adapter: &dyn AgentAdapter,
     source_context: &AgentContext,
     target_context: &AgentContext,
+    scope: ResourceScope,
     artifacts: &mut Vec<ConversionArtifact>,
 ) -> Result<(), AgentError> {
     if let (Some(source_port), Some(target_port)) =
         (source_adapter.skills(), target_adapter.skills())
     {
-        let targets = target_port.list(target_context)?;
-        for source in source_port.list(source_context)? {
+        let targets = snapshots_in_scope(target_port.list(target_context)?, scope);
+        for source in snapshots_in_scope(source_port.list(source_context)?, scope) {
             let name = source.content.get("name").and_then(Value::as_str);
             let target = name.and_then(|name| {
                 targets.iter().find(|target| {
@@ -125,8 +128,8 @@ fn append_collection_artifacts(
     if let (Some(source_port), Some(target_port)) =
         (source_adapter.plugins(), target_adapter.plugins())
     {
-        let targets = target_port.list(target_context)?;
-        for source in source_port.list(source_context)? {
+        let targets = snapshots_in_scope(target_port.list(target_context)?, scope);
+        for source in snapshots_in_scope(source_port.list(source_context)?, scope) {
             let target = targets.iter().find(|target| {
                 target.resource.logical_id == source.resource.logical_id
                     && target.resource.scope == source.resource.scope
@@ -136,6 +139,24 @@ fn append_collection_artifacts(
     }
     artifacts.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(())
+}
+
+fn conversion_scope(context: &AgentContext) -> ResourceScope {
+    if context.project_path.is_some() {
+        ResourceScope::Project
+    } else {
+        ResourceScope::User
+    }
+}
+
+fn snapshots_in_scope(
+    snapshots: Vec<ResourceSnapshot>,
+    scope: ResourceScope,
+) -> Vec<ResourceSnapshot> {
+    snapshots
+        .into_iter()
+        .filter(|snapshot| snapshot.resource.scope == scope)
+        .collect()
 }
 
 fn adapter_for_context<'a>(
