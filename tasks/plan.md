@@ -56,7 +56,7 @@ Claude ports + Codex ports + ExecutionEngine
 ### Phase 3: Safe Execution
 
 - [x] Task 7: Claude capability ports over existing behavior
-- [ ] Task 8: Backend-owned plan store and digest validation
+- [x] Task 8: Backend-owned plan store and digest validation
 - [ ] Task 9: Backup manifest, atomic mutations, receipts and compensation
 
 ### Checkpoint C

@@ -65,6 +65,9 @@
   - [x] skills 的本地来源安装和 user/project symlink 启停可生成 MutationPlan；Git acquisition 暂保留旧流程并通过 degraded limitation 明示
   - [x] plugins 暴露现有列表与 project override 启停；AD 原本不管理插件安装，因此不声明 Install operation，并返回结构化 Unsupported
   - [x] process 输出通用 ProcessObservation，launch 只生成 LaunchRecipe，不直接启动进程
+- [x] (2026-07-15) 建立 backend-owned PlanStore 与 settings preview IPC；IPC 仅返回 MutationPlanView，真实 mutation content/read-set 留在后端，执行侧 claim 只接受 PlanId
+  - [x] plan 过期、未知 id、重复消费均返回结构化错误；claim 前同时重新校验 read-set 与 write-set digest，冲突后 plan 立即失效
+  - [x] 新增 6 个 PlanStore 单元测试，并通过 36 个 Agent 定向回归测试与 cargo check；真正备份、写入和 receipt 留在下一 ExecutionEngine 切片
 - [ ] (待开始) 实现 Codex adapter 的 discovery、配置、Skills、Plugins、进程探测和终端启动
 - [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 TOML preview contract、model 映射和 unsupported 字段报告，目标写入/回滚仍待实现
 - [ ] (进行中) 接入 Agent-aware store、UI、i18n 和 IPC；当前已完成 Agent store、selector、双语文案、discovery IPC 与按 Agent profile 加载/保存

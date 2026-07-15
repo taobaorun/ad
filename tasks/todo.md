@@ -54,7 +54,7 @@
   - Files: `src-tauri/src/agents/claude.rs`, `src-tauri/src/agents/claude_ports.rs`, `src-tauri/src/agents/claude_ports/`, `src-tauri/src/commands/agents.rs`
   - Dependencies: Task 3
 
-- [ ] Task 8: Add backend-owned plan store and digest checks
+- [x] Task 8: Add backend-owned plan store and digest checks
   - Acceptance: preview returns a plan view; apply accepts planId only; changed read/write resources invalidate the plan.
   - Verify: unit tests for expiry, unknown plan, replay and target-changed conflict.
   - Files: `src-tauri/src/agents/plan_store.rs`, `src-tauri/src/agents/operations.rs`, `src-tauri/src/commands/agents.rs`
