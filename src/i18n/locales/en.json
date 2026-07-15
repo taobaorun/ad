@@ -291,6 +291,61 @@
       }
     }
   },
+  "agents": {
+    "capabilities": {
+      "pluginInstallNotManaged": "Plugin installation is not managed for this Agent; existing Plugins can still be enabled or disabled.",
+      "gitAcquisitionUsesLegacyFlow": "Git acquisition still uses the legacy source flow; local Skill changes use the safe plan engine.",
+      "codexPluginInstallRequiresMarketplace": "Codex Plugin installation requires its marketplace and authorization flow; AD currently manages listing and enabled state only.",
+      "projectWritePending": "Project writes are not currently available."
+    }
+  },
+  "agentWorkspace": {
+    "tabs": {
+      "settings": "Settings",
+      "resources": "Skills & Plugins"
+    },
+    "settingsUnavailable": "Settings are unavailable for this Agent and project context.",
+    "resourcesUnavailable": "Skills and Plugins are unavailable until an Agent installation is selected."
+  },
+  "agentSettings": {
+    "loading": "Loading Agent settings…",
+    "empty": "No editable settings were found for this Agent context.",
+    "loadError": "Failed to load Agent settings: {{error}}",
+    "resources": "Settings resources",
+    "scope": {
+      "user": "User",
+      "project": "Project"
+    },
+    "unsaved": "unsaved",
+    "preview": "Preview changes",
+    "invalidJson": "Settings must be valid JSON before preview.",
+    "applySuccess": "Applied",
+    "rollback": "Rollback",
+    "rollbackConfirm": "Rollback the last settings change? This will only proceed if the resource has not changed since apply.",
+    "rollbackSuccess": "Rolled back"
+  },
+  "agentCollections": {
+    "loading": "Loading Skills and Plugins…",
+    "filter": "Filter Skills and Plugins",
+    "skills": "Skills",
+    "plugins": "Plugins",
+    "empty": "No matching Skills or Plugins were found.",
+    "enable": "Enable {{name}}",
+    "disable": "Disable {{name}}"
+  },
+  "agentPlan": {
+    "title": "Review changes",
+    "description": "AD will verify the resources again, create backups, and then apply this plan.",
+    "changes": "Planned resource changes",
+    "operation": {
+      "create": "Create",
+      "replace": "Replace",
+      "delete": "Delete"
+    },
+    "cancel": "Cancel",
+    "apply": "Apply",
+    "applying": "Applying…"
+  },
   "projectSkills": {
     "demote": {
       "title": "Demote \"{{skillName}}\" from global to project scope",

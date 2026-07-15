@@ -291,6 +291,61 @@
       }
     }
   },
+  "agents": {
+    "capabilities": {
+      "pluginInstallNotManaged": "当前 Agent 的 Plugin 安装不由 AD 管理；仍可管理已有 Plugin 的启停状态。",
+      "gitAcquisitionUsesLegacyFlow": "Git 获取仍使用旧版 Source 流程；本地 Skill 变更使用安全计划引擎。",
+      "codexPluginInstallRequiresMarketplace": "Codex Plugin 安装需要 marketplace 与授权流程；AD 当前只管理列表和启停状态。",
+      "projectWritePending": "当前尚不支持项目级写入。"
+    }
+  },
+  "agentWorkspace": {
+    "tabs": {
+      "settings": "配置",
+      "resources": "Skills 与 Plugins"
+    },
+    "settingsUnavailable": "当前 Agent 与项目上下文不支持配置管理。",
+    "resourcesUnavailable": "选择 Agent installation 后才能管理 Skills 与 Plugins。"
+  },
+  "agentSettings": {
+    "loading": "正在加载 Agent 配置…",
+    "empty": "当前 Agent 上下文中没有找到可编辑配置。",
+    "loadError": "加载 Agent 配置失败：{{error}}",
+    "resources": "配置资源",
+    "scope": {
+      "user": "用户级",
+      "project": "项目级"
+    },
+    "unsaved": "未保存",
+    "preview": "预览变更",
+    "invalidJson": "预览前请修复 JSON 格式。",
+    "applySuccess": "已应用",
+    "rollback": "回滚",
+    "rollbackConfirm": "回滚上一次配置变更？仅当应用后资源未被再次修改时才会执行。",
+    "rollbackSuccess": "已回滚"
+  },
+  "agentCollections": {
+    "loading": "正在加载 Skills 与 Plugins…",
+    "filter": "筛选 Skills 与 Plugins",
+    "skills": "Skills",
+    "plugins": "Plugins",
+    "empty": "没有找到匹配的 Skill 或 Plugin。",
+    "enable": "启用 {{name}}",
+    "disable": "禁用 {{name}}"
+  },
+  "agentPlan": {
+    "title": "检查变更",
+    "description": "AD 会再次校验资源、创建备份，然后应用此计划。",
+    "changes": "计划中的资源变更",
+    "operation": {
+      "create": "创建",
+      "replace": "替换",
+      "delete": "删除"
+    },
+    "cancel": "取消",
+    "apply": "应用",
+    "applying": "应用中…"
+  },
   "projectSkills": {
     "demote": {
       "title": "将 \"{{skillName}}\" 从全局降为项目级",

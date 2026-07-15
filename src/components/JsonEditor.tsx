@@ -26,6 +26,7 @@ export interface JsonEditorProps {
   onChange: (next: string) => void;
   dark?: boolean;
   readOnly?: boolean;
+  language?: 'json' | 'text';
   className?: string;
 }
 
@@ -69,7 +70,14 @@ const heightTheme = EditorView.theme({
   '.cm-content': { padding: '8px 0' },
 });
 
-export function JsonEditor({ value, onChange, dark, readOnly, className }: JsonEditorProps) {
+export function JsonEditor({
+  value,
+  onChange,
+  dark,
+  readOnly,
+  language = 'json',
+  className,
+}: JsonEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const themeCompartment = useRef(new Compartment());
@@ -80,6 +88,7 @@ export function JsonEditor({ value, onChange, dark, readOnly, className }: JsonE
   // without listing them as deps (which would tear the view down on toggle).
   const initialDarkRef = useRef(!!dark);
   const initialReadOnlyRef = useRef(!!readOnly);
+  const initialLanguageRef = useRef(language);
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -91,9 +100,7 @@ export function JsonEditor({ value, onChange, dark, readOnly, className }: JsonE
       doc: value,
       extensions: [
         basicSetup,
-        json(),
-        bracketFold,
-        jsonFoldConfig,
+        ...(initialLanguageRef.current === 'json' ? [json(), bracketFold, jsonFoldConfig] : []),
         heightTheme,
         themeCompartment.current.of(initialDarkRef.current ? oneDark : []),
         readOnlyCompartment.current.of(EditorState.readOnly.of(initialReadOnlyRef.current)),
