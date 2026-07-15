@@ -1,7 +1,7 @@
 use crate::agents::{
     builtin_registry, convert_claude_profile_to_codex, profile_settings_content, AgentContext,
     AgentError, AgentErrorCode, AgentId, AgentInstallation, AgentMetadata, CapabilityDescriptor,
-    ClaudeToCodexRoute, CollectionInstallRequest, ConversionPreview, ConversionRoute,
+    ClaudeToCodexOptions, ClaudeToCodexRoute, CollectionInstallRequest, ConversionPreview,
     ConversionRoutePreview, ExecutionEngine, InstallationId, MutationPlanView,
     OperationHistoryEntry, OperationReceipt, PlanId, PlanStore, ProcessObservation, ProfileId,
     ReceiptId, ResourceKind, ResourceRef, ResourceScope, ResourceSnapshot, SettingsDocument,
@@ -192,9 +192,14 @@ pub fn preview_claude_to_codex(profile: ProfileFile) -> CmdResult<ConversionPrev
 pub fn preview_claude_to_codex_route(
     source_context: AgentContext,
     target_context: AgentContext,
+    options: Option<ClaudeToCodexOptions>,
     plans: State<'_, PlanStore>,
 ) -> Result<ConversionRoutePreview, AgentError> {
-    let result = ClaudeToCodexRoute.preview(&source_context, &target_context)?;
+    let result = ClaudeToCodexRoute.preview_with_options(
+        &source_context,
+        &target_context,
+        &options.unwrap_or_default(),
+    )?;
     let plan = if result.plan.mutations.is_empty() {
         None
     } else {

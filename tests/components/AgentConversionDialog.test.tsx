@@ -118,6 +118,7 @@ describe('AgentConversionButton', () => {
     expect(previewClaudeToCodexRoute).toHaveBeenCalledWith(
       { installationId: 'claude-code:default' },
       { installationId: 'codex:default' },
+      {},
     );
     expect(screen.getByText('Model maps to Codex')).toBeInTheDocument();
     expect(applyConversionPlan).not.toHaveBeenCalled();
@@ -157,8 +158,63 @@ describe('AgentConversionButton', () => {
           installationId: 'codex:default',
           projectPath: '/Users/test/project',
         },
+        {},
       );
     });
+  });
+
+  it('passes explicit Codex model and permission decisions into preview', async () => {
+    render(<AgentConversionButton />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Convert configuration' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Codex model' }), {
+      target: { value: 'gpt-5.6-sol' },
+    });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Codex permissions' }), {
+      target: { value: 'never_danger_full_access' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview conversion' }));
+
+    await waitFor(() =>
+      expect(previewClaudeToCodexRoute).toHaveBeenCalledWith(
+        { installationId: 'claude-code:default' },
+        { installationId: 'codex:default' },
+        {
+          targetModel: 'gpt-5.6-sol',
+          permissionPreset: 'never_danger_full_access',
+        },
+      ),
+    );
+  });
+
+  it('explains when the source was read but no safe changes are available', async () => {
+    previewClaudeToCodexRoute.mockResolvedValueOnce({
+      sourceAgentId: 'claude-code',
+      targetAgentId: 'codex',
+      artifacts: [
+        {
+          id: 'user-settings:model',
+          kind: 'settings',
+          source: {
+            installationId: 'claude-code:default',
+            kind: 'settings',
+            scope: 'user',
+            logicalId: 'user-settings',
+          },
+          disposition: 'requires_input',
+          message: 'Select a Codex model',
+        },
+      ],
+    });
+    render(<AgentConversionButton />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Convert configuration' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview conversion' }));
+
+    expect(await screen.findByText(/The source was read/)).toHaveTextContent(
+      '1 items require input',
+    );
+    expect(screen.queryByRole('button', { name: 'Apply conversion' })).not.toBeInTheDocument();
   });
 
   it('locks scope and installations while a preview is in flight', () => {
@@ -171,5 +227,7 @@ describe('AgentConversionButton', () => {
     expect(screen.getByRole('combobox', { name: 'Conversion scope' })).toBeDisabled();
     expect(screen.getByRole('combobox', { name: 'Claude Code source' })).toBeDisabled();
     expect(screen.getByRole('combobox', { name: 'Codex target' })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'Codex model' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Codex permissions' })).toBeDisabled();
   });
 });

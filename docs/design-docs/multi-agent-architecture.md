@@ -209,6 +209,8 @@ source context
 
 一次转换只处理一个作用域。`AgentContext.projectPath` 为空时 route 只处理 user resources；存在时只处理该 canonical project 的 project resources。Project Settings 将 Claude `.claude/settings.json` 与 `.claude/settings.local.json` 按 shared → local 优先级合并，再写入同项目 `.codex/config.toml`。另一个 scope 的 artifact 不进入预览、read-set 或 write-set，避免 Project 转换隐式修改用户配置。
 
+字段映射也遵循“确认过的语义才自动转换”：`maxContextTokens` 映射为 Codex `model_context_window`；Claude 原生 model 名不直接写入 Codex，用户可通过 route 的内置 `targetModel` 决策显式选择目标模型。Claude permissions 只有在用户选择内置预设后才生成 `approval_policy` + `sandbox_mode`，其中 bypass 对等预设必须明确显示 `never` + `danger-full-access` 风险。用户不能通过配置扩展或替换这些规则。
+
 每个转换项必须标记：
 
 - `exact`：语义和内容可无损迁移；
@@ -219,6 +221,7 @@ source context
 - `unchanged`：目标已等价，无需写入。
 
 转换计划的 write-set 永远不能包含 source resource。目标已存在时默认是 merge/skip/conflict 计划，不把整份 `config.toml` 当作可直接覆盖的字符串。源和目标任何 digest 变化都会使 plan 失效，要求重新预览。
+当 plan 为空时，UI 必须明确说明 source 已成功读取，并汇总 requires-input、unsupported 和 conflict 数量，不能把“没有安全可写项”表现成执行成功或静默无效。
 
 ### 8. 运行时能力复用 macOS 服务
 

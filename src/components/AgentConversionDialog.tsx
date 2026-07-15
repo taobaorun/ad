@@ -22,6 +22,7 @@ const CLAUDE_TO_CODEX_ROUTE = {
 } as const;
 
 type ConversionScope = 'user' | 'project';
+type PermissionPreset = '' | 'on_request_workspace_write' | 'never_danger_full_access';
 
 export function AgentConversionButton() {
   const { t } = useTranslation();
@@ -79,6 +80,8 @@ function AgentConversionDialog({
   const [sourceId, setSourceId] = useState(sourceInstallations[0]?.id ?? null);
   const [targetId, setTargetId] = useState(targetInstallations[0]?.id ?? null);
   const [scope, setScope] = useState<ConversionScope>('user');
+  const [targetModel, setTargetModel] = useState('');
+  const [permissionPreset, setPermissionPreset] = useState<PermissionPreset>('');
   const [preview, setPreview] = useState<ConversionRoutePreview | null>(null);
   const [receipt, setReceipt] = useState<OperationReceipt | null>(null);
   const [busy, setBusy] = useState(false);
@@ -96,6 +99,8 @@ function AgentConversionDialog({
   }, [targetId, targetInstallations]);
   useEffect(() => {
     if (!activeProjectPath && scope === 'project') setScope('user');
+    setTargetModel('');
+    setPermissionPreset('');
     setPreview(null);
     setReceipt(null);
     setError(null);
@@ -114,6 +119,11 @@ function AgentConversionDialog({
     setPreview(null);
     setReceipt(null);
     setError(null);
+  }
+
+  function resetDecisions() {
+    setTargetModel('');
+    setPermissionPreset('');
   }
 
   async function runPreview() {
@@ -135,6 +145,10 @@ function AgentConversionDialog({
       const result = await tauri.previewClaudeToCodexRoute(
         sourceContext,
         targetContext,
+        {
+          ...(targetModel ? { targetModel } : {}),
+          ...(permissionPreset ? { permissionPreset } : {}),
+        },
       );
       setPreview(result);
     } catch (caught) {
@@ -229,6 +243,7 @@ function AgentConversionDialog({
           disabled={busy}
           onChange={(event) => {
             setScope(event.target.value as ConversionScope);
+            resetDecisions();
             resetResult();
           }}
           className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
@@ -259,6 +274,7 @@ function AgentConversionDialog({
           disabled={busy}
           onChange={(id) => {
             setSourceId(id);
+            resetDecisions();
             resetResult();
           }}
         />
@@ -270,9 +286,75 @@ function AgentConversionDialog({
           disabled={busy}
           onChange={(id) => {
             setTargetId(id);
+            resetDecisions();
             resetResult();
           }}
         />
+      </div>
+
+      <div className="mt-3 rounded-md border border-border p-3">
+        <h3 className="text-xs font-semibold">{t('agentConversion.decisions')}</h3>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <div>
+            <label
+              htmlFor="conversion-model"
+              className="mb-1 block text-xs font-medium text-muted-foreground"
+            >
+              {t('agentConversion.codexModel')}
+            </label>
+            <input
+              id="conversion-model"
+              value={targetModel}
+              disabled={busy}
+              onChange={(event) => {
+                setTargetModel(event.target.value);
+                resetResult();
+              }}
+              placeholder={t('agentConversion.codexModelPlaceholder')}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 font-mono text-sm"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t('agentConversion.codexModelHint')}
+            </p>
+          </div>
+          <div>
+            <label
+              htmlFor="conversion-permissions"
+              className="mb-1 block text-xs font-medium text-muted-foreground"
+            >
+              {t('agentConversion.codexPermissions')}
+            </label>
+            <select
+              id="conversion-permissions"
+              value={permissionPreset}
+              disabled={busy}
+              onChange={(event) => {
+                setPermissionPreset(event.target.value as PermissionPreset);
+                resetResult();
+              }}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="">{t('agentConversion.permissionsPreserve')}</option>
+              <option value="on_request_workspace_write">
+                {t('agentConversion.permissionsSafe')}
+              </option>
+              <option value="never_danger_full_access">
+                {t('agentConversion.permissionsBypass')}
+              </option>
+            </select>
+            <p
+              className={`mt-1 text-xs ${
+                permissionPreset === 'never_danger_full_access'
+                  ? 'text-destructive'
+                  : 'text-muted-foreground'
+              }`}
+            >
+              {permissionPreset === 'never_danger_full_access'
+                ? t('agentConversion.permissionsDangerHint')
+                : t('agentConversion.permissionsHint')}
+            </p>
+          </div>
+        </div>
       </div>
 
       <p className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
@@ -308,7 +390,11 @@ function AgentConversionDialog({
           </ul>
           {!preview.plan && (
             <p role="status" className="mt-3 text-sm text-muted-foreground">
-              {t('agentConversion.noChanges')}
+              {t('agentConversion.noChanges', {
+                count: preview.artifacts.filter((artifact) =>
+                  ['requires_input', 'unsupported', 'conflict'].includes(artifact.disposition),
+                ).length,
+              })}
             </p>
           )}
         </div>

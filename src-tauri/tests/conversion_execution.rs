@@ -1,6 +1,7 @@
 use ad_lib::agents::{
-    builtin_registry, AgentContext, AgentErrorCode, ClaudeToCodexRoute, ConversionRoute,
-    ExecutionEngine, OperationStatus, PlanStore, ResourceScope,
+    builtin_registry, AgentContext, AgentErrorCode, ClaudeToCodexOptions, ClaudeToCodexRoute,
+    CodexPermissionPreset, ConversionRoute, ExecutionEngine, OperationStatus, PlanStore,
+    ResourceScope,
 };
 use serial_test::serial;
 
@@ -103,7 +104,16 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     let (source, target) = contexts(Some(canonical_project));
     let route = ClaudeToCodexRoute;
     let plans = PlanStore::default();
-    let route_plan = route.preview(&source, &target).unwrap();
+    let route_plan = route
+        .preview_with_options(
+            &source,
+            &target,
+            &ClaudeToCodexOptions {
+                target_model: Some("project-local".into()),
+                permission_preset: None,
+            },
+        )
+        .unwrap();
 
     assert!(!route_plan.artifacts.is_empty());
     assert!(route_plan
@@ -142,6 +152,88 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     assert_eq!(rollback.status, OperationStatus::Complete);
     assert_eq!(std::fs::read(&project_target_path).unwrap(), project_target);
     assert_eq!(std::fs::read(&user_target_path).unwrap(), user_target);
+}
+
+#[test]
+#[serial(home_env)]
+fn project_conversion_applies_explicit_model_and_permission_decisions() {
+    let home = tempfile::tempdir().unwrap();
+    let project = home.path().join("project");
+    std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+    std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+    std::fs::create_dir_all(project.join(".claude")).unwrap();
+    std::fs::create_dir_all(project.join(".codex")).unwrap();
+    std::fs::write(
+        project.join(".claude/settings.local.json"),
+        br#"{
+          "model":"opus[1m]",
+          "maxContextTokens":250000,
+          "permissions":{"permissions":{"defaultMode":"bypassPermissions"}}
+        }"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project.join(".codex/config.toml"),
+        b"model = \"existing-codex-model\"\n",
+    )
+    .unwrap();
+
+    let previous_home = std::env::var("AD_HOME").ok();
+    let previous_codex_home = std::env::var("CODEX_HOME").ok();
+    std::env::set_var("AD_HOME", home.path());
+    std::env::remove_var("CODEX_HOME");
+
+    let canonical_project = std::fs::canonicalize(&project)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let (source, target) = contexts(Some(canonical_project));
+    let safe_route_plan = ClaudeToCodexRoute.preview(&source, &target).unwrap();
+    let safe_content = safe_route_plan.plan.mutations[0]
+        .content
+        .as_ref()
+        .and_then(serde_json::Value::as_str)
+        .unwrap()
+        .parse::<toml::Value>()
+        .unwrap();
+    let model_artifact = safe_route_plan
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.id.ends_with(":model"))
+        .unwrap();
+
+    assert_eq!(
+        model_artifact.disposition,
+        ad_lib::agents::ArtifactDisposition::RequiresInput
+    );
+    assert_eq!(safe_content["model"].as_str(), Some("existing-codex-model"));
+    assert_eq!(
+        safe_content["model_context_window"].as_integer(),
+        Some(250_000)
+    );
+    assert!(safe_content.get("approval_policy").is_none());
+    assert!(safe_content.get("sandbox_mode").is_none());
+
+    let options = ClaudeToCodexOptions {
+        target_model: Some("gpt-5.6-sol".into()),
+        permission_preset: Some(CodexPermissionPreset::NeverDangerFullAccess),
+    };
+    let route_plan = ClaudeToCodexRoute
+        .preview_with_options(&source, &target, &options)
+        .unwrap();
+    let content = route_plan.plan.mutations[0]
+        .content
+        .as_ref()
+        .and_then(serde_json::Value::as_str)
+        .unwrap()
+        .parse::<toml::Value>()
+        .unwrap();
+
+    restore_env(previous_home, previous_codex_home);
+    assert_eq!(content["model"].as_str(), Some("gpt-5.6-sol"));
+    assert_eq!(content["model_context_window"].as_integer(), Some(250_000));
+    assert_eq!(content["approval_policy"].as_str(), Some("never"));
+    assert_eq!(content["sandbox_mode"].as_str(), Some("danger-full-access"));
 }
 
 fn contexts(project_path: Option<String>) -> (AgentContext, AgentContext) {

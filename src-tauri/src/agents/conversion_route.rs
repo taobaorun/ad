@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::conversion::{
-    map_claude_setting, map_plugin_artifact, map_skill_artifact, ArtifactDisposition,
-    ConversionArtifact,
+    explicit_targets, map_claude_setting, map_plugin_artifact, map_skill_artifact,
+    ArtifactDisposition, ConversionArtifact, FieldMapping,
 };
 use super::{
     builtin_registry, AdapterRegistry, AgentAdapter, AgentContext, AgentError, AgentErrorCode,
@@ -32,6 +32,22 @@ pub struct ConversionRoutePlan {
     pub target_agent_id: AgentId,
     pub artifacts: Vec<ConversionArtifact>,
     pub plan: MutationPlan,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ClaudeToCodexOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_preset: Option<CodexPermissionPreset>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexPermissionPreset {
+    OnRequestWorkspaceWrite,
+    NeverDangerFullAccess,
 }
 
 pub trait ConversionRoute {
@@ -62,6 +78,22 @@ impl ConversionRoute for ClaudeToCodexRoute {
         source_context: &AgentContext,
         target_context: &AgentContext,
     ) -> Result<ConversionRoutePlan, AgentError> {
+        self.preview_with_options(
+            source_context,
+            target_context,
+            &ClaudeToCodexOptions::default(),
+        )
+    }
+}
+
+impl ClaudeToCodexRoute {
+    pub fn preview_with_options(
+        &self,
+        source_context: &AgentContext,
+        target_context: &AgentContext,
+        options: &ClaudeToCodexOptions,
+    ) -> Result<ConversionRoutePlan, AgentError> {
+        validate_options(target_context, options)?;
         let registry = builtin_registry();
         let source_adapter =
             adapter_for_context(&registry, source_context, self.source_agent_id(), "source")?;
@@ -86,6 +118,7 @@ impl ConversionRoute for ClaudeToCodexRoute {
             target_settings,
             snapshots_in_scope(source_settings.inspect(source_context)?, scope),
             snapshots_in_scope(target_settings.inspect(target_context)?, scope),
+            options,
         )?;
         append_collection_artifacts(
             source_adapter,
@@ -98,6 +131,26 @@ impl ConversionRoute for ClaudeToCodexRoute {
         validate_route_plan(&result, source_context, target_context)?;
         Ok(result)
     }
+}
+
+fn validate_options(
+    context: &AgentContext,
+    options: &ClaudeToCodexOptions,
+) -> Result<(), AgentError> {
+    if let Some(model) = &options.target_model {
+        let trimmed = model.trim();
+        if trimmed.is_empty()
+            || trimmed.len() > 200
+            || trimmed.chars().any(char::is_control)
+            || trimmed != model
+        {
+            return Err(route_error(
+                context,
+                "Codex target model must be a non-empty model id without surrounding whitespace",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn append_collection_artifacts(
@@ -190,6 +243,7 @@ fn build_settings_route(
     target_settings: &dyn super::SettingsPort,
     sources: Vec<ResourceSnapshot>,
     targets: Vec<ResourceSnapshot>,
+    options: &ClaudeToCodexOptions,
 ) -> Result<ConversionRoutePlan, AgentError> {
     let mut source_groups = BTreeMap::<ResourceScope, Vec<ResourceSnapshot>>::new();
     for snapshot in sources {
@@ -245,32 +299,40 @@ fn build_settings_route(
         let mut merged = original.clone();
 
         for (field, (source, value)) in effective {
-            let Some(mapping) = map_claude_setting(&field, &value) else {
+            let Some(mapping) = resolved_setting_mapping(&field, &value, options) else {
                 continue;
             };
             let id = format!("{}:{field}", source.logical_id);
             let mut disposition = mapping.disposition;
             let mut message = mapping.message;
-            let target = mapping.target_key.as_ref().map(|_| target_resource.clone());
+            let target = (!mapping.target_values.is_empty()).then(|| target_resource.clone());
 
-            if let (Some(target_key), Some(target_value)) =
-                (mapping.target_key.as_ref(), mapping.target_value.as_ref())
-            {
-                match original.get(target_key) {
-                    Some(existing) if existing == target_value => {
-                        disposition = ArtifactDisposition::Unchanged;
-                        message =
-                            format!("Target already has an equivalent value for {target_key}");
+            if !mapping.target_values.is_empty() {
+                let mut changed = false;
+                let mut conflicts = Vec::new();
+                for (target_key, target_value) in &mapping.target_values {
+                    match original.get(target_key) {
+                        Some(existing) if existing == target_value => {}
+                        Some(_) if mapping.replace_existing => {
+                            merged.insert(target_key.clone(), target_value.clone());
+                            changed = true;
+                        }
+                        Some(_) => conflicts.push(target_key.as_str()),
+                        None => {
+                            merged.insert(target_key.clone(), target_value.clone());
+                            changed = true;
+                        }
                     }
-                    Some(_) => {
-                        disposition = ArtifactDisposition::Conflict;
-                        message = format!(
-                            "Target already defines {target_key}; existing value is preserved"
-                        );
-                    }
-                    None => {
-                        merged.insert(target_key.clone(), target_value.clone());
-                    }
+                }
+                if !conflicts.is_empty() {
+                    disposition = ArtifactDisposition::Conflict;
+                    message = format!(
+                        "Target already defines {}; existing value is preserved",
+                        conflicts.join(", ")
+                    );
+                } else if !changed {
+                    disposition = ArtifactDisposition::Unchanged;
+                    message = "Target already has equivalent values".into();
                 }
             }
 
@@ -325,6 +387,59 @@ fn build_settings_route(
     };
     validate_route_plan(&result, source_context, target_context)?;
     Ok(result)
+}
+
+fn resolved_setting_mapping(
+    field: &str,
+    value: &Value,
+    options: &ClaudeToCodexOptions,
+) -> Option<FieldMapping> {
+    let default_mapping = map_claude_setting(field, value)?;
+    match field {
+        "model" => options
+            .target_model
+            .as_ref()
+            .map(|model| {
+                explicit_targets(
+                    ResourceKind::Settings,
+                    [("model".into(), toml::Value::String(model.clone()))],
+                    "User-selected Codex model replaces the target model",
+                )
+            })
+            .or(Some(default_mapping)),
+        "permissions" => options
+            .permission_preset
+            .map(|preset| {
+                let (approval_policy, sandbox_mode, message) = match preset {
+                    CodexPermissionPreset::OnRequestWorkspaceWrite => (
+                        "on-request",
+                        "workspace-write",
+                        "User selected interactive approval with workspace-write sandboxing",
+                    ),
+                    CodexPermissionPreset::NeverDangerFullAccess => (
+                        "never",
+                        "danger-full-access",
+                        "User explicitly selected the bypass-permissions equivalent",
+                    ),
+                };
+                explicit_targets(
+                    ResourceKind::Settings,
+                    [
+                        (
+                            "approval_policy".into(),
+                            toml::Value::String(approval_policy.into()),
+                        ),
+                        (
+                            "sandbox_mode".into(),
+                            toml::Value::String(sandbox_mode.into()),
+                        ),
+                    ],
+                    message,
+                )
+            })
+            .or(Some(default_mapping)),
+        _ => Some(default_mapping),
+    }
 }
 
 fn validate_snapshot_context(
@@ -548,6 +663,25 @@ mod tests {
         let mapping = map_claude_setting("model", &serde_json::json!({"name": "gpt-5.4"})).unwrap();
 
         assert_eq!(mapping.disposition, ArtifactDisposition::RequiresInput);
-        assert!(mapping.target_value.is_none());
+        assert!(mapping.target_values.is_empty());
+    }
+
+    #[test]
+    fn claude_model_name_requires_an_explicit_codex_model() {
+        let mapping = map_claude_setting("model", &serde_json::json!("opus[1m]")).unwrap();
+
+        assert_eq!(mapping.disposition, ArtifactDisposition::RequiresInput);
+        assert!(mapping.target_values.is_empty());
+    }
+
+    #[test]
+    fn max_context_tokens_maps_to_codex_context_window() {
+        let mapping = map_claude_setting("maxContextTokens", &serde_json::json!(250_000)).unwrap();
+
+        assert_eq!(mapping.disposition, ArtifactDisposition::Mapped);
+        assert_eq!(
+            mapping.target_values.get("model_context_window"),
+            Some(&toml::Value::Integer(250_000))
+        );
     }
 }

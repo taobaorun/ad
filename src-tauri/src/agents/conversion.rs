@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -33,8 +35,8 @@ pub struct ConversionArtifact {
 
 pub(super) struct FieldMapping {
     pub kind: ResourceKind,
-    pub target_key: Option<String>,
-    pub target_value: Option<toml::Value>,
+    pub target_values: BTreeMap<String, toml::Value>,
+    pub replace_existing: bool,
     pub disposition: ArtifactDisposition,
     pub message: String,
 }
@@ -44,8 +46,13 @@ pub fn convert_claude_profile_to_codex(profile: &ProfileFile) -> ConversionPrevi
     let mut issues = Vec::new();
     let settings = serde_json::to_value(&profile.settings).unwrap_or(Value::Null);
 
-    if let Some(model) = settings.get("model").and_then(Value::as_str) {
-        target.insert("model".into(), toml::Value::String(model.into()));
+    if settings.get("model").and_then(Value::as_str).is_some() {
+        issues.push(ConversionIssue {
+            path: "model".into(),
+            kind: ConversionIssueKind::RequiresConfirmation,
+            message: "Claude model names have no automatic Codex equivalent; select a Codex model"
+                .into(),
+        });
     }
 
     for field in ["env", "permissions", "hooks", "theme"] {
@@ -113,46 +120,54 @@ pub(super) fn map_claude_setting(field: &str, value: &Value) -> Option<FieldMapp
     match field {
         "env" | "hooks" | "theme" => Some(FieldMapping {
             kind,
-            target_key: None,
-            target_value: None,
+            target_values: BTreeMap::new(),
+            replace_existing: false,
             disposition: ArtifactDisposition::Unsupported,
             message: format!("Claude Code field has no confirmed Codex equivalent: {field}"),
         }),
         "permissions" => Some(FieldMapping {
             kind,
-            target_key: None,
-            target_value: None,
+            target_values: BTreeMap::new(),
+            replace_existing: false,
             disposition: ArtifactDisposition::RequiresInput,
             message: "Claude permissions require approval_policy and sandbox_mode choices".into(),
         }),
-        "model" => match value.as_str() {
-            Some(value) => Some(FieldMapping {
+        "model" => Some(requires_input(
+            kind,
+            if value.is_string() {
+                "Claude model names have no automatic Codex equivalent; select a Codex model".into()
+            } else {
+                "Claude model selection must be a string".into()
+            },
+        )),
+        "maxContextTokens" => match value.as_u64().and_then(|value| i64::try_from(value).ok()) {
+            Some(value) if value > 0 => Some(single_target(
                 kind,
-                target_key: Some(field.into()),
-                target_value: Some(toml::Value::String(value.into())),
-                disposition: ArtifactDisposition::Mapped,
-                message: "Claude model selection maps to the Codex model key".into(),
-            }),
-            None => Some(requires_input(
+                "model_context_window",
+                toml::Value::Integer(value),
+                ArtifactDisposition::Mapped,
+                "Claude maxContextTokens maps to the Codex model_context_window key".into(),
+            )),
+            _ => Some(requires_input(
                 kind,
-                "Claude model selection must be a string".into(),
+                "Claude maxContextTokens must be a positive integer".into(),
             )),
         },
         field if is_exact_codex_field(field) => match json_to_toml(value) {
-            Ok(Some(target_value)) => Some(FieldMapping {
+            Ok(Some(target_value)) => Some(single_target(
                 kind,
-                target_key: Some(field.into()),
-                target_value: Some(target_value),
-                disposition: ArtifactDisposition::Exact,
-                message: format!("Field {field} has a direct Codex representation"),
-            }),
+                field,
+                target_value,
+                ArtifactDisposition::Exact,
+                format!("Field {field} has a direct Codex representation"),
+            )),
             Ok(None) => None,
             Err(message) => Some(requires_input(kind, message)),
         },
         _ => Some(FieldMapping {
             kind,
-            target_key: None,
-            target_value: None,
+            target_values: BTreeMap::new(),
+            replace_existing: false,
             disposition: ArtifactDisposition::Unsupported,
             message: format!("Claude Code field has no confirmed Codex equivalent: {field}"),
         }),
@@ -302,9 +317,39 @@ fn artifact_kind(field: &str) -> ResourceKind {
 fn requires_input(kind: ResourceKind, message: String) -> FieldMapping {
     FieldMapping {
         kind,
-        target_key: None,
-        target_value: None,
+        target_values: BTreeMap::new(),
+        replace_existing: false,
         disposition: ArtifactDisposition::RequiresInput,
+        message,
+    }
+}
+
+pub(super) fn explicit_targets(
+    kind: ResourceKind,
+    values: impl IntoIterator<Item = (String, toml::Value)>,
+    message: impl Into<String>,
+) -> FieldMapping {
+    FieldMapping {
+        kind,
+        target_values: values.into_iter().collect(),
+        replace_existing: true,
+        disposition: ArtifactDisposition::Mapped,
+        message: message.into(),
+    }
+}
+
+fn single_target(
+    kind: ResourceKind,
+    key: impl Into<String>,
+    value: toml::Value,
+    disposition: ArtifactDisposition,
+    message: String,
+) -> FieldMapping {
+    FieldMapping {
+        kind,
+        target_values: BTreeMap::from([(key.into(), value)]),
+        replace_existing: false,
+        disposition,
         message,
     }
 }
@@ -361,7 +406,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn maps_model_and_reports_non_equivalent_claude_fields() {
+    fn requires_a_codex_model_and_reports_non_equivalent_claude_fields() {
         let mut profile = ProfileFile::sample();
         profile.settings.hooks = Some(serde_json::json!({"PreToolUse": []}));
 
@@ -369,9 +414,10 @@ mod tests {
 
         assert_eq!(preview.target_agent_id.as_str(), "codex");
         assert_eq!(preview.target_format, "toml");
-        assert!(preview
-            .target_content
-            .contains("model = \"claude-opus-4-7\""));
+        assert!(!preview.target_content.contains("model ="));
+        assert!(preview.issues.iter().any(|issue| {
+            issue.path == "model" && issue.kind == ConversionIssueKind::RequiresConfirmation
+        }));
         assert!(preview
             .issues
             .iter()

@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use ad_lib::agents::{
-    builtin_registry, ArtifactDisposition, ClaudeToCodexRoute, ConversionRoute, WritePolicy,
+    builtin_registry, ArtifactDisposition, ClaudeToCodexOptions, ClaudeToCodexRoute, WritePolicy,
 };
 use serial_test::serial;
 
@@ -38,7 +38,16 @@ fn route_reports_artifact_dispositions_and_builds_a_target_only_plan() {
         .context(None);
 
     let route = ClaudeToCodexRoute;
-    let result = route.preview(&source, &target).unwrap();
+    let result = route
+        .preview_with_options(
+            &source,
+            &target,
+            &ClaudeToCodexOptions {
+                target_model: Some("gpt-5.4".into()),
+                permission_preset: None,
+            },
+        )
+        .unwrap();
 
     restore_env(previous_home, previous_codex_home);
 

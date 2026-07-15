@@ -98,8 +98,10 @@ adapter allowlist 中的配置对象，例如 settings、instructions、skills�
 3. 分别快照所选 scope 的 source 和 target setup。
 4. 按 artifact 分类转换，不把所有内容压成一个 TOML 文档。
 5. 每项标记 exact、mapped、requires_input、unsupported、conflict 或 unchanged。
-6. source resource 只能进入 read-set，永远不能进入 write-set。
-7. 用户确认后通过相同 ExecutionEngine 写入 Codex target；Claude setup 保持不动。
+6. `maxContextTokens` 自动转换为 `model_context_window`；Claude model 和 permissions 不猜测，分别通过内置 Codex model 输入和权限预设解决。
+7. 无安全可写项时明确提示 source 已读取并汇总受阻项，不显示成执行成功。
+8. source resource 只能进入 read-set，永远不能进入 write-set。
+9. 用户确认后通过相同 ExecutionEngine 写入 Codex target；Claude setup 保持不动。
 
 ## Capability Parity
 
@@ -123,6 +125,7 @@ adapter allowlist 中的配置对象，例如 settings、instructions、skills�
 - profile、project state、history 和 receipt 按 AgentContext 隔离。
 - conversion 允许明确选择 User / Project；Project 绑定当前选中项目并显示路径，切换 scope 或项目后旧预览失效。
 - conversion preview 展示 artifact、目标位置、差异、disposition 和所需用户输入。
+- conversion 提供内置 Codex model 和权限决策；默认保留目标权限，危险的无审批完全访问必须显式选择并显示风险。
 - 所有用户文案进入 zh/en i18n；后端错误 message 保持英文，前端按 error code 映射可操作提示。
 - Agent-specific editor 只能在集中 registry 注册，通用组件和 store 不散布 agentId 业务分支。
 
@@ -160,6 +163,7 @@ pnpm build
 - backup-before-write、fault injection、compensation 和 rollback；
 - source unchanged、target changed、plan expiry/replay；
 - Project conversion 的 artifact、read-set、write-set、真实写盘和 rollback 均不跨入 user scope；
+- Project local fixture 覆盖 Claude 原生 model、`maxContextTokens` 和 bypass permissions：默认预览只安全映射 context window，显式决策后才覆盖 Codex model/permissions；
 - sensitive/runtime file exclusion。
 
 ### TypeScript and UI tests

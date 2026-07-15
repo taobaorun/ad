@@ -63,6 +63,11 @@ export interface AgentCollectionInstallRequest {
   source: JsonValue;
 }
 
+export interface ClaudeToCodexOptions {
+  targetModel?: string;
+  permissionPreset?: 'on_request_workspace_write' | 'never_danger_full_access';
+}
+
 export interface ClaudeProcess {
   pid: number;
   cmd: string;
@@ -99,11 +104,13 @@ export const tauri = {
   previewClaudeToCodexRoute: async (
     sourceContext: AgentContext,
     targetContext: AgentContext,
+    options: ClaudeToCodexOptions = {},
   ): Promise<ConversionRoutePreview> =>
     ConversionRoutePreviewSchema.parse(
       await invoke<unknown>('preview_claude_to_codex_route', {
         sourceContext,
         targetContext,
+        options,
       }),
     ),
   previewAgentSettingsEdit: async (

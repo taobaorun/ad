@@ -46,7 +46,8 @@
 - [x] (2026-07-15) 实现 route 单作用域过滤（验证标准：Project plan 只含 project resource，User plan 只含 user resource；定向 Rust 测试通过）。
 - [x] (2026-07-15) 写前端失败测试并实现作用域选择（验证标准：Project 预览向 source/target 发送同一 canonical projectPath，User 预览不带 projectPath）。
 - [x] (2026-07-15) 同步中英文文案及 multi-agent 设计/产品文档（验证标准：i18n key parity 与 MD/HTML 内容一致）。
-- [ ] 运行全量质量门禁（验证标准：typecheck、lint、前端测试/build、Rust test/check/clippy 全部通过）。
+- [x] (2026-07-15) 修复真实 Project 配置“预览无可写变更”问题（验证标准：`maxContextTokens` 安全映射；Claude 模型不误写；模型/权限人工决策可生成计划；无变更原因明确可见）。
+- [x] (2026-07-15) 运行全量质量门禁（验证标准：typecheck、lint、54 个前端测试/build、205+7 个 Rust 测试、check、clippy 全部通过；4 个既有 ignored）。
 - [ ] 构建、备份并安装 AD.app，完成只读原生验收（验证标准：签名校验通过；Project 作用域入口和当前项目目标可见；不对真实配置执行 apply）。
 - [ ] 填写结果回顾并将本计划 MD + 冻结 HTML 一起归档到 `docs/exec-plans/completed/`。
 
@@ -60,12 +61,21 @@
   证据：全量检查仅列出 `types.rs`、旧 commands、fs 和 `lib.rs` 等未修改文件，未列出 `conversion_route.rs` 或 `conversion_execution.rs`。
 - 发现：首次代码审查发现 preview in-flight 时 scope 和 installation selector 仍可修改，旧请求返回后可能重新显示旧上下文 plan。
   证据：新增前端回归测试在三个 selector 缺少 `disabled` 时失败；busy 锁定后通过。
+- 发现：真实 `sofampy/.claude/settings.local.json` 已被 Project route 正确读取，但现有目标已定义 Codex model，Claude model 因冲突被保留；其余字段全部落入 requires-input/unsupported，最终 mutation 为空，UI 又没有收集转换决策，用户只能观察到“没有效果”。
+  证据：目标 `.codex/config.toml` 修改时间与用户操作一致且保留 `model = "gpt-5.6-sol"`；预览规则会把 `opus[1m]` 当作普通 model 后因目标冲突保留，权限仅报告需要输入。
+- 发现：既有 model mapper 在空目标上会把 Claude 原生模型名（如 `opus[1m]`）直接写入 Codex `model`，语义不安全；同时未映射两端都具备明确 token-window 语义的 `maxContextTokens` / `model_context_window`。
+  证据：`map_claude_setting("model", ...)` 对任意字符串返回 Mapped；官方 Codex Configuration Reference 将 `model` 定义为 Codex 模型名，并确认 `model_context_window`、`approval_policy`、`sandbox_mode` 是有效字段。
+- 发现：定向调用 `cargo fmt` 仍按整个 crate 格式化并触碰无关文件。
+  证据：Git diff 出现 10 个不在本任务影响范围的纯格式文件；已逐项通过 apply_patch 恢复，随后改用带 `skip_children=true` 的 rustfmt 对修改文件做定向检查。
 
 ## 决策日志
 
 - 决策：Project 转换采用“当前项目、单一 scope”语义。
   理由：作用域选择应决定本次读写边界；用户要求 Project 转换时不应隐式改动 User 配置。
   日期/作者：2026-07-15 / 用户批准，Codex 记录
+- 决策：Claude 原生 model 不做猜测映射；允许用户显式提供 Codex model。`maxContextTokens` 自动映射到 `model_context_window`；权限只允许从内置安全预设中选择，默认保留目标。
+  理由：配置转换应生成 Codex 可识别字段，同时不能静默扩大执行权限；内置预设符合此前“不允许用户配置转换规则”的产品决策。
+  日期/作者：2026-07-15 / Codex（根据真实项目反馈修正）
 
 ## 结果回顾
 
