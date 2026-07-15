@@ -73,7 +73,7 @@ fn setup_two_file_plan() -> (
 fn execution_backs_up_all_targets_before_atomic_writes() {
     let (temp, store, plan_id, shared, local) = setup_two_file_plan();
 
-    let receipt = ExecutionEngine::default().apply(&plan_id, &store).unwrap();
+    let receipt = ExecutionEngine.apply(&plan_id, &store).unwrap();
 
     assert_eq!(receipt.status, OperationStatus::Complete);
     assert_eq!(receipt.applied_resources.len(), 2);
@@ -111,7 +111,7 @@ fn backup_failure_happens_before_any_target_write() {
     let (_temp, store, plan_id, shared, local) = setup_two_file_plan();
     let faults = FailAt::new([ExecutionStep::Backup(1)]);
 
-    let error = ExecutionEngine::default()
+    let error = ExecutionEngine
         .apply_with_faults(&plan_id, &store, &faults)
         .unwrap_err();
 
@@ -129,7 +129,7 @@ fn second_write_failure_compensates_the_first_write() {
     let (_temp, store, plan_id, shared, local) = setup_two_file_plan();
     let faults = FailAt::new([ExecutionStep::Apply(1)]);
 
-    let receipt = ExecutionEngine::default()
+    let receipt = ExecutionEngine
         .apply_with_faults(&plan_id, &store, &faults)
         .unwrap();
 
@@ -147,7 +147,7 @@ fn compensation_failure_returns_a_partial_receipt() {
     let (_temp, store, plan_id, shared, local) = setup_two_file_plan();
     let faults = FailAt::new([ExecutionStep::Apply(1), ExecutionStep::Compensate(0)]);
 
-    let receipt = ExecutionEngine::default()
+    let receipt = ExecutionEngine
         .apply_with_faults(&plan_id, &store, &faults)
         .unwrap();
 

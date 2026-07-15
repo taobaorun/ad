@@ -36,8 +36,8 @@ pub use types::*;
 
 pub fn builtin_registry() -> AdapterRegistry {
     let mut registry = AdapterRegistry::new();
-    registry.register(Box::new(ClaudeAdapter::default()));
-    registry.register(Box::new(CodexAdapter::default()));
+    registry.register(Box::new(ClaudeAdapter));
+    registry.register(Box::new(CodexAdapter));
     registry
 }
 

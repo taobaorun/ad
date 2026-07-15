@@ -138,7 +138,7 @@ pub fn list_agent_operation_history(
             created_at,
         });
     }
-    history.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+    history.sort_by_key(|entry| std::cmp::Reverse(entry.created_at));
     history.truncate(limit.unwrap_or(50).min(200));
     Ok(history)
 }

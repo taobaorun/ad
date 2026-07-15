@@ -879,7 +879,7 @@ mod tests {
             auto_update: false,
             added_at: Utc::now(),
         };
-        save_sources(&[s.clone()]).unwrap();
+        save_sources(std::slice::from_ref(&s)).unwrap();
         let loaded = load_sources().unwrap();
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].id, "test");
