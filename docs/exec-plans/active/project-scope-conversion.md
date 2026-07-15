@@ -44,7 +44,7 @@
 
 - [x] (2026-07-15) 写 Project scope 集成测试并确认当前行为失败（验证标准：测试证明当前 route 会混入 user scope）。
 - [x] (2026-07-15) 实现 route 单作用域过滤（验证标准：Project plan 只含 project resource，User plan 只含 user resource；定向 Rust 测试通过）。
-- [ ] 写前端失败测试并实现作用域选择（验证标准：Project 预览向 source/target 发送同一 canonical projectPath，User 预览不带 projectPath）。
+- [x] (2026-07-15) 写前端失败测试并实现作用域选择（验证标准：Project 预览向 source/target 发送同一 canonical projectPath，User 预览不带 projectPath）。
 - [ ] 同步中英文文案及 multi-agent 设计/产品文档（验证标准：i18n key parity 与 MD/HTML 内容一致）。
 - [ ] 运行全量质量门禁（验证标准：typecheck、lint、前端测试/build、Rust test/check/clippy 全部通过）。
 - [ ] 构建、备份并安装 AD.app，完成只读原生验收（验证标准：签名校验通过；Project 作用域入口和当前项目目标可见；不对真实配置执行 apply）。

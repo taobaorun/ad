@@ -5,15 +5,19 @@ import { AgentConversionButton } from '@/components/AgentConversionDialog';
 import i18n from '@/i18n';
 import { AgentInstallationSchema } from '@/lib/agentTypes';
 import { useAgents } from '@/store/agents';
+import { useUiState } from '@/store/ui';
 
-const { previewClaudeToCodexRoute, applyConversionPlan, rollbackAgentReceipt } = vi.hoisted(() => ({
-  previewClaudeToCodexRoute: vi.fn(),
-  applyConversionPlan: vi.fn(),
-  rollbackAgentReceipt: vi.fn(),
-}));
+const { resolveAgentContext, previewClaudeToCodexRoute, applyConversionPlan, rollbackAgentReceipt } =
+  vi.hoisted(() => ({
+    resolveAgentContext: vi.fn(),
+    previewClaudeToCodexRoute: vi.fn(),
+    applyConversionPlan: vi.fn(),
+    rollbackAgentReceipt: vi.fn(),
+  }));
 
 vi.mock('@/lib/tauri', () => ({
   tauri: {
+    resolveAgentContext,
     previewClaudeToCodexRoute,
     applyConversionPlan,
     rollbackAgentReceipt,
@@ -37,6 +41,13 @@ describe('AgentConversionButton', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
     useAgents.setState({ installations });
+    useUiState.setState({ activeProjectPath: '/Users/test/project' });
+    resolveAgentContext.mockReset().mockImplementation((installationId, projectPath) =>
+      Promise.resolve({
+        installationId,
+        ...(projectPath ? { projectPath } : {}),
+      }),
+    );
     previewClaudeToCodexRoute.mockReset().mockResolvedValue({
       sourceAgentId: 'claude-code',
       targetAgentId: 'codex',
@@ -104,6 +115,10 @@ describe('AgentConversionButton', () => {
     expect(screen.getByText(/The Claude Code source is read-only/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Preview conversion' }));
     await screen.findByText('Mapped');
+    expect(previewClaudeToCodexRoute).toHaveBeenCalledWith(
+      { installationId: 'claude-code:default' },
+      { installationId: 'codex:default' },
+    );
     expect(screen.getByText('Model maps to Codex')).toBeInTheDocument();
     expect(applyConversionPlan).not.toHaveBeenCalled();
 
@@ -115,5 +130,34 @@ describe('AgentConversionButton', () => {
     await waitFor(() =>
       expect(rollbackAgentReceipt).toHaveBeenCalledWith('conversion-receipt', true),
     );
+  });
+
+  it('previews only the current project scope with canonical Agent contexts', async () => {
+    render(<AgentConversionButton />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Convert configuration' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Conversion scope' }), {
+      target: { value: 'project' },
+    });
+    expect(screen.getByText('/Users/test/project')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview conversion' }));
+
+    await waitFor(() => {
+      expect(resolveAgentContext).toHaveBeenCalledWith(
+        'claude-code:default',
+        '/Users/test/project',
+      );
+      expect(resolveAgentContext).toHaveBeenCalledWith('codex:default', '/Users/test/project');
+      expect(previewClaudeToCodexRoute).toHaveBeenCalledWith(
+        {
+          installationId: 'claude-code:default',
+          projectPath: '/Users/test/project',
+        },
+        {
+          installationId: 'codex:default',
+          projectPath: '/Users/test/project',
+        },
+      );
+    });
   });
 });

@@ -11,6 +11,7 @@ import {
 } from '@/lib/agentTypes';
 import { tauri } from '@/lib/tauri';
 import { useAgents } from '@/store/agents';
+import { useUiState } from '@/store/ui';
 
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
@@ -20,9 +21,12 @@ const CLAUDE_TO_CODEX_ROUTE = {
   targetAgentId: 'codex',
 } as const;
 
+type ConversionScope = 'user' | 'project';
+
 export function AgentConversionButton() {
   const { t } = useTranslation();
   const installations = useAgents((state) => state.installations);
+  const activeProjectPath = useUiState((state) => state.activeProjectPath);
   const [open, setOpen] = useState(false);
   const sourceInstallations = installations.filter(
     (installation) => installation.agentId === CLAUDE_TO_CODEX_ROUTE.sourceAgentId,
@@ -50,6 +54,7 @@ export function AgentConversionButton() {
         onOpenChange={setOpen}
         sourceInstallations={sourceInstallations}
         targetInstallations={targetInstallations}
+        activeProjectPath={activeProjectPath}
       />
     </>
   );
@@ -60,6 +65,7 @@ interface AgentConversionDialogProps {
   onOpenChange: (open: boolean) => void;
   sourceInstallations: AgentInstallation[];
   targetInstallations: AgentInstallation[];
+  activeProjectPath: string | null;
 }
 
 function AgentConversionDialog({
@@ -67,10 +73,12 @@ function AgentConversionDialog({
   onOpenChange,
   sourceInstallations,
   targetInstallations,
+  activeProjectPath,
 }: AgentConversionDialogProps) {
   const { t } = useTranslation();
   const [sourceId, setSourceId] = useState(sourceInstallations[0]?.id ?? null);
   const [targetId, setTargetId] = useState(targetInstallations[0]?.id ?? null);
+  const [scope, setScope] = useState<ConversionScope>('user');
   const [preview, setPreview] = useState<ConversionRoutePreview | null>(null);
   const [receipt, setReceipt] = useState<OperationReceipt | null>(null);
   const [busy, setBusy] = useState(false);
@@ -86,6 +94,12 @@ function AgentConversionDialog({
       setTargetId(targetInstallations[0]?.id ?? null);
     }
   }, [targetId, targetInstallations]);
+  useEffect(() => {
+    if (!activeProjectPath && scope === 'project') setScope('user');
+    setPreview(null);
+    setReceipt(null);
+    setError(null);
+  }, [activeProjectPath, scope]);
 
   const source = useMemo(
     () => sourceInstallations.find((installation) => installation.id === sourceId),
@@ -108,9 +122,19 @@ function AgentConversionDialog({
     setError(null);
     setReceipt(null);
     try {
+      const [sourceContext, targetContext] =
+        scope === 'project' && activeProjectPath
+          ? await Promise.all([
+              tauri.resolveAgentContext(source.id, activeProjectPath),
+              tauri.resolveAgentContext(target.id, activeProjectPath),
+            ])
+          : [
+              AgentContextSchema.parse({ installationId: source.id }),
+              AgentContextSchema.parse({ installationId: target.id }),
+            ];
       const result = await tauri.previewClaudeToCodexRoute(
-        AgentContextSchema.parse({ installationId: source.id }),
-        AgentContextSchema.parse({ installationId: target.id }),
+        sourceContext,
+        targetContext,
       );
       setPreview(result);
     } catch (caught) {
@@ -192,6 +216,39 @@ function AgentConversionDialog({
         </div>
       }
     >
+      <div>
+        <label
+          htmlFor="conversion-scope"
+          className="mb-1 block text-xs font-medium text-muted-foreground"
+        >
+          {t('agentConversion.scope')}
+        </label>
+        <select
+          id="conversion-scope"
+          value={scope}
+          onChange={(event) => {
+            setScope(event.target.value as ConversionScope);
+            resetResult();
+          }}
+          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+        >
+          <option value="user">{t('agentConversion.scopeUser')}</option>
+          <option value="project" disabled={!activeProjectPath}>
+            {t('agentConversion.scopeProject')}
+          </option>
+        </select>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {scope === 'project' && activeProjectPath ? (
+            <>
+              {t('agentConversion.scopeProjectHint')}
+              <span className="ml-1 break-all font-mono text-foreground">{activeProjectPath}</span>
+            </>
+          ) : (
+            t('agentConversion.scopeUserHint')
+          )}
+        </p>
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2">
         <InstallationSelect
           id="conversion-source"
