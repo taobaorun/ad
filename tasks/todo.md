@@ -86,7 +86,7 @@
   - Files: `src-tauri/src/agents/runtime.rs`, `src-tauri/src/commands/terminal.rs`, `src-tauri/src/terminal/`
   - Dependencies: Tasks 3, 7
 
-- [ ] Task 13: Prove operation-level parity
+- [x] Task 13: Prove operation-level parity
   - Acceptance: Claude and Codex satisfy the required settings/skills/plugins/process/launch user journeys or report explicit degraded limitations.
   - Verify: shared adapter contract suite.
   - Files: `src-tauri/tests/agent_parity.rs`

@@ -87,6 +87,12 @@
   - [x] Ghostty、cmux、Terminal.app 和 custom backend 统一消费 program/args/env/cwd，逐项 shell quote；旧 Claude binary UI 设置已移除并从 localStorage hydration 过滤
   - [x] 49 个 Agent 测试、15 个终端测试、27 个前端测试、typecheck、cargo check 和变更文件 ESLint 通过；全仓 lint 仅剩既有 ProjectSidebar/SkillSources 错误
 - [x] (2026-07-15) 实现 Codex adapter 的 discovery、配置、Skills、Plugins、进程探测和终端启动
+- [x] (2026-07-15) 完成 Claude/Codex operation-level parity contract 与 Checkpoint D
+  - [x] 同一集成 contract 分别执行两种 adapter 的 settings edit、Skill install/disable、Plugin toggle、process detect 和 launch recipe；实际 mutation 均经过 PlanStore 与 ExecutionEngine
+  - [x] 两种 Plugin install 均通过 degraded descriptor 和结构化 Unsupported 表达限制，不用 capability enum 数量伪造对等
+  - [x] Codex fixture 同时放置 auth、history、session、log 文件，并验证 settings/skills/plugins 的非空 snapshots 从不包含这些运行时或敏感文件
+  - [x] parity 测试发现并修复 macOS `/var` 与 `/private/var` alias 导致 Claude Skill symlink 被误判为非 AD-managed 的问题
+  - [x] 移除六个 capability port 对尚未实现的用户 `Rollback` operation 的超前声明；Task 16 提供带 digest 保护的真实 rollback API 后再恢复
 - [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 TOML preview contract、model 映射和 unsupported 字段报告，目标写入/回滚仍待实现
 - [ ] (进行中) 接入 Agent-aware store、UI、i18n 和 IPC；当前已完成 Agent store、selector、双语文案、discovery IPC 与按 Agent profile 加载/保存
 - [ ] (待开始) 完成单元、集成、行为测试及架构文档更新
@@ -104,6 +110,7 @@
 - 当前 Codex 官方 Skill authoring/discovery 位置为 `$HOME/.agents/skills` 和从 CWD 到 repo root 的 `.agents/skills`；`CODEX_HOME/skills` 不作为 AD 新建用户 Skill 的目标。
 - Codex Plugin 的 marketplace 可位于 repo/user `.agents/plugins/marketplace.json`，安装副本进入 `CODEX_HOME/plugins/cache/...`，启停状态进入用户 `config.toml`；单纯复制插件目录不能形成对等安装。
 - 多文件转换不能承诺原子事务；正确保证是写前全量备份、逐文件原子写、digest 并发检查和带 partial 状态的补偿式回滚。
+- 共享 parity contract 首次执行 Claude Skill disable 时暴露 macOS 临时目录的 `/var` → `/private/var` canonical alias；symlink target 与 managed root 必须按 canonical identity 比较，同时兼容 dangling target。
 
 ## 决策日志
 
@@ -137,6 +144,10 @@
 
 - 决策：物理 resource path 由 capability port 的内置 allowlist resolver 提供，MutationPlan、PlanView 和 apply IPC 均不携带可由调用方指定的路径。
   理由：ExecutionEngine 需要访问真实目标完成 digest、backup 和 write，但路径解释仍必须属于 Agent-specific port，避免通用层拼接 Claude/Codex 路径或信任前端输入。
+  日期/作者：2026-07-15 / Codex
+
+- 决策：在可调用 receipt rollback API 完成前，Settings/Skills/Plugins descriptor 不声明 Rollback operation。
+  理由：ExecutionEngine 当前只有 apply 失败时的内部补偿；把它表述为用户可调用 rollback 会破坏“capability 来自真实端口”的核心约束。Task 16 实现 digest-protected rollback 后再恢复声明。
   日期/作者：2026-07-15 / Codex
 
 ## 上下文和方向

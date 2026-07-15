@@ -69,12 +69,12 @@ Claude ports + Codex ports + ExecutionEngine
 - [x] Task 10: Codex resource allowlist and settings port
 - [x] Task 11: Codex skills and plugins ports
 - [x] Task 12: Shared process service and launch recipes
-- [ ] Task 13: Claude/Codex operation-level parity contract tests
+- [x] Task 13: Claude/Codex operation-level parity contract tests
 
 ### Checkpoint D
 
-- [ ] Five required user capabilities are callable for both agents
-- [ ] Sensitive/runtime Codex files never enter managed snapshots
+- [x] Five required user capabilities are callable for both agents
+- [x] Sensitive/runtime Codex files never enter managed snapshots
 
 ### Phase 5: Profiles and Conversion
 
