@@ -137,7 +137,9 @@ fn push_snapshot(
 ) -> Result<(), AgentError> {
     let resource = ResourceRef {
         installation_id: context.installation_id.clone(),
-        project_path: context.project_path.clone(),
+        project_path: (scope == ResourceScope::Project)
+            .then(|| context.project_path.clone())
+            .flatten(),
         kind: ResourceKind::Settings,
         scope,
         logical_id: logical_id.into(),
@@ -174,9 +176,15 @@ fn resolve_settings_path(
     context: &AgentContext,
     resource: &ResourceRef,
 ) -> Result<PathBuf, AgentError> {
+    let belongs_to_context = match resource.scope {
+        ResourceScope::User => resource.project_path.is_none(),
+        ResourceScope::Project => {
+            context.project_path.is_some() && resource.project_path == context.project_path
+        }
+    };
     if resource.installation_id != context.installation_id
         || resource.kind != ResourceKind::Settings
-        || resource.project_path != context.project_path
+        || !belongs_to_context
     {
         return Err(agent_error(
             AgentErrorCode::InvalidPlan,

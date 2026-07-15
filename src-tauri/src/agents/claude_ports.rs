@@ -59,6 +59,45 @@ mod tests {
 
     #[test]
     #[serial_test::serial(home_env)]
+    fn settings_resource_identity_only_includes_project_for_project_scope() {
+        let (temp, mut context, _) = setup();
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        std::fs::write(
+            project.join(".claude/settings.json"),
+            br#"{"permissions":{}}"#,
+        )
+        .unwrap();
+        context.project_path = Some(
+            std::fs::canonicalize(&project)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+        );
+        let registry = builtin_registry();
+        let snapshots = registry
+            .adapter("claude-code")
+            .unwrap()
+            .settings()
+            .unwrap()
+            .inspect(&context)
+            .unwrap();
+
+        let user = snapshots
+            .iter()
+            .find(|snapshot| snapshot.resource.scope == ResourceScope::User)
+            .unwrap();
+        let project = snapshots
+            .iter()
+            .find(|snapshot| snapshot.resource.scope == ResourceScope::Project)
+            .unwrap();
+
+        assert_eq!(user.resource.project_path, None);
+        assert_eq!(project.resource.project_path, context.project_path);
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
     fn settings_port_plans_an_edit_without_writing_source() {
         let (temp, context, original) = setup();
         let registry = builtin_registry();
