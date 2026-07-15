@@ -111,7 +111,13 @@
   - [x] rollback 将原状态构造成新的 MutationPlan 交给 ExecutionEngine，因此同样具备写前备份、原子写和失败补偿；旧 receipt 缺少新状态时明确拒绝
   - [x] source/target integration 覆盖未确认拒绝、确认 apply、source 字节不变、目标字节级恢复和外部修改拒绝；200 个 Rust lib 测试（4 ignored）、parity、31 个前端测试、typecheck、cargo check 和变更文件 ESLint 通过
   - [x] Settings/Skills/Plugins 的 Claude/Codex descriptor 重新声明真实可调用 Rollback operation
-- [ ] (进行中) 接入 Agent-aware store、UI、i18n 和 IPC；当前已完成 Agent store、selector、双语文案、discovery IPC 与按 Agent profile 加载/保存
+- [x] (2026-07-15) 接入 Agent-aware store、UI、i18n 和 IPC
+  - [x] Agent store 同时维护 canonical installation context 与 adapter-derived capability descriptors；项目 Settings、Skills、Plugins、进程探测和终端入口按 operation/scope/availability 驱动
+  - [x] Settings 编辑器支持存在和待创建的 JSON/TOML target；所有编辑与资源启停先预览 MutationPlan，经确认后 apply，并提供结构化错误与 receipt rollback
+  - [x] Profile UI 以 `(agentId, profileId)` envelope 和集中 adapter payload editor 工作；Claude legacy template/import/shortcut 入口仅由内置 profile policy 暴露
+  - [x] Claude Code → Codex 转换 UI 固定使用内置 route，展示逐 artifact disposition 与原因，明确保持 source 不变，并提供目标备份和回滚
+  - [x] History UI 展示 installation-scoped operation receipts 并支持确认回滚；Claude 旧激活历史作为受 policy 控制的兼容区保留
+  - [x] 双语文案、严格前端 schema、Tauri IPC 和 capability limitation 展示已同步；48 个前端测试、60 个 Agent 定向 Rust 测试、typecheck、ESLint 与前端 production build 通过
 - [ ] (待开始) 完成单元、集成、行为测试及架构文档更新
 - [ ] (待开始) 完成发布前 build 和人工验收
 
