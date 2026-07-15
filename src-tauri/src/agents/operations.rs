@@ -3,6 +3,7 @@ use std::fmt;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use super::{AgentContext, AgentId, InstallationId, PlanId, ReceiptId};
 
@@ -14,6 +15,10 @@ pub struct ContentDigest(String);
 impl ContentDigest {
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    pub fn sha256(content: &[u8]) -> Self {
+        Self(format!("sha256:{:x}", Sha256::digest(content)))
     }
 }
 

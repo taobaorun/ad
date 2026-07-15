@@ -1,9 +1,14 @@
 use crate::fs::paths::claude_dir;
 
-use super::{AgentAdapter, AgentDefinition, DiscoveryEvidence, InstallationCandidate};
+use super::claude_ports::ClaudeSettingsPort;
+use super::{
+    AgentAdapter, AgentDefinition, DiscoveryEvidence, InstallationCandidate, SettingsPort,
+};
 
 #[derive(Debug, Default)]
 pub struct ClaudeAdapter;
+
+static SETTINGS_PORT: ClaudeSettingsPort = ClaudeSettingsPort;
 
 impl AgentAdapter for ClaudeAdapter {
     fn definition(&self) -> &AgentDefinition {
@@ -26,5 +31,9 @@ impl AgentAdapter for ClaudeAdapter {
         )
         .into_iter()
         .collect()
+    }
+
+    fn settings(&self) -> Option<&dyn SettingsPort> {
+        Some(&SETTINGS_PORT)
     }
 }
