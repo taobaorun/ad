@@ -4,8 +4,8 @@ use super::claude_ports::{
     ClaudeLaunchPort, ClaudePluginsPort, ClaudeProcessPort, ClaudeSettingsPort, ClaudeSkillsPort,
 };
 use super::{
-    AgentAdapter, AgentDefinition, DiscoveryEvidence, InstallationCandidate, LaunchPort,
-    PluginsPort, ProcessPort, SettingsPort, SkillsPort,
+    AgentAdapter, AgentDefinition, ClaudeProfileSchema, DiscoveryEvidence, InstallationCandidate,
+    LaunchPort, PluginsPort, ProcessPort, ProfileSchema, SettingsPort, SkillsPort,
 };
 
 #[derive(Debug, Default)]
@@ -16,6 +16,7 @@ static SKILLS_PORT: ClaudeSkillsPort = ClaudeSkillsPort;
 static PLUGINS_PORT: ClaudePluginsPort = ClaudePluginsPort;
 static PROCESS_PORT: ClaudeProcessPort = ClaudeProcessPort;
 static LAUNCH_PORT: ClaudeLaunchPort = ClaudeLaunchPort;
+static PROFILE_SCHEMA: ClaudeProfileSchema = ClaudeProfileSchema;
 
 impl AgentAdapter for ClaudeAdapter {
     fn definition(&self) -> &AgentDefinition {
@@ -58,5 +59,9 @@ impl AgentAdapter for ClaudeAdapter {
 
     fn launcher(&self) -> Option<&dyn LaunchPort> {
         Some(&LAUNCH_PORT)
+    }
+
+    fn profile_schema(&self) -> Option<&dyn ProfileSchema> {
+        Some(&PROFILE_SCHEMA)
     }
 }

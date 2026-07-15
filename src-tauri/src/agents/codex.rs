@@ -5,8 +5,8 @@ use super::codex_ports::CodexSettingsPort;
 use super::codex_runtime::{CodexLaunchPort, CodexProcessPort};
 use super::codex_skills::CodexSkillsPort;
 use super::{
-    AgentAdapter, AgentDefinition, DiscoveryEvidence, InstallationCandidate, LaunchPort,
-    PluginsPort, ProcessPort, SettingsPort, SkillsPort,
+    AgentAdapter, AgentDefinition, CodexProfileSchema, DiscoveryEvidence, InstallationCandidate,
+    LaunchPort, PluginsPort, ProcessPort, ProfileSchema, SettingsPort, SkillsPort,
 };
 
 #[derive(Debug, Default)]
@@ -17,6 +17,7 @@ static SKILLS_PORT: CodexSkillsPort = CodexSkillsPort;
 static PLUGINS_PORT: CodexPluginsPort = CodexPluginsPort;
 static PROCESS_PORT: CodexProcessPort = CodexProcessPort;
 static LAUNCH_PORT: CodexLaunchPort = CodexLaunchPort;
+static PROFILE_SCHEMA: CodexProfileSchema = CodexProfileSchema;
 
 impl AgentAdapter for CodexAdapter {
     fn definition(&self) -> &AgentDefinition {
@@ -50,6 +51,10 @@ impl AgentAdapter for CodexAdapter {
 
     fn launcher(&self) -> Option<&dyn LaunchPort> {
         Some(&LAUNCH_PORT)
+    }
+
+    fn profile_schema(&self) -> Option<&dyn ProfileSchema> {
+        Some(&PROFILE_SCHEMA)
     }
 }
 

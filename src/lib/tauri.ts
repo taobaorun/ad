@@ -1,5 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { ProfileFile, ClaudeSettings } from './profileSchema';
+import {
+  AgentProfileSchema,
+  type AgentProfile,
+  type ProfileFile,
+  type ClaudeSettings,
+} from './profileSchema';
 import type {
   ApplyOptions,
   ApplyOutcome,
@@ -85,6 +90,20 @@ export const tauri = {
     invoke<ProfileFile>('save_agent_profile', { profile }),
   deleteAgentProfile: (agentId: string, id: string) =>
     invoke<void>('delete_agent_profile', { agentId, id }),
+  listProfileEnvelopes: async (agentId: string) =>
+    AgentProfileSchema.array().parse(
+      await invoke<unknown>('list_profile_envelopes', { agentId }),
+    ),
+  getProfileEnvelope: async (agentId: string, id: string) =>
+    AgentProfileSchema.parse(
+      await invoke<unknown>('get_profile_envelope', { agentId, id }),
+    ),
+  saveProfileEnvelope: async (profile: AgentProfile) =>
+    AgentProfileSchema.parse(
+      await invoke<unknown>('save_profile_envelope', { profile }),
+    ),
+  deleteProfileEnvelope: (agentId: string, id: string) =>
+    invoke<void>('delete_profile_envelope', { agentId, id }),
   getProfile: (id: string) => invoke<ProfileFile>('get_profile', { id }),
   saveProfile: (profile: ProfileFile) => invoke<ProfileFile>('save_profile', { profile }),
   deleteProfile: (id: string) => invoke<void>('delete_profile', { id }),

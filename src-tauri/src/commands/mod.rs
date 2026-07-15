@@ -5,6 +5,7 @@ pub mod discover;
 pub mod history;
 pub mod importers;
 pub mod path_complete;
+pub mod profile_envelopes;
 pub mod profiles;
 pub mod projects;
 pub mod scan_roots;

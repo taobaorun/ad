@@ -4,6 +4,8 @@ import {
   parseProfileFile,
   blankProfile,
   settingsFromLayers,
+  AgentProfileSchema,
+  profileFileToAgentProfile,
   type ProfileLayers,
 } from '@/lib/profileSchema';
 
@@ -106,6 +108,50 @@ describe('ProfileFileSchema', () => {
       expect(r.data.layers.local).toEqual({ model: 'claude-opus-4-7' });
       expect(r.data.layers.env).toEqual({ ANTHROPIC_API_KEY: 'sk-test' });
     }
+  });
+});
+
+describe('AgentProfileSchema', () => {
+  it('maps a legacy Claude profile into the stable envelope', () => {
+    const legacy = blankProfile('default');
+    const profile = profileFileToAgentProfile(legacy);
+
+    expect(AgentProfileSchema.parse(profile)).toEqual(profile);
+    expect(profile.key).toEqual({ agentId: 'claude-code', profileId: 'default' });
+    expect(profile.payloadSchema).toBe('ad.profile/claude-code.v2');
+    expect(profile.payload).toEqual({ layers: legacy.layers, settings: legacy.settings });
+  });
+
+  it('accepts a Codex TOML payload without Claude fields', () => {
+    const now = new Date().toISOString();
+    const profile = AgentProfileSchema.parse({
+      schemaVersion: 1,
+      key: { agentId: 'codex', profileId: 'default' },
+      metadata: {
+        displayName: 'Default',
+        description: null,
+        color: '#7C3AED',
+        createdAt: now,
+        updatedAt: now,
+      },
+      payloadSchema: 'ad.profile/codex.v1',
+      payload: { configToml: 'model = "gpt-5.4"\n' },
+    });
+
+    expect(profile.key.agentId).toBe('codex');
+    expect(profile.payload).toEqual({ configToml: 'model = "gpt-5.4"\n' });
+    expect(profile.payload).not.toHaveProperty('settings');
+    expect(profile.payload).not.toHaveProperty('layers');
+  });
+
+  it('rejects an Agent/schema mismatch', () => {
+    const legacy = profileFileToAgentProfile(blankProfile('default'));
+    const result = AgentProfileSchema.safeParse({
+      ...legacy,
+      key: { ...legacy.key, agentId: 'codex' },
+    });
+
+    expect(result.success).toBe(false);
   });
 });
 

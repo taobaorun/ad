@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use chrono::Utc;
 
+use crate::agents::builtin_registry;
 use crate::fs::atomic::write_atomic;
 use crate::fs::paths::{active_pointer_path, ensure_dir, profiles_dir};
 use crate::models::ProfileFile;
@@ -41,13 +42,13 @@ pub(crate) fn validate_id(id: &str) -> Result<(), CommandError> {
     Ok(())
 }
 
-fn profile_path(id: &str) -> CmdResult<PathBuf> {
+pub(crate) fn profile_path(id: &str) -> CmdResult<PathBuf> {
     validate_id(id)?;
     Ok(profiles_dir()?.join(format!("{id}.json")))
 }
 
-fn validate_agent_id(agent_id: &str) -> CmdResult<()> {
-    if agent_id != "claude-code" && agent_id != "codex" {
+pub(crate) fn validate_agent_id(agent_id: &str) -> CmdResult<()> {
+    if builtin_registry().adapter(agent_id).is_none() {
         return Err(CommandError::Generic(format!(
             "unknown built-in agent id: {agent_id}"
         )));
@@ -55,7 +56,37 @@ fn validate_agent_id(agent_id: &str) -> CmdResult<()> {
     Ok(())
 }
 
-fn agent_profile_path(agent_id: &str, id: &str) -> CmdResult<PathBuf> {
+fn validate_legacy_agent_id(agent_id: &str) -> CmdResult<()> {
+    validate_agent_id(agent_id)?;
+    if agent_id != "claude-code" {
+        return Err(CommandError::Generic(
+            "legacy ProfileFile operations only support claude-code; use AgentProfile envelope"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn id_collides_in_dir(dir: &std::path::Path, id: &str) -> CmdResult<bool> {
+    if !dir.exists() {
+        return Ok(false);
+    }
+    let lower = id.to_ascii_lowercase();
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|suffix| suffix.to_str()) != Some("json") {
+            continue;
+        }
+        if let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) {
+            if stem != id && stem.eq_ignore_ascii_case(&lower) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+pub(crate) fn agent_profile_path(agent_id: &str, id: &str) -> CmdResult<PathBuf> {
     validate_agent_id(agent_id)?;
     validate_id(id)?;
     Ok(profiles_dir()?
@@ -66,24 +97,7 @@ fn agent_profile_path(agent_id: &str, id: &str) -> CmdResult<PathBuf> {
 /// Returns true if a profile with the given id (case-insensitive) already
 /// exists on disk. Used to refuse case-collisions on APFS-CI volumes.
 fn id_collides_existing(id: &str) -> CmdResult<bool> {
-    let dir = profiles_dir()?;
-    if !dir.exists() {
-        return Ok(false);
-    }
-    let lower = id.to_ascii_lowercase();
-    for entry in std::fs::read_dir(&dir)? {
-        let entry = entry?;
-        let p = entry.path();
-        if p.extension().and_then(|s| s.to_str()) != Some("json") {
-            continue;
-        }
-        if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
-            if stem != id && stem.eq_ignore_ascii_case(&lower) {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
+    id_collides_in_dir(&profiles_dir()?, id)
 }
 
 #[tauri::command]
@@ -169,89 +183,31 @@ pub fn delete_profile(id: String) -> CmdResult<()> {
 #[tauri::command]
 pub fn list_agent_profiles(agent_id: String) -> CmdResult<Vec<ProfileFile>> {
     validate_agent_id(&agent_id)?;
-    if agent_id == "claude-code" {
-        return Ok(list_profiles()?
-            .into_iter()
-            .filter(|profile| profile.agent_id == agent_id)
-            .collect());
-    }
-    let dir = profiles_dir()?.join(&agent_id);
-    if !dir.exists() {
+    if agent_id != "claude-code" {
         return Ok(Vec::new());
     }
-    let mut out = Vec::new();
-    for entry in std::fs::read_dir(&dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("json") {
-            continue;
-        }
-        let bytes = std::fs::read(&path)?;
-        match serde_json::from_slice::<ProfileFile>(&bytes) {
-            Ok(profile) if profile.agent_id == agent_id => out.push(profile),
-            Ok(_) => tracing::warn!(path = %path.display(), "skipping profile with mismatched agent id"),
-            Err(err) => tracing::warn!(path = %path.display(), error = %err, "skipping unreadable Agent profile"),
-        }
-    }
-    out.sort_by(|a, b| a.display_name.cmp(&b.display_name));
-    Ok(out)
+    Ok(list_profiles()?
+        .into_iter()
+        .filter(|profile| profile.agent_id == agent_id)
+        .collect())
 }
 
 #[tauri::command]
 pub fn get_agent_profile(agent_id: String, id: String) -> CmdResult<ProfileFile> {
-    validate_agent_id(&agent_id)?;
-    if agent_id == "claude-code" {
-        return get_profile(id);
-    }
-    let path = agent_profile_path(&agent_id, &id)?;
-    let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
-    let profile: ProfileFile = serde_json::from_slice(&bytes)?;
-    if profile.agent_id != agent_id {
-        return Err(CommandError::Generic(format!(
-            "profile agent mismatch: expected {agent_id}, found {}",
-            profile.agent_id
-        )));
-    }
-    Ok(profile)
+    validate_legacy_agent_id(&agent_id)?;
+    get_profile(id)
 }
 
 #[tauri::command]
 pub fn save_agent_profile(profile: ProfileFile) -> CmdResult<ProfileFile> {
-    validate_agent_id(&profile.agent_id)?;
-    if profile.agent_id == "claude-code" {
-        return save_profile(profile);
-    }
-    let path = agent_profile_path(&profile.agent_id, &profile.id)?;
-    ensure_dir(path.parent().unwrap())?;
-    let mut profile = profile;
-    if path.exists() {
-        let prev_bytes = std::fs::read(&path)?;
-        if let Ok(prev) = serde_json::from_slice::<ProfileFile>(&prev_bytes) {
-            if prev.updated_at > profile.updated_at {
-                return Err(CommandError::Generic(format!(
-                    "conflict: on-disk {} is newer ({} > {})",
-                    profile.id, prev.updated_at, profile.updated_at
-                )));
-            }
-            profile.created_at = prev.created_at;
-        }
-    }
-    profile.updated_at = Utc::now();
-    write_atomic(&path, &serde_json::to_vec_pretty(&profile)?)?;
-    Ok(profile)
+    validate_legacy_agent_id(&profile.agent_id)?;
+    save_profile(profile)
 }
 
 #[tauri::command]
 pub fn delete_agent_profile(agent_id: String, id: String) -> CmdResult<()> {
-    validate_agent_id(&agent_id)?;
-    if agent_id == "claude-code" {
-        return delete_profile(id);
-    }
-    let path = agent_profile_path(&agent_id, &id)?;
-    if path.exists() {
-        std::fs::remove_file(&path).with_context(|| format!("delete {}", path.display()))?;
-    }
-    Ok(())
+    validate_legacy_agent_id(&agent_id)?;
+    delete_profile(id)
 }
 
 #[tauri::command]
@@ -307,22 +263,17 @@ mod tests {
 
     #[test]
     #[serial(home_env)]
-    fn agent_profiles_are_stored_under_agent_specific_directory() {
+    fn legacy_agent_profile_api_rejects_codex_payloads() {
         let _g = setup_home();
         let mut profile = ProfileFile::sample();
         profile.agent_id = "codex".into();
         profile.id = "default".into();
 
-        save_agent_profile(profile.clone()).unwrap();
+        let error = save_agent_profile(profile).unwrap_err();
 
-        let listed = list_agent_profiles("codex".into()).unwrap();
-        assert_eq!(listed.len(), 1);
-        let loaded = get_agent_profile("codex".into(), "default".into()).unwrap();
-        assert_eq!(loaded.agent_id, profile.agent_id);
-        assert_eq!(loaded.id, profile.id);
-        assert_eq!(loaded.settings, profile.settings);
-        assert!(profiles_dir().unwrap().join("codex/default.json").exists());
-        assert!(list_agent_profiles("claude-code".into()).unwrap().is_empty());
+        assert!(format!("{error}").contains("AgentProfile envelope"));
+        assert!(list_agent_profiles("codex".into()).unwrap().is_empty());
+        assert!(!profiles_dir().unwrap().join("codex/default.json").exists());
     }
 
     #[test]

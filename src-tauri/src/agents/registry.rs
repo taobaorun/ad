@@ -4,7 +4,7 @@ use super::{
     launch_descriptor, plugins_descriptor, process_descriptor, settings_descriptor,
     skills_descriptor, AgentDefinition, AgentInstallation, AgentMetadata, Capability,
     CapabilityDescriptor, CapabilityKind, InstallationCandidate, LaunchPort, ManagedResourceTarget,
-    PluginsPort, ProcessPort, ResourceKind, ResourceRef, SettingsPort, SkillsPort,
+    PluginsPort, ProcessPort, ProfileSchema, ResourceKind, ResourceRef, SettingsPort, SkillsPort,
 };
 
 /// Built-in adapter boundary. User-defined adapters are intentionally not
@@ -31,6 +31,10 @@ pub trait AgentAdapter: Send + Sync {
     }
 
     fn launcher(&self) -> Option<&dyn LaunchPort> {
+        None
+    }
+
+    fn profile_schema(&self) -> Option<&dyn ProfileSchema> {
         None
     }
 }
