@@ -51,9 +51,16 @@ pub struct CodexProfilePayload {
     pub config_toml: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProfileSettingsContent {
+    pub media_type: String,
+    pub content: Value,
+}
+
 pub trait ProfileSchema: Send + Sync {
     fn id(&self) -> &'static str;
     fn validate(&self, payload: &Value) -> Result<(), ProfileError>;
+    fn settings_content(&self, payload: &Value) -> Result<ProfileSettingsContent, ProfileError>;
 }
 
 #[derive(Debug, Default)]
@@ -82,6 +89,17 @@ impl ProfileSchema for ClaudeProfileSchema {
             .map(|_| ())
             .map_err(|error| ProfileError::InvalidPayload(error.to_string()))
     }
+
+    fn settings_content(&self, payload: &Value) -> Result<ProfileSettingsContent, ProfileError> {
+        let payload = serde_json::from_value::<ClaudeProfilePayload>(payload.clone())
+            .map_err(|error| ProfileError::InvalidPayload(error.to_string()))?;
+        let content = serde_json::to_value(payload.settings)
+            .map_err(|error| ProfileError::InvalidPayload(error.to_string()))?;
+        Ok(ProfileSettingsContent {
+            media_type: "application/json".into(),
+            content,
+        })
+    }
 }
 
 impl ProfileSchema for CodexProfileSchema {
@@ -97,6 +115,21 @@ impl ProfileSchema for CodexProfileSchema {
             .parse::<toml::Value>()
             .map(|_| ())
             .map_err(|error| ProfileError::InvalidPayload(format!("invalid Codex TOML: {error}")))
+    }
+
+    fn settings_content(&self, payload: &Value) -> Result<ProfileSettingsContent, ProfileError> {
+        let payload = serde_json::from_value::<CodexProfilePayload>(payload.clone())
+            .map_err(|error| ProfileError::InvalidPayload(error.to_string()))?;
+        payload
+            .config_toml
+            .parse::<toml::Value>()
+            .map_err(|error| {
+                ProfileError::InvalidPayload(format!("invalid Codex TOML: {error}"))
+            })?;
+        Ok(ProfileSettingsContent {
+            media_type: "application/toml".into(),
+            content: Value::String(payload.config_toml),
+        })
     }
 }
 
@@ -170,6 +203,17 @@ pub fn validate_profile(
     schema.validate(&profile.payload)
 }
 
+pub fn profile_settings_content(
+    adapter: &dyn AgentAdapter,
+    profile: &AgentProfile,
+) -> Result<ProfileSettingsContent, ProfileError> {
+    validate_profile(adapter, profile)?;
+    adapter
+        .profile_schema()
+        .ok_or_else(|| ProfileError::UnsupportedSchema(profile.payload_schema.clone()))?
+        .settings_content(&profile.payload)
+}
+
 fn is_hex_color(color: &str) -> bool {
     color.len() == 7
         && color.starts_with('#')
@@ -239,5 +283,24 @@ mod tests {
             .unwrap_err();
 
         assert!(error.to_string().contains("#RRGGBB"));
+    }
+
+    #[test]
+    fn profile_payloads_produce_adapter_owned_settings_content() {
+        let registry = builtin_registry();
+        let claude_adapter = registry.adapter("claude-code").unwrap();
+        let claude = AgentProfile::from_legacy_claude(ProfileFile::sample()).unwrap();
+        let claude_content = profile_settings_content(claude_adapter, &claude).unwrap();
+        assert_eq!(claude_content.media_type, "application/json");
+        assert!(claude_content.content.is_object());
+
+        let codex_adapter = registry.adapter("codex").unwrap();
+        let mut codex = claude.clone();
+        codex.key.agent_id = AgentId::from("codex");
+        codex.payload_schema = CODEX_PROFILE_PAYLOAD_SCHEMA.into();
+        codex.payload = serde_json::json!({"configToml": "model = \"gpt-5.4\"\n"});
+        let codex_content = profile_settings_content(codex_adapter, &codex).unwrap();
+        assert_eq!(codex_content.media_type, "application/toml");
+        assert_eq!(codex_content.content, "model = \"gpt-5.4\"\n");
     }
 }

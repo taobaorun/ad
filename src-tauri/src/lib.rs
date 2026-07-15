@@ -151,6 +151,7 @@ pub fn run() {
             commands::agents::preview_claude_to_codex,
             commands::agents::preview_claude_to_codex_route,
             commands::agents::preview_agent_settings_edit,
+            commands::agents::preview_agent_profile_apply,
             commands::agents::preview_agent_collection_install,
             commands::agents::preview_agent_collection_toggle,
             commands::agents::apply_agent_plan,

@@ -3,13 +3,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentProfilesButton } from '@/components/AgentProfilesDialog';
 import i18n from '@/i18n';
+import { AgentContextSchema } from '@/lib/agentTypes';
 import { AgentProfileSchema } from '@/lib/profileSchema';
 import { useAgents } from '@/store/agents';
 
-const { listProfileEnvelopes, saveProfileEnvelope, deleteProfileEnvelope } = vi.hoisted(() => ({
+const {
+  listProfileEnvelopes,
+  saveProfileEnvelope,
+  deleteProfileEnvelope,
+  previewAgentProfileApply,
+  applyAgentPlan,
+  rollbackAgentReceipt,
+} = vi.hoisted(() => ({
   listProfileEnvelopes: vi.fn(),
   saveProfileEnvelope: vi.fn(),
   deleteProfileEnvelope: vi.fn(),
+  previewAgentProfileApply: vi.fn(),
+  applyAgentPlan: vi.fn(),
+  rollbackAgentReceipt: vi.fn(),
 }));
 
 vi.mock('@/lib/tauri', () => ({
@@ -17,6 +28,9 @@ vi.mock('@/lib/tauri', () => ({
     listProfileEnvelopes,
     saveProfileEnvelope,
     deleteProfileEnvelope,
+    previewAgentProfileApply,
+    applyAgentPlan,
+    rollbackAgentReceipt,
   },
 }));
 
@@ -47,10 +61,47 @@ const profile = AgentProfileSchema.parse({
 describe('AgentProfilesButton', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
-    useAgents.setState({ activeAgentId: 'codex' });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    useAgents.setState({
+      activeAgentId: 'codex',
+      activeContext: AgentContextSchema.parse({ installationId: 'codex:default' }),
+    });
     listProfileEnvelopes.mockReset().mockResolvedValue([profile]);
     saveProfileEnvelope.mockReset().mockImplementation(async (next) => next);
     deleteProfileEnvelope.mockReset();
+    previewAgentProfileApply.mockReset().mockResolvedValue({
+      id: 'profile-plan',
+      agentId: 'codex',
+      context: { installationId: 'codex:default' },
+      changes: [
+        {
+          resource: {
+            installationId: 'codex:default',
+            kind: 'settings',
+            scope: 'user',
+            logicalId: 'user-config',
+          },
+          kind: 'replace',
+        },
+      ],
+      expiresAt: '2026-07-15T01:05:00Z',
+    });
+    applyAgentPlan.mockReset().mockResolvedValue({
+      id: 'profile-receipt',
+      planId: 'profile-plan',
+      status: 'complete',
+      appliedResources: [],
+      backupPaths: ['/tmp/profile-backup'],
+      postApplyStates: [],
+    });
+    rollbackAgentReceipt.mockReset().mockResolvedValue({
+      id: 'profile-rollback-receipt',
+      planId: 'profile-plan',
+      status: 'compensated',
+      appliedResources: [],
+      backupPaths: [],
+      postApplyStates: [],
+    });
   });
 
   it('edits an adapter-owned profile payload through the registry', async () => {
@@ -67,5 +118,20 @@ describe('AgentProfilesButton', () => {
     expect(saveProfileEnvelope.mock.calls[0]?.[0].payload).toEqual({
       configToml: 'model = "gpt-5.5"\n',
     });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview profile apply' }));
+    await waitFor(() =>
+      expect(previewAgentProfileApply).toHaveBeenCalledWith(
+        { installationId: 'codex:default' },
+        'default',
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await waitFor(() => expect(applyAgentPlan).toHaveBeenCalledWith('profile-plan'));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Rollback profile apply' }));
+    await waitFor(() =>
+      expect(rollbackAgentReceipt).toHaveBeenCalledWith('profile-receipt', true),
+    );
   });
 });

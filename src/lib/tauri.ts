@@ -113,6 +113,13 @@ export const tauri = {
     MutationPlanViewSchema.parse(
       await invoke<unknown>('preview_agent_settings_edit', { context, edit }),
     ),
+  previewAgentProfileApply: async (
+    context: AgentContext,
+    profileId: string,
+  ): Promise<MutationPlanView> =>
+    MutationPlanViewSchema.parse(
+      await invoke<unknown>('preview_agent_profile_apply', { context, profileId }),
+    ),
   listAgentSettingsDocuments: async (context: AgentContext): Promise<SettingsDocument[]> =>
     SettingsDocumentSchema.array().parse(
       await invoke<unknown>('list_agent_settings_documents', { context }),

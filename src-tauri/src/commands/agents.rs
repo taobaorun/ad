@@ -1,10 +1,11 @@
 use crate::agents::{
-    builtin_registry, convert_claude_profile_to_codex, AgentContext, AgentError, AgentErrorCode,
-    AgentId, AgentInstallation, AgentMetadata, CapabilityDescriptor, ClaudeToCodexRoute,
-    CollectionInstallRequest, ConversionPreview, ConversionRoute, ConversionRoutePreview,
-    ExecutionEngine, InstallationId, MutationPlanView, OperationHistoryEntry, OperationReceipt,
-    PlanId, PlanStore, ProcessObservation, ReceiptId, ResourceKind, ResourceRef, ResourceSnapshot,
-    SettingsDocument, SettingsEdit,
+    builtin_registry, convert_claude_profile_to_codex, profile_settings_content, AgentContext,
+    AgentError, AgentErrorCode, AgentId, AgentInstallation, AgentMetadata, CapabilityDescriptor,
+    ClaudeToCodexRoute, CollectionInstallRequest, ConversionPreview, ConversionRoute,
+    ConversionRoutePreview, ExecutionEngine, InstallationId, MutationPlanView,
+    OperationHistoryEntry, OperationReceipt, PlanId, PlanStore, ProcessObservation, ProfileId,
+    ReceiptId, ResourceKind, ResourceRef, ResourceScope, ResourceSnapshot, SettingsDocument,
+    SettingsEdit,
 };
 use crate::models::ProfileFile;
 use tauri::State;
@@ -217,6 +218,15 @@ pub fn preview_agent_settings_edit(
 }
 
 #[tauri::command]
+pub fn preview_agent_profile_apply(
+    context: AgentContext,
+    profile_id: ProfileId,
+    plans: State<'_, PlanStore>,
+) -> Result<MutationPlanView, AgentError> {
+    preview_agent_profile_apply_inner(context, profile_id, plans.inner())
+}
+
+#[tauri::command]
 pub fn preview_agent_collection_install(
     context: AgentContext,
     kind: ResourceKind,
@@ -298,6 +308,43 @@ fn preview_agent_settings_edit_inner(
     plans.insert(plan)
 }
 
+fn preview_agent_profile_apply_inner(
+    context: AgentContext,
+    profile_id: ProfileId,
+    plans: &PlanStore,
+) -> Result<MutationPlanView, AgentError> {
+    let plan = with_context_adapter(&context, |adapter| {
+        let agent_id = adapter.definition().id.to_string();
+        let profile =
+            super::profile_envelopes::get_profile_envelope(agent_id, profile_id.to_string())
+                .map_err(|error| profile_apply_error(&context, error.to_string()))?;
+        let profile_content = profile_settings_content(adapter, &profile)
+            .map_err(|error| profile_apply_error(&context, error.to_string()))?;
+        let settings = adapter
+            .settings()
+            .ok_or_else(|| context_error(&context, "Agent does not support settings edits"))?;
+        let target_scope = if context.project_path.is_some() {
+            ResourceScope::Project
+        } else {
+            ResourceScope::User
+        };
+        let target = settings
+            .edit_documents(&context)?
+            .into_iter()
+            .find(|document| document.resource.scope == target_scope)
+            .ok_or_else(|| context_error(&context, "Agent profile has no settings target"))?;
+        settings.plan_edit(
+            &context,
+            SettingsEdit {
+                resource: target.resource,
+                media_type: profile_content.media_type,
+                content: profile_content.content,
+            },
+        )
+    })?;
+    plans.insert(plan)
+}
+
 fn preview_agent_collection_toggle_inner(
     context: AgentContext,
     resource: ResourceRef,
@@ -369,6 +416,18 @@ fn operation_history_error(message: impl Into<String>) -> AgentError {
         installation_id: None,
         resource: None,
         retryable: true,
+        details: None,
+    }
+}
+
+fn profile_apply_error(context: &AgentContext, message: impl Into<String>) -> AgentError {
+    AgentError {
+        code: AgentErrorCode::InvalidPlan,
+        message: message.into(),
+        agent_id: None,
+        installation_id: Some(context.installation_id.clone()),
+        resource: None,
+        retryable: false,
         details: None,
     }
 }
@@ -493,6 +552,71 @@ mod tests {
         assert_eq!(view.changes.len(), 1);
         assert_eq!(
             std::fs::read(claude_home.join("settings.json")).unwrap(),
+            original
+        );
+
+        match previous_home {
+            Some(value) => std::env::set_var("AD_HOME", value),
+            None => std::env::remove_var("AD_HOME"),
+        }
+        match previous_codex_home {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn profile_apply_preview_targets_the_active_agent_settings_without_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let codex_home = temp.path().join(".codex");
+        std::fs::create_dir_all(&codex_home).unwrap();
+        let original = b"model = \"gpt-5.3\"\n";
+        std::fs::write(codex_home.join("config.toml"), original).unwrap();
+        let previous_home = std::env::var("AD_HOME").ok();
+        let previous_codex_home = std::env::var("CODEX_HOME").ok();
+        std::env::set_var("AD_HOME", temp.path());
+        std::env::set_var("CODEX_HOME", &codex_home);
+
+        let now = chrono::Utc::now();
+        crate::commands::profile_envelopes::save_profile_envelope(crate::agents::AgentProfile {
+            schema_version: crate::agents::AGENT_PROFILE_SCHEMA_VERSION,
+            key: crate::agents::AgentProfileKey {
+                agent_id: AgentId::from("codex"),
+                profile_id: crate::agents::ProfileId::from("review"),
+            },
+            metadata: crate::agents::ProfileMetadata {
+                display_name: "Review".into(),
+                description: None,
+                color: "#7C3AED".into(),
+                created_at: now,
+                updated_at: now,
+            },
+            payload_schema: crate::agents::CODEX_PROFILE_PAYLOAD_SCHEMA.into(),
+            payload: serde_json::json!({"configToml": "model = \"gpt-5.4\"\n"}),
+        })
+        .unwrap();
+        let installation = builtin_registry()
+            .discover()
+            .into_iter()
+            .find(|item| item.agent_id.as_str() == "codex")
+            .unwrap();
+        let context = AgentContext {
+            installation_id: installation.id,
+            project_path: None,
+        };
+
+        let view = preview_agent_profile_apply_inner(
+            context,
+            crate::agents::ProfileId::from("review"),
+            &PlanStore::default(),
+        )
+        .unwrap();
+
+        assert_eq!(view.agent_id.as_str(), "codex");
+        assert_eq!(view.changes[0].resource.logical_id, "user-config");
+        assert_eq!(
+            std::fs::read(codex_home.join("config.toml")).unwrap(),
             original
         );
 
