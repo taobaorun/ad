@@ -68,7 +68,6 @@ impl PluginsPort for ClaudePluginsPort {
             CapabilityOperation::Disable,
             CapabilityOperation::Preview,
             CapabilityOperation::Apply,
-            CapabilityOperation::Rollback,
         ])
     }
 

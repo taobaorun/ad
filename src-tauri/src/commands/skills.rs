@@ -158,7 +158,7 @@ pub(crate) fn is_ad_managed_symlink(entry: &Path) -> bool {
         return false;
     };
     if let Ok(lib_dir) = skill_library_dir() {
-        if target.starts_with(&lib_dir) {
+        if target_is_within(&target, &lib_dir) {
             return true;
         }
     }
@@ -170,12 +170,27 @@ pub(crate) fn is_ad_managed_symlink(entry: &Path) -> bool {
                     .map(|d| d.join(&source.id))
                     .unwrap_or_default(),
             };
-            if target.starts_with(&source_path) {
+            if target_is_within(&target, &source_path) {
                 return true;
             }
         }
     }
     false
+}
+
+fn target_is_within(target: &Path, root: &Path) -> bool {
+    if target.starts_with(root) {
+        return true;
+    }
+    let Ok(canonical_root) = std::fs::canonicalize(root) else {
+        return false;
+    };
+    if target.starts_with(&canonical_root) {
+        return true;
+    }
+    std::fs::canonicalize(target)
+        .map(|canonical_target| canonical_target.starts_with(canonical_root))
+        .unwrap_or(false)
 }
 
 fn create_skill_symlink(link_dir: &Path, name: &str, target: &Path) -> CmdResult<()> {
@@ -963,6 +978,16 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink(&managed_target, claude_dir.join("managed")).unwrap();
         assert!(is_ad_managed_symlink(&claude_dir.join("managed")));
+    }
+
+    #[test]
+    fn managed_path_check_accepts_a_canonical_dangling_target() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("skill-library");
+        std::fs::create_dir_all(&root).unwrap();
+        let target = std::fs::canonicalize(&root).unwrap().join("missing-skill");
+
+        assert!(target_is_within(&target, &root));
     }
 
     #[test]

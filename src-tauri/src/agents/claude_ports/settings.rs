@@ -37,7 +37,6 @@ impl SettingsPort for ClaudeSettingsPort {
             CapabilityOperation::Edit,
             CapabilityOperation::Preview,
             CapabilityOperation::Apply,
-            CapabilityOperation::Rollback,
         ])
     }
 

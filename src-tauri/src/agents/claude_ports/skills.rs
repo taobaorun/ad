@@ -74,7 +74,6 @@ impl SkillsPort for ClaudeSkillsPort {
             CapabilityOperation::Disable,
             CapabilityOperation::Preview,
             CapabilityOperation::Apply,
-            CapabilityOperation::Rollback,
         ])
     }
 
