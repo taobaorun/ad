@@ -99,7 +99,13 @@
   - [x] compatibility reader 将旧 Claude ProfileFile 映射为 envelope，读取过程不改写源文件；首次保存写入 canonical 目录，并保留时间戳冲突与 APFS case-collision 保护
   - [x] 新增独立 envelope CRUD 和前端严格 Zod schema；旧 ProfileFile façade 仅继续服务 Claude，拒绝把 Codex 伪装成 Claude payload
   - [x] 197 个 Rust lib 测试（4 ignored）、双 Agent parity 测试、30 个前端测试、typecheck、cargo check 和变更文件 ESLint 通过
-- [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 TOML preview contract、model 映射和 unsupported 字段报告，目标写入/回滚仍待实现
+- [x] (2026-07-15) 将 Claude Code → Codex 配置转换重构为 artifact-level route
+  - [x] 内置 ConversionRoute 通过 Claude/Codex Settings Port 获取 source/target snapshots；按字段输出 exact、mapped、requires_input、unsupported、conflict、unchanged
+  - [x] 已启用 Skills 和已安装 Plugins 同样进入 artifact inventory；未确认的本地来源、marketplace 身份和授权显式标记 requires_input/conflict，不静默安装或遗漏
+  - [x] Codex 目标采用 merge/skip/conflict：未知目标 TOML 和冲突值原样保留，只为无冲突 artifact 生成后端 MutationPlan
+  - [x] Claude source snapshots 仅以 ReadOnly precondition 进入 read-set，所有 mutation 必须属于 Codex installation；伪造 source mutation 会被 route invariant 拒绝
+  - [x] source/target fixtures 验证预览不写盘、六种 disposition、未知字段保留和 target-only write-set；199 个 Rust lib 测试（4 ignored）、parity、30 个前端测试、typecheck 和 cargo check 通过
+- [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 artifact route、冲突分析和 target-only plan，确认式 apply 与 digest-protected rollback 仍待实现
 - [ ] (进行中) 接入 Agent-aware store、UI、i18n 和 IPC；当前已完成 Agent store、selector、双语文案、discovery IPC 与按 Agent profile 加载/保存
 - [ ] (待开始) 完成单元、集成、行为测试及架构文档更新
 - [ ] (待开始) 完成发布前 build 和人工验收

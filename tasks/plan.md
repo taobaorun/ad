@@ -79,7 +79,7 @@ Claude ports + Codex ports + ExecutionEngine
 ### Phase 5: Profiles and Conversion
 
 - [x] Task 14: AgentProfile envelope and Claude compatibility reader
-- [ ] Task 15: Artifact-level Claude-to-Codex conversion route
+- [x] Task 15: Artifact-level Claude-to-Codex conversion route
 - [ ] Task 16: Confirmed apply and rollback through ExecutionEngine
 
 ### Checkpoint E

@@ -100,7 +100,7 @@
   - Files: `src-tauri/src/agents/profiles.rs`, `src-tauri/src/commands/profiles.rs`, `src/lib/profileSchema.ts`
   - Dependencies: Tasks 4, 7, 10
 
-- [ ] Task 15: Build artifact conversion route
+- [x] Task 15: Build artifact conversion route
   - Acceptance: conversion reports exact/mapped/requires_input/unsupported/conflict/unchanged per artifact and never puts source resources in write-set.
   - Verify: source/target fixture tests and invariant tests.
   - Files: `src-tauri/src/agents/conversion.rs`, `src-tauri/src/agents/conversion_route.rs`
