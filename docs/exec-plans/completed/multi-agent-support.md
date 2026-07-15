@@ -1,6 +1,6 @@
 # Multi-Agent 支持 ExecPlan
 
-本 ExecPlan 是一个活文档。当前处于 Stage 3 执行；已冻结的 HTML 仍是首次批准基线，实时设计与进展以本 MD 和 `docs/design-docs/multi-agent-architecture.md` 为准。
+本 ExecPlan 已完成并归档。冻结 HTML 保留首次批准基线，最终实现与结果以本 MD 和 `docs/design-docs/multi-agent-architecture.md` 为准。
 
 ## 目的 / 全局视角
 
@@ -10,7 +10,7 @@
 
 ## 确认状态
 
-- [x] **用户已确认** — 评审 HTML 路径：docs/exec-plans/active/multi-agent-support.html
+- [x] **用户已确认** — 评审 HTML 路径：docs/exec-plans/completed/multi-agent-support.html
 - [x] 用户已确认，开始执行（2026-07-14 Asia/Shanghai）
 - [x] **设计重开已批准，恢复实施** — `docs/design-docs/multi-agent-architecture.html`（2026-07-15 Asia/Shanghai，用户 LGTM）
 
@@ -118,8 +118,18 @@
   - [x] Claude Code → Codex 转换 UI 固定使用内置 route，展示逐 artifact disposition 与原因，明确保持 source 不变，并提供目标备份和回滚
   - [x] History UI 展示 installation-scoped operation receipts 并支持确认回滚；Claude 旧激活历史作为受 policy 控制的兼容区保留
   - [x] 双语文案、严格前端 schema、Tauri IPC 和 capability limitation 展示已同步；48 个前端测试、60 个 Agent 定向 Rust 测试、typecheck、ESLint 与前端 production build 通过
-- [ ] (待开始) 完成单元、集成、行为测试及架构文档更新
-- [ ] (待开始) 完成发布前 build 和人工验收
+- [x] (2026-07-15) 完成单元、集成、行为测试及架构文档更新
+  - [x] Profile 新增 adapter-owned Settings 转换和安全 plan/apply/rollback UI；测试覆盖双 Agent payload、Codex preview 不写盘、前端 apply 与 rollback
+  - [x] 新增 zh/en leaf-key parity 测试，并补齐待创建 Settings target、Codex operation history、conversion source 只读与 rollback 行为测试
+  - [x] `architecture.md` 升级为多 Agent v2 as-built，总架构、多 Agent 设计和产品规格的 MD/HTML 与索引已同步
+  - [x] 全量通过 50 个前端测试；Rust lib 203 passed、4 ignored，另有 parity 1、atomic crash 2、conversion execution 1、conversion route 1 全部通过
+- [x] (2026-07-15) 完成发布前 build、安装和原生验收
+  - [x] `pnpm typecheck`、全仓 `pnpm lint`、`pnpm test`、`pnpm build`、`cargo check`、全量 `cargo test` 通过
+  - [x] 严格 Clippy 在显式允许结构化 `AgentError` 的 `result_large_err` 后零 warning；该例外保留稳定 IPC error envelope，其他机械 warning 已修复
+  - [x] npm bulk advisory 复核发现并修复 PostCSS moderate advisory；升级到 8.5.16 后 advisory 为 0
+  - [x] `pnpm tauri build` 生成 AD.app 与 `AD_1.0.1_aarch64.dmg`；安装到 `/Applications/AD.app` 并完成 ad-hoc deep/strict 签名校验
+  - [x] 原生只读验收确认 Agent selector、Codex user/project Settings、Profiles 安全应用入口、Claude Code → Codex source/target 与只读提示；未对真实配置执行 apply
+  - [x] 原生验收发现并修复 hidden WKWebView 冷启动不显示主窗口；修复后单次 cold launch 在 4.6 秒内产生唯一进程和 980×640 主窗口
 
 ## 意外发现
 
@@ -134,6 +144,8 @@
 - Codex Plugin 的 marketplace 可位于 repo/user `.agents/plugins/marketplace.json`，安装副本进入 `CODEX_HOME/plugins/cache/...`，启停状态进入用户 `config.toml`；单纯复制插件目录不能形成对等安装。
 - 多文件转换不能承诺原子事务；正确保证是写前全量备份、逐文件原子写、digest 并发检查和带 partial 状态的补偿式回滚。
 - 共享 parity contract 首次执行 Claude Skill disable 时暴露 macOS 临时目录的 `/var` → `/private/var` canonical alias；symlink target 与 managed root 必须按 canonical identity 比较，同时兼容 dangling target。
+- 发布验收发现隐藏 WebView 依赖双 `requestAnimationFrame` 显示窗口会在冷启动时被节流；后端必须在 main page-load Finished 时主动 show，settings window 继续保持隐藏。
+- pnpm 9 的旧 audit endpoint 已被 npm 以 HTTP 410 下线；发布审计改用 npm bulk advisory endpoint，并据此修复 PostCSS moderate advisory。
 
 ## 决策日志
 
@@ -189,7 +201,7 @@
 
 ## 工作计划
 
-### Phase 1 — v1 contract（当前）
+### Phase 1 — v1 contract（已完成）
 
 1. 用 newtype 定义 AgentId、InstallationId、ProfileId、PlanId、ReceiptId。
 2. 定义 AgentDefinition、AgentInstallation、AgentContext、ResourceRef、ResourceSnapshot、MutationPlan、OperationReceipt、AgentError。
@@ -285,3 +297,13 @@
 - M4 Codex Parity：Codex 五类能力通过 operation-level contracts。
 - M5 Conversion：profile envelope + artifact route + backup/rollback。
 - M6 UI & Release：统一 UI、全量测试、build、手工验收和文档归档。
+
+## 结果回顾
+
+本计划完成了从 Claude Code 专用模型到多 Agent v1 contract 的迁移。Claude Code 与 Codex 现在共享 Definition/Installation/Context、capability descriptor、ResourceSnapshot、MutationPlan/Receipt 和 ExecutionEngine；Agent-specific 路径、格式、Profile payload、进程 matcher 与 launch recipe 留在内置 adapter 中。canonical discovery 只保留去重 installation，Profile 以复合身份隔离，Claude Code → Codex conversion 保持 source 字节不变。
+
+数据安全目标已通过故障注入和真实 bundle 验收：所有 v1 写操作先 preview，写前完成全目标 backup，写入使用 APFS 单文件原子替换，多文件失败有 compensated/partial 状态，rollback 受 apply 后 digest 保护。前端只提交 planId 和确认意图，不能指定物理 target path 或 mutation content。
+
+首期仍有两个明确且诚实暴露的后续项：Plugin acquisition 尚未进入共享安全执行，Claude 不声明 install，Codex 标记 degraded/unsupported；仍被 template/import/shortcut 调用的 Claude legacy façade 暂不删除。二者不阻塞本期能力和数据安全验收，后续应分别建立独立计划处理。
+
+最终交付物包括同步的系统架构/详细设计/产品规格 MD + HTML、完整测试与 parity contracts、可安装的 AD 1.0.1 app/dmg，以及已安装并运行的 `/Applications/AD.app`。原安装已备份到 `~/.ad/app-backups/`，可在安装层面恢复。
