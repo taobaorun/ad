@@ -106,7 +106,7 @@
   - Files: `src-tauri/src/agents/conversion.rs`, `src-tauri/src/agents/conversion_route.rs`
   - Dependencies: Tasks 10-11, 14
 
-- [ ] Task 16: Apply and rollback conversion plans
+- [x] Task 16: Apply and rollback conversion plans
   - Acceptance: confirmed plans use shared execution; rollback checks current digests and never overwrites post-apply user changes.
   - Verify: integration tests with existing target, external modification and injected failure.
   - Files: `src-tauri/src/commands/agents.rs`, `src-tauri/src/agents/execution.rs`, `src-tauri/tests/conversion_execution.rs`

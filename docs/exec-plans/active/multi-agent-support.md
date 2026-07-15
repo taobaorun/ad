@@ -105,7 +105,12 @@
   - [x] Codex 目标采用 merge/skip/conflict：未知目标 TOML 和冲突值原样保留，只为无冲突 artifact 生成后端 MutationPlan
   - [x] Claude source snapshots 仅以 ReadOnly precondition 进入 read-set，所有 mutation 必须属于 Codex installation；伪造 source mutation 会被 route invariant 拒绝
   - [x] source/target fixtures 验证预览不写盘、六种 disposition、未知字段保留和 target-only write-set；199 个 Rust lib 测试（4 ignored）、parity、30 个前端测试、typecheck 和 cargo check 通过
-- [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 artifact route、冲突分析和 target-only plan，确认式 apply 与 digest-protected rollback 仍待实现
+- [x] (2026-07-15) 完成 conversion 显式确认、共享执行和 digest-protected rollback，并通过 Checkpoint E
+  - [x] PlanStore 区分普通 plan 与 confirmation-required conversion plan；通用 apply 不能绕过确认，未确认失败不会消费 plan
+  - [x] receipt 持久化 manifest digest、post-apply resource kind 和 digest；rollback 重新通过 adapter allowlist 解析目标，不信任 manifest 中的物理 target path
+  - [x] rollback 将原状态构造成新的 MutationPlan 交给 ExecutionEngine，因此同样具备写前备份、原子写和失败补偿；旧 receipt 缺少新状态时明确拒绝
+  - [x] source/target integration 覆盖未确认拒绝、确认 apply、source 字节不变、目标字节级恢复和外部修改拒绝；200 个 Rust lib 测试（4 ignored）、parity、31 个前端测试、typecheck、cargo check 和变更文件 ESLint 通过
+  - [x] Settings/Skills/Plugins 的 Claude/Codex descriptor 重新声明真实可调用 Rollback operation
 - [ ] (进行中) 接入 Agent-aware store、UI、i18n 和 IPC；当前已完成 Agent store、selector、双语文案、discovery IPC 与按 Agent profile 加载/保存
 - [ ] (待开始) 完成单元、集成、行为测试及架构文档更新
 - [ ] (待开始) 完成发布前 build 和人工验收
@@ -164,6 +169,10 @@
 
 - 决策：新增 AgentProfile envelope CRUD，并暂时保留只支持 Claude 的旧 ProfileFile façade。
   理由：旧 UI 在 Task 17 迁移前仍需读取 Claude profile；让 Codex 继续复用 ClaudeSettings/ProfileLayers 会污染 adapter 边界，因此旧 façade 对 Codex 返回空列表并拒绝写入。
+  日期/作者：2026-07-15 / Codex
+
+- 决策：conversion plan 在 PlanStore 中标记为 confirmation-required，只有专用 confirmed claim 路径可以消费。
+  理由：仅依赖前端确认对话框无法阻止调用方拿 planId 走通用 apply；确认意图必须由后端强制执行，且未确认尝试不能使 plan 失效。
   日期/作者：2026-07-15 / Codex
 
 ## 上下文和方向

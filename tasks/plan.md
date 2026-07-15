@@ -80,13 +80,13 @@ Claude ports + Codex ports + ExecutionEngine
 
 - [x] Task 14: AgentProfile envelope and Claude compatibility reader
 - [x] Task 15: Artifact-level Claude-to-Codex conversion route
-- [ ] Task 16: Confirmed apply and rollback through ExecutionEngine
+- [x] Task 16: Confirmed apply and rollback through ExecutionEngine
 
 ### Checkpoint E
 
-- [ ] Source bytes never change
-- [ ] Target conflicts and unsupported artifacts are visible before apply
-- [ ] Rollback respects post-apply external modifications
+- [x] Source bytes never change
+- [x] Target conflicts and unsupported artifacts are visible before apply
+- [x] Rollback respects post-apply external modifications
 
 ### Phase 6: UI and Release
 
