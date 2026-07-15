@@ -45,7 +45,7 @@
 - [x] (2026-07-15) 写 Project scope 集成测试并确认当前行为失败（验证标准：测试证明当前 route 会混入 user scope）。
 - [x] (2026-07-15) 实现 route 单作用域过滤（验证标准：Project plan 只含 project resource，User plan 只含 user resource；定向 Rust 测试通过）。
 - [x] (2026-07-15) 写前端失败测试并实现作用域选择（验证标准：Project 预览向 source/target 发送同一 canonical projectPath，User 预览不带 projectPath）。
-- [ ] 同步中英文文案及 multi-agent 设计/产品文档（验证标准：i18n key parity 与 MD/HTML 内容一致）。
+- [x] (2026-07-15) 同步中英文文案及 multi-agent 设计/产品文档（验证标准：i18n key parity 与 MD/HTML 内容一致）。
 - [ ] 运行全量质量门禁（验证标准：typecheck、lint、前端测试/build、Rust test/check/clippy 全部通过）。
 - [ ] 构建、备份并安装 AD.app，完成只读原生验收（验证标准：签名校验通过；Project 作用域入口和当前项目目标可见；不对真实配置执行 apply）。
 - [ ] 填写结果回顾并将本计划 MD + 冻结 HTML 一起归档到 `docs/exec-plans/completed/`。
@@ -56,6 +56,8 @@
   证据：`AgentConversionDialog.runPreview` 仅传 installationId；`ClaudeToCodexRoute.preview` 已校验两个 project context 一致。
 - 发现：Settings Port 在 Project 上下文会同时返回 user 与 project snapshots；当前 route 对全部 scope 循环，因此简单给 UI 加 `projectPath` 会同时生成 User 和 Project 变更。
   证据：Claude/Codex `SettingsPort.inspect` 都先追加 User snapshot，再按 `projectPath` 追加 Project snapshot；`build_settings_route` 当前遍历所有 `source_groups`。
+- 发现：仓库当前并非全量 rustfmt clean；`cargo fmt --check` 会报告多个与本任务无关的既有文件，而本次修改的两个 Rust 文件没有格式差异。
+  证据：全量检查仅列出 `types.rs`、旧 commands、fs 和 `lib.rs` 等未修改文件，未列出 `conversion_route.rs` 或 `conversion_execution.rs`。
 
 ## 决策日志
 

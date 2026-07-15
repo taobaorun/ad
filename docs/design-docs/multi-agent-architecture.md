@@ -197,6 +197,7 @@ Claude Code → Codex 转换由独立 `ConversionRoute` 协调 source adapter �
 
 ```text
 source context
+  → derive one requested scope (user or project)
   → immutable source snapshots
   → artifact-level mapping
   → target snapshots + conflict analysis
@@ -205,6 +206,8 @@ source context
   → shared execution engine
   → receipt / rollback
 ```
+
+一次转换只处理一个作用域。`AgentContext.projectPath` 为空时 route 只处理 user resources；存在时只处理该 canonical project 的 project resources。Project Settings 将 Claude `.claude/settings.json` 与 `.claude/settings.local.json` 按 shared → local 优先级合并，再写入同项目 `.codex/config.toml`。另一个 scope 的 artifact 不进入预览、read-set 或 write-set，避免 Project 转换隐式修改用户配置。
 
 每个转换项必须标记：
 

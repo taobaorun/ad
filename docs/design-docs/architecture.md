@@ -63,7 +63,7 @@ Capability 由 `SettingsPort`、`SkillsPort`、`PluginsPort`、`ProcessPort` 和
 
 ## Claude Code → Codex 转换
 
-转换是内置 artifact route：Claude source snapshots 始终只读；每个 artifact 标记 `exact`、`mapped`、`requires_input`、`unsupported`、`conflict` 或 `unchanged`。只有无冲突目标进入 confirmation-required plan，目标写入复用共享执行引擎。转换不会删除或改写 Claude 配置，Codex 目标可通过 receipt 回滚。
+转换是内置 artifact route：Claude source snapshots 始终只读；每个 artifact 标记 `exact`、`mapped`、`requires_input`、`unsupported`、`conflict` 或 `unchanged`。每次转换只处理 User 或当前 canonical Project 一个作用域；Project 模式按 shared → local 合并 Claude 项目层，只生成同项目 `.codex/config.toml` 目标，不把 User resource 带入预览或计划。只有无冲突目标进入 confirmation-required plan，目标写入复用共享执行引擎。转换不会删除或改写 Claude 配置，Codex 目标可通过 receipt 回滚。
 
 ## 双窗口与前端状态
 

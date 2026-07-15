@@ -93,11 +93,13 @@ adapter allowlist 中的配置对象，例如 settings、instructions、skills�
 
 ### 5. Claude Code → Codex
 
-1. 分别快照 source 和 target setup。
-2. 按 artifact 分类转换，不把所有内容压成一个 TOML 文档。
-3. 每项标记 exact、mapped、requires_input、unsupported、conflict 或 unchanged。
-4. source resource 只能进入 read-set，永远不能进入 write-set。
-5. 用户确认后通过相同 ExecutionEngine 写入 Codex target；Claude setup 保持不动。
+1. 用户明确选择 User 或 Project；每次只转换一个 scope。
+2. User 只处理用户配置；Project 绑定当前项目，将 Claude shared/local 项目层转换到同项目 `.codex/config.toml`，不改动 Claude/Codex 用户配置。
+3. 分别快照所选 scope 的 source 和 target setup。
+4. 按 artifact 分类转换，不把所有内容压成一个 TOML 文档。
+5. 每项标记 exact、mapped、requires_input、unsupported、conflict 或 unchanged。
+6. source resource 只能进入 read-set，永远不能进入 write-set。
+7. 用户确认后通过相同 ExecutionEngine 写入 Codex target；Claude setup 保持不动。
 
 ## Capability Parity
 
@@ -110,7 +112,7 @@ adapter allowlist 中的配置对象，例如 settings、instructions、skills�
 | Process detection | P0 | P0 | 不误报另一个 Agent 或 config instance |
 | Terminal launch | P0 | P0 | 正确 launcher、env、cwd 和 terminal backend |
 | Conversion source | P0 | 不适用 | Claude setup 只读 |
-| Conversion target | 不适用 | P0 | preview、conflict、backup、apply、rollback |
+| Conversion target | 不适用 | P0 | user/project 单作用域隔离、preview、conflict、backup、apply、rollback |
 
 “对等”表示用户任务和安全保证对等，不表示字段或底层文件结构相同。真实平台缺少某项 operation 时必须报告 degraded/unavailable，不能伪造成功。
 
@@ -119,6 +121,7 @@ adapter allowlist 中的配置对象，例如 settings、instructions、skills�
 - 主窗口提供 Agent installation selector；多个 installation 必须可区分。
 - capability descriptor 控制入口、操作状态和 disabled reason。
 - profile、project state、history 和 receipt 按 AgentContext 隔离。
+- conversion 允许明确选择 User / Project；Project 绑定当前选中项目并显示路径，切换 scope 或项目后旧预览失效。
 - conversion preview 展示 artifact、目标位置、差异、disposition 和所需用户输入。
 - 所有用户文案进入 zh/en i18n；后端错误 message 保持英文，前端按 error code 映射可操作提示。
 - Agent-specific editor 只能在集中 registry 注册，通用组件和 store 不散布 agentId 业务分支。
@@ -156,6 +159,7 @@ pnpm build
 - 通过 `AD_HOME=<tempdir>` 隔离 Claude/Codex fixtures；
 - backup-before-write、fault injection、compensation 和 rollback；
 - source unchanged、target changed、plan expiry/replay；
+- Project conversion 的 artifact、read-set、write-set、真实写盘和 rollback 均不跨入 user scope；
 - sensitive/runtime file exclusion。
 
 ### TypeScript and UI tests
