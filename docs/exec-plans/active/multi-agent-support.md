@@ -68,6 +68,10 @@
 - [x] (2026-07-15) 建立 backend-owned PlanStore 与 settings preview IPC；IPC 仅返回 MutationPlanView，真实 mutation content/read-set 留在后端，执行侧 claim 只接受 PlanId
   - [x] plan 过期、未知 id、重复消费均返回结构化错误；claim 前同时重新校验 read-set 与 write-set digest，冲突后 plan 立即失效
   - [x] 新增 6 个 PlanStore 单元测试，并通过 36 个 Agent 定向回归测试与 cargo check；真正备份、写入和 receipt 留在下一 ExecutionEngine 切片
+- [x] (2026-07-15) 实现共享 ExecutionEngine；adapter capability port 通过 allowlist resolver 将 ResourceRef 解析为后端物理目标，IPC apply 只接收 PlanId
+  - [x] 所有目标在写入前完成 file backup 与 manifest 持久化；每个文件使用 atomic write，Skill symlink 使用临时 sibling + rename
+  - [x] 第二次写失败时逆序补偿；补偿成功返回 compensated receipt，补偿失败返回 partial_failure receipt；receipt 持久化到 AD history
+  - [x] 5 个 execution 测试覆盖 complete、backup failure、second write failure、compensation failure 和 symlink apply；43 个 Agent 测试、前端契约测试、typecheck、cargo check 通过
 - [ ] (待开始) 实现 Codex adapter 的 discovery、配置、Skills、Plugins、进程探测和终端启动
 - [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 TOML preview contract、model 映射和 unsupported 字段报告，目标写入/回滚仍待实现
 - [ ] (进行中) 接入 Agent-aware store、UI、i18n 和 IPC；当前已完成 Agent store、selector、双语文案、discovery IPC 与按 Agent profile 加载/保存
@@ -112,6 +116,10 @@
 
 - 决策：Claude Plugins Port 不声明 Install operation。
   理由：现有 AD 只读取插件并管理项目级 enabledPlugins override，不具备插件安装行为；capability descriptor 必须来自真实可调用能力。
+  日期/作者：2026-07-15 / Codex
+
+- 决策：物理 resource path 由 capability port 的内置 allowlist resolver 提供，MutationPlan、PlanView 和 apply IPC 均不携带可由调用方指定的路径。
+  理由：ExecutionEngine 需要访问真实目标完成 digest、backup 和 write，但路径解释仍必须属于 Agent-specific port，避免通用层拼接 Claude/Codex 路径或信任前端输入。
   日期/作者：2026-07-15 / Codex
 
 ## 上下文和方向

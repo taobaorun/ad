@@ -57,12 +57,12 @@ Claude ports + Codex ports + ExecutionEngine
 
 - [x] Task 7: Claude capability ports over existing behavior
 - [x] Task 8: Backend-owned plan store and digest validation
-- [ ] Task 9: Backup manifest, atomic mutations, receipts and compensation
+- [x] Task 9: Backup manifest, atomic mutations, receipts and compensation
 
 ### Checkpoint C
 
 - [x] Claude existing behavior has no regression
-- [ ] Fault-injection tests prove conflict and partial-failure semantics
+- [x] Fault-injection tests prove conflict and partial-failure semantics
 
 ### Phase 4: Codex Parity
 

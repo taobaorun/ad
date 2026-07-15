@@ -60,7 +60,7 @@
   - Files: `src-tauri/src/agents/plan_store.rs`, `src-tauri/src/agents/operations.rs`, `src-tauri/src/commands/agents.rs`
   - Dependencies: Tasks 2, 7
 
-- [ ] Task 9: Implement shared safe execution
+- [x] Task 9: Implement shared safe execution
   - Acceptance: all backups complete before writes; atomic writes create receipts; failures compensate in reverse order and report partial outcomes.
   - Verify: AD_HOME fault-injection integration tests.
   - Files: `src-tauri/src/agents/execution.rs`, `src-tauri/src/fs/atomic.rs`, `src-tauri/tests/agent_execution.rs`
