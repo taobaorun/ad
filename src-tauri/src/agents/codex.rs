@@ -1,14 +1,19 @@
 use crate::fs::paths::codex_dir;
 
+use super::codex_plugins::CodexPluginsPort;
 use super::codex_ports::CodexSettingsPort;
+use super::codex_skills::CodexSkillsPort;
 use super::{
-    AgentAdapter, AgentDefinition, DiscoveryEvidence, InstallationCandidate, SettingsPort,
+    AgentAdapter, AgentDefinition, DiscoveryEvidence, InstallationCandidate, PluginsPort,
+    SettingsPort, SkillsPort,
 };
 
 #[derive(Debug, Default)]
 pub struct CodexAdapter;
 
 static SETTINGS_PORT: CodexSettingsPort = CodexSettingsPort;
+static SKILLS_PORT: CodexSkillsPort = CodexSkillsPort;
+static PLUGINS_PORT: CodexPluginsPort = CodexPluginsPort;
 
 impl AgentAdapter for CodexAdapter {
     fn definition(&self) -> &AgentDefinition {
@@ -26,6 +31,14 @@ impl AgentAdapter for CodexAdapter {
 
     fn settings(&self) -> Option<&dyn SettingsPort> {
         Some(&SETTINGS_PORT)
+    }
+
+    fn skills(&self) -> Option<&dyn SkillsPort> {
+        Some(&SKILLS_PORT)
+    }
+
+    fn plugins(&self) -> Option<&dyn PluginsPort> {
+        Some(&PLUGINS_PORT)
     }
 }
 
@@ -243,5 +256,160 @@ mod tests {
             std::fs::read_to_string(codex_home.join("config.toml")).unwrap(),
             "model = \"user\"\n"
         );
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn skills_port_lists_scopes_and_plans_without_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let codex_home = temp.path().join(".codex");
+        let user_skill = temp.path().join(".agents/skills/user-demo");
+        let project = temp.path().join("project");
+        let project_skill = project.join(".agents/skills/project-demo");
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::create_dir_all(&user_skill).unwrap();
+        std::fs::create_dir_all(&project_skill).unwrap();
+        std::fs::write(codex_home.join("config.toml"), "model = \"gpt-5.6\"\n").unwrap();
+        std::fs::write(user_skill.join("SKILL.md"), "---\nname: user-demo\n---\n").unwrap();
+        std::fs::write(
+            project_skill.join("SKILL.md"),
+            "---\nname: project-demo\n---\n",
+        )
+        .unwrap();
+        std::env::set_var("AD_HOME", temp.path());
+        std::env::remove_var("CODEX_HOME");
+        let registry = crate::agents::builtin_registry();
+        let installation = registry
+            .discover()
+            .into_iter()
+            .find(|item| item.agent_id.as_str() == "codex")
+            .unwrap();
+        let context = crate::agents::AgentContext {
+            installation_id: installation.id,
+            project_path: Some(
+                std::fs::canonicalize(&project)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        };
+        let port = registry.adapter("codex").unwrap().skills().unwrap();
+
+        let snapshots = port.list(&context).unwrap();
+        assert!(snapshots
+            .iter()
+            .any(|item| item.resource.logical_id == "user-demo"));
+        let project_demo = snapshots
+            .iter()
+            .find(|item| item.resource.logical_id == "project-demo")
+            .unwrap();
+        let plan = port
+            .plan_set_enabled(&context, &project_demo.resource, false)
+            .unwrap();
+
+        assert_eq!(
+            plan.mutations[0].resource.kind,
+            crate::agents::ResourceKind::Settings
+        );
+        assert_eq!(
+            std::fs::read_to_string(codex_home.join("config.toml")).unwrap(),
+            "model = \"gpt-5.6\"\n"
+        );
+        let plan_id = plan.id.clone();
+        let store = crate::agents::PlanStore::default();
+        store.insert(plan).unwrap();
+        crate::agents::ExecutionEngine
+            .apply(&plan_id, &store)
+            .unwrap();
+        let config = std::fs::read_to_string(codex_home.join("config.toml")).unwrap();
+        assert!(config.contains("[[skills.config]]"));
+        assert!(config.contains("enabled = false"));
+
+        let source = temp.path().join("source/install-demo");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("SKILL.md"), "---\nname: install-demo\n---\n").unwrap();
+        let install = port
+            .plan_install(
+                &context,
+                crate::agents::CollectionInstallRequest {
+                    logical_id: "install-demo".into(),
+                    source: serde_json::json!({"path": source}),
+                },
+            )
+            .unwrap();
+        let install_id = install.id.clone();
+        let install_store = crate::agents::PlanStore::default();
+        install_store.insert(install).unwrap();
+        crate::agents::ExecutionEngine
+            .apply(&install_id, &install_store)
+            .unwrap();
+        assert!(project.join(".agents/skills/install-demo").is_symlink());
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn plugins_port_lists_and_plans_toggle_but_reports_install_limitation() {
+        let temp = tempfile::tempdir().unwrap();
+        let codex_home = temp.path().join(".codex");
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::write(
+            codex_home.join("config.toml"),
+            "future = 1\n\n[plugins.\"demo@market\"]\nenabled = true\n",
+        )
+        .unwrap();
+        std::env::set_var("AD_HOME", temp.path());
+        std::env::remove_var("CODEX_HOME");
+        let registry = crate::agents::builtin_registry();
+        let installation = registry
+            .discover()
+            .into_iter()
+            .find(|item| item.agent_id.as_str() == "codex")
+            .unwrap();
+        let context = crate::agents::AgentContext {
+            installation_id: installation.id,
+            project_path: None,
+        };
+        let port = registry.adapter("codex").unwrap().plugins().unwrap();
+
+        let plugin = port.list(&context).unwrap().remove(0);
+        let plan = port
+            .plan_set_enabled(&context, &plugin.resource, false)
+            .unwrap();
+        let install_error = port
+            .plan_install(
+                &context,
+                crate::agents::CollectionInstallRequest {
+                    logical_id: "demo@market".into(),
+                    source: serde_json::json!({}),
+                },
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            plan.mutations[0].resource.kind,
+            crate::agents::ResourceKind::Plugins
+        );
+        assert_eq!(
+            install_error.code,
+            crate::agents::AgentErrorCode::Unsupported
+        );
+        assert_eq!(
+            port.availability(),
+            crate::agents::CapabilityAvailability::Degraded
+        );
+        assert!(!port.limitations().is_empty());
+        let plan_id = plan.id.clone();
+        let store = crate::agents::PlanStore::default();
+        store.insert(plan).unwrap();
+        crate::agents::ExecutionEngine
+            .apply(&plan_id, &store)
+            .unwrap();
+        let updated = std::fs::read_to_string(codex_home.join("config.toml")).unwrap();
+        let parsed = updated.parse::<toml::Value>().unwrap();
+        assert_eq!(
+            parsed["plugins"]["demo@market"]["enabled"].as_bool(),
+            Some(false)
+        );
+        assert_eq!(parsed["future"].as_integer(), Some(1));
     }
 }

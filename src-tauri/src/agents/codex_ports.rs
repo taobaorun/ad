@@ -183,7 +183,7 @@ fn push_snapshot(
     Ok(())
 }
 
-fn resolve_codex_home(context: &AgentContext) -> Result<PathBuf, AgentError> {
+pub(super) fn resolve_codex_home(context: &AgentContext) -> Result<PathBuf, AgentError> {
     discover_codex_candidates()
         .into_iter()
         .find(|candidate| candidate.installation().id == context.installation_id)
@@ -198,7 +198,7 @@ fn resolve_codex_home(context: &AgentContext) -> Result<PathBuf, AgentError> {
         })
 }
 
-fn validate_project_path(
+pub(super) fn validate_project_path(
     context: &AgentContext,
     project_path: &str,
 ) -> Result<PathBuf, AgentError> {
@@ -259,7 +259,7 @@ fn resolve_settings_path(
     }
 }
 
-fn read_optional(
+pub(super) fn read_optional(
     path: &PathBuf,
     context: &AgentContext,
     resource: Option<ResourceRef>,
@@ -276,7 +276,7 @@ fn read_optional(
     }
 }
 
-fn agent_error(
+pub(super) fn agent_error(
     code: AgentErrorCode,
     context: &AgentContext,
     resource: Option<ResourceRef>,
