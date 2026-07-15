@@ -160,4 +160,16 @@ describe('AgentConversionButton', () => {
       );
     });
   });
+
+  it('locks scope and installations while a preview is in flight', () => {
+    previewClaudeToCodexRoute.mockReturnValue(new Promise(() => {}));
+    render(<AgentConversionButton />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Convert configuration' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview conversion' }));
+
+    expect(screen.getByRole('combobox', { name: 'Conversion scope' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Claude Code source' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Codex target' })).toBeDisabled();
+  });
 });

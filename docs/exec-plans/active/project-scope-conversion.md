@@ -58,6 +58,8 @@
   证据：Claude/Codex `SettingsPort.inspect` 都先追加 User snapshot，再按 `projectPath` 追加 Project snapshot；`build_settings_route` 当前遍历所有 `source_groups`。
 - 发现：仓库当前并非全量 rustfmt clean；`cargo fmt --check` 会报告多个与本任务无关的既有文件，而本次修改的两个 Rust 文件没有格式差异。
   证据：全量检查仅列出 `types.rs`、旧 commands、fs 和 `lib.rs` 等未修改文件，未列出 `conversion_route.rs` 或 `conversion_execution.rs`。
+- 发现：首次代码审查发现 preview in-flight 时 scope 和 installation selector 仍可修改，旧请求返回后可能重新显示旧上下文 plan。
+  证据：新增前端回归测试在三个 selector 缺少 `disabled` 时失败；busy 锁定后通过。
 
 ## 决策日志
 

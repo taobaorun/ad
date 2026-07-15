@@ -226,6 +226,7 @@ function AgentConversionDialog({
         <select
           id="conversion-scope"
           value={scope}
+          disabled={busy}
           onChange={(event) => {
             setScope(event.target.value as ConversionScope);
             resetResult();
@@ -255,6 +256,7 @@ function AgentConversionDialog({
           label={t('agentConversion.source')}
           installations={sourceInstallations}
           value={sourceId}
+          disabled={busy}
           onChange={(id) => {
             setSourceId(id);
             resetResult();
@@ -265,6 +267,7 @@ function AgentConversionDialog({
           label={t('agentConversion.target')}
           installations={targetInstallations}
           value={targetId}
+          disabled={busy}
           onChange={(id) => {
             setTargetId(id);
             resetResult();
@@ -331,6 +334,7 @@ interface InstallationSelectProps {
   label: string;
   installations: AgentInstallation[];
   value: AgentInstallation['id'] | null;
+  disabled: boolean;
   onChange: (id: AgentInstallation['id']) => void;
 }
 
@@ -339,6 +343,7 @@ function InstallationSelect({
   label,
   installations,
   value,
+  disabled,
   onChange,
 }: InstallationSelectProps) {
   return (
@@ -349,6 +354,7 @@ function InstallationSelect({
       <select
         id={id}
         value={value ?? ''}
+        disabled={disabled}
         onChange={(event) => {
           const selected = installations.find(
             (installation) => installation.id === event.target.value,
