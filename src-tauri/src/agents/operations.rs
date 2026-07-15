@@ -149,6 +149,45 @@ pub struct MutationPlan {
     pub expires_at: DateTime<Utc>,
 }
 
+/// Frontend-safe summary of one planned resource change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MutationPlanChangeView {
+    pub resource: ResourceRef,
+    pub kind: MutationKind,
+}
+
+/// Public view of a backend-owned plan. Mutation content and preconditions stay private.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MutationPlanView {
+    pub id: PlanId,
+    pub agent_id: AgentId,
+    pub context: AgentContext,
+    #[serde(default)]
+    pub changes: Vec<MutationPlanChangeView>,
+    pub expires_at: DateTime<Utc>,
+}
+
+impl From<&MutationPlan> for MutationPlanView {
+    fn from(plan: &MutationPlan) -> Self {
+        Self {
+            id: plan.id.clone(),
+            agent_id: plan.agent_id.clone(),
+            context: plan.context.clone(),
+            changes: plan
+                .mutations
+                .iter()
+                .map(|mutation| MutationPlanChangeView {
+                    resource: mutation.resource.clone(),
+                    kind: mutation.kind,
+                })
+                .collect(),
+            expires_at: plan.expires_at,
+        }
+    }
+}
+
 impl MutationPlan {
     pub fn validate(&self) -> Result<(), AgentError> {
         for mutation in &self.mutations {

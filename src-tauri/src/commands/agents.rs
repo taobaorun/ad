@@ -1,8 +1,10 @@
 use crate::agents::{
-    builtin_registry, convert_claude_profile_to_codex, AgentContext, AgentInstallation,
-    AgentMetadata, ConversionPreview, InstallationId,
+    builtin_registry, convert_claude_profile_to_codex, AgentContext, AgentError, AgentErrorCode,
+    AgentInstallation, AgentMetadata, ConversionPreview, InstallationId, MutationPlanView,
+    PlanStore, SettingsEdit,
 };
 use crate::models::ProfileFile;
+use tauri::State;
 
 use super::CmdResult;
 
@@ -61,6 +63,48 @@ pub fn preview_claude_to_codex(profile: ProfileFile) -> CmdResult<ConversionPrev
     Ok(convert_claude_profile_to_codex(&profile))
 }
 
+#[tauri::command]
+pub fn preview_agent_settings_edit(
+    context: AgentContext,
+    edit: SettingsEdit,
+    plans: State<'_, PlanStore>,
+) -> Result<MutationPlanView, AgentError> {
+    preview_agent_settings_edit_inner(context, edit, plans.inner())
+}
+
+fn preview_agent_settings_edit_inner(
+    context: AgentContext,
+    edit: SettingsEdit,
+    plans: &PlanStore,
+) -> Result<MutationPlanView, AgentError> {
+    let registry = builtin_registry();
+    let installation = registry
+        .discover()
+        .into_iter()
+        .find(|installation| installation.id == context.installation_id)
+        .ok_or_else(|| context_error(&context, "Unknown Agent installation"))?;
+    let adapter = registry
+        .adapter(installation.agent_id.as_str())
+        .ok_or_else(|| context_error(&context, "Unknown Agent adapter"))?;
+    let settings = adapter
+        .settings()
+        .ok_or_else(|| context_error(&context, "Agent does not support settings edits"))?;
+    let plan = settings.plan_edit(&context, edit)?;
+    plans.insert(plan)
+}
+
+fn context_error(context: &AgentContext, message: impl Into<String>) -> AgentError {
+    AgentError {
+        code: AgentErrorCode::Unsupported,
+        message: message.into(),
+        agent_id: None,
+        installation_id: Some(context.installation_id.clone()),
+        resource: None,
+        retryable: false,
+        details: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,5 +152,67 @@ mod tests {
             None => std::env::remove_var("CODEX_HOME"),
         }
         assert_eq!(context.project_path.as_deref(), Some(expected_project.as_str()));
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn settings_preview_returns_a_stored_plan_view_without_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let claude_home = temp.path().join(".claude");
+        std::fs::create_dir_all(&claude_home).unwrap();
+        let original = br#"{"model":"claude-opus-4-7"}"#;
+        std::fs::write(claude_home.join("settings.json"), original).unwrap();
+        let previous_home = std::env::var("AD_HOME").ok();
+        let previous_codex_home = std::env::var("CODEX_HOME").ok();
+        std::env::set_var("AD_HOME", temp.path());
+        std::env::remove_var("CODEX_HOME");
+
+        let registry = builtin_registry();
+        let installation = registry
+            .discover()
+            .into_iter()
+            .find(|item| item.agent_id.as_str() == "claude-code")
+            .unwrap();
+        let context = AgentContext {
+            installation_id: installation.id,
+            project_path: None,
+        };
+        let resource = registry
+            .adapter("claude-code")
+            .unwrap()
+            .settings()
+            .unwrap()
+            .inspect(&context)
+            .unwrap()
+            .remove(0)
+            .resource;
+        let store = PlanStore::default();
+
+        let view = preview_agent_settings_edit_inner(
+            context,
+            SettingsEdit {
+                resource,
+                media_type: "application/json".into(),
+                content: serde_json::json!({"model": "claude-sonnet-4-5"}),
+            },
+            &store,
+        )
+        .unwrap();
+
+        assert_eq!(view.agent_id.as_str(), "claude-code");
+        assert_eq!(view.changes.len(), 1);
+        assert_eq!(
+            std::fs::read(claude_home.join("settings.json")).unwrap(),
+            original
+        );
+
+        match previous_home {
+            Some(value) => std::env::set_var("AD_HOME", value),
+            None => std::env::remove_var("AD_HOME"),
+        }
+        match previous_codex_home {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
     }
 }

@@ -5,6 +5,7 @@ mod codex;
 mod conversion;
 mod discovery;
 mod operations;
+mod plan_store;
 mod registry;
 mod types;
 
@@ -14,6 +15,7 @@ pub use codex::CodexAdapter;
 pub use conversion::convert_claude_profile_to_codex;
 pub use discovery::*;
 pub use operations::*;
+pub use plan_store::*;
 pub use registry::*;
 pub use types::*;
 

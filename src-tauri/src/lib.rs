@@ -40,6 +40,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(agents::PlanStore::default())
         .manage(commands::shortcut::ShortcutState::default())
         .setup(|app| {
             // First-run: relocate AD data from ~/.claude/ to ~/.ad/ if needed.
@@ -137,6 +138,7 @@ pub fn run() {
             commands::agents::discover_agents,
             commands::agents::resolve_agent_context,
             commands::agents::preview_claude_to_codex,
+            commands::agents::preview_agent_settings_edit,
             commands::history::read_history,
             commands::history::restore_backup,
             commands::importers::import_from_file,
