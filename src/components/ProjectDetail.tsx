@@ -13,7 +13,7 @@
  * intentionally not reachable from this pane any more.
  */
 
-import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useUiState } from '@/store/ui';
 import { useProjects } from '@/store/projects';
@@ -22,17 +22,14 @@ import { useAgents } from '@/store/agents';
 import { useUiSettings } from '@/store/uiSettings';
 import { tauri } from '@/lib/tauri';
 import { Trash2, Repeat, SquareTerminal, X as XIcon } from 'lucide-react';
+import { AgentContextSchema, type CapabilityDescriptor } from '@/lib/agentTypes';
 import type { Project, ProjectStatus } from '@/lib/projectTypes';
 import type { ProfileFile } from '@/lib/profileSchema';
 import { SwitchTemplateDialog } from './SwitchTemplateDialog';
-import { ProjectSkills } from './ProjectSkills';
+import { AgentCollectionPanel } from './AgentCollectionPanel';
 
-// ProjectConfigEditor pulls in CodeMirror + the layered settings editor;
-// lazy-loading it keeps the App entry chunk small. The Suspense fallback is
-// an unlabeled muted box — a short flash is better than text that hints at
-// trouble.
-const ProjectConfigEditor = lazy(() =>
-  import('./ProjectConfigEditor').then((m) => ({ default: m.ProjectConfigEditor })),
+const AgentSettingsEditor = lazy(() =>
+  import('./AgentSettingsEditor').then((module) => ({ default: module.AgentSettingsEditor })),
 );
 
 function EditorSkeleton() {
@@ -79,7 +76,23 @@ function Detail({ project }: { project: Project }) {
   const launchingRef = useRef(false);
   const terminal = useUiSettings((s) => s.terminal);
   const activeContext = useAgents((s) => s.activeContext);
+  const activeCapabilities = useAgents((s) => s.activeCapabilities);
   const [activeTab, setActiveTab] = useState<'settings' | 'skills'>('settings');
+
+  const projectContext = useMemo(
+    () =>
+      activeContext
+        ? AgentContextSchema.parse({
+            installationId: activeContext.installationId,
+            projectPath: project.path,
+          })
+        : null,
+    [activeContext, project.path],
+  );
+  const settingsCapability = findCapability(activeCapabilities, 'settings');
+  const launchCapability = findCapability(activeCapabilities, 'terminal_launch');
+  const settingsAvailable = capabilityAllows(settingsCapability, 'inspect', 'project');
+  const launchSupported = capabilityAllows(launchCapability, 'launch', 'project');
 
   useEffect(() => {
     void (async () => {
@@ -92,19 +105,19 @@ function Detail({ project }: { project: Project }) {
 
   const customMissing = terminal.backend === 'custom' && terminal.customCommand.trim() === '';
   const backendLabel = t(`terminal.backend.${terminal.backend}`);
-  const launchUnavailable = customMissing || activeContext === null;
+  const launchUnavailable = customMissing || projectContext === null || !launchSupported;
   const openTitle = launchUnavailable
     ? t('terminal.openTooltipDisabled')
     : t('terminal.openTooltip', { backend: backendLabel, path: project.path });
 
   async function openTerminal() {
-    if (launchingRef.current || launchUnavailable || !activeContext) return;
+    if (launchingRef.current || launchUnavailable || !projectContext) return;
     launchingRef.current = true;
     setLaunching(true);
     setLaunchError(null);
     try {
       await tauri.openInTerminal({
-        context: { ...activeContext, projectPath: project.path },
+        context: projectContext,
         backend: terminal.backend,
         customTemplate: terminal.customCommand || undefined,
       });
@@ -147,9 +160,6 @@ function Detail({ project }: { project: Project }) {
                       ? (status.gitDirty ? t('detail.gitDirty') : t('detail.gitClean'))
                       : t('detail.notARepo')}
                   </StatusPill>
-                  {status.claudeDirExists && (
-                    <StatusPill ok>{t('detail.claudeDirPresent')}</StatusPill>
-                  )}
                   {status.isGitRepo && status.gitignoreExcludesSettingsLocal === false && (
                     <StatusPill warn>{t('detail.settingsLocalNotIgnored')}</StatusPill>
                   )}
@@ -245,10 +255,10 @@ function Detail({ project }: { project: Project }) {
       >
         <div className="flex gap-0" style={{ borderBottom: '1px solid var(--ds-line)' }}>
           <TabButton active={activeTab === 'settings'} onClick={() => setActiveTab('settings')}>
-            Settings
+            {t('agentWorkspace.tabs.settings')}
           </TabButton>
           <TabButton active={activeTab === 'skills'} onClick={() => setActiveTab('skills')}>
-            Skills
+            {t('agentWorkspace.tabs.resources')}
           </TabButton>
         </div>
       </div>
@@ -258,15 +268,25 @@ function Detail({ project }: { project: Project }) {
         className="flex-1 min-h-0"
         style={{ width: '100%', maxWidth: 1400, margin: '0 auto', padding: '0 40px 40px' }}
       >
-        {activeTab === 'settings' ? (
+        {activeTab === 'settings' && projectContext && settingsAvailable ? (
           <div className="h-full pt-5">
             <Suspense fallback={<EditorSkeleton />}>
-              <ProjectConfigEditor key={editorReloadKey} projectPath={project.path} />
+              <AgentSettingsEditor key={editorReloadKey} context={projectContext} />
             </Suspense>
+          </div>
+        ) : activeTab === 'settings' ? (
+          <div role="status" className="flex h-full items-center justify-center text-sm" style={{ color: 'var(--ds-fg-4)' }}>
+            {t('agentWorkspace.settingsUnavailable')}
           </div>
         ) : (
           <div className="h-full pt-2" style={{ border: '0.5px solid var(--ds-line)', borderTop: 'none', borderRadius: '0 0 8px 8px' }}>
-            <ProjectSkills projectPath={project.path} />
+            {projectContext ? (
+              <AgentCollectionPanel context={projectContext} capabilities={activeCapabilities} />
+            ) : (
+              <div role="status" className="flex h-full items-center justify-center text-sm" style={{ color: 'var(--ds-fg-4)' }}>
+                {t('agentWorkspace.resourcesUnavailable')}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -282,6 +302,26 @@ function Detail({ project }: { project: Project }) {
         }}
       />
     </div>
+  );
+}
+
+function findCapability(
+  capabilities: CapabilityDescriptor[],
+  kind: CapabilityDescriptor['kind'],
+): CapabilityDescriptor | undefined {
+  return capabilities.find((capability) => capability.kind === kind);
+}
+
+function capabilityAllows(
+  capability: CapabilityDescriptor | undefined,
+  operation: CapabilityDescriptor['operations'][number],
+  scope: CapabilityDescriptor['scopes'][number],
+): boolean {
+  return (
+    capability !== undefined &&
+    capability.availability !== 'unavailable' &&
+    capability.operations.includes(operation) &&
+    capability.scopes.includes(scope)
   );
 }
 

@@ -2,17 +2,21 @@ export function Toggle({
   on,
   onChange,
   disabled,
+  ariaLabel,
 }: {
   on: boolean;
   onChange: () => void;
   disabled?: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
-      onClick={disabled ? undefined : onChange}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={onChange}
       className="relative h-[20px] w-[36px] cursor-pointer rounded-full"
       style={{
         background: on ? 'rgba(180,180,190,0.7)' : 'rgba(120,120,128,0.32)',
