@@ -20,9 +20,22 @@ import {
   AgentInstallationSchema,
   AgentMetadataSchema,
   ConversionPreviewSchema,
+  MutationPlanViewSchema,
+  OperationReceiptSchema,
+  type AgentContext,
   type ConversionPreview,
   type InstallationId,
+  type MutationPlanView,
+  type OperationReceipt,
+  type PlanId,
+  type ResourceRef,
 } from './agentTypes';
+
+export interface AgentSettingsEdit {
+  resource: ResourceRef;
+  mediaType: string;
+  content: unknown;
+}
 
 export interface ClaudeProcess {
   pid: number;
@@ -53,6 +66,15 @@ export const tauri = {
     ),
   previewClaudeToCodex: async (profile: ProfileFile): Promise<ConversionPreview> =>
     ConversionPreviewSchema.parse(await invoke<unknown>('preview_claude_to_codex', { profile })),
+  previewAgentSettingsEdit: async (
+    context: AgentContext,
+    edit: AgentSettingsEdit,
+  ): Promise<MutationPlanView> =>
+    MutationPlanViewSchema.parse(
+      await invoke<unknown>('preview_agent_settings_edit', { context, edit }),
+    ),
+  applyAgentPlan: async (planId: PlanId): Promise<OperationReceipt> =>
+    OperationReceiptSchema.parse(await invoke<unknown>('apply_agent_plan', { planId })),
 
   listProfiles: () => invoke<ProfileFile[]>('list_profiles'),
   listAgentProfiles: (agentId: string) =>

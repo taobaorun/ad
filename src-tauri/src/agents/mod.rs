@@ -4,6 +4,10 @@ mod claude_ports;
 mod codex;
 mod conversion;
 mod discovery;
+mod execution;
+mod execution_fs;
+#[cfg(test)]
+mod execution_tests;
 mod operations;
 mod plan_store;
 mod registry;
@@ -14,6 +18,7 @@ pub use claude::ClaudeAdapter;
 pub use codex::CodexAdapter;
 pub use conversion::convert_claude_profile_to_codex;
 pub use discovery::*;
+pub use execution::*;
 pub use operations::*;
 pub use plan_store::*;
 pub use registry::*;

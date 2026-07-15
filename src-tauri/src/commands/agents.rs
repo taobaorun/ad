@@ -1,7 +1,7 @@
 use crate::agents::{
     builtin_registry, convert_claude_profile_to_codex, AgentContext, AgentError, AgentErrorCode,
-    AgentInstallation, AgentMetadata, ConversionPreview, InstallationId, MutationPlanView,
-    PlanStore, SettingsEdit,
+    AgentInstallation, AgentMetadata, ConversionPreview, ExecutionEngine, InstallationId,
+    MutationPlanView, OperationReceipt, PlanId, PlanStore, SettingsEdit,
 };
 use crate::models::ProfileFile;
 use tauri::State;
@@ -70,6 +70,14 @@ pub fn preview_agent_settings_edit(
     plans: State<'_, PlanStore>,
 ) -> Result<MutationPlanView, AgentError> {
     preview_agent_settings_edit_inner(context, edit, plans.inner())
+}
+
+#[tauri::command]
+pub fn apply_agent_plan(
+    plan_id: PlanId,
+    plans: State<'_, PlanStore>,
+) -> Result<OperationReceipt, AgentError> {
+    ExecutionEngine.apply(&plan_id, plans.inner())
 }
 
 fn preview_agent_settings_edit_inner(

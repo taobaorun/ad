@@ -3,8 +3,8 @@ use std::collections::BTreeSet;
 use super::{
     launch_descriptor, plugins_descriptor, process_descriptor, settings_descriptor,
     skills_descriptor, AgentDefinition, AgentInstallation, AgentMetadata, Capability,
-    CapabilityDescriptor, CapabilityKind, InstallationCandidate, LaunchPort, PluginsPort,
-    ProcessPort, SettingsPort, SkillsPort,
+    CapabilityDescriptor, CapabilityKind, InstallationCandidate, LaunchPort, ManagedResourceTarget,
+    PluginsPort, ProcessPort, ResourceKind, ResourceRef, SettingsPort, SkillsPort,
 };
 
 /// Built-in adapter boundary. User-defined adapters are intentionally not
@@ -88,6 +88,63 @@ impl AdapterRegistry {
             .iter()
             .find(|adapter| adapter.definition().id.as_str() == agent_id)
             .map(|adapter| adapter.as_ref())
+    }
+
+    pub fn resolve_resource(
+        &self,
+        context: &super::AgentContext,
+        resource: &ResourceRef,
+    ) -> Result<ManagedResourceTarget, super::AgentError> {
+        let installation = self
+            .discover()
+            .into_iter()
+            .find(|installation| installation.id == context.installation_id)
+            .ok_or_else(|| registry_error(context, resource, "Unknown Agent installation"))?;
+        if resource.installation_id != installation.id {
+            return Err(registry_error(
+                context,
+                resource,
+                "Resource does not belong to the active Agent installation",
+            ));
+        }
+        let adapter = self
+            .adapter(installation.agent_id.as_str())
+            .ok_or_else(|| registry_error(context, resource, "Unknown Agent adapter"))?;
+        match resource.kind {
+            ResourceKind::Settings => adapter
+                .settings()
+                .ok_or_else(|| registry_error(context, resource, "Settings are unsupported"))?
+                .resolve(context, resource),
+            ResourceKind::Skills => adapter
+                .skills()
+                .ok_or_else(|| registry_error(context, resource, "Skills are unsupported"))?
+                .resolve(context, resource),
+            ResourceKind::Plugins => adapter
+                .plugins()
+                .ok_or_else(|| registry_error(context, resource, "Plugins are unsupported"))?
+                .resolve(context, resource),
+            _ => Err(registry_error(
+                context,
+                resource,
+                "Resource kind is not managed by this Agent adapter",
+            )),
+        }
+    }
+}
+
+fn registry_error(
+    context: &super::AgentContext,
+    resource: &ResourceRef,
+    message: impl Into<String>,
+) -> super::AgentError {
+    super::AgentError {
+        code: super::AgentErrorCode::Unsupported,
+        message: message.into(),
+        agent_id: None,
+        installation_id: Some(context.installation_id.clone()),
+        resource: Some(resource.clone()),
+        retryable: false,
+        details: None,
     }
 }
 
