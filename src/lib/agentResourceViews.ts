@@ -1,4 +1,4 @@
-import type { JsonValue, ResourceSnapshot } from '@/lib/agentTypes';
+import type { JsonValue, ResourceSnapshot, SettingsDocument } from '@/lib/agentTypes';
 
 export interface CollectionItemView {
   name: string;
@@ -6,7 +6,7 @@ export interface CollectionItemView {
   enabled: boolean;
 }
 
-export function editableResourceText(snapshot: ResourceSnapshot): string {
+export function editableResourceText(snapshot: SettingsDocument): string {
   if (snapshot.mediaType === 'application/toml' && typeof snapshot.content === 'string') {
     return snapshot.content;
   }
@@ -18,7 +18,7 @@ export function editableResourceText(snapshot: ResourceSnapshot): string {
     : JSON.stringify(snapshot.content, null, 2);
 }
 
-export function editedResourceContent(snapshot: ResourceSnapshot, text: string): JsonValue {
+export function editedResourceContent(snapshot: SettingsDocument, text: string): JsonValue {
   if (snapshot.mediaType === 'application/json') {
     return JSON.parse(text) as JsonValue;
   }

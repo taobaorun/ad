@@ -2,18 +2,18 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import i18n from '@/i18n';
-import { AgentContextSchema, ResourceSnapshotSchema } from '@/lib/agentTypes';
+import { AgentContextSchema, SettingsDocumentSchema } from '@/lib/agentTypes';
 import { AgentSettingsEditor } from '@/components/AgentSettingsEditor';
 
-const { inspectAgentSettings, previewAgentSettingsEdit, applyAgentPlan } = vi.hoisted(() => ({
-  inspectAgentSettings: vi.fn(),
+const { listAgentSettingsDocuments, previewAgentSettingsEdit, applyAgentPlan } = vi.hoisted(() => ({
+  listAgentSettingsDocuments: vi.fn(),
   previewAgentSettingsEdit: vi.fn(),
   applyAgentPlan: vi.fn(),
 }));
 
 vi.mock('@/lib/tauri', () => ({
   tauri: {
-    inspectAgentSettings,
+    listAgentSettingsDocuments,
     previewAgentSettingsEdit,
     applyAgentPlan,
     rollbackAgentReceipt: vi.fn(),
@@ -30,7 +30,7 @@ vi.mock('@/components/JsonEditor', () => ({
   ),
 }));
 
-const snapshot = ResourceSnapshotSchema.parse({
+const snapshot = SettingsDocumentSchema.parse({
   resource: {
     installationId: 'codex:default',
     projectPath: '/Users/test/project',
@@ -41,14 +41,14 @@ const snapshot = ResourceSnapshotSchema.parse({
   location: { path: '/Users/test/project/.codex/config.toml', origin: 'project' },
   mediaType: 'application/toml',
   content: 'model = "gpt-5.4"\n',
+  exists: true,
   digest: 'sha256:before',
-  observedAt: '2026-07-15T01:00:00Z',
 });
 
 describe('AgentSettingsEditor', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
-    inspectAgentSettings.mockReset().mockResolvedValue([snapshot]);
+    listAgentSettingsDocuments.mockReset().mockResolvedValue([snapshot]);
     previewAgentSettingsEdit.mockReset().mockResolvedValue({
       id: 'plan-1',
       agentId: 'codex',

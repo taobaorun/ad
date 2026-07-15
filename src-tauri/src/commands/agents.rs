@@ -2,8 +2,9 @@ use crate::agents::{
     builtin_registry, convert_claude_profile_to_codex, AgentContext, AgentError, AgentErrorCode,
     AgentId, AgentInstallation, AgentMetadata, CapabilityDescriptor, ClaudeToCodexRoute,
     CollectionInstallRequest, ConversionPreview, ConversionRoute, ConversionRoutePreview,
-    ExecutionEngine, InstallationId, MutationPlanView, OperationReceipt, PlanId, PlanStore,
-    ProcessObservation, ReceiptId, ResourceKind, ResourceRef, ResourceSnapshot, SettingsEdit,
+    ExecutionEngine, InstallationId, MutationPlanView, OperationHistoryEntry, OperationReceipt,
+    PlanId, PlanStore, ProcessObservation, ReceiptId, ResourceKind, ResourceRef, ResourceSnapshot,
+    SettingsDocument, SettingsEdit,
 };
 use crate::models::ProfileFile;
 use tauri::State;
@@ -38,6 +39,18 @@ pub fn inspect_agent_settings(context: AgentContext) -> Result<Vec<ResourceSnaps
 }
 
 #[tauri::command]
+pub fn list_agent_settings_documents(
+    context: AgentContext,
+) -> Result<Vec<SettingsDocument>, AgentError> {
+    with_context_adapter(&context, |adapter| {
+        adapter
+            .settings()
+            .ok_or_else(|| context_error(&context, "Agent does not support settings editing"))?
+            .edit_documents(&context)
+    })
+}
+
+#[tauri::command]
 pub fn list_agent_skills(context: AgentContext) -> Result<Vec<ResourceSnapshot>, AgentError> {
     with_context_adapter(&context, |adapter| {
         adapter
@@ -67,6 +80,66 @@ pub fn detect_agent_processes(
             .ok_or_else(|| context_error(&context, "Agent does not support process detection"))?
             .detect(&context)
     })
+}
+
+#[tauri::command]
+pub fn list_agent_operation_history(
+    installation_id: Option<InstallationId>,
+    limit: Option<usize>,
+) -> Result<Vec<OperationHistoryEntry>, AgentError> {
+    let directory = crate::fs::paths::history_dir()
+        .map_err(|error| operation_history_error(error.to_string()))?
+        .join("operations");
+    if !directory.is_dir() {
+        return Ok(Vec::new());
+    }
+    let entries = std::fs::read_dir(&directory).map_err(|error| {
+        operation_history_error(format!("Failed to read {}: {error}", directory.display()))
+    })?;
+    let mut history = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+            continue;
+        }
+        let receipt = match std::fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<OperationReceipt>(&bytes).ok())
+        {
+            Some(receipt) => receipt,
+            None => {
+                tracing::warn!(path = %path.display(), "skipping malformed operation receipt");
+                continue;
+            }
+        };
+        if let Some(expected) = &installation_id {
+            let matches = receipt
+                .applied_resources
+                .iter()
+                .chain(
+                    receipt
+                        .post_apply_states
+                        .iter()
+                        .map(|state| &state.resource),
+                )
+                .any(|resource| &resource.installation_id == expected);
+            if !matches {
+                continue;
+            }
+        }
+        let created_at = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .map(chrono::DateTime::<chrono::Utc>::from)
+            .unwrap_or_else(|_| chrono::Utc::now());
+        history.push(OperationHistoryEntry {
+            receipt,
+            created_at,
+        });
+    }
+    history.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+    history.truncate(limit.unwrap_or(50).min(200));
+    Ok(history)
 }
 
 #[tauri::command]
@@ -288,6 +361,18 @@ fn agent_error_for_id(agent_id: AgentId, message: impl Into<String>) -> AgentErr
     }
 }
 
+fn operation_history_error(message: impl Into<String>) -> AgentError {
+    AgentError {
+        code: AgentErrorCode::Io,
+        message: message.into(),
+        agent_id: None,
+        installation_id: None,
+        resource: None,
+        retryable: true,
+        details: None,
+    }
+}
+
 fn require_confirmation(confirmed: bool, message: &str) -> Result<(), AgentError> {
     if confirmed {
         return Ok(());
@@ -312,10 +397,13 @@ mod tests {
     fn lists_built_in_agents() {
         let agents = list_agents().unwrap();
 
-        assert_eq!(agents.iter().map(|agent| agent.id.as_str()).collect::<Vec<_>>(), [
-            "claude-code",
-            "codex",
-        ]);
+        assert_eq!(
+            agents
+                .iter()
+                .map(|agent| agent.id.as_str())
+                .collect::<Vec<_>>(),
+            ["claude-code", "codex",]
+        );
     }
 
     #[test]
@@ -350,7 +438,10 @@ mod tests {
             Some(value) => std::env::set_var("CODEX_HOME", value),
             None => std::env::remove_var("CODEX_HOME"),
         }
-        assert_eq!(context.project_path.as_deref(), Some(expected_project.as_str()));
+        assert_eq!(
+            context.project_path.as_deref(),
+            Some(expected_project.as_str())
+        );
     }
 
     #[test]
@@ -480,6 +571,102 @@ mod tests {
         match previous_codex_home {
             Some(value) => std::env::set_var("CODEX_HOME", value),
             None => std::env::remove_var("CODEX_HOME"),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn settings_documents_include_missing_project_targets() {
+        let temp = tempfile::tempdir().unwrap();
+        let codex_home = temp.path().join(".codex");
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        let previous_home = std::env::var("AD_HOME").ok();
+        let previous_codex_home = std::env::var("CODEX_HOME").ok();
+        std::env::set_var("AD_HOME", temp.path());
+        std::env::set_var("CODEX_HOME", &codex_home);
+
+        let installation = builtin_registry()
+            .discover()
+            .into_iter()
+            .find(|item| item.agent_id.as_str() == "codex")
+            .unwrap();
+        let context = AgentContext {
+            installation_id: installation.id,
+            project_path: Some(
+                std::fs::canonicalize(&project)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into(),
+            ),
+        };
+        let documents = list_agent_settings_documents(context).unwrap();
+
+        assert_eq!(documents.len(), 2);
+        let project_document = documents
+            .iter()
+            .find(|document| document.resource.scope == crate::agents::ResourceScope::Project)
+            .unwrap();
+        assert!(!project_document.exists);
+        assert_eq!(
+            project_document.content,
+            serde_json::Value::String(String::new())
+        );
+
+        match previous_home {
+            Some(value) => std::env::set_var("AD_HOME", value),
+            None => std::env::remove_var("AD_HOME"),
+        }
+        match previous_codex_home {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn operation_history_filters_receipts_by_installation() {
+        let temp = tempfile::tempdir().unwrap();
+        let previous_home = std::env::var("AD_HOME").ok();
+        std::env::set_var("AD_HOME", temp.path());
+        let operations = crate::fs::paths::history_dir().unwrap().join("operations");
+        std::fs::create_dir_all(&operations).unwrap();
+        std::fs::write(
+            operations.join("receipt-1.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "id": "receipt-1",
+                "planId": "plan-1",
+                "status": "complete",
+                "appliedResources": [{
+                    "installationId": "codex:default",
+                    "kind": "settings",
+                    "scope": "user",
+                    "logicalId": "user-config"
+                }],
+                "backupPaths": [],
+                "postApplyStates": []
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let entries =
+            list_agent_operation_history(Some(InstallationId::from("codex:default")), Some(20))
+                .unwrap();
+        let other = list_agent_operation_history(
+            Some(InstallationId::from("claude-code:default")),
+            Some(20),
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].receipt.id.as_str(), "receipt-1");
+        assert!(other.is_empty());
+
+        match previous_home {
+            Some(value) => std::env::set_var("AD_HOME", value),
+            None => std::env::remove_var("AD_HOME"),
         }
     }
 }

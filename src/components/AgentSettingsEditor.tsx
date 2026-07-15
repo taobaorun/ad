@@ -3,11 +3,12 @@ import { CheckCircle2, RotateCcw, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { editedResourceContent, editableResourceText } from '@/lib/agentResourceViews';
+import { formatAgentError } from '@/lib/agentErrors';
 import type {
   AgentContext,
   MutationPlanView,
   OperationReceipt,
-  ResourceSnapshot,
+  SettingsDocument,
 } from '@/lib/agentTypes';
 import { tauri } from '@/lib/tauri';
 import { useUiSettings } from '@/store/uiSettings';
@@ -23,7 +24,7 @@ interface AgentSettingsEditorProps {
 export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
   const { t } = useTranslation();
   const darkMode = useUiSettings((state) => state.darkMode);
-  const [snapshots, setSnapshots] = useState<ResourceSnapshot[]>([]);
+  const [snapshots, setSnapshots] = useState<SettingsDocument[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,17 +39,21 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
     setLoading(true);
     setError(null);
     try {
-      const next = await tauri.inspectAgentSettings(context);
+      const next = await tauri.listAgentSettingsDocuments(context);
       const nextDrafts = Object.fromEntries(
         next.map((snapshot) => [resourceKey(snapshot), editableResourceText(snapshot)]),
       );
       setSnapshots(next);
       setDrafts(nextDrafts);
       setSelectedKey((current) =>
-        current && nextDrafts[current] !== undefined ? current : (next[0] ? resourceKey(next[0]) : null),
+        current && nextDrafts[current] !== undefined
+          ? current
+          : next[0]
+            ? resourceKey(next[0])
+            : null,
       );
     } catch (caught) {
-      setError(messageOf(caught));
+      setError(formatAgentError(caught));
     } finally {
       setLoading(false);
     }
@@ -82,7 +87,7 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
       setError(
         selected.mediaType === 'application/json' && caught instanceof SyntaxError
           ? t('agentSettings.invalidJson')
-          : messageOf(caught),
+          : formatAgentError(caught),
       );
     }
   }
@@ -98,7 +103,7 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
       setStatus(t('agentSettings.applySuccess'));
       await load();
     } catch (caught) {
-      setPlanError(messageOf(caught));
+      setPlanError(formatAgentError(caught));
     } finally {
       setPlanBusy(false);
     }
@@ -113,26 +118,48 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
       setStatus(t('agentSettings.rollbackSuccess'));
       await load();
     } catch (caught) {
-      setError(messageOf(caught));
+      setError(formatAgentError(caught));
     }
   }
 
   if (loading) {
-    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground" aria-busy="true">{t('agentSettings.loading')}</div>;
+    return (
+      <div
+        className="flex h-full items-center justify-center text-sm text-muted-foreground"
+        aria-busy="true"
+      >
+        {t('agentSettings.loading')}
+      </div>
+    );
   }
 
   if (error && snapshots.length === 0) {
-    return <div role="alert" className="p-6 text-sm text-destructive">{t('agentSettings.loadError', { error })}</div>;
+    return (
+      <div role="alert" className="p-6 text-sm text-destructive">
+        {t('agentSettings.loadError', { error })}
+      </div>
+    );
   }
 
   if (!selected) {
-    return <div role="status" className="flex h-full items-center justify-center text-sm text-muted-foreground">{t('agentSettings.empty')}</div>;
+    return (
+      <div
+        role="status"
+        className="flex h-full items-center justify-center text-sm text-muted-foreground"
+      >
+        {t('agentSettings.empty')}
+      </div>
+    );
   }
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto" role="tablist" aria-label={t('agentSettings.resources')}>
+        <div
+          className="flex min-w-0 flex-1 gap-1 overflow-x-auto"
+          role="tablist"
+          aria-label={t('agentSettings.resources')}
+        >
           {snapshots.map((snapshot) => {
             const key = resourceKey(snapshot);
             return (
@@ -148,12 +175,21 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
                   color: key === selectedKey ? 'var(--ds-fg-1)' : 'var(--ds-fg-3)',
                 }}
               >
-                {t(`agentSettings.scope.${snapshot.resource.scope}`)} · {snapshot.resource.logicalId}
+                {t(`agentSettings.scope.${snapshot.resource.scope}`)} ·{' '}
+                {snapshot.resource.logicalId}
               </button>
             );
           })}
         </div>
-        {status && <span role="status" className="flex items-center gap-1 whitespace-nowrap text-xs text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" />{status}</span>}
+        {status && (
+          <span
+            role="status"
+            className="flex items-center gap-1 whitespace-nowrap text-xs text-emerald-600"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            {status}
+          </span>
+        )}
         {lastReceipt && (
           <Button type="button" size="sm" variant="outline" onClick={() => void rollback()}>
             <RotateCcw className="h-3.5 w-3.5" />
@@ -168,9 +204,20 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
 
       <div className="shrink-0 border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
         <span className="font-mono">{selected.location.path}</span>
-        {dirty && <span className="ml-2" aria-live="polite">· {t('agentSettings.unsaved')}</span>}
+        {dirty && (
+          <span className="ml-2" aria-live="polite">
+            · {t('agentSettings.unsaved')}
+          </span>
+        )}
       </div>
-      {error && <div role="alert" className="shrink-0 border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div>}
+      {error && (
+        <div
+          role="alert"
+          className="shrink-0 border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
+          {error}
+        </div>
+      )}
       <div className="min-h-0 flex-1">
         <JsonEditor
           key={`${selected.resource.logicalId}:${selected.mediaType}`}
@@ -194,10 +241,6 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
   );
 }
 
-function resourceKey(snapshot: ResourceSnapshot): string {
+function resourceKey(snapshot: SettingsDocument): string {
   return `${snapshot.resource.scope}:${snapshot.resource.logicalId}`;
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

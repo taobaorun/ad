@@ -8,9 +8,11 @@ import {
   CapabilitySchema,
   ConversionRoutePreviewSchema,
   MutationPlanViewSchema,
+  OperationHistoryEntrySchema,
   OperationReceiptSchema,
   ProcessObservationSchema,
   ResourceSnapshotSchema,
+  SettingsDocumentSchema,
   parseAgentInstallation,
 } from '@/lib/agentTypes';
 
@@ -87,6 +89,28 @@ describe('Agent schemas', () => {
     expect(ResourceSnapshotSchema.parse(snapshot).resource.kind).toBe('settings');
     const { content: _content, ...withoutContent } = snapshot;
     expect(ResourceSnapshotSchema.safeParse(withoutContent).success).toBe(false);
+  });
+
+  it('represents an editable settings target that does not exist yet', () => {
+    const document = SettingsDocumentSchema.parse({
+      resource: {
+        installationId: 'codex:default',
+        projectPath: '/Users/test/project',
+        kind: 'settings',
+        scope: 'project',
+        logicalId: 'project-config',
+      },
+      location: {
+        path: '/Users/test/project/.codex/config.toml',
+        origin: 'project',
+      },
+      mediaType: 'application/toml',
+      content: '',
+      exists: false,
+    });
+
+    expect(document.exists).toBe(false);
+    expect(document.digest).toBeUndefined();
   });
 
   it('validates capability descriptors derived from ports', () => {
@@ -180,6 +204,22 @@ describe('Agent schemas', () => {
         retryable: true,
       }).retryable,
     ).toBe(true);
+  });
+
+  it('validates operation history entries at the IPC boundary', () => {
+    const entry = OperationHistoryEntrySchema.parse({
+      createdAt: '2026-07-15T01:00:00Z',
+      receipt: {
+        id: 'receipt-1',
+        planId: 'plan-1',
+        status: 'complete',
+        appliedResources: [],
+        backupPaths: [],
+        postApplyStates: [],
+      },
+    });
+
+    expect(entry.receipt.id).toBe('receipt-1');
   });
 
   it('validates artifact conversion previews without mutation content', () => {

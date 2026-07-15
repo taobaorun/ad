@@ -121,7 +121,23 @@
     "removeScanRoot": "Remove {{path}}"
   },
   "history": {
-    "title": "Activation history"
+    "title": "History",
+    "operationTitle": "Operation history",
+    "operationEmpty": "No Agent operations yet.",
+    "activationTitle": "Legacy activation history",
+    "activationEmpty": "No profile activations yet.",
+    "refresh": "Refresh",
+    "rollback": "Rollback",
+    "operationRollbackConfirm": "Rollback this operation? Current resources will be backed up before restoration.",
+    "restore": "Restore",
+    "restoreConfirm": "Restore this backup? Your current settings.json will itself be backed up first.",
+    "noBackup": "No backup",
+    "noResources": "No changed resources",
+    "status": {
+      "complete": "Complete",
+      "compensated": "Compensated",
+      "partial_failure": "Partial failure"
+    }
   },
   "drawer": {
     "editTemplate": "Edit template",
@@ -291,6 +307,64 @@
       }
     }
   },
+  "agentProfiles": {
+    "open": "Manage profiles",
+    "shortLabel": "Profiles",
+    "title": "Agent profiles",
+    "description": "Profiles for {{agent}} use an adapter-owned payload and remain isolated from other Agents.",
+    "list": "Profiles",
+    "loading": "Loading profiles…",
+    "empty": "No profiles yet.",
+    "select": "Select or create a profile.",
+    "create": "New profile",
+    "save": "Save profile",
+    "delete": "Delete",
+    "deleteConfirm": "Delete profile “{{name}}”?",
+    "discardConfirm": "Discard unsaved profile changes?",
+    "invalidPayload": "The profile payload is invalid.",
+    "color": "Profile color",
+    "name": "Profile name",
+    "profileDescription": "Profile description",
+    "descriptionPlaceholder": "Optional description"
+  },
+  "agentConversion": {
+    "open": "Convert configuration",
+    "shortLabel": "Convert",
+    "title": "Claude Code → Codex",
+    "description": "Generate an equivalent Codex configuration while preserving the existing Claude Code configuration.",
+    "source": "Claude Code source",
+    "target": "Codex target",
+    "sourceUnchanged": "The Claude Code source is read-only. AD only writes target resources after explicit confirmation.",
+    "preview": "Preview conversion",
+    "previewing": "Previewing…",
+    "apply": "Apply conversion",
+    "applying": "Applying…",
+    "close": "Close",
+    "artifacts": "Conversion artifacts",
+    "noChanges": "No target changes are available. Review unsupported, conflicting, or unchanged artifacts above.",
+    "applied": "Conversion applied",
+    "backupCount_one": "{{count}} backup created",
+    "backupCount_other": "{{count}} backups created",
+    "rollback": "Rollback target",
+    "rollbackConfirm": "Rollback the generated Codex configuration? This will not change the Claude Code source.",
+    "disposition": {
+      "exact": "Exact",
+      "mapped": "Mapped",
+      "requires_input": "Input required",
+      "unsupported": "Unsupported",
+      "conflict": "Conflict",
+      "unchanged": "Unchanged"
+    }
+  },
+  "agentErrors": {
+    "invalid_plan": "The operation is no longer valid. Preview it again.",
+    "resource_changed": "The resource changed after preview. Preview the operation again.",
+    "permission_denied": "Permission was denied. Check the target and try again.",
+    "unsupported": "This operation is not supported by the selected Agent.",
+    "plan_expired": "The preview expired. Create a new preview before applying.",
+    "partial_failure": "The operation only completed partially. Review the receipt before continuing.",
+    "io": "AD could not read or write an Agent resource. Check file permissions and try again."
+  },
   "agents": {
     "capabilities": {
       "pluginInstallNotManaged": "Plugin installation is not managed for this Agent; existing Plugins can still be enabled or disabled.",
@@ -305,7 +379,9 @@
       "resources": "Skills & Plugins"
     },
     "settingsUnavailable": "Settings are unavailable for this Agent and project context.",
-    "resourcesUnavailable": "Skills and Plugins are unavailable until an Agent installation is selected."
+    "resourcesUnavailable": "Skills and Plugins are unavailable until an Agent installation is selected.",
+    "runningProcesses_one": "{{count}} Agent process running",
+    "runningProcesses_other": "{{count}} Agent processes running"
   },
   "agentSettings": {
     "loading": "Loading Agent settings…",

@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{
-    AgentContext, AgentError, InstallationId, MutationPlan, ResourceRef, ResourceScope,
-    ResourceSnapshot,
+    AgentContext, AgentError, ContentDigest, InstallationId, MutationPlan, ResourceLocation,
+    ResourceRef, ResourceScope, ResourceSnapshot,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -69,6 +69,31 @@ pub struct SettingsEdit {
     pub resource: ResourceRef,
     pub media_type: String,
     pub content: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsDocument {
+    pub resource: ResourceRef,
+    pub location: ResourceLocation,
+    pub media_type: String,
+    pub content: Value,
+    pub exists: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<ContentDigest>,
+}
+
+impl From<ResourceSnapshot> for SettingsDocument {
+    fn from(snapshot: ResourceSnapshot) -> Self {
+        Self {
+            resource: snapshot.resource,
+            location: snapshot.location,
+            media_type: snapshot.media_type,
+            content: snapshot.content,
+            exists: true,
+            digest: Some(snapshot.digest),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -184,6 +209,10 @@ pub trait SettingsPort: ResourcePort + Send + Sync {
     descriptor_fields!();
 
     fn inspect(&self, context: &AgentContext) -> Result<Vec<ResourceSnapshot>, AgentError>;
+    fn edit_documents(&self, context: &AgentContext) -> Result<Vec<SettingsDocument>, AgentError> {
+        self.inspect(context)
+            .map(|snapshots| snapshots.into_iter().map(SettingsDocument::from).collect())
+    }
     fn plan_edit(
         &self,
         context: &AgentContext,

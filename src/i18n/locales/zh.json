@@ -121,7 +121,23 @@
     "removeScanRoot": "移除 {{path}}"
   },
   "history": {
-    "title": "激活历史"
+    "title": "历史记录",
+    "operationTitle": "操作历史",
+    "operationEmpty": "暂无 Agent 操作记录。",
+    "activationTitle": "旧版激活历史",
+    "activationEmpty": "暂无 Profile 激活记录。",
+    "refresh": "刷新",
+    "rollback": "回滚",
+    "operationRollbackConfirm": "确定回滚本次操作吗？恢复前会先备份当前资源。",
+    "restore": "恢复",
+    "restoreConfirm": "确定恢复此备份吗？当前 settings.json 会先生成备份。",
+    "noBackup": "无备份",
+    "noResources": "无变更资源",
+    "status": {
+      "complete": "已完成",
+      "compensated": "已补偿",
+      "partial_failure": "部分失败"
+    }
   },
   "drawer": {
     "editTemplate": "编辑模板",
@@ -291,6 +307,64 @@
       }
     }
   },
+  "agentProfiles": {
+    "open": "管理 Profiles",
+    "shortLabel": "Profiles",
+    "title": "Agent Profiles",
+    "description": "{{agent}} 的 Profile 使用 adapter 自有 payload，并与其他 Agent 隔离。",
+    "list": "Profiles",
+    "loading": "正在加载 Profiles…",
+    "empty": "暂无 Profile。",
+    "select": "选择或新建一个 Profile。",
+    "create": "新建 Profile",
+    "save": "保存 Profile",
+    "delete": "删除",
+    "deleteConfirm": "删除 Profile“{{name}}”？",
+    "discardConfirm": "放弃未保存的 Profile 变更？",
+    "invalidPayload": "Profile payload 格式无效。",
+    "color": "Profile 颜色",
+    "name": "Profile 名称",
+    "profileDescription": "Profile 描述",
+    "descriptionPlaceholder": "可选描述"
+  },
+  "agentConversion": {
+    "open": "转换配置",
+    "shortLabel": "转换",
+    "title": "Claude Code → Codex",
+    "description": "在保留现有 Claude Code 配置的同时，生成能力对等的 Codex 配置。",
+    "source": "Claude Code 源",
+    "target": "Codex 目标",
+    "sourceUnchanged": "Claude Code 源仅用于读取。只有明确确认后，AD 才会写入目标资源。",
+    "preview": "预览转换",
+    "previewing": "预览中…",
+    "apply": "应用转换",
+    "applying": "应用中…",
+    "close": "关闭",
+    "artifacts": "转换项",
+    "noChanges": "当前没有可写入的目标变更，请检查上方不支持、冲突或无需变更的项目。",
+    "applied": "转换已应用",
+    "backupCount_one": "已创建 {{count}} 份备份",
+    "backupCount_other": "已创建 {{count}} 份备份",
+    "rollback": "回滚目标",
+    "rollbackConfirm": "回滚生成的 Codex 配置？此操作不会修改 Claude Code 源。",
+    "disposition": {
+      "exact": "完全转换",
+      "mapped": "已映射",
+      "requires_input": "需要输入",
+      "unsupported": "无法转换",
+      "conflict": "存在冲突",
+      "unchanged": "无需变更"
+    }
+  },
+  "agentErrors": {
+    "invalid_plan": "该操作已失效，请重新预览。",
+    "resource_changed": "资源在预览后发生了变化，请重新预览操作。",
+    "permission_denied": "权限被拒绝，请检查目标后重试。",
+    "unsupported": "所选 Agent 不支持该操作。",
+    "plan_expired": "预览已过期，请重新生成预览后再应用。",
+    "partial_failure": "操作仅部分完成，请检查回执后再继续。",
+    "io": "AD 无法读取或写入 Agent 资源，请检查文件权限后重试。"
+  },
   "agents": {
     "capabilities": {
       "pluginInstallNotManaged": "当前 Agent 的 Plugin 安装不由 AD 管理；仍可管理已有 Plugin 的启停状态。",
@@ -305,7 +379,9 @@
       "resources": "Skills 与 Plugins"
     },
     "settingsUnavailable": "当前 Agent 与项目上下文不支持配置管理。",
-    "resourcesUnavailable": "选择 Agent installation 后才能管理 Skills 与 Plugins。"
+    "resourcesUnavailable": "选择 Agent installation 后才能管理 Skills 与 Plugins。",
+    "runningProcesses_one": "{{count}} 个 Agent 进程正在运行",
+    "runningProcesses_other": "{{count}} 个 Agent 进程正在运行"
   },
   "agentSettings": {
     "loading": "正在加载 Agent 配置…",

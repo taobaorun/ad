@@ -7,7 +7,7 @@ use super::super::{
     AgentContext, AgentError, AgentErrorCode, AgentId, CapabilityAvailability, CapabilityOperation,
     ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan, PlanId, PlannedMutation,
     ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin, ResourcePort, ResourceRef,
-    ResourceScope, ResourceSnapshot, SettingsEdit, SettingsPort, WritePolicy,
+    ResourceScope, ResourceSnapshot, SettingsDocument, SettingsEdit, SettingsPort, WritePolicy,
 };
 use super::common::{agent_error, read_optional, resolve_claude_home, validate_project_path};
 
@@ -80,6 +80,43 @@ impl SettingsPort for ClaudeSettingsPort {
         Ok(snapshots)
     }
 
+    fn edit_documents(&self, context: &AgentContext) -> Result<Vec<SettingsDocument>, AgentError> {
+        let mut documents = self
+            .inspect(context)?
+            .into_iter()
+            .map(SettingsDocument::from)
+            .collect::<Vec<_>>();
+        let claude_home = resolve_claude_home(context)?;
+        push_missing_document(
+            &mut documents,
+            context,
+            ResourceScope::User,
+            "user-settings",
+            claude_home.join("settings.json"),
+            ResourceOrigin::User,
+        );
+        if let Some(project_path) = &context.project_path {
+            let project = validate_project_path(context, project_path)?;
+            push_missing_document(
+                &mut documents,
+                context,
+                ResourceScope::Project,
+                "project-shared",
+                project.join(".claude/settings.json"),
+                ResourceOrigin::Project,
+            );
+            push_missing_document(
+                &mut documents,
+                context,
+                ResourceScope::Project,
+                "project-local",
+                project.join(".claude/settings.local.json"),
+                ResourceOrigin::Project,
+            );
+        }
+        Ok(documents)
+    }
+
     fn plan_edit(
         &self,
         context: &AgentContext,
@@ -137,6 +174,40 @@ impl SettingsPort for ClaudeSettingsPort {
         plan.validate()?;
         Ok(plan)
     }
+}
+
+fn push_missing_document(
+    documents: &mut Vec<SettingsDocument>,
+    context: &AgentContext,
+    scope: ResourceScope,
+    logical_id: &str,
+    path: PathBuf,
+    origin: ResourceOrigin,
+) {
+    if documents.iter().any(|document| {
+        document.resource.scope == scope && document.resource.logical_id == logical_id
+    }) {
+        return;
+    }
+    documents.push(SettingsDocument {
+        resource: ResourceRef {
+            installation_id: context.installation_id.clone(),
+            project_path: (scope == ResourceScope::Project)
+                .then(|| context.project_path.clone())
+                .flatten(),
+            kind: ResourceKind::Settings,
+            scope,
+            logical_id: logical_id.into(),
+        },
+        location: ResourceLocation {
+            path: path.to_string_lossy().into_owned(),
+            origin,
+        },
+        media_type: "application/json".into(),
+        content: serde_json::json!({}),
+        exists: false,
+        digest: None,
+    });
 }
 
 fn push_snapshot(

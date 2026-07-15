@@ -109,6 +109,17 @@ export const ResourceSnapshotSchema = z
   })
   .strict();
 
+export const SettingsDocumentSchema = z
+  .object({
+    resource: ResourceRefSchema,
+    location: ResourceLocationSchema,
+    mediaType: z.string().min(1),
+    content: JsonValueSchema,
+    exists: z.boolean(),
+    digest: ContentDigestSchema.optional(),
+  })
+  .strict();
+
 export const CapabilityKindSchema = z.enum([
   'settings',
   'skills',
@@ -203,6 +214,13 @@ export const OperationReceiptSchema = z
   })
   .strict();
 
+export const OperationHistoryEntrySchema = z
+  .object({
+    receipt: OperationReceiptSchema,
+    createdAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
 export const AgentErrorCodeSchema = z.enum([
   'invalid_plan',
   'resource_changed',
@@ -289,6 +307,7 @@ export type ResourceOrigin = z.infer<typeof ResourceOriginSchema>;
 export type ResourceRef = z.infer<typeof ResourceRefSchema>;
 export type ResourceLocation = z.infer<typeof ResourceLocationSchema>;
 export type ResourceSnapshot = z.infer<typeof ResourceSnapshotSchema>;
+export type SettingsDocument = z.infer<typeof SettingsDocumentSchema>;
 export type CapabilityKind = z.infer<typeof CapabilityKindSchema>;
 export type CapabilityOperation = z.infer<typeof CapabilityOperationSchema>;
 export type CapabilityAvailability = z.infer<typeof CapabilityAvailabilitySchema>;
@@ -300,6 +319,7 @@ export type MutationPlanChangeView = z.infer<typeof MutationPlanChangeViewSchema
 export type MutationPlanView = z.infer<typeof MutationPlanViewSchema>;
 export type OperationStatus = z.infer<typeof OperationStatusSchema>;
 export type OperationReceipt = z.infer<typeof OperationReceiptSchema>;
+export type OperationHistoryEntry = z.infer<typeof OperationHistoryEntrySchema>;
 export type AppliedResourceState = z.infer<typeof AppliedResourceStateSchema>;
 export type AgentErrorCode = z.infer<typeof AgentErrorCodeSchema>;
 export type AgentError = z.infer<typeof AgentErrorSchema>;

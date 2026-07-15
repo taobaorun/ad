@@ -9,7 +9,7 @@ use super::{
     AgentContext, AgentError, AgentErrorCode, AgentId, CapabilityAvailability, CapabilityOperation,
     ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan, PlanId, PlannedMutation,
     ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin, ResourcePort, ResourceRef,
-    ResourceScope, ResourceSnapshot, SettingsEdit, SettingsPort, WritePolicy,
+    ResourceScope, ResourceSnapshot, SettingsDocument, SettingsEdit, SettingsPort, WritePolicy,
 };
 
 #[derive(Debug, Default)]
@@ -67,6 +67,35 @@ impl SettingsPort for CodexSettingsPort {
             )?;
         }
         Ok(snapshots)
+    }
+
+    fn edit_documents(&self, context: &AgentContext) -> Result<Vec<SettingsDocument>, AgentError> {
+        let mut documents = self
+            .inspect(context)?
+            .into_iter()
+            .map(SettingsDocument::from)
+            .collect::<Vec<_>>();
+        let codex_home = resolve_codex_home(context)?;
+        push_missing_document(
+            &mut documents,
+            context,
+            ResourceScope::User,
+            "user-config",
+            codex_home.join("config.toml"),
+            ResourceOrigin::User,
+        );
+        if let Some(project_path) = &context.project_path {
+            let project = validate_project_path(context, project_path)?;
+            push_missing_document(
+                &mut documents,
+                context,
+                ResourceScope::Project,
+                "project-config",
+                project.join(".codex/config.toml"),
+                ResourceOrigin::Project,
+            );
+        }
+        Ok(documents)
     }
 
     fn plan_edit(
@@ -131,6 +160,40 @@ impl SettingsPort for CodexSettingsPort {
         plan.validate()?;
         Ok(plan)
     }
+}
+
+fn push_missing_document(
+    documents: &mut Vec<SettingsDocument>,
+    context: &AgentContext,
+    scope: ResourceScope,
+    logical_id: &str,
+    path: PathBuf,
+    origin: ResourceOrigin,
+) {
+    if documents.iter().any(|document| {
+        document.resource.scope == scope && document.resource.logical_id == logical_id
+    }) {
+        return;
+    }
+    documents.push(SettingsDocument {
+        resource: ResourceRef {
+            installation_id: context.installation_id.clone(),
+            project_path: (scope == ResourceScope::Project)
+                .then(|| context.project_path.clone())
+                .flatten(),
+            kind: ResourceKind::Settings,
+            scope,
+            logical_id: logical_id.into(),
+        },
+        location: ResourceLocation {
+            path: path.to_string_lossy().into_owned(),
+            origin,
+        },
+        media_type: "application/toml".into(),
+        content: serde_json::Value::String(String::new()),
+        exists: false,
+        digest: None,
+    });
 }
 
 fn push_snapshot(

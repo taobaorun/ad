@@ -28,9 +28,11 @@ import {
   ConversionPreviewSchema,
   ConversionRoutePreviewSchema,
   MutationPlanViewSchema,
+  OperationHistoryEntrySchema,
   OperationReceiptSchema,
   ProcessObservationSchema,
   ResourceSnapshotSchema,
+  SettingsDocumentSchema,
   type AgentContext,
   type AgentId,
   type CapabilityDescriptor,
@@ -38,6 +40,7 @@ import {
   type ConversionRoutePreview,
   type InstallationId,
   type MutationPlanView,
+  type OperationHistoryEntry,
   type OperationReceipt,
   type PlanId,
   type ProcessObservation,
@@ -45,6 +48,7 @@ import {
   type ResourceKind,
   type ResourceRef,
   type ResourceSnapshot,
+  type SettingsDocument,
   type JsonValue,
 } from './agentTypes';
 
@@ -109,18 +113,14 @@ export const tauri = {
     MutationPlanViewSchema.parse(
       await invoke<unknown>('preview_agent_settings_edit', { context, edit }),
     ),
-  inspectAgentSettings: async (context: AgentContext): Promise<ResourceSnapshot[]> =>
-    ResourceSnapshotSchema.array().parse(
-      await invoke<unknown>('inspect_agent_settings', { context }),
+  listAgentSettingsDocuments: async (context: AgentContext): Promise<SettingsDocument[]> =>
+    SettingsDocumentSchema.array().parse(
+      await invoke<unknown>('list_agent_settings_documents', { context }),
     ),
   listAgentSkills: async (context: AgentContext): Promise<ResourceSnapshot[]> =>
-    ResourceSnapshotSchema.array().parse(
-      await invoke<unknown>('list_agent_skills', { context }),
-    ),
+    ResourceSnapshotSchema.array().parse(await invoke<unknown>('list_agent_skills', { context })),
   listAgentPlugins: async (context: AgentContext): Promise<ResourceSnapshot[]> =>
-    ResourceSnapshotSchema.array().parse(
-      await invoke<unknown>('list_agent_plugins', { context }),
-    ),
+    ResourceSnapshotSchema.array().parse(await invoke<unknown>('list_agent_plugins', { context })),
   detectAgentProcesses: async (context: AgentContext): Promise<ProcessObservation[]> =>
     ProcessObservationSchema.array().parse(
       await invoke<unknown>('detect_agent_processes', { context }),
@@ -158,10 +158,16 @@ export const tauri = {
     OperationReceiptSchema.parse(
       await invoke<unknown>('rollback_agent_receipt', { receiptId, confirmed }),
     ),
+  listAgentOperationHistory: async (
+    installationId?: InstallationId,
+    limit = 50,
+  ): Promise<OperationHistoryEntry[]> =>
+    OperationHistoryEntrySchema.array().parse(
+      await invoke<unknown>('list_agent_operation_history', { installationId, limit }),
+    ),
 
   listProfiles: () => invoke<ProfileFile[]>('list_profiles'),
-  listAgentProfiles: (agentId: string) =>
-    invoke<ProfileFile[]>('list_agent_profiles', { agentId }),
+  listAgentProfiles: (agentId: string) => invoke<ProfileFile[]>('list_agent_profiles', { agentId }),
   getAgentProfile: (agentId: string, id: string) =>
     invoke<ProfileFile>('get_agent_profile', { agentId, id }),
   saveAgentProfile: (profile: ProfileFile) =>
@@ -169,17 +175,11 @@ export const tauri = {
   deleteAgentProfile: (agentId: string, id: string) =>
     invoke<void>('delete_agent_profile', { agentId, id }),
   listProfileEnvelopes: async (agentId: string) =>
-    AgentProfileSchema.array().parse(
-      await invoke<unknown>('list_profile_envelopes', { agentId }),
-    ),
+    AgentProfileSchema.array().parse(await invoke<unknown>('list_profile_envelopes', { agentId })),
   getProfileEnvelope: async (agentId: string, id: string) =>
-    AgentProfileSchema.parse(
-      await invoke<unknown>('get_profile_envelope', { agentId, id }),
-    ),
+    AgentProfileSchema.parse(await invoke<unknown>('get_profile_envelope', { agentId, id })),
   saveProfileEnvelope: async (profile: AgentProfile) =>
-    AgentProfileSchema.parse(
-      await invoke<unknown>('save_profile_envelope', { profile }),
-    ),
+    AgentProfileSchema.parse(await invoke<unknown>('save_profile_envelope', { profile })),
   deleteProfileEnvelope: (agentId: string, id: string) =>
     invoke<void>('delete_profile_envelope', { agentId, id }),
   getProfile: (id: string) => invoke<ProfileFile>('get_profile', { id }),
@@ -212,11 +212,7 @@ export const tauri = {
   writeProjectSettings: (projectPath: string, layer: 'shared' | 'local', content: string) =>
     invoke<void>('write_project_settings', { projectPath, layer, content }),
 
-  applyProfileToProject: (
-    profileId: string,
-    projectPath: string,
-    options: ApplyOptions,
-  ) =>
+  applyProfileToProject: (profileId: string, projectPath: string, options: ApplyOptions) =>
     invoke<ApplyOutcome>('apply_profile_to_project', {
       profileId,
       projectPath,
@@ -230,8 +226,7 @@ export const tauri = {
     invoke<ScanRoot[]>('set_scan_root_enabled', { path, enabled }),
 
   scanForProjects: () => invoke<DetectedProject[]>('scan_for_projects'),
-  completePathPrefix: (prefix: string) =>
-    invoke<string[]>('complete_path_prefix', { prefix }),
+  completePathPrefix: (prefix: string) => invoke<string[]>('complete_path_prefix', { prefix }),
 
   // External terminal launcher
   listTerminalBackends: () =>
@@ -245,22 +240,17 @@ export const tauri = {
   // Global OS-level keyboard shortcut to toggle the main window.
   // Pass `null` to unregister; pass a Tauri shortcut string
   // (e.g. "Alt+Cmd+KeyA") to register / replace.
-  setGlobalShortcut: (binding: string | null) =>
-    invoke<void>('set_global_shortcut', { binding }),
+  setGlobalShortcut: (binding: string | null) => invoke<void>('set_global_shortcut', { binding }),
 
-  writeThemeHint: (dark: boolean) =>
-    invoke<void>('write_theme_hint', { dark }),
+  writeThemeHint: (dark: boolean) => invoke<void>('write_theme_hint', { dark }),
 
-  openSettingsWindow: () =>
-    invoke<void>('open_settings_window'),
+  openSettingsWindow: () => invoke<void>('open_settings_window'),
 
   // Skill management
   listSkillSources: () => invoke<SkillSource[]>('list_skill_sources'),
-  addSkillSource: (source: SkillSource) =>
-    invoke<SkillSource>('add_skill_source', { source }),
+  addSkillSource: (source: SkillSource) => invoke<SkillSource>('add_skill_source', { source }),
   removeSkillSource: (id: string) => invoke<void>('remove_skill_source', { id }),
-  updateSkillSource: (id: string) =>
-    invoke<SkillUpdateResult>('update_skill_source', { id }),
+  updateSkillSource: (id: string) => invoke<SkillUpdateResult>('update_skill_source', { id }),
   scanSkillLibrary: (projectPath?: string) =>
     invoke<SkillEntry[]>('scan_skill_library', { projectPath: projectPath ?? null }),
   getProjectSkills: (projectPath: string) =>
