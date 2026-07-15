@@ -9,7 +9,7 @@ mod tray;
 
 pub mod commands;
 
-use tauri::webview::Color;
+use tauri::webview::{Color, PageLoadEvent};
 use tauri::{Manager, WebviewWindowBuilder, WindowEvent};
 use tracing::info;
 
@@ -24,6 +24,10 @@ fn theme_bg() -> Color {
     } else {
         Color(0xff, 0xff, 0xff, 0xff)
     }
+}
+
+fn should_show_main_on_page_load(label: &str, event: PageLoadEvent) -> bool {
+    label == "main" && matches!(event, PageLoadEvent::Finished)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -75,6 +79,12 @@ pub fn run() {
             )?
             .background_color(bg)
             .visible(false)
+            .on_page_load(|window, payload| {
+                if should_show_main_on_page_load(window.label(), payload.event()) {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            })
             .build()?;
 
             // Pre-create settings window hidden so it's instantly ready when
@@ -204,4 +214,27 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use tauri::webview::PageLoadEvent;
+
+    use super::should_show_main_on_page_load;
+
+    #[test]
+    fn only_finished_main_page_load_reveals_a_window() {
+        assert!(!should_show_main_on_page_load(
+            "main",
+            PageLoadEvent::Started
+        ));
+        assert!(should_show_main_on_page_load(
+            "main",
+            PageLoadEvent::Finished
+        ));
+        assert!(!should_show_main_on_page_load(
+            "settings",
+            PageLoadEvent::Finished
+        ));
+    }
 }
