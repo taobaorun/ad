@@ -68,7 +68,7 @@
 
 ## Phase 4: Codex Parity
 
-- [ ] Task 10: Implement Codex settings resources
+- [x] Task 10: Implement Codex settings resources
   - Acceptance: user/project config scopes are inspected and planned with TOML unknown-field preservation; sensitive runtime files are excluded.
   - Verify: Codex fixture tests and real local read-only inspection.
   - Files: `src-tauri/src/agents/codex.rs`, `src-tauri/src/agents/codex_settings.rs`, `src-tauri/tests/codex_settings.rs`

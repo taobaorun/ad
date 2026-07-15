@@ -72,6 +72,10 @@
   - [x] 所有目标在写入前完成 file backup 与 manifest 持久化；每个文件使用 atomic write，Skill symlink 使用临时 sibling + rename
   - [x] 第二次写失败时逆序补偿；补偿成功返回 compensated receipt，补偿失败返回 partial_failure receipt；receipt 持久化到 AD history
   - [x] 5 个 execution 测试覆盖 complete、backup failure、second write failure、compensation failure 和 symlink apply；43 个 Agent 测试、前端契约测试、typecheck、cargo check 通过
+- [x] (2026-07-15) 基于当前 Codex 官方手册实现 Codex Settings Port：支持 CODEX_HOME/default home 下的 user `config.toml` 与 canonical project 下的 `.codex/config.toml`
+  - [x] TOML 作为完整文本 snapshot/edit 进行语法验证，保留未知字段和表；preview 不写盘，apply 复用共享 ExecutionEngine
+  - [x] allowlist 只接受 user-config/project-config，明确排除 auth.json、history、logs、sessions、cache/database 等认证与运行时状态
+  - [x] 4 个 Codex 测试及 45 个 Agent 回归测试、typecheck 通过；user/project apply 互不串写
 - [ ] (待开始) 实现 Codex adapter 的 discovery、配置、Skills、Plugins、进程探测和终端启动
 - [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 TOML preview contract、model 映射和 unsupported 字段报告，目标写入/回滚仍待实现
 - [ ] (进行中) 接入 Agent-aware store、UI、i18n 和 IPC；当前已完成 Agent store、selector、双语文案、discovery IPC 与按 Agent profile 加载/保存
@@ -86,6 +90,7 @@
 - 当前 `AgentAdapter` 只有 metadata/discover，capability 声明与 settings/skills/plugins/process/launch 的可调用实现没有类型关系；两个 capability set 相等不能证明能力对等。
 - 当前 `ProfileFile` 增加 agentId 后仍持有 ClaudeSettings/ProfileLayers，Codex profile 会被迫伪装成 Claude payload。
 - Codex 支持 `CODEX_HOME`，当前 `~/.codex` 固定路径与 `agentId + rootPath` lexical 去重无法表达多个配置实例；canonical identity 应由 adapter 按有效配置 home 判定。
+- 当前 Codex 官方配置层级为 CLI override → trusted project `.codex/config.toml` → profile file → user `config.toml` → system config；项目配置不能覆盖认证/provider/telemetry 等受限键，但 AD 仍应保留这些未知文本并由 Codex 自身决定是否生效。
 - 多文件转换不能承诺原子事务；正确保证是写前全量备份、逐文件原子写、digest 并发检查和带 partial 状态的补偿式回滚。
 
 ## 决策日志
