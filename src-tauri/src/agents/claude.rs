@@ -1,14 +1,17 @@
 use crate::fs::paths::claude_dir;
 
-use super::claude_ports::ClaudeSettingsPort;
+use super::claude_ports::{ClaudeLaunchPort, ClaudeProcessPort, ClaudeSettingsPort};
 use super::{
-    AgentAdapter, AgentDefinition, DiscoveryEvidence, InstallationCandidate, SettingsPort,
+    AgentAdapter, AgentDefinition, DiscoveryEvidence, InstallationCandidate, LaunchPort,
+    ProcessPort, SettingsPort,
 };
 
 #[derive(Debug, Default)]
 pub struct ClaudeAdapter;
 
 static SETTINGS_PORT: ClaudeSettingsPort = ClaudeSettingsPort;
+static PROCESS_PORT: ClaudeProcessPort = ClaudeProcessPort;
+static LAUNCH_PORT: ClaudeLaunchPort = ClaudeLaunchPort;
 
 impl AgentAdapter for ClaudeAdapter {
     fn definition(&self) -> &AgentDefinition {
@@ -35,5 +38,13 @@ impl AgentAdapter for ClaudeAdapter {
 
     fn settings(&self) -> Option<&dyn SettingsPort> {
         Some(&SETTINGS_PORT)
+    }
+
+    fn processes(&self) -> Option<&dyn ProcessPort> {
+        Some(&PROCESS_PORT)
+    }
+
+    fn launcher(&self) -> Option<&dyn LaunchPort> {
+        Some(&LAUNCH_PORT)
     }
 }

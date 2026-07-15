@@ -90,7 +90,7 @@ pub fn detect_claude_processes() -> CmdResult<Vec<ClaudeProcess>> {
     Ok(detect_claude_processes_inner())
 }
 
-fn detect_claude_processes_inner() -> Vec<ClaudeProcess> {
+pub(crate) fn detect_claude_processes_inner() -> Vec<ClaudeProcess> {
     let me = std::process::id();
     let mut sys = System::new_with_specifics(
         RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),
