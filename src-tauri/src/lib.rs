@@ -69,7 +69,7 @@ pub fn run() {
             // delegate — at that point the HTML/CSS splash is fully loaded and
             // composited, so the user sees the splash instead of a blank frame.
             let bg = theme_bg();
-            let main_win = WebviewWindowBuilder::from_config(
+            WebviewWindowBuilder::from_config(
                 app.handle(),
                 &app.config().app.windows[0],
             )?
