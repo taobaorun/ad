@@ -48,10 +48,10 @@
 
 ## Phase 3: Safe Execution
 
-- [ ] Task 7: Wrap Claude behavior with v1 ports
+- [x] Task 7: Wrap Claude behavior with v1 ports
   - Acceptance: existing settings, skills, plugins, process and launch behavior is reachable through capability ports with unchanged legacy IPC behavior.
   - Verify: existing Claude tests plus port contract tests.
-  - Files: `src-tauri/src/agents/claude.rs`, `src-tauri/src/agents/claude_ports.rs`, `src-tauri/src/commands/agents.rs`
+  - Files: `src-tauri/src/agents/claude.rs`, `src-tauri/src/agents/claude_ports.rs`, `src-tauri/src/agents/claude_ports/`, `src-tauri/src/commands/agents.rs`
   - Dependencies: Task 3
 
 - [ ] Task 8: Add backend-owned plan store and digest checks

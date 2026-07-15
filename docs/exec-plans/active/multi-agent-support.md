@@ -60,7 +60,11 @@
   - [x] (2026-07-15) TypeScript 已增加 branded identities、context/resource/descriptor/plan view/receipt/error 严格 Zod schemas；Phase 1 Rust、schema、旧 profile/store 回归全部通过且无 v1 写盘路径
 - [x] (2026-07-15) canonical installation identity 已移入 adapter discovery candidate；真实路径规范化覆盖默认 home、CODEX_HOME、尾斜杠与 macOS path alias，registry 仅保留 canonical installation，不持久化 evidence/aliases
 - [x] (2026-07-15) AgentContext 已接入 IPC 与 Zustand；前端从 legacy activeAgentId 迁移到 v2 installation/project context，支持持久化恢复与失效 installation 回退，Tauri Agent 边界使用严格 Zod 解析
-- [ ] (进行中) 将现有 Claude Code 行为包入 Claude adapter，保持回归兼容；当前已完成 Agent-scoped profile identity、Agent-specific profile storage 与 built-in discovery
+- [x] (2026-07-15) 将现有 Claude Code settings、skills、plugins、process、launch 行为包入五类 v1 capability ports；端口只 inspect/plan、不写用户文件，旧 settings/skills/activate IPC 回归测试保持通过
+  - [x] settings snapshot 使用 SHA-256 digest，user scope ResourceRef 不携带项目路径，project scope 才绑定 canonical project
+  - [x] skills 的本地来源安装和 user/project symlink 启停可生成 MutationPlan；Git acquisition 暂保留旧流程并通过 degraded limitation 明示
+  - [x] plugins 暴露现有列表与 project override 启停；AD 原本不管理插件安装，因此不声明 Install operation，并返回结构化 Unsupported
+  - [x] process 输出通用 ProcessObservation，launch 只生成 LaunchRecipe，不直接启动进程
 - [ ] (待开始) 实现 Codex adapter 的 discovery、配置、Skills、Plugins、进程探测和终端启动
 - [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 TOML preview contract、model 映射和 unsupported 字段报告，目标写入/回滚仍待实现
 - [ ] (进行中) 接入 Agent-aware store、UI、i18n 和 IPC；当前已完成 Agent store、selector、双语文案、discovery IPC 与按 Agent profile 加载/保存
@@ -98,6 +102,14 @@
 - 决策：未来 Agent 只支持内置代码 adapter。
   理由：用户明确不支持用户配置式扩展。
   日期/作者：2026-07-14 / Codex
+
+- 决策：Claude Skills Port 的 Git acquisition 在共享执行引擎接管目录级副作用前继续使用旧流程，并将能力标记为 degraded。
+  理由：当前 MutationPlan 只表达受 allowlist 约束的资源变更，Git 网络拉取与目录落盘不能被安全地伪装成普通原子文件写入。
+  日期/作者：2026-07-15 / Codex
+
+- 决策：Claude Plugins Port 不声明 Install operation。
+  理由：现有 AD 只读取插件并管理项目级 enabledPlugins override，不具备插件安装行为；capability descriptor 必须来自真实可调用能力。
+  日期/作者：2026-07-15 / Codex
 
 ## 上下文和方向
 
