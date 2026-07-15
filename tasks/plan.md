@@ -67,7 +67,7 @@ Claude ports + Codex ports + ExecutionEngine
 ### Phase 4: Codex Parity
 
 - [x] Task 10: Codex resource allowlist and settings port
-- [ ] Task 11: Codex skills and plugins ports
+- [x] Task 11: Codex skills and plugins ports
 - [ ] Task 12: Shared process service and launch recipes
 - [ ] Task 13: Claude/Codex operation-level parity contract tests
 

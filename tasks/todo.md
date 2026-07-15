@@ -74,7 +74,7 @@
   - Files: `src-tauri/src/agents/codex.rs`, `src-tauri/src/agents/codex_settings.rs`, `src-tauri/tests/codex_settings.rs`
   - Dependencies: Tasks 5, 9
 
-- [ ] Task 11: Implement Codex skills and plugins ports
+- [x] Task 11: Implement Codex skills and plugins ports
   - Acceptance: list/install/enable/disable workflows reflect actual Codex scopes and return structured limitations where authorization is required.
   - Verify: isolated filesystem/CLI fixture tests.
   - Files: `src-tauri/src/agents/codex_skills.rs`, `src-tauri/src/agents/codex_plugins.rs`, `src-tauri/tests/codex_extensions.rs`

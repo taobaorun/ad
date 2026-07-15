@@ -76,6 +76,11 @@
   - [x] TOML 作为完整文本 snapshot/edit 进行语法验证，保留未知字段和表；preview 不写盘，apply 复用共享 ExecutionEngine
   - [x] allowlist 只接受 user-config/project-config，明确排除 auth.json、history、logs、sessions、cache/database 等认证与运行时状态
   - [x] 4 个 Codex 测试及 45 个 Agent 回归测试、typecheck 通过；user/project apply 互不串写
+- [x] (2026-07-15) 实现 Codex Skills/Plugins Ports
+  - [x] Skills 按官方位置扫描 `$HOME/.agents/skills` 与项目 `.agents/skills`，支持本地目录 symlink 安装；enable/disable 通过用户 `config.toml` 的 `[[skills.config]]` 规划并由 ExecutionEngine 应用
+  - [x] Plugins 从用户 `config.toml` 的 `[plugins."<id>"]` 列表与规划 enabled 状态，完整保留其他 TOML 字段
+  - [x] Plugin install 涉及 marketplace snapshot、cache 和可能的工作区授权，当前 port 标记 degraded 并返回结构化 Unsupported，不模拟不完整安装
+  - [x] 6 个 Codex 测试及 47 个 Agent 回归测试、cargo check 通过
 - [ ] (待开始) 实现 Codex adapter 的 discovery、配置、Skills、Plugins、进程探测和终端启动
 - [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 TOML preview contract、model 映射和 unsupported 字段报告，目标写入/回滚仍待实现
 - [ ] (进行中) 接入 Agent-aware store、UI、i18n 和 IPC；当前已完成 Agent store、selector、双语文案、discovery IPC 与按 Agent profile 加载/保存
@@ -91,6 +96,8 @@
 - 当前 `ProfileFile` 增加 agentId 后仍持有 ClaudeSettings/ProfileLayers，Codex profile 会被迫伪装成 Claude payload。
 - Codex 支持 `CODEX_HOME`，当前 `~/.codex` 固定路径与 `agentId + rootPath` lexical 去重无法表达多个配置实例；canonical identity 应由 adapter 按有效配置 home 判定。
 - 当前 Codex 官方配置层级为 CLI override → trusted project `.codex/config.toml` → profile file → user `config.toml` → system config；项目配置不能覆盖认证/provider/telemetry 等受限键，但 AD 仍应保留这些未知文本并由 Codex 自身决定是否生效。
+- 当前 Codex 官方 Skill authoring/discovery 位置为 `$HOME/.agents/skills` 和从 CWD 到 repo root 的 `.agents/skills`；`CODEX_HOME/skills` 不作为 AD 新建用户 Skill 的目标。
+- Codex Plugin 的 marketplace 可位于 repo/user `.agents/plugins/marketplace.json`，安装副本进入 `CODEX_HOME/plugins/cache/...`，启停状态进入用户 `config.toml`；单纯复制插件目录不能形成对等安装。
 - 多文件转换不能承诺原子事务；正确保证是写前全量备份、逐文件原子写、digest 并发检查和带 partial 状态的补偿式回滚。
 
 ## 决策日志
