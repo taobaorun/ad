@@ -3,6 +3,8 @@ import { Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { collectionItemView } from '@/lib/agentResourceViews';
+import { formatAgentError } from '@/lib/agentErrors';
+import { capabilityAllows, capabilityFor } from '@/lib/agentCapabilities';
 import type {
   AgentContext,
   CapabilityDescriptor,
@@ -32,8 +34,8 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
 
   const skillsCapability = capabilityFor(capabilities, 'skills');
   const pluginsCapability = capabilityFor(capabilities, 'plugins');
-  const canListSkills = capabilityAllows(skillsCapability, 'list');
-  const canListPlugins = capabilityAllows(pluginsCapability, 'list');
+  const canListSkills = capabilityAllows(capabilities, 'skills', 'list');
+  const canListPlugins = capabilityAllows(capabilities, 'plugins', 'list');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,7 +48,7 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
       setSkills(nextSkills);
       setPlugins(nextPlugins);
     } catch (caught) {
-      setError(messageOf(caught));
+      setError(formatAgentError(caught));
     } finally {
       setLoading(false);
     }
@@ -65,7 +67,10 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
     () => plugins.filter((snapshot) => matches(snapshot, query)),
     [plugins, query],
   );
-  const limitations = [...(skillsCapability?.limitations ?? []), ...(pluginsCapability?.limitations ?? [])];
+  const limitations = [
+    ...(skillsCapability?.limitations ?? []),
+    ...(pluginsCapability?.limitations ?? []),
+  ];
 
   async function previewToggle(snapshot: ResourceSnapshot) {
     const item = collectionItemView(snapshot);
@@ -79,7 +84,7 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
       setPlan(nextPlan);
       setPlanError(null);
     } catch (caught) {
-      setError(messageOf(caught));
+      setError(formatAgentError(caught));
     }
   }
 
@@ -92,21 +97,30 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
       setPlan(null);
       await load();
     } catch (caught) {
-      setPlanError(messageOf(caught));
+      setPlanError(formatAgentError(caught));
     } finally {
       setPlanBusy(false);
     }
   }
 
   if (loading) {
-    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground" aria-busy="true">{t('agentCollections.loading')}</div>;
+    return (
+      <div
+        className="flex h-full items-center justify-center text-sm text-muted-foreground"
+        aria-busy="true"
+      >
+        {t('agentCollections.loading')}
+      </div>
+    );
   }
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
         <Search className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-        <label htmlFor="agent-resource-filter" className="sr-only">{t('agentCollections.filter')}</label>
+        <label htmlFor="agent-resource-filter" className="sr-only">
+          {t('agentCollections.filter')}
+        </label>
         <input
           id="agent-resource-filter"
           type="search"
@@ -117,7 +131,14 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
         />
       </div>
 
-      {error && <div role="alert" className="shrink-0 border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div>}
+      {error && (
+        <div
+          role="alert"
+          className="shrink-0 border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
+          {error}
+        </div>
+      )}
       {limitations.length > 0 && (
         <ul className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-800 dark:text-amber-200">
           {limitations.map((limitation) => (
@@ -130,16 +151,20 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
         {filteredSkills.length > 0 && (
           <CollectionSection
             title={t('agentCollections.skills')}
+            kind="skills"
             snapshots={filteredSkills}
             onToggle={previewToggle}
+            capabilities={capabilities}
             t={t}
           />
         )}
         {filteredPlugins.length > 0 && (
           <CollectionSection
             title={t('agentCollections.plugins')}
+            kind="plugins"
             snapshots={filteredPlugins}
             onToggle={previewToggle}
+            capabilities={capabilities}
             t={t}
           />
         )}
@@ -163,20 +188,43 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
 
 interface CollectionSectionProps {
   title: string;
+  kind: 'skills' | 'plugins';
   snapshots: ResourceSnapshot[];
   onToggle: (snapshot: ResourceSnapshot) => Promise<void>;
+  capabilities: CapabilityDescriptor[];
   t: ReturnType<typeof useTranslation>['t'];
 }
 
-function CollectionSection({ title, snapshots, onToggle, t }: CollectionSectionProps) {
+function CollectionSection({
+  title,
+  kind,
+  snapshots,
+  onToggle,
+  capabilities,
+  t,
+}: CollectionSectionProps) {
   return (
     <section className="mb-4" aria-labelledby={`collection-${title}`}>
-      <h3 id={`collection-${title}`} className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
+      <h3
+        id={`collection-${title}`}
+        className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+      >
+        {title}
+      </h3>
       <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
         {snapshots.map((snapshot) => {
           const item = collectionItemView(snapshot);
+          const canToggle = capabilityAllows(
+            capabilities,
+            kind,
+            item.enabled ? 'disable' : 'enable',
+            snapshot.resource.scope,
+          );
           return (
-            <li key={`${snapshot.resource.scope}:${snapshot.resource.logicalId}`} className="flex items-center gap-3 px-3 py-2.5">
+            <li
+              key={`${snapshot.resource.scope}:${snapshot.resource.logicalId}`}
+              className="flex items-center gap-3 px-3 py-2.5"
+            >
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{item.name}</div>
                 <div className="truncate text-xs text-muted-foreground">
@@ -186,9 +234,13 @@ function CollectionSection({ title, snapshots, onToggle, t }: CollectionSectionP
               <Toggle
                 on={item.enabled}
                 onChange={() => void onToggle(snapshot)}
-                ariaLabel={t(item.enabled ? 'agentCollections.disable' : 'agentCollections.enable', {
-                  name: item.name,
-                })}
+                disabled={!canToggle}
+                ariaLabel={t(
+                  item.enabled ? 'agentCollections.disable' : 'agentCollections.enable',
+                  {
+                    name: item.name,
+                  },
+                )}
               />
             </li>
           );
@@ -198,32 +250,10 @@ function CollectionSection({ title, snapshots, onToggle, t }: CollectionSectionP
   );
 }
 
-function capabilityFor(
-  capabilities: CapabilityDescriptor[],
-  kind: CapabilityDescriptor['kind'],
-): CapabilityDescriptor | undefined {
-  return capabilities.find((capability) => capability.kind === kind);
-}
-
-function capabilityAllows(
-  capability: CapabilityDescriptor | undefined,
-  operation: CapabilityDescriptor['operations'][number],
-): boolean {
-  return (
-    capability !== undefined &&
-    capability.availability !== 'unavailable' &&
-    capability.operations.includes(operation)
-  );
-}
-
 function matches(snapshot: ResourceSnapshot, query: string): boolean {
   if (!query) return true;
   const item = collectionItemView(snapshot);
   return [item.name, item.description, snapshot.resource.logicalId]
     .filter((value): value is string => typeof value === 'string')
     .some((value) => value.toLocaleLowerCase().includes(query));
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

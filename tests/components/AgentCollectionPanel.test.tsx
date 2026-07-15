@@ -92,10 +92,29 @@ describe('AgentCollectionPanel', () => {
     render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
 
     fireEvent.click(await screen.findByRole('switch', { name: 'Disable Review' }));
-    await waitFor(() => expect(previewAgentCollectionToggle).toHaveBeenCalledWith(context, skill.resource, false));
+    await waitFor(() =>
+      expect(previewAgentCollectionToggle).toHaveBeenCalledWith(context, skill.resource, false),
+    );
     expect(applyAgentPlan).not.toHaveBeenCalled();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
     await waitFor(() => expect(applyAgentPlan).toHaveBeenCalledWith('plan-2'));
+  });
+
+  it('disables toggles that are not allowed by the capability descriptor', async () => {
+    const listOnly = CapabilityDescriptorSchema.array().parse([
+      {
+        kind: 'skills',
+        scopes: ['project'],
+        operations: ['list'],
+        availability: 'available',
+        limitations: [],
+      },
+    ]);
+
+    render(<AgentCollectionPanel context={context} capabilities={listOnly} />);
+
+    expect(await screen.findByRole('switch', { name: 'Disable Review' })).toBeDisabled();
+    expect(previewAgentCollectionToggle).not.toHaveBeenCalled();
   });
 });

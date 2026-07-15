@@ -17,6 +17,8 @@ import { useShallow } from 'zustand/shallow';
 import { useGlobalKeymap, type ShortcutMap } from '@/lib/keymap';
 import { useUiState } from '@/store/ui';
 import { useProjects } from '@/store/projects';
+import { useAgents } from '@/store/agents';
+import { profileFeaturesFor } from '@/lib/profileEditorRegistry';
 
 export function GlobalKeymap() {
   const {
@@ -37,6 +39,8 @@ export function GlobalKeymap() {
     })),
   );
   const projects = useProjects((s) => s.projects);
+  const activeAgentId = useAgents((s) => s.activeAgentId);
+  const legacyProjectTemplates = profileFeaturesFor(activeAgentId).legacyProjectTemplates;
 
   const shortcuts = useMemo<ShortcutMap>(() => {
     const m: ShortcutMap = {
@@ -48,6 +52,7 @@ export function GlobalKeymap() {
       'mod+t': () => openPalette('add '),
       'mod+p': () => openPalette('apply '),
       'mod+e': () => {
+        if (!legacyProjectTemplates) return;
         const path = useUiState.getState().activeProjectPath;
         const project = projects.find((p) => p.path === path);
         const id = project?.currentProfileId;
@@ -67,7 +72,16 @@ export function GlobalKeymap() {
       };
     }
     return m;
-  }, [projects, openPalette, closePalette, closeEditDrawer, setActiveProject, toggleSidebar, openEditDrawer]);
+  }, [
+    projects,
+    legacyProjectTemplates,
+    openPalette,
+    closePalette,
+    closeEditDrawer,
+    setActiveProject,
+    toggleSidebar,
+    openEditDrawer,
+  ]);
 
   useGlobalKeymap(shortcuts);
   return null;

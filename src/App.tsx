@@ -12,7 +12,10 @@ import { useProjects } from './store/projects';
 import { useUiState } from './store/ui';
 import { useUiSettings } from './store/uiSettings';
 import { AgentSelector, useLoadAgents } from './components/AgentSelector';
+import { AgentConversionButton } from './components/AgentConversionDialog';
+import { AgentProfilesButton } from './components/AgentProfilesDialog';
 import { useAgents } from './store/agents';
+import { profileFeaturesFor } from './lib/profileEditorRegistry';
 
 // Heavy dialogs/drawers are lazy-loaded so they don't sit in the first-paint
 // chunk. Each is wrapped in a tiny "gate" below that only mounts the lazy
@@ -74,8 +77,12 @@ export function App() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         document.getElementById('ad-splash')?.remove();
-        getCurrentWindow().show().catch(() => {});
-        getCurrentWindow().setFocus().catch(() => {});
+        getCurrentWindow()
+          .show()
+          .catch(() => {});
+        getCurrentWindow()
+          .setFocus()
+          .catch(() => {});
       });
     });
   }, []);
@@ -99,12 +106,18 @@ export function App() {
     const unlisten = listen('profile-activated', () => {
       void useProfiles.getState().loadAll();
     });
-    return () => { void unlisten.then((f) => f()); };
+    return () => {
+      void unlisten.then((f) => f());
+    };
   }, []);
 
   return (
     <div className="flex h-full w-full flex-col">
-      <Titlebar onOpenPalette={() => openPalette()} dark={darkMode} onToggleDark={() => setDarkMode(!darkMode)} />
+      <Titlebar
+        onOpenPalette={() => openPalette()}
+        dark={darkMode}
+        onToggleDark={() => setDarkMode(!darkMode)}
+      />
 
       <div className="flex flex-1 overflow-hidden">
         {!sidebarCollapsed && (
@@ -135,8 +148,9 @@ export function App() {
 
 function GatedProfileEditDrawer() {
   const editingProfileId = useUiState((s) => s.editingProfileId);
+  const activeAgentId = useAgents((s) => s.activeAgentId);
   const mounted = useHasBeenTrue(editingProfileId != null);
-  if (!mounted) return null;
+  if (!mounted || !profileFeaturesFor(activeAgentId).legacyProjectTemplates) return null;
   return (
     <Suspense fallback={null}>
       <ProfileEditDrawer />
@@ -180,8 +194,9 @@ function GatedDetectedProjectsModal() {
 
 function GatedImportDialog() {
   const open = useProfiles((s) => s.importOpen);
+  const activeAgentId = useAgents((s) => s.activeAgentId);
   const mounted = useHasBeenTrue(open);
-  if (!mounted) return null;
+  if (!mounted || !profileFeaturesFor(activeAgentId).legacyImport) return null;
   return (
     <Suspense fallback={null}>
       <ImportDialog />
@@ -189,14 +204,24 @@ function GatedImportDialog() {
   );
 }
 
-function Titlebar({ onOpenPalette, dark, onToggleDark }: { onOpenPalette: () => void; dark: boolean; onToggleDark: () => void }) {
+function Titlebar({
+  onOpenPalette,
+  dark,
+  onToggleDark,
+}: {
+  onOpenPalette: () => void;
+  dark: boolean;
+  onToggleDark: () => void;
+}) {
   const { t } = useTranslation();
   return (
     <header
       className="flex h-9 items-center justify-between px-3 text-sm"
       style={{ borderBottom: '0.5px solid var(--ds-line)', background: 'hsl(var(--background))' }}
     >
-      <div className="font-semibold" style={{ fontSize: 14 }}>AD</div>
+      <div className="font-semibold" style={{ fontSize: 14 }}>
+        AD
+      </div>
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -210,14 +235,34 @@ function Titlebar({ onOpenPalette, dark, onToggleDark }: { onOpenPalette: () => 
           }}
           title={t('app.titlebar.openPaletteTitle')}
         >
-          <kbd className="font-mono" style={{ fontSize: 10.5, padding: '0 4px', borderRadius: 4, background: 'var(--ds-bg-soft)', border: '0.5px solid var(--ds-line)', color: 'var(--ds-fg-3)' }}>⌘K</kbd>
+          <kbd
+            className="font-mono"
+            style={{
+              fontSize: 10.5,
+              padding: '0 4px',
+              borderRadius: 4,
+              background: 'var(--ds-bg-soft)',
+              border: '0.5px solid var(--ds-line)',
+              color: 'var(--ds-fg-3)',
+            }}
+          >
+            ⌘K
+          </kbd>
           <span>{t('app.titlebar.runAnything')}</span>
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ marginLeft: 'auto' }}>
-            <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" strokeWidth="1.2"/>
-            <path d="M8.5 8.5l3 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 13 13"
+            fill="none"
+            style={{ marginLeft: 'auto' }}
+          >
+            <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" strokeWidth="1.2" />
+            <path d="M8.5 8.5l3 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
           </svg>
         </button>
         <AdvancedSettingsButton />
+        <AgentProfilesButton />
+        <AgentConversionButton />
         <AgentSelector />
         <button
           type="button"
@@ -225,27 +270,102 @@ function Titlebar({ onOpenPalette, dark, onToggleDark }: { onOpenPalette: () => 
           title={dark ? '切换到浅色' : '切换到深色'}
           aria-label={dark ? '切换到浅色' : '切换到深色'}
           style={{
-            width: 28, height: 28,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            borderRadius: 6, background: 'transparent', border: 0,
-            color: 'var(--ds-fg-3)', cursor: 'pointer',
+            width: 28,
+            height: 28,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            background: 'transparent',
+            border: 0,
+            color: 'var(--ds-fg-3)',
+            cursor: 'pointer',
           }}
         >
           {dark ? (
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M14 10.5A6.5 6.5 0 015.5 2a6.5 6.5 0 108.5 8.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+              <path
+                d="M14 10.5A6.5 6.5 0 015.5 2a6.5 6.5 0 108.5 8.5z"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinejoin="round"
+              />
             </svg>
           ) : (
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.3"/>
-              <line x1="8" y1="1" x2="8" y2="2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-              <line x1="8" y1="13.5" x2="8" y2="15" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-              <line x1="1" y1="8" x2="2.5" y2="8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-              <line x1="13.5" y1="8" x2="15" y2="8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-              <line x1="3.05" y1="3.05" x2="4.1" y2="4.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-              <line x1="11.9" y1="11.9" x2="12.95" y2="12.95" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-              <line x1="12.95" y1="3.05" x2="11.9" y2="4.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-              <line x1="4.1" y1="11.9" x2="3.05" y2="12.95" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+              <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.3" />
+              <line
+                x1="8"
+                y1="1"
+                x2="8"
+                y2="2.5"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
+              <line
+                x1="8"
+                y1="13.5"
+                x2="8"
+                y2="15"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
+              <line
+                x1="1"
+                y1="8"
+                x2="2.5"
+                y2="8"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
+              <line
+                x1="13.5"
+                y1="8"
+                x2="15"
+                y2="8"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
+              <line
+                x1="3.05"
+                y1="3.05"
+                x2="4.1"
+                y2="4.1"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
+              <line
+                x1="11.9"
+                y1="11.9"
+                x2="12.95"
+                y2="12.95"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
+              <line
+                x1="12.95"
+                y1="3.05"
+                x2="11.9"
+                y2="4.1"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
+              <line
+                x1="4.1"
+                y1="11.9"
+                x2="3.05"
+                y2="12.95"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
             </svg>
           )}
         </button>

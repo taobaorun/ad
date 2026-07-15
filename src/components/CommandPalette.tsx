@@ -20,6 +20,8 @@ import { useUiSettings } from '@/store/uiSettings';
 import { tauri } from '@/lib/tauri';
 import { usePathAutocomplete } from '@/lib/pathAutocomplete';
 import type { ApplyOptions } from '@/lib/projectTypes';
+import { capabilityAllows } from '@/lib/agentCapabilities';
+import { profileFeaturesFor } from '@/lib/profileEditorRegistry';
 
 type Group = 'APPLY' | 'SWITCH' | 'EDIT' | 'ADD' | 'OTHER';
 
@@ -52,7 +54,10 @@ export function CommandPalette() {
   const activePath = useUiState((s) => s.activeProjectPath);
   const activeProject = projects.find((p) => p.path === activePath) ?? null;
   const activeContext = useAgents((s) => s.activeContext);
+  const activeAgentId = useAgents((s) => s.activeAgentId);
+  const activeCapabilities = useAgents((s) => s.activeCapabilities);
   const terminal = useUiSettings((s) => s.terminal);
+  const profileFeatures = profileFeaturesFor(activeAgentId);
 
   const [term, setTerm] = useState<string>('');
   const [activeIdx, setActiveIdx] = useState<number>(0);
@@ -60,8 +65,7 @@ export function CommandPalette() {
 
   const addMode = term.startsWith('add ') && term.slice(4).length > 0;
   const addPath = addMode ? term.slice(4) : '';
-  const { candidates: pathCandidates, completion: pathCompletion } =
-    usePathAutocomplete(addPath);
+  const { candidates: pathCandidates, completion: pathCompletion } = usePathAutocomplete(addPath);
 
   useEffect(() => {
     if (open) {
@@ -74,8 +78,7 @@ export function CommandPalette() {
   async function addProjectFromPath(rawPath: string) {
     const trimmed = rawPath.trim();
     if (!trimmed) return;
-    const normalized =
-      trimmed.length > 1 && trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+    const normalized = trimmed.length > 1 && trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
     try {
       const project = await useProjects.getState().addProject(normalized);
       setActiveProject(project.path);
@@ -109,13 +112,16 @@ export function CommandPalette() {
     const list: Command[] = [];
 
     // APPLY: apply each profile to active project (single-layer "local" default)
-    if (activeProject) {
+    if (activeProject && profileFeatures.legacyProjectTemplates) {
       profiles.forEach((pf) => {
         list.push({
           group: 'APPLY',
           id: `apply-${pf.id}`,
           icon: '↻',
-          label: t('palette.applyTo', { profile: pf.displayName, project: activeProject.displayName }),
+          label: t('palette.applyTo', {
+            profile: pf.displayName,
+            project: activeProject.displayName,
+          }),
           desc: 'local',
           run: async () => {
             const opts: ApplyOptions = {
@@ -155,17 +161,23 @@ export function CommandPalette() {
 
     // SWITCH-TEMPLATE: open the dialog for the active project
     if (activeProject) {
-      list.push({
-        group: 'APPLY',
-        id: 'switch-template',
-        icon: '↻',
-        label: t('palette.switchTemplate', { project: activeProject.displayName }),
-        run: () => openSwitchTemplate(),
-      });
+      if (profileFeatures.legacyProjectTemplates) {
+        list.push({
+          group: 'APPLY',
+          id: 'switch-template',
+          icon: '↻',
+          label: t('palette.switchTemplate', { project: activeProject.displayName }),
+          run: () => openSwitchTemplate(),
+        });
+      }
 
       // OPEN IN TERMINAL: use the active Agent adapter's launch recipe.
       const customMissing = terminal.backend === 'custom' && terminal.customCommand.trim() === '';
-      if (!customMissing && activeContext) {
+      if (
+        !customMissing &&
+        activeContext &&
+        capabilityAllows(activeCapabilities, 'terminal_launch', 'launch', 'project')
+      ) {
         const backendLabel = t(`terminal.backend.${terminal.backend}`);
         list.push({
           group: 'APPLY',
@@ -188,16 +200,18 @@ export function CommandPalette() {
       }
     }
 
-    // EDIT: open template editor drawer
-    profiles.forEach((pf) => {
-      list.push({
-        group: 'EDIT',
-        id: `edit-${pf.id}`,
-        icon: '✎',
-        label: t('palette.editTemplate', { name: pf.displayName }),
-        run: () => openEditDrawer(pf.id),
+    // EDIT: the legacy drawer only understands Claude Code profile payloads.
+    if (profileFeatures.legacyProjectTemplates) {
+      profiles.forEach((pf) => {
+        list.push({
+          group: 'EDIT',
+          id: `edit-${pf.id}`,
+          icon: '✎',
+          label: t('palette.editTemplate', { name: pf.displayName }),
+          run: () => openEditDrawer(pf.id),
+        });
       });
-    });
+    }
 
     // ADD
     list.push({
@@ -216,15 +230,19 @@ export function CommandPalette() {
       id: 'add-detected',
       icon: '✨',
       label: t('palette.reviewDetected'),
-      run: () => { void openDetectedModal(); },
+      run: () => {
+        void openDetectedModal();
+      },
     });
-    list.push({
-      group: 'ADD',
-      id: 'add-import',
-      icon: '⬇',
-      label: t('palette.importProfile'),
-      run: () => setImportOpen(true),
-    });
+    if (profileFeatures.legacyImport) {
+      list.push({
+        group: 'ADD',
+        id: 'add-import',
+        icon: '⬇',
+        label: t('palette.importProfile'),
+        run: () => setImportOpen(true),
+      });
+    }
 
     // OTHER
     list.push({
@@ -243,6 +261,8 @@ export function CommandPalette() {
     activeProject,
     activePath,
     activeContext,
+    activeCapabilities,
+    profileFeatures,
     terminal,
     setActiveProject,
     openEditDrawer,
@@ -264,7 +284,13 @@ export function CommandPalette() {
 
   // Group filtered commands while preserving GROUP_ORDER.
   const grouped = useMemo(() => {
-    const buckets: Record<Group, Command[]> = { APPLY: [], SWITCH: [], EDIT: [], ADD: [], OTHER: [] };
+    const buckets: Record<Group, Command[]> = {
+      APPLY: [],
+      SWITCH: [],
+      EDIT: [],
+      ADD: [],
+      OTHER: [],
+    };
     filtered.forEach((c) => buckets[c.group].push(c));
     const flat: Command[] = [];
     GROUP_ORDER.forEach((g) => buckets[g].forEach((c) => flat.push(c)));
@@ -315,7 +341,9 @@ export function CommandPalette() {
   return (
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center bg-black/40 pt-20 backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) close(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) close();
+      }}
     >
       <div className="flex max-h-[500px] w-[560px] max-w-[calc(100%-48px)] flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
@@ -323,7 +351,10 @@ export function CommandPalette() {
           <input
             ref={inputRef}
             value={term}
-            onChange={(e) => { setTerm(e.target.value); setActiveIdx(0); }}
+            onChange={(e) => {
+              setTerm(e.target.value);
+              setActiveIdx(0);
+            }}
             onKeyDown={onKeyDown}
             placeholder={t('palette.placeholder')}
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
@@ -335,12 +366,12 @@ export function CommandPalette() {
             pathCandidates.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
                 {t('palette.noMatchingDirs')}{' '}
-                <kbd className="mx-1 rounded border border-border bg-muted px-1 font-mono">↵</kbd>
-                {' '}{t('palette.pressToAddAsIs', { path: addPath })}
+                <kbd className="mx-1 rounded border border-border bg-muted px-1 font-mono">↵</kbd>{' '}
+                {t('palette.pressToAddAsIs', { path: addPath })}
               </div>
             ) : (
               <div>
-                <div className="px-4 pt-3 pb-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                <div className="px-4 pb-1 pt-3 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                   {t('palette.addProjectHeader')}
                 </div>
                 {pathCandidates.map((cand, idx) => {
@@ -349,7 +380,10 @@ export function CommandPalette() {
                     <button
                       key={cand}
                       type="button"
-                      onClick={() => { close(); void addProjectFromPath(cand); }}
+                      onClick={() => {
+                        close();
+                        void addProjectFromPath(cand);
+                      }}
                       onMouseEnter={() => setActiveIdx(idx)}
                       className={
                         'flex w-full items-center gap-3 px-4 py-2 text-left font-mono text-sm ' +
@@ -364,14 +398,16 @@ export function CommandPalette() {
               </div>
             )
           ) : grouped.flat.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">{t('palette.noMatches')}</div>
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              {t('palette.noMatches')}
+            </div>
           ) : (
             GROUP_ORDER.map((g) => {
               const items = grouped.buckets[g];
               if (items.length === 0) return null;
               return (
                 <div key={g}>
-                  <div className="px-4 pt-3 pb-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <div className="px-4 pb-1 pt-3 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                     {t(`palette.groups.${g.toLowerCase()}`)}
                   </div>
                   {items.map((cmd) => {
@@ -381,11 +417,16 @@ export function CommandPalette() {
                       <button
                         key={cmd.id}
                         type="button"
-                        onClick={() => { close(); void cmd.run(); }}
+                        onClick={() => {
+                          close();
+                          void cmd.run();
+                        }}
                         onMouseEnter={() => setActiveIdx(flatIdx)}
                         className={
                           'flex w-full items-center gap-3 px-4 py-2 text-left text-sm ' +
-                          (active ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50')
+                          (active
+                            ? 'bg-muted text-foreground'
+                            : 'text-foreground hover:bg-muted/50')
                         }
                       >
                         <span className="w-4 text-center font-mono text-xs text-muted-foreground">
@@ -407,12 +448,24 @@ export function CommandPalette() {
         </div>
 
         <div className="flex items-center gap-4 border-t border-border bg-muted/30 px-4 py-1.5 font-mono text-[10px] text-muted-foreground">
-          <span><kbd className="mr-1 rounded border border-border bg-background px-1">↑↓</kbd>{t('palette.kbd.navigate')}</span>
+          <span>
+            <kbd className="mr-1 rounded border border-border bg-background px-1">↑↓</kbd>
+            {t('palette.kbd.navigate')}
+          </span>
           {addMode && (
-            <span><kbd className="mr-1 rounded border border-border bg-background px-1">tab</kbd>{t('palette.kbd.complete')}</span>
+            <span>
+              <kbd className="mr-1 rounded border border-border bg-background px-1">tab</kbd>
+              {t('palette.kbd.complete')}
+            </span>
           )}
-          <span><kbd className="mr-1 rounded border border-border bg-background px-1">↵</kbd>{addMode ? t('palette.kbd.add') : t('palette.kbd.run')}</span>
-          <span><kbd className="mr-1 rounded border border-border bg-background px-1">esc</kbd>{t('palette.kbd.close')}</span>
+          <span>
+            <kbd className="mr-1 rounded border border-border bg-background px-1">↵</kbd>
+            {addMode ? t('palette.kbd.add') : t('palette.kbd.run')}
+          </span>
+          <span>
+            <kbd className="mr-1 rounded border border-border bg-background px-1">esc</kbd>
+            {t('palette.kbd.close')}
+          </span>
         </div>
       </div>
     </div>

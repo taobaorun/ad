@@ -13,7 +13,16 @@
  * intentionally not reachable from this pane any more.
  */
 
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useUiState } from '@/store/ui';
 import { useProjects } from '@/store/projects';
@@ -22,7 +31,9 @@ import { useAgents } from '@/store/agents';
 import { useUiSettings } from '@/store/uiSettings';
 import { tauri } from '@/lib/tauri';
 import { Trash2, Repeat, SquareTerminal, X as XIcon } from 'lucide-react';
-import { AgentContextSchema, type CapabilityDescriptor } from '@/lib/agentTypes';
+import { AgentContextSchema, type ProcessObservation } from '@/lib/agentTypes';
+import { capabilityAllows } from '@/lib/agentCapabilities';
+import { profileFeaturesFor } from '@/lib/profileEditorRegistry';
 import type { Project, ProjectStatus } from '@/lib/projectTypes';
 import type { ProfileFile } from '@/lib/profileSchema';
 import { SwitchTemplateDialog } from './SwitchTemplateDialog';
@@ -49,7 +60,10 @@ export function ProjectDetail() {
 
   if (!project) {
     return (
-      <div className="flex h-full items-center justify-center text-sm" style={{ color: 'var(--ds-fg-4)' }}>
+      <div
+        className="flex h-full items-center justify-center text-sm"
+        style={{ color: 'var(--ds-fg-4)' }}
+      >
         {t('detail.selectPrefix')}
         <KbdChip className="mx-1">⌘1</KbdChip>
         {t('detail.selectSuffix')}
@@ -73,10 +87,13 @@ function Detail({ project }: { project: Project }) {
   const [editorReloadKey, setEditorReloadKey] = useState(0);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
+  const [processes, setProcesses] = useState<ProcessObservation[]>([]);
   const launchingRef = useRef(false);
   const terminal = useUiSettings((s) => s.terminal);
   const activeContext = useAgents((s) => s.activeContext);
+  const activeAgentId = useAgents((s) => s.activeAgentId);
   const activeCapabilities = useAgents((s) => s.activeCapabilities);
+  const profileFeatures = profileFeaturesFor(activeAgentId);
   const [activeTab, setActiveTab] = useState<'settings' | 'skills'>('settings');
 
   const projectContext = useMemo(
@@ -89,15 +106,38 @@ function Detail({ project }: { project: Project }) {
         : null,
     [activeContext, project.path],
   );
-  const settingsCapability = findCapability(activeCapabilities, 'settings');
-  const launchCapability = findCapability(activeCapabilities, 'terminal_launch');
-  const settingsAvailable = capabilityAllows(settingsCapability, 'inspect', 'project');
-  const launchSupported = capabilityAllows(launchCapability, 'launch', 'project');
+  const settingsAvailable = capabilityAllows(activeCapabilities, 'settings', 'inspect', 'project');
+  const launchSupported = capabilityAllows(
+    activeCapabilities,
+    'terminal_launch',
+    'launch',
+    'project',
+  );
+  const processDetectionSupported = capabilityAllows(
+    activeCapabilities,
+    'process_detection',
+    'detect',
+    'project',
+  );
+
+  useEffect(() => {
+    if (!projectContext || !processDetectionSupported) {
+      setProcesses([]);
+      return;
+    }
+    void tauri
+      .detectAgentProcesses(projectContext)
+      .then(setProcesses)
+      .catch(() => setProcesses([]));
+  }, [processDetectionSupported, projectContext]);
 
   useEffect(() => {
     void (async () => {
-      try { setStatus(await tauri.getProjectStatus(project.path)); }
-      catch { setStatus(null); }
+      try {
+        setStatus(await tauri.getProjectStatus(project.path));
+      } catch {
+        setStatus(null);
+      }
     })();
   }, [project.path, project.lastApplied]);
 
@@ -144,12 +184,27 @@ function Detail({ project }: { project: Project }) {
         style={{ width: '100%', maxWidth: 1400, margin: '0 auto', padding: '32px 40px 0' }}
       >
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 16,
+          }}
+        >
           <div style={{ minWidth: 0, flex: 1 }}>
-            <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', color: 'hsl(var(--foreground))', margin: 0 }}>
+            <h1
+              style={{
+                fontSize: 24,
+                fontWeight: 600,
+                letterSpacing: '-0.02em',
+                color: 'hsl(var(--foreground))',
+                margin: 0,
+              }}
+            >
               {project.displayName}
             </h1>
-            <div className="font-mono text-[12.5px] mt-1.5" style={{ color: 'var(--ds-fg-3)' }}>
+            <div className="mt-1.5 font-mono text-[12.5px]" style={{ color: 'var(--ds-fg-3)' }}>
               {project.path}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 14 }}>
@@ -157,11 +212,18 @@ function Detail({ project }: { project: Project }) {
                 <>
                   <StatusPill ok={!status.gitDirty && status.isGitRepo} warn={status.gitDirty}>
                     {status.isGitRepo
-                      ? (status.gitDirty ? t('detail.gitDirty') : t('detail.gitClean'))
+                      ? status.gitDirty
+                        ? t('detail.gitDirty')
+                        : t('detail.gitClean')
                       : t('detail.notARepo')}
                   </StatusPill>
                   {status.isGitRepo && status.gitignoreExcludesSettingsLocal === false && (
                     <StatusPill warn>{t('detail.settingsLocalNotIgnored')}</StatusPill>
+                  )}
+                  {processes.length > 0 && (
+                    <StatusPill ok>
+                      {t('agentWorkspace.runningProcesses', { count: processes.length })}
+                    </StatusPill>
                   )}
                 </>
               )}
@@ -174,9 +236,14 @@ function Detail({ project }: { project: Project }) {
               disabled={launchUnavailable || launching}
               title={openTitle}
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                height: 30, padding: '0 11px', borderRadius: 7,
-                fontSize: 12.5, fontWeight: 500,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                height: 30,
+                padding: '0 11px',
+                borderRadius: 7,
+                fontSize: 12.5,
+                fontWeight: 500,
                 border: '0.5px solid var(--ds-line-strong)',
                 background: 'var(--ds-bg-card)',
                 color: launchUnavailable ? 'var(--ds-fg-4)' : 'var(--ds-fg-2)',
@@ -196,9 +263,16 @@ function Detail({ project }: { project: Project }) {
               }}
               title={t('detail.removeTitle')}
               style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 30, height: 30, borderRadius: 7,
-                background: 'transparent', border: 0, color: 'var(--ds-fg-4)', cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 30,
+                height: 30,
+                borderRadius: 7,
+                background: 'transparent',
+                border: 0,
+                color: 'var(--ds-fg-4)',
+                cursor: 'pointer',
               }}
               onMouseEnter={(e) => {
                 (e.currentTarget as HTMLElement).style.background = 'var(--ds-danger-soft)';
@@ -218,15 +292,24 @@ function Detail({ project }: { project: Project }) {
           <div
             role="alert"
             style={{
-              marginTop: 12, padding: '10px 14px', borderRadius: 8,
-              background: 'var(--ds-danger-soft)', border: '0.5px solid var(--ds-danger)',
+              marginTop: 12,
+              padding: '10px 14px',
+              borderRadius: 8,
+              background: 'var(--ds-danger-soft)',
+              border: '0.5px solid var(--ds-danger)',
               color: 'var(--ds-danger)',
-              display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12.5,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              fontSize: 12.5,
             }}
           >
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600 }}>{t('terminal.launchFailed')}</div>
-              <div className="font-mono" style={{ marginTop: 2, fontSize: 11.5, opacity: 0.85, wordBreak: 'break-all' }}>
+              <div
+                className="font-mono"
+                style={{ marginTop: 2, fontSize: 11.5, opacity: 0.85, wordBreak: 'break-all' }}
+              >
                 {launchError}
               </div>
             </div>
@@ -234,7 +317,13 @@ function Detail({ project }: { project: Project }) {
               type="button"
               onClick={() => setLaunchError(null)}
               aria-label="dismiss"
-              style={{ background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', padding: 2 }}
+              style={{
+                background: 'transparent',
+                border: 0,
+                color: 'inherit',
+                cursor: 'pointer',
+                padding: 2,
+              }}
             >
               <XIcon className="h-3.5 w-3.5" />
             </button>
@@ -242,10 +331,12 @@ function Detail({ project }: { project: Project }) {
         )}
 
         {/* Breadcrumb: initialized from template + Switch */}
-        <TemplateBreadcrumb
-          initializedFrom={initializedFrom}
-          onSwitchTemplate={openSwitchTemplate}
-        />
+        {profileFeatures.legacyProjectTemplates && (
+          <TemplateBreadcrumb
+            initializedFrom={initializedFrom}
+            onSwitchTemplate={openSwitchTemplate}
+          />
+        )}
       </div>
 
       {/* Tab bar */}
@@ -265,7 +356,7 @@ function Detail({ project }: { project: Project }) {
 
       {/* Tab content — fills remaining vertical space */}
       <div
-        className="flex-1 min-h-0"
+        className="min-h-0 flex-1"
         style={{ width: '100%', maxWidth: 1400, margin: '0 auto', padding: '0 40px 40px' }}
       >
         {activeTab === 'settings' && projectContext && settingsAvailable ? (
@@ -275,15 +366,30 @@ function Detail({ project }: { project: Project }) {
             </Suspense>
           </div>
         ) : activeTab === 'settings' ? (
-          <div role="status" className="flex h-full items-center justify-center text-sm" style={{ color: 'var(--ds-fg-4)' }}>
+          <div
+            role="status"
+            className="flex h-full items-center justify-center text-sm"
+            style={{ color: 'var(--ds-fg-4)' }}
+          >
             {t('agentWorkspace.settingsUnavailable')}
           </div>
         ) : (
-          <div className="h-full pt-2" style={{ border: '0.5px solid var(--ds-line)', borderTop: 'none', borderRadius: '0 0 8px 8px' }}>
+          <div
+            className="h-full pt-2"
+            style={{
+              border: '0.5px solid var(--ds-line)',
+              borderTop: 'none',
+              borderRadius: '0 0 8px 8px',
+            }}
+          >
             {projectContext ? (
               <AgentCollectionPanel context={projectContext} capabilities={activeCapabilities} />
             ) : (
-              <div role="status" className="flex h-full items-center justify-center text-sm" style={{ color: 'var(--ds-fg-4)' }}>
+              <div
+                role="status"
+                className="flex h-full items-center justify-center text-sm"
+                style={{ color: 'var(--ds-fg-4)' }}
+              >
                 {t('agentWorkspace.resourcesUnavailable')}
               </div>
             )}
@@ -291,37 +397,22 @@ function Detail({ project }: { project: Project }) {
         )}
       </div>
 
-      <SwitchTemplateDialog
-        open={switchOpen}
-        projectPath={project.path}
-        currentProfileId={project.currentProfileId ?? null}
-        onOpenChange={(v) => { if (!v) closeSwitchTemplate(); else openSwitchTemplate(); }}
-        onApplied={() => {
-          void reloadProjects();
-          setEditorReloadKey((k) => k + 1);
-        }}
-      />
+      {profileFeatures.legacyProjectTemplates && (
+        <SwitchTemplateDialog
+          open={switchOpen}
+          projectPath={project.path}
+          currentProfileId={project.currentProfileId ?? null}
+          onOpenChange={(v) => {
+            if (!v) closeSwitchTemplate();
+            else openSwitchTemplate();
+          }}
+          onApplied={() => {
+            void reloadProjects();
+            setEditorReloadKey((k) => k + 1);
+          }}
+        />
+      )}
     </div>
-  );
-}
-
-function findCapability(
-  capabilities: CapabilityDescriptor[],
-  kind: CapabilityDescriptor['kind'],
-): CapabilityDescriptor | undefined {
-  return capabilities.find((capability) => capability.kind === kind);
-}
-
-function capabilityAllows(
-  capability: CapabilityDescriptor | undefined,
-  operation: CapabilityDescriptor['operations'][number],
-  scope: CapabilityDescriptor['scopes'][number],
-): boolean {
-  return (
-    capability !== undefined &&
-    capability.availability !== 'unavailable' &&
-    capability.operations.includes(operation) &&
-    capability.scopes.includes(scope)
   );
 }
 
@@ -347,10 +438,27 @@ function TemplateBreadcrumb({
         padding: '8px 14px',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, color: 'var(--ds-fg-3)', minWidth: 0 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          fontSize: 12.5,
+          color: 'var(--ds-fg-3)',
+          minWidth: 0,
+        }}
+      >
         {initializedFrom ? (
           <>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: initializedFrom.color, flexShrink: 0 }} />
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: initializedFrom.color,
+                flexShrink: 0,
+              }}
+            />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {t('detail.initializedFrom', { name: initializedFrom.displayName })}
             </span>
@@ -375,14 +483,24 @@ function StatusPill({ ok, warn, children }: { ok?: boolean; warn?: boolean; chil
   let color = 'var(--ds-fg-2)';
   let bg = 'var(--ds-bg-soft)';
   let borderColor = 'var(--ds-line)';
-  if (ok) { color = 'var(--ds-ok)'; bg = 'rgba(21,128,61,0.06)'; borderColor = 'rgba(21,128,61,0.18)'; }
-  if (warn) { color = 'var(--ds-warning)'; bg = 'var(--ds-warning-soft)'; borderColor = 'rgba(194,65,12,0.18)'; }
+  if (ok) {
+    color = 'var(--ds-ok)';
+    bg = 'rgba(21,128,61,0.06)';
+    borderColor = 'rgba(21,128,61,0.18)';
+  }
+  if (warn) {
+    color = 'var(--ds-warning)';
+    bg = 'var(--ds-warning-soft)';
+    borderColor = 'rgba(194,65,12,0.18)';
+  }
 
   return (
     <span
       className="font-mono"
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 5,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
         fontSize: 11.5,
         padding: '3px 8px 3px 7px',
         borderRadius: 5,
@@ -392,13 +510,30 @@ function StatusPill({ ok, warn, children }: { ok?: boolean; warn?: boolean; chil
         whiteSpace: 'nowrap',
       }}
     >
-      <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: 0.85, flexShrink: 0 }} />
+      <span
+        style={{
+          width: 5,
+          height: 5,
+          borderRadius: '50%',
+          background: 'currentColor',
+          opacity: 0.85,
+          flexShrink: 0,
+        }}
+      />
       {children}
     </span>
   );
 }
 
-function KbdChip({ children, className = '', style }: { children: ReactNode; className?: string; style?: CSSProperties }) {
+function KbdChip({
+  children,
+  className = '',
+  style,
+}: {
+  children: ReactNode;
+  className?: string;
+  style?: CSSProperties;
+}) {
   return (
     <span
       className={`inline-flex items-center justify-center font-mono ${className}`}
@@ -423,7 +558,9 @@ function KbdChip({ children, className = '', style }: { children: ReactNode; cla
 }
 
 const dsBtn: CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 7,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 7,
   height: 30,
   padding: '0 11px',
   borderRadius: 7,
@@ -436,7 +573,15 @@ const dsBtn: CSSProperties = {
   cursor: 'pointer',
 };
 
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
   return (
     <button
       type="button"
