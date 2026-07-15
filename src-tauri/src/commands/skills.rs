@@ -150,7 +150,7 @@ fn parse_skill_md(dir: &Path) -> Option<String> {
 // Symlink helpers
 // ---------------------------------------------------------------------------
 
-fn is_ad_managed_symlink(entry: &Path) -> bool {
+pub(crate) fn is_ad_managed_symlink(entry: &Path) -> bool {
     if !entry.is_symlink() {
         return false;
     }
@@ -371,12 +371,25 @@ pub fn update_skill_source(id: String) -> CmdResult<SkillUpdateResult> {
 
 #[tauri::command]
 pub fn scan_skill_library(project_path: Option<String>) -> CmdResult<Vec<SkillEntry>> {
+    scan_skill_library_inner(project_path, true)
+}
+
+pub(crate) fn scan_skill_library_read_only(
+    project_path: Option<String>,
+) -> CmdResult<Vec<SkillEntry>> {
+    scan_skill_library_inner(project_path, false)
+}
+
+fn scan_skill_library_inner(
+    project_path: Option<String>,
+    persist_discovered_sources: bool,
+) -> CmdResult<Vec<SkillEntry>> {
     let sources = load_sources()?;
     let claude_skills = claude_skills_dir()?;
     let mut entries = Vec::new();
 
     let mut sources = sources;
-    if auto_register_discovered(&mut sources)? {
+    if auto_register_discovered(&mut sources)? && persist_discovered_sources {
         save_sources(&sources)?;
     }
 
