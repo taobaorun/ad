@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import { useUiState } from '@/store/ui';
 import { useProjects } from '@/store/projects';
 import { useProfiles } from '@/store/profiles';
+import { useAgents } from '@/store/agents';
 import { useUiSettings } from '@/store/uiSettings';
 import { tauri } from '@/lib/tauri';
 import { Trash2, Repeat, SquareTerminal, X as XIcon } from 'lucide-react';
@@ -77,6 +78,7 @@ function Detail({ project }: { project: Project }) {
   const [launching, setLaunching] = useState(false);
   const launchingRef = useRef(false);
   const terminal = useUiSettings((s) => s.terminal);
+  const activeContext = useAgents((s) => s.activeContext);
   const [activeTab, setActiveTab] = useState<'settings' | 'skills'>('settings');
 
   useEffect(() => {
@@ -90,20 +92,20 @@ function Detail({ project }: { project: Project }) {
 
   const customMissing = terminal.backend === 'custom' && terminal.customCommand.trim() === '';
   const backendLabel = t(`terminal.backend.${terminal.backend}`);
-  const openTitle = customMissing
+  const launchUnavailable = customMissing || activeContext === null;
+  const openTitle = launchUnavailable
     ? t('terminal.openTooltipDisabled')
     : t('terminal.openTooltip', { backend: backendLabel, path: project.path });
 
   async function openTerminal() {
-    if (launchingRef.current || customMissing) return;
+    if (launchingRef.current || launchUnavailable || !activeContext) return;
     launchingRef.current = true;
     setLaunching(true);
     setLaunchError(null);
     try {
       await tauri.openInTerminal({
-        projectPath: project.path,
+        context: { ...activeContext, projectPath: project.path },
         backend: terminal.backend,
-        claudeBin: terminal.claudeBinPath || undefined,
         customTemplate: terminal.customCommand || undefined,
       });
     } catch (err) {
@@ -159,7 +161,7 @@ function Detail({ project }: { project: Project }) {
             <button
               type="button"
               onClick={() => void openTerminal()}
-              disabled={customMissing || launching}
+              disabled={launchUnavailable || launching}
               title={openTitle}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -167,8 +169,8 @@ function Detail({ project }: { project: Project }) {
                 fontSize: 12.5, fontWeight: 500,
                 border: '0.5px solid var(--ds-line-strong)',
                 background: 'var(--ds-bg-card)',
-                color: customMissing ? 'var(--ds-fg-4)' : 'var(--ds-fg-2)',
-                cursor: customMissing ? 'not-allowed' : 'pointer',
+                color: launchUnavailable ? 'var(--ds-fg-4)' : 'var(--ds-fg-2)',
+                cursor: launchUnavailable ? 'not-allowed' : 'pointer',
                 opacity: launching ? 0.6 : 1,
               }}
             >

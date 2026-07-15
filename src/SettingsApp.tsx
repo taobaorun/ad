@@ -175,16 +175,6 @@ function TerminalSection() {
         </div>
       </Field>
 
-      <Field label={t('terminal.claudeBinLabel')} hint={t('terminal.claudeBinHint')}>
-        <input
-          type="text"
-          value={terminal.claudeBinPath}
-          onChange={(e) => setTerminal({ claudeBinPath: e.target.value })}
-          placeholder={t('terminal.claudeBinPlaceholder')}
-          className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-clay"
-        />
-      </Field>
-
       {terminal.backend === 'custom' && (
         <Field label={t('terminal.customTemplateLabel')} hint={t('terminal.customTemplateHint')}>
           <textarea

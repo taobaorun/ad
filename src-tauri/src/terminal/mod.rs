@@ -4,6 +4,7 @@
 // plays nicely with serde for IPC. Each backend implementation lives in its
 // own file and exposes a single `launch` function consumed by `launch()` below.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
@@ -46,8 +47,16 @@ impl TerminalBackend {
 
 pub struct LaunchSpec<'a> {
     pub cwd: &'a Path,
-    pub claude_bin: &'a str,
+    pub program: &'a str,
+    pub args: &'a [String],
+    pub env: &'a BTreeMap<String, String>,
     pub custom_template: Option<&'a str>,
+}
+
+impl LaunchSpec<'_> {
+    pub(crate) fn command(&self) -> String {
+        render_launch_command(self.program, self.args, self.env)
+    }
 }
 
 pub fn launch(backend: TerminalBackend, spec: LaunchSpec<'_>) -> Result<()> {
@@ -97,6 +106,24 @@ pub(crate) fn shell_quote(s: &str) -> String {
     out
 }
 
+pub(crate) fn render_launch_command(
+    program: &str,
+    args: &[String],
+    env: &BTreeMap<String, String>,
+) -> String {
+    let mut parts = Vec::with_capacity(env.len() + args.len() + 2);
+    if !env.is_empty() {
+        parts.push("env".to_string());
+        parts.extend(
+            env.iter()
+                .map(|(key, value)| shell_quote(&format!("{key}={value}"))),
+        );
+    }
+    parts.push(shell_quote(program));
+    parts.extend(args.iter().map(|arg| shell_quote(arg)));
+    parts.join(" ")
+}
+
 /// Resolve a binary name to an absolute path by querying the user's login
 /// shell. Needed because Tauri/GUI apps launched from the Dock or Launchpad
 /// inherit only the system PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), missing
@@ -108,7 +135,7 @@ pub(crate) fn resolve_bin(bin: &str) -> Option<String> {
     }
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
     let out = std::process::Command::new(&shell)
-        .args(["-lc", &format!("command -v {bin}")])
+        .args(["-lc", &format!("command -v {}", shell_quote(bin))])
         .output()
         .ok()?;
     if !out.status.success() {
@@ -151,5 +178,18 @@ mod tests {
         assert_eq!(shell_quote("foo bar"), "'foo bar'");
         assert_eq!(shell_quote("it's"), "'it'\\''s'");
         assert_eq!(shell_quote(""), "''");
+    }
+
+    #[test]
+    fn launch_command_quotes_program_args_and_environment() {
+        let env = std::collections::BTreeMap::from([
+            ("A_KEY".to_string(), "value with spaces".to_string()),
+            ("B_KEY".to_string(), "it's safe".to_string()),
+        ]);
+
+        assert_eq!(
+            render_launch_command("codex", &["--profile".into(), "work space".into()], &env),
+            "env 'A_KEY=value with spaces' 'B_KEY=it'\\''s safe' 'codex' '--profile' 'work space'"
+        );
     }
 }

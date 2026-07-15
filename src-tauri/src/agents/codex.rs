@@ -2,10 +2,11 @@ use crate::fs::paths::codex_dir;
 
 use super::codex_plugins::CodexPluginsPort;
 use super::codex_ports::CodexSettingsPort;
+use super::codex_runtime::{CodexLaunchPort, CodexProcessPort};
 use super::codex_skills::CodexSkillsPort;
 use super::{
-    AgentAdapter, AgentDefinition, DiscoveryEvidence, InstallationCandidate, PluginsPort,
-    SettingsPort, SkillsPort,
+    AgentAdapter, AgentDefinition, DiscoveryEvidence, InstallationCandidate, LaunchPort,
+    PluginsPort, ProcessPort, SettingsPort, SkillsPort,
 };
 
 #[derive(Debug, Default)]
@@ -14,6 +15,8 @@ pub struct CodexAdapter;
 static SETTINGS_PORT: CodexSettingsPort = CodexSettingsPort;
 static SKILLS_PORT: CodexSkillsPort = CodexSkillsPort;
 static PLUGINS_PORT: CodexPluginsPort = CodexPluginsPort;
+static PROCESS_PORT: CodexProcessPort = CodexProcessPort;
+static LAUNCH_PORT: CodexLaunchPort = CodexLaunchPort;
 
 impl AgentAdapter for CodexAdapter {
     fn definition(&self) -> &AgentDefinition {
@@ -39,6 +42,14 @@ impl AgentAdapter for CodexAdapter {
 
     fn plugins(&self) -> Option<&dyn PluginsPort> {
         Some(&PLUGINS_PORT)
+    }
+
+    fn processes(&self) -> Option<&dyn ProcessPort> {
+        Some(&PROCESS_PORT)
+    }
+
+    fn launcher(&self) -> Option<&dyn LaunchPort> {
+        Some(&LAUNCH_PORT)
     }
 }
 
@@ -70,6 +81,68 @@ pub(crate) fn discover_codex_candidates() -> Vec<InstallationCandidate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn restore_env(previous_home: Option<String>, previous_codex_home: Option<String>) {
+        match previous_home {
+            Some(value) => std::env::set_var("AD_HOME", value),
+            None => std::env::remove_var("AD_HOME"),
+        }
+        match previous_codex_home {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn runtime_ports_expose_codex_process_spec_and_launch_recipe() {
+        let temp = tempfile::tempdir().unwrap();
+        let codex_home = temp.path().join(".codex");
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        let previous_home = std::env::var("AD_HOME").ok();
+        let previous_codex_home = std::env::var("CODEX_HOME").ok();
+        std::env::set_var("AD_HOME", temp.path());
+        std::env::remove_var("CODEX_HOME");
+
+        let registry = crate::agents::builtin_registry();
+        let installation = registry
+            .discover()
+            .into_iter()
+            .find(|item| item.agent_id.as_str() == "codex")
+            .unwrap();
+        let context = crate::agents::AgentContext {
+            installation_id: installation.id,
+            project_path: Some(
+                std::fs::canonicalize(&project)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        };
+        let adapter = registry.adapter("codex").unwrap();
+        let process_port = adapter.processes().unwrap();
+        let process_spec = process_port.match_spec();
+        let observations = process_port.detect(&context).unwrap();
+        let recipe = adapter.launcher().unwrap().recipe(&context).unwrap();
+
+        restore_env(previous_home, previous_codex_home);
+
+        assert!(observations
+            .iter()
+            .all(|item| item.installation_id == context.installation_id));
+        assert!(process_spec.matches("codex"));
+        assert!(process_spec.matches("Codex-cli"));
+        assert!(!process_spec.matches("claude"));
+        assert_eq!(recipe.program, "codex");
+        assert_eq!(
+            recipe.cwd,
+            std::fs::canonicalize(project).unwrap().to_string_lossy()
+        );
+        assert!(recipe.args.is_empty());
+        assert!(recipe.env.is_empty());
+    }
 
     #[test]
     #[serial_test::serial(home_env)]

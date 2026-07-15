@@ -140,9 +140,8 @@ export const tauri = {
   listTerminalBackends: () =>
     invoke<{ id: TerminalBackendId; label: string }[]>('list_terminal_backends'),
   openInTerminal: (args: {
-    projectPath: string;
+    context: AgentContext;
     backend: TerminalBackendId;
-    claudeBin?: string;
     customTemplate?: string;
   }) => invoke<void>('open_in_terminal', args),
 

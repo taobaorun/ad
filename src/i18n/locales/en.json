@@ -194,7 +194,7 @@
   },
   "terminal": {
     "openInTerminal": "Open in terminal",
-    "openTooltip": "Launch claude in {{backend}} at {{path}}",
+    "openTooltip": "Launch the active Agent in {{backend}} at {{path}}",
     "openTooltipDisabled": "Configure a custom command template in Settings first",
     "section": "Terminal",
     "backendLabel": "Backend",
@@ -210,15 +210,12 @@
       "apple-terminal": "Built into macOS; reuses front window for a new tab when running",
       "custom": "Custom command template"
     },
-    "claudeBinLabel": "Claude binary path",
-    "claudeBinPlaceholder": "claude",
-    "claudeBinHint": "Defaults to PATH lookup; leave empty to use `claude`",
     "customTemplateLabel": "Command template",
-    "customTemplateHint": "Placeholders: {{cwd}} = project path, {{cmd}} = full claude command",
+    "customTemplateHint": "Placeholders: {{cwd}} = project path, {{cmd}} = full Agent command",
     "launchFailed": "Could not open terminal",
     "openSettings": "Open Settings",
     "paletteEntry": "Open in terminal: {{project}}",
-    "paletteSubtitle": "Launch claude in {{backend}} (cwd: {{path}})"
+    "paletteSubtitle": "Launch the active Agent in {{backend}} (cwd: {{path}})"
   },
   "settings": {
     "title": "Settings",
@@ -235,7 +232,7 @@
     },
     "terminal": {
       "title": "Terminal",
-      "desc": "Behavior when launching Claude in an external terminal"
+      "desc": "Behavior when launching the active Agent in an external terminal"
     },
     "shortcuts": {
       "title": "Shortcuts",

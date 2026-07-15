@@ -194,7 +194,7 @@
   },
   "terminal": {
     "openInTerminal": "在终端打开",
-    "openTooltip": "在 {{backend}} 中以 {{path}} 启动 claude",
+    "openTooltip": "在 {{backend}} 中以 {{path}} 启动当前 Agent",
     "openTooltipDisabled": "请先在 Settings 配置 custom 命令模板",
     "section": "终端",
     "backendLabel": "终端类型",
@@ -210,15 +210,12 @@
       "apple-terminal": "macOS 自带,已运行时复用窗口开新 tab",
       "custom": "自定义命令模板"
     },
-    "claudeBinLabel": "Claude 二进制路径",
-    "claudeBinPlaceholder": "claude",
-    "claudeBinHint": "默认依赖 PATH，留空使用 `claude`",
     "customTemplateLabel": "命令模板",
-    "customTemplateHint": "可用占位符：{{cwd}}=项目路径，{{cmd}}=完整 claude 启动命令",
+    "customTemplateHint": "可用占位符：{{cwd}}=项目路径，{{cmd}}=完整 Agent 启动命令",
     "launchFailed": "无法打开终端",
     "openSettings": "打开 Settings",
     "paletteEntry": "在终端打开：{{project}}",
-    "paletteSubtitle": "在 {{backend}} 启动 claude（cwd: {{path}}）"
+    "paletteSubtitle": "在 {{backend}} 启动当前 Agent（cwd: {{path}}）"
   },
   "settings": {
     "title": "设置",
@@ -235,7 +232,7 @@
     },
     "terminal": {
       "title": "终端",
-      "desc": "在外部终端启动 Claude 时的行为"
+      "desc": "在外部终端启动当前 Agent 时的行为"
     },
     "shortcuts": {
       "title": "快捷键",

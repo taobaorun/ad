@@ -2,7 +2,7 @@
 //
 // Strategy is symmetric to Ghostty's:
 //   1. If Terminal.app is running, try an AppleScript that opens a new tab in
-//      the front window and `do script` the cd+claude command.
+//      the front window and `do script` the cd+Agent command.
 //   2. Otherwise fall back to launching a fresh window via AppleScript
 //      `do script` against application "Terminal" (which auto-launches).
 //
@@ -20,7 +20,7 @@ pub fn launch(spec: &LaunchSpec<'_>) -> Result<()> {
         .cwd
         .to_str()
         .ok_or_else(|| anyhow!("non-utf8 project path"))?;
-    let shell_cmd = format!("cd {} && {}", shell_quote(cwd), shell_quote(spec.claude_bin));
+    let shell_cmd = format!("cd {} && {}", shell_quote(cwd), spec.command());
     let escaped = escape_applescript_string(&shell_cmd);
 
     let script = if terminal_is_running() {

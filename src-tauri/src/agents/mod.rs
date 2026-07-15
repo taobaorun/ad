@@ -4,6 +4,7 @@ mod claude_ports;
 mod codex;
 mod codex_plugins;
 mod codex_ports;
+mod codex_runtime;
 mod codex_skills;
 mod conversion;
 mod discovery;
@@ -14,6 +15,7 @@ mod execution_tests;
 mod operations;
 mod plan_store;
 mod registry;
+mod runtime;
 mod types;
 
 pub use capabilities::*;
@@ -25,6 +27,7 @@ pub use execution::*;
 pub use operations::*;
 pub use plan_store::*;
 pub use registry::*;
+pub use runtime::*;
 pub use types::*;
 
 pub fn builtin_registry() -> AdapterRegistry {

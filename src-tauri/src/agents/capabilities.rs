@@ -88,6 +88,30 @@ pub struct ProcessObservation {
     pub cwd: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessMatchSpec {
+    executable_names: BTreeSet<String>,
+}
+
+impl ProcessMatchSpec {
+    pub fn new(names: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            executable_names: names
+                .into_iter()
+                .map(Into::into)
+                .map(|name: String| name.to_ascii_lowercase())
+                .collect(),
+        }
+    }
+
+    pub fn matches(&self, executable_name: &str) -> bool {
+        let name = executable_name
+            .trim_end_matches(".exe")
+            .to_ascii_lowercase();
+        self.executable_names.contains(&name)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchRecipe {
@@ -204,6 +228,7 @@ pub trait PluginsPort: ResourcePort + Send + Sync {
 pub trait ProcessPort: Send + Sync {
     descriptor_fields!();
 
+    fn match_spec(&self) -> ProcessMatchSpec;
     fn detect(&self, context: &AgentContext) -> Result<Vec<ProcessObservation>, AgentError>;
 }
 

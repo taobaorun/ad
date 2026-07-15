@@ -1,19 +1,19 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::{
+use super::codex_ports::{agent_error, resolve_codex_home, validate_project_path};
+use super::{
     detect_processes, AgentContext, AgentError, AgentErrorCode, CapabilityAvailability,
     CapabilityOperation, LaunchPort, LaunchRecipe, ProcessMatchSpec, ProcessObservation,
     ProcessPort, ResourceScope,
 };
-use super::common::{agent_error, resolve_claude_home, validate_project_path};
 
 #[derive(Debug, Default)]
-pub(crate) struct ClaudeProcessPort;
+pub(crate) struct CodexProcessPort;
 
 #[derive(Debug, Default)]
-pub(crate) struct ClaudeLaunchPort;
+pub(crate) struct CodexLaunchPort;
 
-impl ProcessPort for ClaudeProcessPort {
+impl ProcessPort for CodexProcessPort {
     fn scopes(&self) -> BTreeSet<ResourceScope> {
         BTreeSet::from([ResourceScope::User, ResourceScope::Project])
     }
@@ -27,16 +27,16 @@ impl ProcessPort for ClaudeProcessPort {
     }
 
     fn match_spec(&self) -> ProcessMatchSpec {
-        ProcessMatchSpec::new(["claude", "claude-code"])
+        ProcessMatchSpec::new(["codex", "codex-cli"])
     }
 
     fn detect(&self, context: &AgentContext) -> Result<Vec<ProcessObservation>, AgentError> {
-        resolve_claude_home(context)?;
+        resolve_codex_home(context)?;
         Ok(detect_processes(context, &self.match_spec()))
     }
 }
 
-impl LaunchPort for ClaudeLaunchPort {
+impl LaunchPort for CodexLaunchPort {
     fn scopes(&self) -> BTreeSet<ResourceScope> {
         BTreeSet::from([ResourceScope::Project])
     }
@@ -50,18 +50,18 @@ impl LaunchPort for ClaudeLaunchPort {
     }
 
     fn recipe(&self, context: &AgentContext) -> Result<LaunchRecipe, AgentError> {
-        resolve_claude_home(context)?;
+        resolve_codex_home(context)?;
         let project_path = context.project_path.as_deref().ok_or_else(|| {
             agent_error(
                 AgentErrorCode::InvalidPlan,
                 context,
                 None,
-                "Claude launch requires a project context",
+                "Codex launch requires a project context",
             )
         })?;
         let project = validate_project_path(context, project_path)?;
         Ok(LaunchRecipe {
-            program: "claude".into(),
+            program: "codex".into(),
             args: Vec::new(),
             env: BTreeMap::new(),
             cwd: project.to_string_lossy().into_owned(),

@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { useUiState } from '@/store/ui';
 import { useProfiles } from '@/store/profiles';
 import { useProjects } from '@/store/projects';
+import { useAgents } from '@/store/agents';
 import { useUiSettings } from '@/store/uiSettings';
 import { tauri } from '@/lib/tauri';
 import { usePathAutocomplete } from '@/lib/pathAutocomplete';
@@ -50,6 +51,7 @@ export function CommandPalette() {
   const projects = useProjects((s) => s.projects);
   const activePath = useUiState((s) => s.activeProjectPath);
   const activeProject = projects.find((p) => p.path === activePath) ?? null;
+  const activeContext = useAgents((s) => s.activeContext);
   const terminal = useUiSettings((s) => s.terminal);
 
   const [term, setTerm] = useState<string>('');
@@ -161,9 +163,9 @@ export function CommandPalette() {
         run: () => openSwitchTemplate(),
       });
 
-      // OPEN IN TERMINAL: launch claude in the configured external terminal
+      // OPEN IN TERMINAL: use the active Agent adapter's launch recipe.
       const customMissing = terminal.backend === 'custom' && terminal.customCommand.trim() === '';
-      if (!customMissing) {
+      if (!customMissing && activeContext) {
         const backendLabel = t(`terminal.backend.${terminal.backend}`);
         list.push({
           group: 'APPLY',
@@ -174,9 +176,8 @@ export function CommandPalette() {
           run: async () => {
             try {
               await tauri.openInTerminal({
-                projectPath: activeProject.path,
+                context: { ...activeContext, projectPath: activeProject.path },
                 backend: terminal.backend,
-                claudeBin: terminal.claudeBinPath || undefined,
                 customTemplate: terminal.customCommand || undefined,
               });
             } catch (e) {
@@ -235,7 +236,23 @@ export function CommandPalette() {
     });
 
     return list;
-  }, [t, profiles, projects, activeProject, activePath, setActiveProject, openEditDrawer, openSwitchTemplate, setView, setImportOpen, openDetectedModal, reloadProjects]);
+  }, [
+    t,
+    profiles,
+    projects,
+    activeProject,
+    activePath,
+    activeContext,
+    terminal,
+    setActiveProject,
+    openEditDrawer,
+    openSwitchTemplate,
+    setView,
+    setImportOpen,
+    openDetectedModal,
+    reloadProjects,
+    openPalette,
+  ]);
 
   const filtered = useMemo(() => {
     const q = term.trim().toLowerCase();
