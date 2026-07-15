@@ -93,6 +93,12 @@
   - [x] Codex fixture 同时放置 auth、history、session、log 文件，并验证 settings/skills/plugins 的非空 snapshots 从不包含这些运行时或敏感文件
   - [x] parity 测试发现并修复 macOS `/var` 与 `/private/var` alias 导致 Claude Skill symlink 被误判为非 AD-managed 的问题
   - [x] 移除六个 capability port 对尚未实现的用户 `Rollback` operation 的超前声明；Task 16 提供带 digest 保护的真实 rollback API 后再恢复
+- [x] (2026-07-15) 引入稳定 AgentProfile envelope 与 adapter-owned payload schema
+  - [x] profile 以 `(agentId, profileId)` 为复合身份，Claude 与 Codex 可使用同名 profile 且分别持久化到 Agent 目录
+  - [x] Claude payload 保留 layers/settings，Codex payload 使用独立 configToml；两种 adapter 在后端分别校验 payload schema，Codex 同时校验 TOML 语法
+  - [x] compatibility reader 将旧 Claude ProfileFile 映射为 envelope，读取过程不改写源文件；首次保存写入 canonical 目录，并保留时间戳冲突与 APFS case-collision 保护
+  - [x] 新增独立 envelope CRUD 和前端严格 Zod schema；旧 ProfileFile façade 仅继续服务 Claude，拒绝把 Codex 伪装成 Claude payload
+  - [x] 197 个 Rust lib 测试（4 ignored）、双 Agent parity 测试、30 个前端测试、typecheck、cargo check 和变更文件 ESLint 通过
 - [ ] (进行中) 实现 Claude Code → Codex 转换预览、冲突、备份和回滚；当前已完成 TOML preview contract、model 映射和 unsupported 字段报告，目标写入/回滚仍待实现
 - [ ] (进行中) 接入 Agent-aware store、UI、i18n 和 IPC；当前已完成 Agent store、selector、双语文案、discovery IPC 与按 Agent profile 加载/保存
 - [ ] (待开始) 完成单元、集成、行为测试及架构文档更新
@@ -148,6 +154,10 @@
 
 - 决策：在可调用 receipt rollback API 完成前，Settings/Skills/Plugins descriptor 不声明 Rollback operation。
   理由：ExecutionEngine 当前只有 apply 失败时的内部补偿；把它表述为用户可调用 rollback 会破坏“capability 来自真实端口”的核心约束。Task 16 实现 digest-protected rollback 后再恢复声明。
+  日期/作者：2026-07-15 / Codex
+
+- 决策：新增 AgentProfile envelope CRUD，并暂时保留只支持 Claude 的旧 ProfileFile façade。
+  理由：旧 UI 在 Task 17 迁移前仍需读取 Claude profile；让 Codex 继续复用 ClaudeSettings/ProfileLayers 会污染 adapter 边界，因此旧 façade 对 Codex 返回空列表并拒绝写入。
   日期/作者：2026-07-15 / Codex
 
 ## 上下文和方向

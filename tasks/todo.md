@@ -94,7 +94,7 @@
 
 ## Phase 5: Profiles and Conversion
 
-- [ ] Task 14: Introduce AgentProfile envelope
+- [x] Task 14: Introduce AgentProfile envelope
   - Acceptance: adapter-owned payload schemas coexist with legacy Claude ProfileFile reads; profiles remain keyed by `(agentId, profileId)`.
   - Verify: migration fixtures and frontend schema tests.
   - Files: `src-tauri/src/agents/profiles.rs`, `src-tauri/src/commands/profiles.rs`, `src/lib/profileSchema.ts`
