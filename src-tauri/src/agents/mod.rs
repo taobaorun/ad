@@ -2,6 +2,7 @@ mod capabilities;
 mod claude;
 mod claude_ports;
 mod codex;
+mod codex_ports;
 mod conversion;
 mod discovery;
 mod execution;
