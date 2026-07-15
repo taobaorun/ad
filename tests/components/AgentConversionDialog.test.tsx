@@ -86,13 +86,22 @@ describe('AgentConversionButton', () => {
       backupPaths: ['/Users/test/.ad/backups/config.toml'],
       postApplyStates: [],
     });
-    rollbackAgentReceipt.mockReset();
+    rollbackAgentReceipt.mockReset().mockResolvedValue({
+      id: 'rollback-receipt',
+      planId: 'rollback-plan',
+      status: 'complete',
+      appliedResources: [],
+      backupPaths: [],
+      postApplyStates: [],
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
   it('previews artifacts before explicitly applying a conversion', async () => {
     render(<AgentConversionButton />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Convert configuration' }));
+    expect(screen.getByText(/The Claude Code source is read-only/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Preview conversion' }));
     await screen.findByText('Mapped');
     expect(screen.getByText('Model maps to Codex')).toBeInTheDocument();
@@ -101,5 +110,10 @@ describe('AgentConversionButton', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Apply conversion' }));
     await waitFor(() => expect(applyConversionPlan).toHaveBeenCalledWith('conversion-plan', true));
     expect(await screen.findByText('1 backup created')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rollback target' }));
+    await waitFor(() =>
+      expect(rollbackAgentReceipt).toHaveBeenCalledWith('conversion-receipt', true),
+    );
   });
 });

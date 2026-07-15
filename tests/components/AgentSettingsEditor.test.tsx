@@ -89,4 +89,42 @@ describe('AgentSettingsEditor', () => {
 
     await waitFor(() => expect(applyAgentPlan).toHaveBeenCalledWith('plan-1'));
   });
+
+  it('previews creation when an editable settings target is missing', async () => {
+    const missingTarget = SettingsDocumentSchema.parse({
+      ...snapshot,
+      content: '',
+      exists: false,
+      digest: undefined,
+    });
+    listAgentSettingsDocuments.mockResolvedValue([missingTarget]);
+    previewAgentSettingsEdit.mockResolvedValue({
+      id: 'plan-create',
+      agentId: 'codex',
+      context: {
+        installationId: 'codex:default',
+        projectPath: '/Users/test/project',
+      },
+      changes: [{ resource: missingTarget.resource, kind: 'create' }],
+      expiresAt: '2026-07-15T01:05:00Z',
+    });
+    const context = AgentContextSchema.parse({
+      installationId: 'codex:default',
+      projectPath: '/Users/test/project',
+    });
+
+    render(<AgentSettingsEditor context={context} />);
+    const editor = await screen.findByRole('textbox', { name: 'Settings content' });
+    fireEvent.change(editor, { target: { value: 'model = "gpt-5.5"\n' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview changes' }));
+
+    await waitFor(() =>
+      expect(previewAgentSettingsEdit).toHaveBeenCalledWith(context, {
+        resource: missingTarget.resource,
+        mediaType: 'application/toml',
+        content: 'model = "gpt-5.5"\n',
+      }),
+    );
+    expect(await screen.findByText('Create')).toBeInTheDocument();
+  });
 });

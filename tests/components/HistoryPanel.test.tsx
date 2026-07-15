@@ -64,6 +64,7 @@ describe('HistoryPanel', () => {
     render(<HistoryPanel />);
 
     expect(await screen.findByText('user-config')).toBeInTheDocument();
+    expect(readHistory).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Rollback' }));
 
     await waitFor(() => expect(rollbackAgentReceipt).toHaveBeenCalledWith('receipt-1', true));
