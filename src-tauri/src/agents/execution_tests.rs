@@ -71,7 +71,7 @@ fn setup_two_file_plan() -> (
 #[test]
 #[serial_test::serial(home_env)]
 fn execution_backs_up_all_targets_before_atomic_writes() {
-    let (_temp, store, plan_id, shared, local) = setup_two_file_plan();
+    let (temp, store, plan_id, shared, local) = setup_two_file_plan();
 
     let receipt = ExecutionEngine::default().apply(&plan_id, &store).unwrap();
 
@@ -92,6 +92,17 @@ fn execution_backs_up_all_targets_before_atomic_writes() {
         .backup_paths
         .iter()
         .all(|path| std::path::Path::new(path).is_file()));
+    let operation_dirs = std::fs::read_dir(temp.path().join(".ad/backups/operations"))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(operation_dirs.len(), 1);
+    assert!(operation_dirs[0].path().join("manifest.json").is_file());
+    assert!(temp
+        .path()
+        .join(".ad/history/operations")
+        .join(format!("{}.json", receipt.id))
+        .is_file());
 }
 
 #[test]
