@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSkills } from '@/store/skills';
 import type { SkillEntry } from '@/lib/skillTypes';
@@ -180,7 +180,7 @@ function AddSourceDialog({
         addedAt: new Date().toISOString(),
       });
       onAdded();
-    } catch (e: any) {
+    } catch (e) {
       setError(String(e));
     } finally {
       setSaving(false);
@@ -310,7 +310,7 @@ function GlobalSkillsPanel({
 }: {
   managedBySource: [string, SkillEntry[]][];
   expanded: Record<string, boolean>;
-  setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  setExpanded: Dispatch<SetStateAction<Record<string, boolean>>>;
   setSkillScope: (skillId: string, scope: string) => Promise<void>;
   scanLibrary: () => Promise<void>;
 }) {
@@ -421,7 +421,7 @@ function GlobalSkillsPanel({
   );
 }
 
-function FieldLabel({ label, children }: { label: string; children: React.ReactNode }) {
+function FieldLabel({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="mb-3">
       <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -438,7 +438,7 @@ function SmallBtn({
   disabled,
   danger,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
@@ -467,7 +467,7 @@ function TypeBtn({
 }: {
   on: boolean;
   onClick: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <button

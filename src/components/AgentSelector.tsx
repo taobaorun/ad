@@ -9,7 +9,10 @@ export function AgentSelector() {
   const select = useAgents((state) => state.select);
 
   return (
-    <label className="inline-flex items-center gap-1.5 text-xs" title={t('app.titlebar.agentSelectorTitle')}>
+    <label
+      className="inline-flex items-center gap-1.5 text-xs"
+      title={t('app.titlebar.agentSelectorTitle')}
+    >
       <span className="sr-only">{t('app.titlebar.agentSelectorLabel')}</span>
       <select
         value={activeAgentId}
@@ -33,6 +36,8 @@ export function AgentSelector() {
   );
 }
 
+// Hook and component intentionally share this small module because they initialize the same store.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useLoadAgents(): void {
   const loadAll = useAgents((state) => state.loadAll);
   useEffect(() => {

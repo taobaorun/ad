@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useProjects } from '@/store/projects';
 import { useProfiles } from '@/store/profiles';
@@ -357,7 +357,7 @@ function ProjectRow({
   );
 }
 
-function KbdChip({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+function KbdChip({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <span
       className={`inline-flex items-center justify-center rounded font-mono text-[10.5px] ${className}`}
