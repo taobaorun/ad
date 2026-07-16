@@ -36,7 +36,11 @@ export default defineConfig({
         // doesn't bloat the entry — we route via the module path.
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
-          if (id.includes('/@codemirror/') || id.match(/\/node_modules\/codemirror\//)) {
+          if (
+            id.includes('/@codemirror/') ||
+            id.includes('/@catppuccin/codemirror/') ||
+            id.match(/\/node_modules\/codemirror\//)
+          ) {
             return 'vendor-codemirror';
           }
           if (
