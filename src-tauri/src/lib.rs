@@ -21,10 +21,14 @@ fn theme_bg() -> Color {
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|s| s.trim() != "light")
         .unwrap_or(true);
+    theme_bg_for(is_dark)
+}
+
+fn theme_bg_for(is_dark: bool) -> Color {
     if is_dark {
-        Color(0x0a, 0x0a, 0x0b, 0xff)
+        Color(0x1e, 0x1e, 0x2e, 0xff)
     } else {
-        Color(0xff, 0xff, 0xff, 0xff)
+        Color(0xef, 0xf1, 0xf5, 0xff)
     }
 }
 
@@ -222,7 +226,16 @@ pub fn run() {
 mod tests {
     use tauri::webview::PageLoadEvent;
 
-    use super::should_show_main_on_page_load;
+    use super::{should_show_main_on_page_load, theme_bg_for};
+
+    #[test]
+    fn maps_theme_mode_to_catppuccin_window_backgrounds() {
+        let mocha = theme_bg_for(true);
+        let latte = theme_bg_for(false);
+
+        assert_eq!((mocha.0, mocha.1, mocha.2, mocha.3), (0x1e, 0x1e, 0x2e, 0xff));
+        assert_eq!((latte.0, latte.1, latte.2, latte.3), (0xef, 0xf1, 0xf5, 0xff));
+    }
 
     #[test]
     fn only_finished_main_page_load_reveals_a_window() {

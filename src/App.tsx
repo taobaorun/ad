@@ -16,6 +16,7 @@ import { AgentConversionButton } from './components/AgentConversionDialog';
 import { AgentProfilesButton } from './components/AgentProfilesDialog';
 import { useAgents } from './store/agents';
 import { profileFeaturesFor } from './lib/profileEditorRegistry';
+import { applyDocumentTheme } from './lib/theme';
 
 // Heavy dialogs/drawers are lazy-loaded so they don't sit in the first-paint
 // chunk. Each is wrapped in a tiny "gate" below that only mounts the lazy
@@ -61,7 +62,7 @@ export function App() {
   useLoadAgents();
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
+    applyDocumentTheme(darkMode);
   }, [darkMode]);
 
   useEffect(() => {
@@ -217,7 +218,7 @@ function Titlebar({
   return (
     <header
       className="flex h-9 items-center justify-between px-3 text-sm"
-      style={{ borderBottom: '0.5px solid var(--ds-line)', background: 'hsl(var(--background))' }}
+      style={{ borderBottom: '0.5px solid var(--ds-line)', background: 'rgb(var(--background))' }}
     >
       <div className="font-semibold" style={{ fontSize: 14 }}>
         AD
@@ -267,8 +268,8 @@ function Titlebar({
         <button
           type="button"
           onClick={onToggleDark}
-          title={dark ? '切换到浅色' : '切换到深色'}
-          aria-label={dark ? '切换到浅色' : '切换到深色'}
+          title={dark ? t('app.titlebar.switchToLight') : t('app.titlebar.switchToDark')}
+          aria-label={dark ? t('app.titlebar.switchToLight') : t('app.titlebar.switchToDark')}
           style={{
             width: 28,
             height: 28,

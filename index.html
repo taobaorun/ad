@@ -18,8 +18,8 @@
             var parsed = JSON.parse(raw);
             if (typeof parsed.darkMode === 'boolean') dark = parsed.darkMode;
           }
-          var bg = dark ? '#0a0a0b' : '#ffffff';
-          var fg = dark ? '#fafafa' : '#09090b';
+          var bg = dark ? '#1e1e2e' : '#eff1f5';
+          var fg = dark ? '#cdd6f4' : '#4c4f69';
           var root = document.documentElement;
           if (dark) root.classList.add('dark');
           root.style.backgroundColor = bg;
@@ -36,20 +36,20 @@
          sees the correct theme color, never a blank/wrong-color frame. -->
     <div id="ad-splash">
       <style>
-        #ad-splash{position:fixed;inset:0;z-index:9999;background:#ffffff}
-        .dark #ad-splash{background:#0a0a0b}
+        #ad-splash{position:fixed;inset:0;z-index:9999;background:#eff1f5;color:#4c4f69}
+        .dark #ad-splash{background:#1e1e2e;color:#cdd6f4}
         #ad-skel{display:flex;flex-direction:column;height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
         #ad-skel-bar{height:36px;display:flex;align-items:center;padding:0 12px;font-size:14px;font-weight:600}
         #ad-skel-body{display:flex;flex:1;overflow:hidden}
         #ad-skel-side{width:264px;flex-shrink:0;padding:12px}
         #ad-skel-main{flex:1}
         .ad-skel-pill{border-radius:6px;margin-bottom:8px}
-        #ad-skel-bar{border-bottom:0.5px solid rgba(0,0,0,0.06);color:#09090b}
-        #ad-skel-side{background:#fafaf9;border-right:0.5px solid rgba(0,0,0,0.06)}
-        .ad-skel-pill{background:rgba(0,0,0,0.06)}
-        .dark #ad-skel-bar{border-bottom-color:rgba(255,255,255,0.07);color:#fafafa}
-        .dark #ad-skel-side{background:#0e0e10;border-right-color:rgba(255,255,255,0.07)}
-        .dark .ad-skel-pill{background:rgba(255,255,255,0.06)}
+        #ad-skel-bar{background:#dce0e8;border-bottom:0.5px solid #ccd0da}
+        #ad-skel-side{background:#e6e9ef;border-right:0.5px solid #ccd0da}
+        .ad-skel-pill{background:#ccd0da}
+        .dark #ad-skel-bar{background:#11111b;border-bottom-color:#313244}
+        .dark #ad-skel-side{background:#181825;border-right-color:#313244}
+        .dark .ad-skel-pill{background:#313244}
       </style>
       <div id="ad-skel">
         <div id="ad-skel-bar">AD</div>
