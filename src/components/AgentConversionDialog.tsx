@@ -8,6 +8,7 @@ import {
   type AgentInstallation,
   type ConversionRoutePreview,
   type OperationReceipt,
+  type PlanAcknowledgement,
 } from '@/lib/agentTypes';
 import { tauri } from '@/lib/tauri';
 import { useAgents } from '@/store/agents';
@@ -15,6 +16,8 @@ import { useUiState } from '@/store/ui';
 
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
+import { AgentConversionArtifacts } from './AgentConversionArtifacts';
+import { AgentConversionRiskDialog } from './AgentConversionRiskDialog';
 
 const CLAUDE_TO_CODEX_ROUTE = {
   sourceAgentId: 'claude-code',
@@ -82,10 +85,12 @@ function AgentConversionDialog({
   const [scope, setScope] = useState<ConversionScope>('user');
   const [targetModel, setTargetModel] = useState('');
   const [permissionPreset, setPermissionPreset] = useState<PermissionPreset>('');
+  const [confirmedSkillIds, setConfirmedSkillIds] = useState<string[]>([]);
   const [preview, setPreview] = useState<ConversionRoutePreview | null>(null);
   const [receipt, setReceipt] = useState<OperationReceipt | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dangerConfirmOpen, setDangerConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!sourceInstallations.some((installation) => installation.id === sourceId)) {
@@ -101,6 +106,7 @@ function AgentConversionDialog({
     if (!activeProjectPath && scope === 'project') setScope('user');
     setTargetModel('');
     setPermissionPreset('');
+    setConfirmedSkillIds([]);
     setPreview(null);
     setReceipt(null);
     setError(null);
@@ -119,14 +125,16 @@ function AgentConversionDialog({
     setPreview(null);
     setReceipt(null);
     setError(null);
+    setDangerConfirmOpen(false);
   }
 
   function resetDecisions() {
     setTargetModel('');
     setPermissionPreset('');
+    setConfirmedSkillIds([]);
   }
 
-  async function runPreview() {
+  async function runPreview(skillIds = confirmedSkillIds) {
     if (!source || !target) return;
     setBusy(true);
     setError(null);
@@ -142,14 +150,11 @@ function AgentConversionDialog({
               AgentContextSchema.parse({ installationId: source.id }),
               AgentContextSchema.parse({ installationId: target.id }),
             ];
-      const result = await tauri.previewClaudeToCodexRoute(
-        sourceContext,
-        targetContext,
-        {
-          ...(targetModel ? { targetModel } : {}),
-          ...(permissionPreset ? { permissionPreset } : {}),
-        },
-      );
+      const result = await tauri.previewClaudeToCodexRoute(sourceContext, targetContext, {
+        ...(targetModel ? { targetModel } : {}),
+        ...(permissionPreset ? { permissionPreset } : {}),
+        ...(skillIds.length > 0 ? { confirmedSkillIds: skillIds } : {}),
+      });
       setPreview(result);
     } catch (caught) {
       setError(formatAgentError(caught));
@@ -160,11 +165,29 @@ function AgentConversionDialog({
 
   async function applyConversion() {
     if (!preview?.plan) return;
+    if (
+      preview.plan.requiredAcknowledgements.some((requirement) => requirement.risk === 'dangerous')
+    ) {
+      setDangerConfirmOpen(true);
+      return;
+    }
+    await submitConversion();
+  }
+
+  async function submitConversion() {
+    if (!preview?.plan) return;
     setBusy(true);
     setError(null);
     try {
-      const result = await tauri.applyConversionPlan(preview.plan.id, true);
+      const acknowledgements: PlanAcknowledgement[] = preview.plan.requiredAcknowledgements.map(
+        (requirement) => ({
+          code: requirement.code,
+          accepted: true,
+        }),
+      );
+      const result = await tauri.applyConversionPlan(preview.plan.id, acknowledgements);
       setReceipt(result);
+      setDangerConfirmOpen(false);
     } catch (caught) {
       setError(formatAgentError(caught));
     } finally {
@@ -187,231 +210,243 @@ function AgentConversionDialog({
     }
   }
 
+  function confirmSkill(logicalId: string) {
+    const next = [...new Set([...confirmedSkillIds, logicalId])];
+    setConfirmedSkillIds(next);
+    void runPreview(next);
+  }
+
+  const showInstallationControls = sourceInstallations.length > 1 || targetInstallations.length > 1;
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!busy) onOpenChange(nextOpen);
-      }}
-      title={t('agentConversion.title')}
-      description={t('agentConversion.description')}
-      size="lg"
-      footer={
-        <div className="flex items-center justify-between gap-3">
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
-            {t('agentConversion.close')}
-          </Button>
-          <div className="flex gap-2">
-            {receipt && (
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (!busy && !dangerConfirmOpen) onOpenChange(nextOpen);
+        }}
+        title={t('agentConversion.title')}
+        description={t('agentConversion.description')}
+        size="lg"
+        footer={
+          <div className="flex items-center justify-between gap-3">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+              disabled={busy}
+            >
+              {t('agentConversion.close')}
+            </Button>
+            <div className="flex gap-2">
+              {receipt && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void rollback()}
+                  disabled={busy}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  {t('agentConversion.rollback')}
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => void rollback()}
-                disabled={busy}
+                onClick={() => void runPreview()}
+                disabled={busy || !source || !target}
               >
-                <RotateCcw className="h-3.5 w-3.5" />
-                {t('agentConversion.rollback')}
+                {busy && !preview ? t('agentConversion.previewing') : t('agentConversion.preview')}
               </Button>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void runPreview()}
-              disabled={busy || !source || !target}
-            >
-              {busy && !preview ? t('agentConversion.previewing') : t('agentConversion.preview')}
-            </Button>
-            {preview?.plan && !receipt && (
-              <Button type="button" onClick={() => void applyConversion()} disabled={busy}>
-                {busy ? t('agentConversion.applying') : t('agentConversion.apply')}
-              </Button>
-            )}
+              {preview?.plan && !receipt && (
+                <Button type="button" onClick={() => void applyConversion()} disabled={busy}>
+                  {busy ? t('agentConversion.applying') : t('agentConversion.apply')}
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
-      }
-    >
-      <div>
-        <label
-          htmlFor="conversion-scope"
-          className="mb-1 block text-xs font-medium text-muted-foreground"
-        >
-          {t('agentConversion.scope')}
-        </label>
-        <select
-          id="conversion-scope"
-          value={scope}
-          disabled={busy}
-          onChange={(event) => {
-            setScope(event.target.value as ConversionScope);
-            resetDecisions();
-            resetResult();
-          }}
-          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-        >
-          <option value="user">{t('agentConversion.scopeUser')}</option>
-          <option value="project" disabled={!activeProjectPath}>
-            {t('agentConversion.scopeProject')}
-          </option>
-        </select>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {scope === 'project' && activeProjectPath ? (
-            <>
-              {t('agentConversion.scopeProjectHint')}
-              <span className="ml-1 break-all font-mono text-foreground">{activeProjectPath}</span>
-            </>
-          ) : (
-            t('agentConversion.scopeUserHint')
-          )}
-        </p>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <InstallationSelect
-          id="conversion-source"
-          label={t('agentConversion.source')}
-          installations={sourceInstallations}
-          value={sourceId}
-          disabled={busy}
-          onChange={(id) => {
-            setSourceId(id);
-            resetDecisions();
-            resetResult();
-          }}
-        />
-        <InstallationSelect
-          id="conversion-target"
-          label={t('agentConversion.target')}
-          installations={targetInstallations}
-          value={targetId}
-          disabled={busy}
-          onChange={(id) => {
-            setTargetId(id);
-            resetDecisions();
-            resetResult();
-          }}
-        />
-      </div>
-
-      <div className="mt-3 rounded-md border border-border p-3">
-        <h3 className="text-xs font-semibold">{t('agentConversion.decisions')}</h3>
-        <div className="mt-2 grid gap-3 sm:grid-cols-2">
-          <div>
-            <label
-              htmlFor="conversion-model"
-              className="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              {t('agentConversion.codexModel')}
-            </label>
-            <input
-              id="conversion-model"
-              value={targetModel}
-              disabled={busy}
-              onChange={(event) => {
-                setTargetModel(event.target.value);
-                resetResult();
-              }}
-              placeholder={t('agentConversion.codexModelPlaceholder')}
-              className="h-9 w-full rounded-md border border-input bg-background px-2 font-mono text-sm"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t('agentConversion.codexModelHint')}
-            </p>
-          </div>
-          <div>
-            <label
-              htmlFor="conversion-permissions"
-              className="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              {t('agentConversion.codexPermissions')}
-            </label>
-            <select
-              id="conversion-permissions"
-              value={permissionPreset}
-              disabled={busy}
-              onChange={(event) => {
-                setPermissionPreset(event.target.value as PermissionPreset);
-                resetResult();
-              }}
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-            >
-              <option value="">{t('agentConversion.permissionsPreserve')}</option>
-              <option value="on_request_workspace_write">
-                {t('agentConversion.permissionsSafe')}
-              </option>
-              <option value="never_danger_full_access">
-                {t('agentConversion.permissionsBypass')}
-              </option>
-            </select>
-            <p
-              className={`mt-1 text-xs ${
-                permissionPreset === 'never_danger_full_access'
-                  ? 'text-destructive'
-                  : 'text-muted-foreground'
-              }`}
-            >
-              {permissionPreset === 'never_danger_full_access'
-                ? t('agentConversion.permissionsDangerHint')
-                : t('agentConversion.permissionsHint')}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <p className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        {t('agentConversion.sourceUnchanged')}
-      </p>
-      {error && (
-        <div
-          role="alert"
-          className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
-        >
-          {error}
-        </div>
-      )}
-
-      {preview && (
-        <div className="mt-4">
-          <h3 className="text-sm font-semibold">{t('agentConversion.artifacts')}</h3>
-          <ul className="mt-2 divide-y divide-border overflow-hidden rounded-lg border border-border">
-            {preview.artifacts.map((artifact) => (
-              <li key={artifact.id} className="flex items-start justify-between gap-4 px-3 py-2.5">
-                <div className="min-w-0">
-                  <div className="truncate font-mono text-xs">{artifact.id}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {artifact.kind} · {artifact.source.logicalId}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">{artifact.message}</div>
-                </div>
-                <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-xs">
-                  {t(`agentConversion.disposition.${artifact.disposition}`)}
+        }
+      >
+        <div>
+          <label
+            htmlFor="conversion-scope"
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+          >
+            {t('agentConversion.scope')}
+          </label>
+          <select
+            id="conversion-scope"
+            value={scope}
+            disabled={busy}
+            onChange={(event) => {
+              setScope(event.target.value as ConversionScope);
+              resetDecisions();
+              resetResult();
+            }}
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+          >
+            <option value="user">{t('agentConversion.scopeUser')}</option>
+            <option value="project" disabled={!activeProjectPath}>
+              {t('agentConversion.scopeProject')}
+            </option>
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {scope === 'project' && activeProjectPath ? (
+              <>
+                {t('agentConversion.scopeProjectHint')}
+                <span className="ml-1 break-all font-mono text-foreground">
+                  {activeProjectPath}
                 </span>
-              </li>
-            ))}
-          </ul>
-          {!preview.plan && (
-            <p role="status" className="mt-3 text-sm text-muted-foreground">
-              {t('agentConversion.noChanges', {
-                count: preview.artifacts.filter((artifact) =>
-                  ['requires_input', 'unsupported', 'conflict'].includes(artifact.disposition),
-                ).length,
-              })}
-            </p>
-          )}
+              </>
+            ) : (
+              t('agentConversion.scopeUserHint')
+            )}
+          </p>
         </div>
-      )}
 
-      {receipt && (
-        <div
-          role="status"
-          className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-200"
-        >
-          <div className="font-medium">{t('agentConversion.applied')}</div>
-          <div className="mt-1 text-xs">
-            {t('agentConversion.backupCount', { count: receipt.backupPaths.length })}
+        {showInstallationControls && (
+          <details className="mt-3 rounded-md border border-border px-3 py-2">
+            <summary className="cursor-pointer text-xs font-medium">
+              {t('agentConversion.advancedInstances')}
+            </summary>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {t('agentConversion.instanceHint')}
+            </p>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              <InstallationSelect
+                id="conversion-source"
+                label={t('agentConversion.sourceInstance')}
+                installations={sourceInstallations}
+                value={sourceId}
+                disabled={busy}
+                onChange={(id) => {
+                  setSourceId(id);
+                  resetDecisions();
+                  resetResult();
+                }}
+              />
+              <InstallationSelect
+                id="conversion-target"
+                label={t('agentConversion.targetInstance')}
+                installations={targetInstallations}
+                value={targetId}
+                disabled={busy}
+                onChange={(id) => {
+                  setTargetId(id);
+                  resetDecisions();
+                  resetResult();
+                }}
+              />
+            </div>
+          </details>
+        )}
+
+        <div className="mt-3 rounded-md border border-border p-3">
+          <h3 className="text-xs font-semibold">{t('agentConversion.decisions')}</h3>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <div>
+              <label
+                htmlFor="conversion-model"
+                className="mb-1 block text-xs font-medium text-muted-foreground"
+              >
+                {t('agentConversion.codexModel')}
+              </label>
+              <input
+                id="conversion-model"
+                value={targetModel}
+                disabled={busy}
+                onChange={(event) => {
+                  setTargetModel(event.target.value);
+                  resetResult();
+                }}
+                placeholder={t('agentConversion.codexModelPlaceholder')}
+                className="h-9 w-full rounded-md border border-input bg-background px-2 font-mono text-sm"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('agentConversion.codexModelHint')}
+              </p>
+            </div>
+            <div>
+              <label
+                htmlFor="conversion-permissions"
+                className="mb-1 block text-xs font-medium text-muted-foreground"
+              >
+                {t('agentConversion.codexPermissions')}
+              </label>
+              <select
+                id="conversion-permissions"
+                value={permissionPreset}
+                disabled={busy}
+                onChange={(event) => {
+                  setPermissionPreset(event.target.value as PermissionPreset);
+                  resetResult();
+                }}
+                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              >
+                <option value="">{t('agentConversion.permissionsPreserve')}</option>
+                <option value="on_request_workspace_write">
+                  {t('agentConversion.permissionsSafe')}
+                </option>
+                <option value="never_danger_full_access">
+                  {t('agentConversion.permissionsBypass')}
+                </option>
+              </select>
+              <p
+                className={`mt-1 text-xs ${
+                  permissionPreset === 'never_danger_full_access'
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'
+                }`}
+              >
+                {permissionPreset === 'never_danger_full_access'
+                  ? t('agentConversion.permissionsDangerHint')
+                  : t('agentConversion.permissionsHint')}
+              </p>
+            </div>
           </div>
         </div>
-      )}
-    </Dialog>
+
+        <p className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          {t('agentConversion.sourceUnchanged')}
+        </p>
+        {error && (
+          <div
+            role="alert"
+            className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            {error}
+          </div>
+        )}
+
+        {preview && (
+          <AgentConversionArtifacts
+            preview={preview}
+            confirmedSkillIds={confirmedSkillIds}
+            busy={busy}
+            onConfirmSkill={confirmSkill}
+          />
+        )}
+
+        {receipt && (
+          <div
+            role="status"
+            className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-200"
+          >
+            <div className="font-medium">{t('agentConversion.applied')}</div>
+            <div className="mt-1 text-xs">
+              {t('agentConversion.backupCount', { count: receipt.backupPaths.length })}
+            </div>
+          </div>
+        )}
+      </Dialog>
+      <AgentConversionRiskDialog
+        open={dangerConfirmOpen}
+        projectPath={scope === 'project' ? activeProjectPath : null}
+        busy={busy}
+        onCancel={() => setDangerConfirmOpen(false)}
+        onConfirm={() => void submitConversion()}
+      />
+    </>
   );
 }
 

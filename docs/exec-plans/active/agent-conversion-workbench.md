@@ -53,10 +53,10 @@
 ## 进展
 
 - [x] (2026-07-16 08:28 CST) Milestone 1：建立失败测试与完整 inventory fixture（已记录 contract 编译失败、Project-only Plugin 遗漏和危险 acknowledgement 缺失的 RED；Project fixture 覆盖 settings.local、Skill symlink、Project-only Plugin）。
-- [ ] Milestone 2：实现 artifact endpoint、resolution、carrier、summary 和 risk contract（验证标准：Rust serde/plan invariants 与 TS zod contract tests 通过）。
+- [x] (2026-07-16 08:40 CST) Milestone 2：实现 artifact endpoint、resolution、carrier、summary 和 risk contract（Rust endpoint/location/resolution/risk/summary 与 TS strict zod schema 已对齐，定向 contract tests 通过）。
 - [x] (2026-07-16 08:28 CST) Milestone 3：实现 backend-owned acknowledgement 门禁（PlanStore 精确集合校验；conversion command 改为 typed acknowledgement；危险集成测试证明缺少专用 ack 不消费 plan，完整 ack 才能 Apply）。
-- [ ] Milestone 4：完成 Project Settings/Permissions/Skills/Plugins 路由（验证标准：Skill 可 Apply/rollback；Plugin key union 正确；不支持项无静默遗漏）。
-- [ ] Milestone 5：重构转换 UI 为工作台（验证标准：单 installation 隐藏选择器；真实 locations、分组 summary、inline resolver 和危险确认可访问）。
+- [x] (2026-07-16 08:40 CST) Milestone 4：完成 Project Settings/Permissions/Skills/Plugins 路由（Settings merge、permission preset 与细粒度 rules 分离；Skill Apply/rollback；Project-only Plugin key union；marketplace 逐项呈现均由测试覆盖）。
+- [x] (2026-07-16 08:40 CST) Milestone 5：重构转换 UI 为工作台（单 installation 隐藏；多实例进入高级区；真实 locations、分组 summary、Skill inline resolver 与独立危险 alertdialog 已通过组件测试）。
 - [ ] Milestone 6：同步文档并执行多轴代码审查与修复（验证标准：设计、产品规格、i18n 和实现一致，无 P0/P1 review finding）。
 - [ ] Milestone 7：全量门禁、构建、安装和只读原生验收（验证标准：全部测试/构建通过，旧应用已备份，`sofampy` preview 完整且所有源/目标 digest 不变）。
 - [ ] 完成结果回顾并将 MD + 冻结 HTML 一起移到 `docs/exec-plans/completed/`。

@@ -343,6 +343,10 @@
     "scopeProjectHint": "只转换当前项目：",
     "source": "Claude Code 源",
     "target": "Codex 目标",
+    "advancedInstances": "高级：配置实例",
+    "instanceHint": "配置实例用于选择 Agent 的配置 Home，不代表本次转换实际读取或写入的路径。",
+    "sourceInstance": "Claude Code 配置实例",
+    "targetInstance": "Codex 配置实例",
     "decisions": "需确认的转换决策",
     "codexModel": "Codex 模型",
     "codexModelPlaceholder": "留空则保留现有目标值",
@@ -360,12 +364,58 @@
     "applying": "应用中…",
     "close": "关闭",
     "artifacts": "转换项",
+    "sourcePath": "源路径",
+    "targetPath": "目标路径",
+    "manualTarget": "需要在 Codex Plugin Marketplace 中完成设置",
+    "confirmSkill": "转换此 Skill",
+    "skillConfirmed": "已纳入 Skill",
     "noChanges": "源配置已读取，但没有安全的自动写入项；其中 {{count}} 项需要输入、存在冲突或无法转换。可调整上方转换决策后重新预览。",
     "applied": "转换已应用",
     "backupCount_one": "已创建 {{count}} 份备份",
     "backupCount_other": "已创建 {{count}} 份备份",
     "rollback": "回滚目标",
     "rollbackConfirm": "回滚生成的 Codex 配置？此操作不会修改 Claude Code 源。",
+    "summary": {
+      "automatic": "自动转换",
+      "requiresInput": "需要决策",
+      "unsupported": "无法转换",
+      "conflicts": "存在冲突",
+      "dangerous": "危险变更"
+    },
+    "kind": {
+      "settings": "设置与权限",
+      "instructions": "指令",
+      "skills": "Skills",
+      "plugins": "Plugins",
+      "hooks": "Hooks",
+      "mcp": "MCP",
+      "agents": "Agents",
+      "rules": "Rules"
+    },
+    "dangerDialog": {
+      "title": "确认 Codex 无限制权限",
+      "description": "此转换会允许命令在无审批提示、无沙箱限制下运行。继续前请核对以下精确配置。",
+      "sourceUnchanged": "Claude Code 源始终只读；AD 只修改预览列出的 Codex 目标，并在写入前创建备份。",
+      "cancel": "取消",
+      "confirm": "应用无限制权限"
+    },
+    "artifactMessage": {
+      "resolution": {
+        "select_target_model": "请选择 Codex 模型，或保留目标中已有的模型。",
+        "select_permission_preset": "请选择明确的 Codex 审批与沙箱策略，或保留目标设置。",
+        "confirm_local_skill_source": "确认已解析的本地 Skill 来源后，才能链接到 Codex。",
+        "complete_plugin_setup": "需要在 Codex 中完成 Marketplace 安装和授权。",
+        "resolve_conflict": "目标中已有不同值，默认保留现有目标。"
+      },
+      "disposition": {
+        "exact": "此值在 Codex 中有直接对应形式。",
+        "mapped": "此项将转换到列出的 Codex 目标。",
+        "requires_input": "需要完成转换决策后才能纳入此项。",
+        "unsupported": "目前没有经过验证的 Codex 自动等价能力；源配置保持不变。",
+        "conflict": "转换值与现有目标不同，默认保留现有目标。",
+        "unchanged": "目标中已有等价值或相同来源，无需变更。"
+      }
+    },
     "disposition": {
       "exact": "完全转换",
       "mapped": "已映射",

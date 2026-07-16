@@ -231,21 +231,37 @@ describe('Agent schemas', () => {
           id: 'user-settings:model',
           kind: 'settings',
           source: {
-            installationId: 'claude-code:default',
-            kind: 'settings',
-            scope: 'user',
-            logicalId: 'user-settings',
+            resource: {
+              installationId: 'claude-code:default',
+              kind: 'settings',
+              scope: 'user',
+              logicalId: 'user-settings',
+            },
+            location: { path: '/Users/test/.claude/settings.json', origin: 'user' },
           },
           target: {
-            installationId: 'codex:default',
-            kind: 'settings',
-            scope: 'user',
-            logicalId: 'user-config',
+            resource: {
+              installationId: 'codex:default',
+              kind: 'settings',
+              scope: 'user',
+              logicalId: 'user-config',
+            },
+            location: { path: '/Users/test/.codex/config.toml', origin: 'user' },
           },
           disposition: 'mapped',
+          risk: 'confirmation',
           message: 'Model key maps to Codex',
         },
       ],
+      summary: {
+        total: 1,
+        automatic: 1,
+        requiresInput: 0,
+        unsupported: 0,
+        conflicts: 0,
+        unchanged: 0,
+        dangerous: 0,
+      },
     });
 
     expect(preview.artifacts.at(0)?.disposition).toBe('mapped');

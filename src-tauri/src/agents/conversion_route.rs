@@ -421,6 +421,16 @@ fn build_settings_route(
         let mut merged = original.clone();
 
         for (field, (source, value)) in effective {
+            if field == "enabledPlugins" {
+                continue;
+            }
+            if field == "extraKnownMarketplaces" {
+                append_marketplace_artifacts(&mut artifacts, &source, &value);
+                continue;
+            }
+            let permission_rule_count = (field == "permissions")
+                .then(|| count_permission_rules(&value))
+                .unwrap_or(0);
             let Some(mapping) = resolved_setting_mapping(&field, &value, options) else {
                 continue;
             };
@@ -464,13 +474,27 @@ fn build_settings_route(
             artifacts.push(ConversionArtifact {
                 id,
                 kind: mapping.kind,
-                source,
+                source: source.clone(),
                 target,
                 disposition,
                 resolution: mapping.resolution,
                 risk: mapping.risk,
                 message,
             });
+            if permission_rule_count > 0 {
+                artifacts.push(ConversionArtifact {
+                    id: format!("{}:permissions:rules", source.resource.logical_id),
+                    kind: ResourceKind::Rules,
+                    source: source.clone(),
+                    target: None,
+                    disposition: ArtifactDisposition::Unsupported,
+                    resolution: None,
+                    risk: ConversionRiskLevel::Safe,
+                    message: format!(
+                        "{permission_rule_count} fine-grained Claude permission rules have no lossless Codex mapping"
+                    ),
+                });
+            }
         }
 
         if merged != original {
@@ -515,6 +539,38 @@ fn build_settings_route(
     };
     validate_route_plan(&result, source_context, target_context)?;
     Ok(result)
+}
+
+fn append_marketplace_artifacts(
+    artifacts: &mut Vec<ConversionArtifact>,
+    source: &ConversionEndpoint,
+    value: &Value,
+) {
+    let Some(marketplaces) = value.as_object() else {
+        return;
+    };
+    for marketplace_id in marketplaces.keys() {
+        artifacts.push(ConversionArtifact {
+            id: format!("marketplace:{marketplace_id}"),
+            kind: ResourceKind::Plugins,
+            source: source.clone(),
+            target: None,
+            disposition: ArtifactDisposition::Unsupported,
+            resolution: None,
+            risk: ConversionRiskLevel::Confirmation,
+            message: format!(
+                "Marketplace {marketplace_id} must be configured through the Codex plugin marketplace"
+            ),
+        });
+    }
+}
+
+fn count_permission_rules(value: &Value) -> usize {
+    ["allow", "ask", "deny"]
+        .into_iter()
+        .filter_map(|key| value.get(key).and_then(Value::as_array))
+        .map(Vec::len)
+        .sum()
 }
 
 fn resolved_setting_mapping(

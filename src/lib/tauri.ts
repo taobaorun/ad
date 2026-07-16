@@ -42,6 +42,7 @@ import {
   type MutationPlanView,
   type OperationHistoryEntry,
   type OperationReceipt,
+  type PlanAcknowledgement,
   type PlanId,
   type ProcessObservation,
   type ReceiptId,
@@ -66,6 +67,7 @@ export interface AgentCollectionInstallRequest {
 export interface ClaudeToCodexOptions {
   targetModel?: string;
   permissionPreset?: 'on_request_workspace_write' | 'never_danger_full_access';
+  confirmedSkillIds?: string[];
 }
 
 export interface ClaudeProcess {
@@ -161,9 +163,12 @@ export const tauri = {
     ),
   applyAgentPlan: async (planId: PlanId): Promise<OperationReceipt> =>
     OperationReceiptSchema.parse(await invoke<unknown>('apply_agent_plan', { planId })),
-  applyConversionPlan: async (planId: PlanId, confirmed: boolean): Promise<OperationReceipt> =>
+  applyConversionPlan: async (
+    planId: PlanId,
+    acknowledgements: PlanAcknowledgement[],
+  ): Promise<OperationReceipt> =>
     OperationReceiptSchema.parse(
-      await invoke<unknown>('apply_conversion_plan', { planId, confirmed }),
+      await invoke<unknown>('apply_conversion_plan', { planId, acknowledgements }),
     ),
   rollbackAgentReceipt: async (
     receiptId: ReceiptId,

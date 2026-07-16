@@ -84,7 +84,9 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     let local_source = br#"{
       "model":"project-local",
       "model_verbosity":"low",
-      "enabledPlugins":{"project-only@marketplace":true}
+      "enabledPlugins":{"project-only@marketplace":true},
+      "extraKnownMarketplaces":{"team-marketplace":{"source":"internal"},"tools":{"source":"github"}},
+      "permissions":{"allow":["Read"],"ask":["Bash"]}
     }"#;
     let project_target = b"project_only = true\n";
     let user_source_path = claude_home.join("settings.json");
@@ -150,6 +152,22 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
         plugin.disposition,
         ad_lib::agents::ArtifactDisposition::Unsupported
     );
+    assert!(route_plan
+        .artifacts
+        .iter()
+        .any(|artifact| artifact.id == "marketplace:team-marketplace"));
+    assert!(route_plan
+        .artifacts
+        .iter()
+        .any(|artifact| artifact.id == "marketplace:tools"));
+    assert!(route_plan
+        .artifacts
+        .iter()
+        .any(|artifact| artifact.id.ends_with(":permissions:rules")));
+    assert!(!route_plan
+        .artifacts
+        .iter()
+        .any(|artifact| artifact.id.ends_with(":enabledPlugins")));
 
     let plan_id = route_plan.plan.id.clone();
     plans.insert_confirmation_required(route_plan.plan).unwrap();

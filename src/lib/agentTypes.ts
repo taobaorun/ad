@@ -179,12 +179,31 @@ export const MutationPlanChangeViewSchema = z
   })
   .strict();
 
+export const PlanAcknowledgementCodeSchema = z.enum([
+  'conversion_apply',
+  'dangerous_permission_expansion',
+]);
+export const PlanRiskLevelSchema = z.enum(['confirmation', 'dangerous']);
+export const AcknowledgementRequirementSchema = z
+  .object({
+    code: PlanAcknowledgementCodeSchema,
+    risk: PlanRiskLevelSchema,
+  })
+  .strict();
+export const PlanAcknowledgementSchema = z
+  .object({
+    code: PlanAcknowledgementCodeSchema,
+    accepted: z.boolean(),
+  })
+  .strict();
+
 export const MutationPlanViewSchema = z
   .object({
     id: PlanIdSchema,
     agentId: AgentIdSchema,
     context: AgentContextSchema,
     changes: z.array(MutationPlanChangeViewSchema).default([]),
+    requiredAcknowledgements: z.array(AcknowledgementRequirementSchema).default([]),
     expiresAt: z.string().datetime({ offset: true }),
   })
   .strict();
@@ -229,6 +248,7 @@ export const AgentErrorCodeSchema = z.enum([
   'plan_expired',
   'partial_failure',
   'io',
+  'confirmation_required',
 ]);
 
 export const AgentErrorSchema = z
@@ -270,14 +290,46 @@ export const ArtifactDispositionSchema = z.enum([
   'unchanged',
 ]);
 
+export const ConversionRiskLevelSchema = z.enum(['safe', 'confirmation', 'dangerous']);
+export const ConversionResolutionKindSchema = z.enum([
+  'select_target_model',
+  'select_permission_preset',
+  'confirm_local_skill_source',
+  'complete_plugin_setup',
+  'resolve_conflict',
+]);
+export const ResolutionRequirementSchema = z
+  .object({ kind: ConversionResolutionKindSchema })
+  .strict();
+export const ConversionEndpointSchema = z
+  .object({
+    resource: ResourceRefSchema,
+    location: ResourceLocationSchema,
+  })
+  .strict();
+
 export const ConversionArtifactSchema = z
   .object({
     id: z.string().min(1),
     kind: ResourceKindSchema,
-    source: ResourceRefSchema,
-    target: ResourceRefSchema.optional(),
+    source: ConversionEndpointSchema,
+    target: ConversionEndpointSchema.optional(),
     disposition: ArtifactDispositionSchema,
+    resolution: ResolutionRequirementSchema.optional(),
+    risk: ConversionRiskLevelSchema,
     message: z.string().min(1),
+  })
+  .strict();
+
+export const ConversionSummarySchema = z
+  .object({
+    total: z.number().int().nonnegative(),
+    automatic: z.number().int().nonnegative(),
+    requiresInput: z.number().int().nonnegative(),
+    unsupported: z.number().int().nonnegative(),
+    conflicts: z.number().int().nonnegative(),
+    unchanged: z.number().int().nonnegative(),
+    dangerous: z.number().int().nonnegative(),
   })
   .strict();
 
@@ -286,6 +338,7 @@ export const ConversionRoutePreviewSchema = z
     sourceAgentId: AgentIdSchema,
     targetAgentId: AgentIdSchema,
     artifacts: z.array(ConversionArtifactSchema),
+    summary: ConversionSummarySchema,
     plan: MutationPlanViewSchema.optional(),
   })
   .strict();
@@ -317,6 +370,10 @@ export type ProcessObservation = z.infer<typeof ProcessObservationSchema>;
 export type MutationKind = z.infer<typeof MutationKindSchema>;
 export type MutationPlanChangeView = z.infer<typeof MutationPlanChangeViewSchema>;
 export type MutationPlanView = z.infer<typeof MutationPlanViewSchema>;
+export type PlanAcknowledgementCode = z.infer<typeof PlanAcknowledgementCodeSchema>;
+export type PlanRiskLevel = z.infer<typeof PlanRiskLevelSchema>;
+export type AcknowledgementRequirement = z.infer<typeof AcknowledgementRequirementSchema>;
+export type PlanAcknowledgement = z.infer<typeof PlanAcknowledgementSchema>;
 export type OperationStatus = z.infer<typeof OperationStatusSchema>;
 export type OperationReceipt = z.infer<typeof OperationReceiptSchema>;
 export type OperationHistoryEntry = z.infer<typeof OperationHistoryEntrySchema>;
@@ -326,7 +383,12 @@ export type AgentError = z.infer<typeof AgentErrorSchema>;
 export type ConversionIssue = z.infer<typeof ConversionIssueSchema>;
 export type ConversionPreview = z.infer<typeof ConversionPreviewSchema>;
 export type ArtifactDisposition = z.infer<typeof ArtifactDispositionSchema>;
+export type ConversionRiskLevel = z.infer<typeof ConversionRiskLevelSchema>;
+export type ConversionResolutionKind = z.infer<typeof ConversionResolutionKindSchema>;
+export type ResolutionRequirement = z.infer<typeof ResolutionRequirementSchema>;
+export type ConversionEndpoint = z.infer<typeof ConversionEndpointSchema>;
 export type ConversionArtifact = z.infer<typeof ConversionArtifactSchema>;
+export type ConversionSummary = z.infer<typeof ConversionSummarySchema>;
 export type ConversionRoutePreview = z.infer<typeof ConversionRoutePreviewSchema>;
 
 export function parseAgentInstallation(
