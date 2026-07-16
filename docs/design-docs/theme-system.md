@@ -4,7 +4,7 @@
 >
 > 主主题：Catppuccin Mocha；亮色兼容：Catppuccin Latte
 >
-> 关联计划：`docs/exec-plans/active/catppuccin-mocha-theme.md`
+> 关联计划：`docs/exec-plans/completed/catppuccin-mocha-theme.md`
 
 ## 结论
 

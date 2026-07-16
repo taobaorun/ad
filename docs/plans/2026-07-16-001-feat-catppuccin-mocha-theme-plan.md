@@ -162,7 +162,7 @@ End users see a global visual refresh across both windows. Contributors gain a s
 ### U5. Finalize the durable theme guide and delivery proof
 
 - **Goal:** Update the proposed design to match implementation, make it discoverable, and verify the complete application.
-- **Files:** `docs/design-docs/theme-system.md`, `docs/design-docs/theme-system.html`, `docs/design-docs/index.md`, `docs/exec-plans/active/catppuccin-mocha-theme.md`.
+- **Files:** `docs/design-docs/theme-system.md`, `docs/design-docs/theme-system.html`, `docs/design-docs/index.md`, `docs/exec-plans/completed/catppuccin-mocha-theme.md`.
 - **Approach:** Record as-built token names, component rules, exceptions, visual examples, official sources, and future-feature constraints; keep the approved ExecPlan HTML frozen while updating only its live Markdown progress.
 - **Requirements:** R10.
 - **Test scenarios:** Every implemented semantic role is documented; no documented token is absent from code; index links resolve; HTML works offline and visually represents Mocha/Latte hierarchy.
