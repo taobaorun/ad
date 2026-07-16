@@ -40,8 +40,8 @@
 
 ## 进展
 
-- [ ] (待开始) 步骤一：建立 Mocha/Latte palette 与语义 token 合同，并用测试固定核心映射（验证标准：主题合同测试通过，基础样式中只存在一份语义来源）。
-- [ ] 步骤二：对齐 native background、HTML splash、React class、跨窗口持久化和 i18n（验证标准：Rust/前端测试通过，双模式启动无错误底色闪烁）。
+- [x] (2026-07-16 14:20 CST) 步骤一：建立 Mocha/Latte palette 与语义 token 合同，并用测试固定核心映射（验证：`tests/styles/themeContract.test.ts` 先出现 4 个预期合同失败，迁移后 4/4 通过；`pnpm typecheck`、`pnpm lint` 通过）。
+- [ ] (进行中) 步骤二：对齐 native background、HTML splash、React class、跨窗口持久化和 i18n（验证标准：Rust/前端测试通过，双模式启动无错误底色闪烁）。
 - [ ] 步骤三：把 CodeMirror 替换为官方 Mocha/Latte 主题（验证标准：切换不 remount、不丢内容，编辑器依旧 lazy-load）。
 - [ ] 步骤四：迁移主窗口、Settings 和所有 overlay/状态控件（验证标准：静态 raw-color inventory 清零或仅剩已记录例外；组件测试与双模式浏览器截图通过）。
 - [ ] 步骤五：按 as-built 更新主题文档，执行完整审查、构建、PR 和 CI（验证标准：所有门禁通过，文档同步，PR 打开并 CI 决定为 green）。
@@ -58,6 +58,8 @@
   证据：`src/App.tsx::Titlebar`。
 - 发现：Catppuccin 官方 Style Guide 已给出 Base/Mantle/Crust、Surface、Text/Subtext/Overlay、status、selection 和 cursor 的语义建议，CodeMirror 6 有官方 MIT 主题包。
   证据：Catppuccin 官方仓库、palette、style guide 与 codemirror port（2026-07-16 核验）。
+- 发现：Latte Sapphire 与 Latte Base/Text 直接作为小号实心按钮前景/背景时对比不足；共享 `primary-foreground` 不能机械映射为当前 flavor 的 Base。
+  证据：对比计算显示 Latte Sapphire 对 Latte Text 为 2.54:1、对 Latte Base 为 2.78:1；实施使用稳定深色 on-primary `17 17 27`，Mocha 使用同值的 Crust token，保证实心控件可读。
 
 ## 决策日志
 
