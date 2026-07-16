@@ -288,9 +288,9 @@ mod tests {
     fn plugins_port_lists_and_plans_project_override_without_writing() {
         let (temp, mut context, _) = setup();
         let project = temp.path().join("project");
-        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
         std::fs::write(
-            temp.path().join(".claude/settings.json"),
+            project.join(".claude/settings.json"),
             br#"{"enabledPlugins":{"demo":true}}"#,
         )
         .unwrap();

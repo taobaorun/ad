@@ -287,7 +287,11 @@ fn create_fixtures(home: &Path, project: &Path, skill_source: &Path) {
     std::fs::write(home.join(".codex/sessions/session.json"), "session").unwrap();
     std::fs::write(home.join(".codex/logs/codex.log"), "log").unwrap();
     std::fs::write(project.join(".claude/settings.json"), "{}").unwrap();
-    std::fs::write(project.join(".claude/settings.local.json"), "{}").unwrap();
+    std::fs::write(
+        project.join(".claude/settings.local.json"),
+        r#"{"enabledPlugins":{"demo":true}}"#,
+    )
+    .unwrap();
     std::fs::write(project.join(".codex/config.toml"), "model = \"project\"\n").unwrap();
     std::fs::write(
         skill_source.join("SKILL.md"),
