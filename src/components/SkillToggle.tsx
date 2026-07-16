@@ -17,19 +17,20 @@ export function Toggle({
       aria-label={ariaLabel}
       disabled={disabled}
       onClick={onChange}
-      className="relative h-[20px] w-[36px] cursor-pointer rounded-full"
+      className={`relative h-[20px] w-[36px] cursor-pointer rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+        on ? 'bg-primary' : 'bg-surface-active/55'
+      }`}
       style={{
-        background: on ? 'rgba(180,180,190,0.7)' : 'rgba(120,120,128,0.32)',
         opacity: disabled ? 0.3 : 1,
         cursor: disabled ? 'not-allowed' : 'pointer',
       }}
     >
       <span
-        className="absolute left-[3px] top-[3px] h-[14px] w-[14px] rounded-full will-change-transform"
+        className={`absolute left-[3px] top-[3px] h-[14px] w-[14px] rounded-full shadow-sm will-change-transform ${
+          on ? 'bg-primary-foreground' : 'bg-foreground'
+        }`}
         style={{
           transform: on ? 'translateX(16px)' : 'translateX(0)',
-          background: '#fff',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
           transition: 'transform 0.12s ease-out',
         }}
       />

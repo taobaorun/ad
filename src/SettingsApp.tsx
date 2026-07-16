@@ -162,8 +162,8 @@ function TerminalSection() {
                 className={
                   'flex flex-col gap-1 rounded-md border p-2.5 text-left transition-colors ' +
                   (selected
-                    ? 'border-clay bg-clay/10 text-foreground'
-                    : 'border-border bg-background hover:border-clay/60')
+                    ? 'border-primary bg-primary/10 text-foreground'
+                    : 'border-border bg-background hover:border-primary/60')
                 }
               >
                 <span className="text-sm font-medium">{t(`terminal.backend.${id}`)}</span>
@@ -183,7 +183,7 @@ function TerminalSection() {
             onChange={(e) => setTerminal({ customCommand: e.target.value })}
             rows={3}
             placeholder="open -na WezTerm.app --args start --cwd {{cwd}} -- {{cmd}}"
-            className="w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-clay"
+            className="w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
           />
         </Field>
       )}
@@ -327,8 +327,8 @@ function ShortcutsSection() {
             className={
               'inline-flex min-w-[140px] items-center justify-center gap-2 rounded-md border px-3 py-1.5 font-mono text-sm transition-colors ' +
               (recording
-                ? 'border-clay bg-clay/10 text-foreground'
-                : 'border-border bg-background hover:border-clay disabled:cursor-not-allowed disabled:opacity-50')
+                ? 'border-primary bg-primary/10 text-foreground'
+                : 'border-border bg-background hover:border-primary disabled:cursor-not-allowed disabled:opacity-50')
             }
           >
             {recording ? t('settings.shortcuts.recording') : prettyShortcut(gs.binding)}
@@ -336,7 +336,7 @@ function ShortcutsSection() {
           <button
             type="button"
             onClick={() => void onReset()}
-            className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground hover:border-clay hover:text-foreground"
+            className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground hover:border-primary hover:text-foreground"
           >
             {t('settings.shortcuts.reset')}
           </button>
@@ -395,7 +395,7 @@ function LangButton({
         'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs ' +
         (on
           ? 'border-foreground bg-foreground text-background'
-          : 'border-border bg-background text-foreground hover:border-clay')
+          : 'border-border bg-background text-foreground hover:border-primary')
       }
     >
       {children}

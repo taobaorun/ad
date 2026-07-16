@@ -43,8 +43,8 @@
 - [x] (2026-07-16 14:20 CST) 步骤一：建立 Mocha/Latte palette 与语义 token 合同，并用测试固定核心映射（验证：`tests/styles/themeContract.test.ts` 先出现 4 个预期合同失败，迁移后 4/4 通过；`pnpm typecheck`、`pnpm lint` 通过）。
 - [x] (2026-07-16 14:25 CST) 步骤二：对齐 native background、HTML splash、React class、跨窗口持久化和 i18n（验证：主题 helper 与 Rust helper 测试均先因实现缺失失败；完成后前端主题/store/i18n 9/9、Rust 定向测试、`pnpm typecheck`、`pnpm lint` 通过）。
 - [x] (2026-07-16 14:28 CST) 步骤三：把 CodeMirror 替换为官方 Mocha/Latte 主题（验证：主题选择测试先因 helper 缺失失败；完成后 editor 2/2、typecheck、lint、Vite production build 通过，`vendor-codemirror` 保持独立且未被 HTML 首屏 preload）。
-- [ ] (进行中) 步骤四：迁移主窗口、Settings 和所有 overlay/状态控件（验证标准：静态 raw-color inventory 清零或仅剩已记录例外；组件测试与双模式浏览器截图通过）。
-- [ ] 步骤五：按 as-built 更新主题文档，执行完整审查、构建、PR 和 CI（验证标准：所有门禁通过，文档同步，PR 打开并 CI 决定为 green）。
+- [x] (2026-07-16 15:35 CST) 步骤四：迁移主窗口、Settings 和所有 overlay/状态控件（验证：静态合同先捕获 84 个产品 chrome 原始色违规，迁移后 0 个；前端 18 files / 68 tests、typecheck、lint、production Vite build 全部通过）。
+- [ ] (进行中) 步骤五：按 as-built 更新主题文档，执行完整审查、构建、PR 和 CI（验证标准：所有门禁通过，文档同步，PR 打开并 CI 决定为 green）。
 
 ## 意外发现
 
@@ -60,6 +60,8 @@
   证据：Catppuccin 官方仓库、palette、style guide 与 codemirror port（2026-07-16 核验）。
 - 发现：Latte Sapphire 与 Latte Base/Text 直接作为小号实心按钮前景/背景时对比不足；共享 `primary-foreground` 不能机械映射为当前 flavor 的 Base。
   证据：对比计算显示 Latte Sapphire 对 Latte Text 为 2.54:1、对 Latte Base 为 2.78:1；实施使用稳定深色 on-primary `17 17 27`，Mocha 使用同值的 Crust token，保证实心控件可读。
+- 发现：当前会话无法采集浏览器或 Tauri 窗口像素，不能生成可信的双模式截图证据。
+  证据：Browser runtime 返回空实例列表；真实 Tauri debug 进程成功输出 `ad ready`，但 macOS `screencapture` 受屏幕录制权限限制，仅返回桌面背景且按 window id 截图失败。U4 以静态产品色合同、组件测试和 production build 替代，正式 browser gate 留给 LFG `ce-test-browser` 再判定。
 
 ## 决策日志
 

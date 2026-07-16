@@ -1,4 +1,7 @@
 {
+  "common": {
+    "close": "关闭"
+  },
   "palette": {
     "placeholder": "输入命令或项目…",
     "noMatches": "无匹配",

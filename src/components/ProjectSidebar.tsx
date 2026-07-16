@@ -106,7 +106,7 @@ export function ProjectSidebar() {
               onKeyDown={(e) => { if (e.key === 'Escape') setQuery(''); }}
               placeholder={t('sidebar.searchPlaceholder')}
               className="min-w-0 flex-1 bg-transparent text-[12px] outline-none"
-              style={{ color: 'hsl(var(--foreground))' }}
+              style={{ color: 'rgb(var(--foreground))' }}
             />
             {query && (
               <button
@@ -309,7 +309,7 @@ function ProjectRow({
       </span>
       <span
         className="truncate text-[13px] font-medium"
-        style={{ color: 'hsl(var(--foreground))', gridRow: 1, gridColumn: 2 }}
+        style={{ color: 'rgb(var(--foreground))', gridRow: 1, gridColumn: 2 }}
       >
         {project.displayName}
       </span>
@@ -368,7 +368,7 @@ function KbdChip({ children, className = '' }: { children: ReactNode; className?
         background: 'var(--ds-bg-soft)',
         border: '0.5px solid var(--ds-line)',
         color: 'var(--ds-fg-3)',
-        boxShadow: 'inset 0 -1px 0 rgba(0,0,0,0.06)',
+        boxShadow: 'inset 0 -1px 0 rgb(var(--color-text-primary) / 0.12)',
         whiteSpace: 'nowrap',
         flexShrink: 0,
       }}

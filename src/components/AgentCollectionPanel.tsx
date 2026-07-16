@@ -140,7 +140,7 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
         </div>
       )}
       {limitations.length > 0 && (
-        <ul className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-800 dark:text-amber-200">
+        <ul className="shrink-0 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-foreground">
           {limitations.map((limitation) => (
             <li key={limitation.code}>{t(limitation.messageKey)}</li>
           ))}

@@ -64,7 +64,7 @@ export function SkillSourcesSection() {
         <button
           type="button"
           onClick={() => setAddOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-md border border-clay bg-clay/10 px-2.5 py-1 text-xs text-clay hover:bg-clay/20"
+          className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1 text-xs text-primary hover:bg-primary/20"
         >
           <Plus className="h-3 w-3" /> {t('settings.skills.addSource')}
         </button>
@@ -188,7 +188,7 @@ function AddSourceDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay/65">
       <div className="w-[440px] rounded-xl border border-border bg-background p-5 shadow-xl">
         <h3 className="mb-4 text-base font-semibold">{t('settings.skills.addDialog.title')}</h3>
 
@@ -198,7 +198,7 @@ function AddSourceDialog({
             value={id}
             onChange={(e) => handleIdChange(e.target.value)}
             placeholder={t('settings.skills.addDialog.namePlaceholder')}
-            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-clay"
+            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
           />
         </FieldLabel>
 
@@ -223,7 +223,7 @@ function AddSourceDialog({
                 ? t('settings.skills.addDialog.gitUrlPlaceholder')
                 : t('settings.skills.addDialog.pathPlaceholder')
             }
-            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-clay"
+            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
           />
         </FieldLabel>
 
@@ -234,7 +234,7 @@ function AddSourceDialog({
               value={branch}
               onChange={(e) => setBranch(e.target.value)}
               placeholder={t('settings.skills.addDialog.branchPlaceholder')}
-              className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-clay"
+              className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
             />
           </FieldLabel>
         )}
@@ -245,7 +245,7 @@ function AddSourceDialog({
             value={subdirectory}
             onChange={(e) => setSubdirectory(e.target.value)}
             placeholder={t('settings.skills.addDialog.subdirectoryPlaceholder')}
-            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-clay"
+            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
           />
         </FieldLabel>
 
@@ -477,7 +477,7 @@ function TypeBtn({
         'rounded-md border px-3 py-1.5 text-xs transition-colors ' +
         (on
           ? 'border-foreground bg-foreground text-background'
-          : 'border-border hover:border-clay')
+          : 'border-border hover:border-primary')
       }
     >
       {children}

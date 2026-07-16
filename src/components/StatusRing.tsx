@@ -2,10 +2,10 @@
  * Status ring — visual indicator for project apply state.
  *
  * Four states (see ExecPlan D3):
- *   - sync   = applied <24h && git clean  → olive solid
- *   - dirty  = git dirty / has conflicts  → clay solid
- *   - recent = applied >=24h              → slate2 (blue) solid
- *   - never  = no lastApplied             → gray dashed
+ *   - sync   = applied <24h && git clean  → success solid
+ *   - dirty  = git dirty / has conflicts  → warning solid
+ *   - recent = applied >=24h              → information solid
+ *   - never  = no lastApplied             → subtle dashed
  *
  * Same color language as the tray menubar dot so the UI stays
  * consistent.
@@ -29,19 +29,19 @@ export function ringStateFor(project: Project, status: ProjectStatus | null): Ri
 /** Tailwind class for the row border. Pair with `border-2`. */
 export function ringBorderClass(state: RingState): string {
   switch (state) {
-    case 'sync':   return 'border-olive';
-    case 'dirty':  return 'border-clay';
-    case 'recent': return 'border-slate2';
-    case 'never':  return 'border-dashed border-gray-300 dark:border-gray-600';
+    case 'sync':   return 'border-success';
+    case 'dirty':  return 'border-warning';
+    case 'recent': return 'border-info';
+    case 'never':  return 'border-dashed border-border';
   }
 }
 
 /** Tailwind text-color class matching the ring. */
 export function ringTextClass(state: RingState): string {
   switch (state) {
-    case 'sync':   return 'text-olive';
-    case 'dirty':  return 'text-clay';
-    case 'recent': return 'text-slate2';
+    case 'sync':   return 'text-success';
+    case 'dirty':  return 'text-warning';
+    case 'recent': return 'text-info';
     case 'never':  return 'text-muted-foreground';
   }
 }

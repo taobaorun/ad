@@ -40,7 +40,7 @@ export function ProfileEditDrawer() {
     <>
       {open && (
         <div
-          className="fixed inset-0 z-[80] bg-black/30"
+          className="fixed inset-0 z-[80] bg-overlay/55"
           onClick={tryClose}
           aria-hidden
         />
