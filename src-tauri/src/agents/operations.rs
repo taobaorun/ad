@@ -157,6 +157,34 @@ pub struct MutationPlanChangeView {
     pub kind: MutationKind,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanAcknowledgementCode {
+    ConversionApply,
+    DangerousPermissionExpansion,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanRiskLevel {
+    Confirmation,
+    Dangerous,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcknowledgementRequirement {
+    pub code: PlanAcknowledgementCode,
+    pub risk: PlanRiskLevel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanAcknowledgement {
+    pub code: PlanAcknowledgementCode,
+    pub accepted: bool,
+}
+
 /// Public view of a backend-owned plan. Mutation content and preconditions stay private.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -166,6 +194,8 @@ pub struct MutationPlanView {
     pub context: AgentContext,
     #[serde(default)]
     pub changes: Vec<MutationPlanChangeView>,
+    #[serde(default)]
+    pub required_acknowledgements: Vec<AcknowledgementRequirement>,
     pub expires_at: DateTime<Utc>,
 }
 
@@ -183,6 +213,7 @@ impl From<&MutationPlan> for MutationPlanView {
                     kind: mutation.kind,
                 })
                 .collect(),
+            required_acknowledgements: Vec::new(),
             expires_at: plan.expires_at,
         }
     }
@@ -265,6 +296,7 @@ pub enum AgentErrorCode {
     InvalidPlan,
     ResourceChanged,
     PermissionDenied,
+    ConfirmationRequired,
     Unsupported,
     PlanExpired,
     PartialFailure,

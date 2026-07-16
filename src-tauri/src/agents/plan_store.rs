@@ -1,10 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Mutex;
 
 use chrono::{DateTime, Utc};
 
 use super::{
-    AgentError, AgentErrorCode, ContentDigest, MutationPlan, MutationPlanView, PlanId, ResourceRef,
+    AcknowledgementRequirement, AgentError, AgentErrorCode, ContentDigest, MutationPlan,
+    MutationPlanView, PlanAcknowledgement, PlanAcknowledgementCode, PlanId, PlanRiskLevel,
+    ResourceRef,
 };
 
 #[derive(Default)]
@@ -15,7 +17,7 @@ struct PlanState {
 
 struct StoredPlan {
     plan: MutationPlan,
-    confirmation_required: bool,
+    required_acknowledgements: Vec<AcknowledgementRequirement>,
 }
 
 /// In-memory owner of mutation plans. Callers outside the backend only receive plan views.
@@ -34,6 +36,14 @@ impl PlanStore {
         plan: MutationPlan,
     ) -> Result<MutationPlanView, AgentError> {
         self.insert_confirmation_required_at(plan, Utc::now())
+    }
+
+    pub fn insert_with_acknowledgements(
+        &self,
+        plan: MutationPlan,
+        requirements: Vec<AcknowledgementRequirement>,
+    ) -> Result<MutationPlanView, AgentError> {
+        self.insert_with_acknowledgements_at(plan, Utc::now(), requirements)
     }
 
     pub fn claim_validated<F>(
@@ -58,12 +68,24 @@ impl PlanStore {
         self.claim_confirmed_at(plan_id, Utc::now(), observe_digest)
     }
 
+    pub fn claim_acknowledged<F>(
+        &self,
+        plan_id: &PlanId,
+        acknowledgements: &[PlanAcknowledgement],
+        observe_digest: F,
+    ) -> Result<MutationPlan, AgentError>
+    where
+        F: FnMut(&ResourceRef) -> Result<Option<ContentDigest>, AgentError>,
+    {
+        self.claim_acknowledged_at(plan_id, Utc::now(), acknowledgements, observe_digest)
+    }
+
     fn insert_at(
         &self,
         plan: MutationPlan,
         now: DateTime<Utc>,
     ) -> Result<MutationPlanView, AgentError> {
-        self.insert_with_confirmation_at(plan, now, false)
+        self.insert_with_acknowledgements_at(plan, now, Vec::new())
     }
 
     fn insert_confirmation_required_at(
@@ -71,14 +93,21 @@ impl PlanStore {
         plan: MutationPlan,
         now: DateTime<Utc>,
     ) -> Result<MutationPlanView, AgentError> {
-        self.insert_with_confirmation_at(plan, now, true)
+        self.insert_with_acknowledgements_at(
+            plan,
+            now,
+            vec![AcknowledgementRequirement {
+                code: PlanAcknowledgementCode::ConversionApply,
+                risk: PlanRiskLevel::Confirmation,
+            }],
+        )
     }
 
-    fn insert_with_confirmation_at(
+    fn insert_with_acknowledgements_at(
         &self,
         plan: MutationPlan,
         now: DateTime<Utc>,
-        confirmation_required: bool,
+        requirements: Vec<AcknowledgementRequirement>,
     ) -> Result<MutationPlanView, AgentError> {
         plan.validate()?;
         if plan.expires_at <= now {
@@ -90,7 +119,8 @@ impl PlanStore {
                 true,
             ));
         }
-        let view = MutationPlanView::from(&plan);
+        let mut view = MutationPlanView::from(&plan);
+        view.required_acknowledgements = requirements.clone();
         let mut state = self.state.lock().map_err(|_| lock_error())?;
         if state.active.contains_key(&plan.id) || state.consumed.contains(&plan.id) {
             return Err(plan_error(
@@ -105,7 +135,7 @@ impl PlanStore {
             plan.id.clone(),
             StoredPlan {
                 plan,
-                confirmation_required,
+                required_acknowledgements: requirements,
             },
         );
         Ok(view)
@@ -120,7 +150,7 @@ impl PlanStore {
     where
         F: FnMut(&ResourceRef) -> Result<Option<ContentDigest>, AgentError>,
     {
-        self.claim_with_confirmation_at(plan_id, now, false, observe_digest)
+        self.claim_acknowledged_at(plan_id, now, &[], observe_digest)
     }
 
     fn claim_confirmed_at<F>(
@@ -132,14 +162,22 @@ impl PlanStore {
     where
         F: FnMut(&ResourceRef) -> Result<Option<ContentDigest>, AgentError>,
     {
-        self.claim_with_confirmation_at(plan_id, now, true, observe_digest)
+        self.claim_acknowledged_at(
+            plan_id,
+            now,
+            &[PlanAcknowledgement {
+                code: PlanAcknowledgementCode::ConversionApply,
+                accepted: true,
+            }],
+            observe_digest,
+        )
     }
 
-    fn claim_with_confirmation_at<F>(
+    fn claim_acknowledged_at<F>(
         &self,
         plan_id: &PlanId,
         now: DateTime<Utc>,
-        confirmed: bool,
+        acknowledgements: &[PlanAcknowledgement],
         mut observe_digest: F,
     ) -> Result<MutationPlan, AgentError>
     where
@@ -165,12 +203,23 @@ impl PlanStore {
                     false,
                 )
             })?;
-            if stored.confirmation_required && !confirmed {
+            let required = stored
+                .required_acknowledgements
+                .iter()
+                .map(|requirement| requirement.code)
+                .collect::<BTreeSet<_>>();
+            let accepted = acknowledgements
+                .iter()
+                .filter(|acknowledgement| acknowledgement.accepted)
+                .map(|acknowledgement| acknowledgement.code)
+                .collect::<BTreeSet<_>>();
+            let exact = acknowledgements.len() == accepted.len() && required == accepted;
+            if !exact {
                 return Err(plan_error(
-                    AgentErrorCode::PermissionDenied,
+                    AgentErrorCode::ConfirmationRequired,
                     Some(&stored.plan),
                     None,
-                    "Mutation plan requires explicit confirmation",
+                    "Mutation plan acknowledgements do not match its requirements",
                     false,
                 ));
             }
@@ -278,8 +327,9 @@ mod tests {
     use chrono::{Duration, Utc};
 
     use super::super::{
-        AgentContext, AgentErrorCode, AgentId, ContentDigest, InstallationId, MutationKind,
-        MutationPlan, PlanId, PlannedMutation, ReadPrecondition, ResourceKind, ResourceRef,
+        AcknowledgementRequirement, AgentContext, AgentErrorCode, AgentId, ContentDigest,
+        InstallationId, MutationKind, MutationPlan, PlanAcknowledgement, PlanAcknowledgementCode,
+        PlanId, PlanRiskLevel, PlannedMutation, ReadPrecondition, ResourceKind, ResourceRef,
         ResourceScope, WritePolicy,
     };
     use super::PlanStore;
@@ -444,8 +494,96 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(unconfirmed.code, AgentErrorCode::PermissionDenied);
-        assert!(unconfirmed.message.contains("confirmation"));
+        assert_eq!(unconfirmed.code, AgentErrorCode::ConfirmationRequired);
+        assert!(unconfirmed.message.contains("acknowledgements"));
         assert_eq!(confirmed.id.as_str(), "plan-1");
+    }
+
+    #[test]
+    fn acknowledgement_requirements_are_exposed_without_plan_content() {
+        let now = Utc::now();
+        let store = PlanStore::default();
+
+        let view = store
+            .insert_with_acknowledgements_at(
+                plan(now),
+                now,
+                vec![AcknowledgementRequirement {
+                    code: PlanAcknowledgementCode::DangerousPermissionExpansion,
+                    risk: PlanRiskLevel::Dangerous,
+                }],
+            )
+            .unwrap();
+        let json = serde_json::to_value(view).unwrap();
+
+        assert_eq!(
+            json["requiredAcknowledgements"][0]["code"],
+            "dangerous_permission_expansion"
+        );
+        assert_eq!(json["requiredAcknowledgements"][0]["risk"], "dangerous");
+        assert!(json.get("readSet").is_none());
+    }
+
+    #[test]
+    fn acknowledgement_set_must_match_and_failed_attempt_does_not_consume_plan() {
+        let now = Utc::now();
+        let store = PlanStore::default();
+        let requirement = AcknowledgementRequirement {
+            code: PlanAcknowledgementCode::DangerousPermissionExpansion,
+            risk: PlanRiskLevel::Dangerous,
+        };
+        store
+            .insert_with_acknowledgements_at(plan(now), now, vec![requirement])
+            .unwrap();
+
+        let missing = store
+            .claim_acknowledged_at(&PlanId::from("plan-1"), now, &[], |_| {
+                Ok(Some(ContentDigest::from("sha256:before")))
+            })
+            .unwrap_err();
+        let accepted = store
+            .claim_acknowledged_at(
+                &PlanId::from("plan-1"),
+                now,
+                &[PlanAcknowledgement {
+                    code: PlanAcknowledgementCode::DangerousPermissionExpansion,
+                    accepted: true,
+                }],
+                |_| Ok(Some(ContentDigest::from("sha256:before"))),
+            )
+            .unwrap();
+
+        assert_eq!(missing.code, AgentErrorCode::ConfirmationRequired);
+        assert_eq!(accepted.id.as_str(), "plan-1");
+    }
+
+    #[test]
+    fn unknown_acknowledgement_cannot_replace_the_required_risk() {
+        let now = Utc::now();
+        let store = PlanStore::default();
+        store
+            .insert_with_acknowledgements_at(
+                plan(now),
+                now,
+                vec![AcknowledgementRequirement {
+                    code: PlanAcknowledgementCode::DangerousPermissionExpansion,
+                    risk: PlanRiskLevel::Dangerous,
+                }],
+            )
+            .unwrap();
+
+        let error = store
+            .claim_acknowledged_at(
+                &PlanId::from("plan-1"),
+                now,
+                &[PlanAcknowledgement {
+                    code: PlanAcknowledgementCode::ConversionApply,
+                    accepted: true,
+                }],
+                |_| Ok(Some(ContentDigest::from("sha256:before"))),
+            )
+            .unwrap_err();
+
+        assert_eq!(error.code, AgentErrorCode::ConfirmationRequired);
     }
 }
