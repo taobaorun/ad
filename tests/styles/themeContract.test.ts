@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 const themeCss = readFileSync('src/styles/globals.css', 'utf8');
 const tailwindConfig = readFileSync('tailwind.config.ts', 'utf8');
 const indexHtml = readFileSync('index.html', 'utf8');
+const themeGuide = readFileSync('docs/design-docs/theme-system.md', 'utf8');
 
 describe('theme contract', () => {
   it('defines the official Latte and Mocha foundation as RGB channels', () => {
@@ -48,5 +49,14 @@ describe('theme contract', () => {
     expect(indexHtml).toContain("var bg = dark ? '#1e1e2e' : '#eff1f5';");
     expect(indexHtml).toContain("var fg = dark ? '#cdd6f4' : '#4c4f69';");
     expect(indexHtml).not.toMatch(/#0a0a0b|#ffffff|#09090b/i);
+  });
+
+  it('documents every implemented product semantic token', () => {
+    const semanticTokens = [...themeCss.matchAll(/^\s*(--color-[\w-]+):/gm)].map(
+      ([, token]) => token,
+    );
+
+    expect(semanticTokens.length).toBeGreaterThan(0);
+    for (const token of semanticTokens) expect(themeGuide).toContain(`\`${token}\``);
   });
 });

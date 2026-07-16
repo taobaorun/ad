@@ -44,7 +44,7 @@
 - [x] (2026-07-16 14:25 CST) 步骤二：对齐 native background、HTML splash、React class、跨窗口持久化和 i18n（验证：主题 helper 与 Rust helper 测试均先因实现缺失失败；完成后前端主题/store/i18n 9/9、Rust 定向测试、`pnpm typecheck`、`pnpm lint` 通过）。
 - [x] (2026-07-16 14:28 CST) 步骤三：把 CodeMirror 替换为官方 Mocha/Latte 主题（验证：主题选择测试先因 helper 缺失失败；完成后 editor 2/2、typecheck、lint、Vite production build 通过，`vendor-codemirror` 保持独立且未被 HTML 首屏 preload）。
 - [x] (2026-07-16 15:35 CST) 步骤四：迁移主窗口、Settings 和所有 overlay/状态控件（验证：静态合同先捕获 84 个产品 chrome 原始色违规，迁移后 0 个；前端 18 files / 68 tests、typecheck、lint、production Vite build 全部通过）。
-- [ ] (进行中) 步骤五：按 as-built 更新主题文档，执行完整审查、构建、PR 和 CI（验证标准：所有门禁通过，文档同步，PR 打开并 CI 决定为 green）。
+- [ ] (2026-07-16 15:46 CST，本地实施完成，LFG 交付尾段进行中) 步骤五：as-built MD/HTML 已同步；前端 69/69、Rust 217 个执行测试、typecheck、lint、Vite build、clippy、`pnpm tauri build` 均通过，`.app` 与 `.dmg` 已生成。待 LFG simplify/review/browser gate/PR/CI 完成后勾选并归档。
 
 ## 意外发现
 
@@ -80,7 +80,9 @@
 
 ## 结果回顾
 
-待实施完成后填写实际效果、门禁结果、PR/CI 状态和遗留问题。
+本地实现已完成：AD 默认主题从 Zinc/Indigo 与 One Dark 混合状态迁移为 Catppuccin Mocha，亮色统一为 Latte；Sapphire/Blue/Sky 分别承担 primary/link/info，所有产品 TSX 原始色违规从 84 个降为 0；首帧、双窗口、Rust native paint 与官方 CodeMirror theme 已对齐。新增主题合同、surface inventory、UI store 与 editor 测试，完整前端与 Rust 门禁、production Vite/Tauri build 通过。
+
+当前只剩 LFG 调用方拥有的交付尾段：代码简化、独立 review 与修复、正式 browser gate、提交推送、PR 与 CI。浏览器截图在本地实施阶段受会话浏览器和 macOS 屏幕录制权限限制，必须在尾段明确判定，不计为已通过。
 
 ## 上下文和方向
 

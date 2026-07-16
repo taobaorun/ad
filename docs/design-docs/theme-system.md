@@ -1,6 +1,6 @@
 # AD 主题系统设计
 
-> 状态：待用户确认（2026-07-16）
+> 状态：已实现（2026-07-16）
 >
 > 主主题：Catppuccin Mocha；亮色兼容：Catppuccin Latte
 >
@@ -37,7 +37,21 @@ Tailwind aliases     --ds-* bridge      CodeMirror       native splash
 UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 ```
 
-`--ds-*` 在迁移期作为兼容桥保留，但其值必须由语义 token 派生。新代码不得新增 `--ds-*`；完成迁移后可在独立任务中移除兼容层。
+`--ds-*` 在迁移期作为兼容桥保留，但其值全部由语义 token 派生。新代码不得新增 `--ds-*`；完成现存 inline UI 的后续迁移后可在独立任务中移除兼容层。旧的 `clay`、`rust`、`olive`、`oat`、`slate2` Tailwind aliases 和 `--ds-clay` 已删除，不再是兼容面。
+
+### As-built token 合同
+
+基础实现位于 `src/styles/globals.css`，Tailwind 暴露位于 `tailwind.config.ts`。当前可供产品组件使用的核心角色如下：
+
+| 类别 | CSS semantic token | Tailwind alias |
+|---|---|---|
+| Canvas / pane / chrome | `--color-bg-canvas` / `--color-bg-pane` / `--color-bg-chrome` | `background` / `pane` / `chrome` |
+| Surface hierarchy | `--color-bg-surface` / `--color-bg-surface-hover` / `--color-bg-surface-active` | `surface` / `surface-hover` / `surface-active` |
+| Text hierarchy | `--color-text-primary` / `--color-text-secondary` / `--color-text-muted` / `--color-text-disabled` | `foreground` / `muted-foreground`，其余通过基础组件消费 |
+| Border / focus | `--color-border-subtle` / `--color-border-strong` / `--color-action-primary` | `border` / `input` / `ring` |
+| Action / navigation | `--color-action-primary` / `--color-on-primary` / `--color-link` | `primary` / `primary-foreground` / `link` |
+| Feedback | `--color-info` / `--color-success` / `--color-warning` / `--color-danger` | `info` / `success` / `warning` / `destructive` |
+| Overlay / editor | `--color-overlay` / `--color-editor-cursor` | `overlay` / 由官方 CodeMirror theme 消费 |
 
 ## Palette 与语义映射
 
@@ -61,7 +75,7 @@ UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 | Muted text | Subtext 0 / Overlay 2 | 元数据、占位符；关键操作不得低于此层 |
 | Disabled text | Overlay 1 | 必须配合透明度或 disabled 状态 |
 | Border subtle / strong | Surface 0 / Surface 1 | 通过层级而非白色透明度构造边界 |
-| Primary action / focus | Sapphire | 主要按钮、选中、focus ring；on-accent 文字使用 Base |
+| Primary action / focus | Sapphire | 主要按钮、选中、focus ring；Mocha on-primary 使用 Crust，Latte 使用稳定深色 `#11111b`，避免 Base/Text 在 Sapphire 上低于可读对比 |
 | Link | Blue | 链接和可导航文本 |
 | Information | Sky | 信息提示和非阻断说明 |
 | Success | Green | 成功、干净状态、完成 |
@@ -73,7 +87,7 @@ UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 
 ### 按钮
 
-- Primary：Sapphire 背景 + Base 文字；hover 使用同色的受控混色，不引入新 hex。
+- Primary：Sapphire 背景 + `--color-on-primary` 文字；hover 使用同色透明度，不引入新 hex。Latte 不机械使用当前 flavor 的 Base/Text 作为前景。
 - Secondary：Surface 0 背景 + Surface 1 边框 + Text。
 - Ghost：透明背景；hover 进入 Surface 0。
 - Destructive：Red 语义色；危险确认必须同时保留明确文案。
@@ -96,7 +110,7 @@ UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 
 ### 状态与数据色
 
-- 成功 Green、警告 Yellow、错误 Red、信息 Blue。
+- 成功 Green、警告 Yellow、错误 Red、信息 Sky；可导航链接使用 Blue。
 - 多类别可视化可从 Teal、Sapphire、Lavender、Peach 中选择，但必须在文档中定义稳定类别映射。
 - Profile 自定义颜色属于用户数据，不强制重映射；其周围的边界和文字仍遵循主题 token。
 
@@ -114,6 +128,14 @@ UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 3. 错误、警告和成功同时包含文案或图标，不只依赖红黄绿。
 4. 主窗口、Settings、所有 overlay、CodeMirror 和首帧 splash 在 Mocha/Latte 下均做浏览器截图巡检。
 5. 主题契约测试固定官方 palette 值和核心语义映射，避免未来改动悄然引入第三套色表。
+
+## 实现与自动化守卫
+
+- `src/lib/theme.ts` 统一 React 根节点的 `.dark` class 与 pre-paint inline 根色；`index.html` 在 React 加载前使用同一组 Mocha/Latte 常量。
+- `src-tauri/src/lib.rs::theme_bg_for` 固定 native WebView 背景，Rust 测试校验 Mocha Base `#1e1e2e` 与 Latte Base `#eff1f5`。
+- `src/lib/editorTheme.ts` 只返回官方 `catppuccinMocha` / `catppuccinLatte` extension；`JsonEditor` 通过 Compartment 重配置，不重建编辑器。
+- `tests/styles/themeContract.test.ts` 固定 palette、语义映射、首帧常量和旧基础色禁令。
+- `tests/components/themeSurfaces.test.tsx` 递归扫描产品 TSX，拒绝 raw hex、数字 `rgb/rgba/hsl` 以及 framework/旧品牌色类。Profile schema/registry 的 `#7C3AED` 是用户数据默认值，不属于产品 chrome，明确保留。
 
 ## 取舍与否决方案
 
