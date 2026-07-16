@@ -171,11 +171,16 @@ fn append_collection_artifacts(
     options: &ClaudeToCodexOptions,
     result: &mut ConversionRoutePlan,
 ) -> Result<(), AgentError> {
+    let mut unmatched_skill_ids = options.confirmed_skill_ids.clone();
     if let (Some(source_port), Some(target_port)) =
         (source_adapter.skills(), target_adapter.skills())
     {
         let targets = snapshots_in_scope(target_port.list(target_context)?, scope);
+        let mut observed_names = BTreeSet::new();
         for source in snapshots_in_scope(source_port.list(source_context)?, scope) {
+            if source.content.get("scope").and_then(Value::as_str) == Some("none") {
+                continue;
+            }
             let name = source.content.get("name").and_then(Value::as_str);
             let target = name.and_then(|name| {
                 targets.iter().find(|target| {
@@ -186,6 +191,10 @@ fn append_collection_artifacts(
             let Some(name) = name else {
                 continue;
             };
+            if !observed_names.insert(name.to_owned()) {
+                continue;
+            }
+            unmatched_skill_ids.remove(name);
             let target_resource = target
                 .map(|snapshot| snapshot.resource.clone())
                 .unwrap_or_else(|| {
@@ -235,6 +244,18 @@ fn append_collection_artifacts(
                 result.artifacts.push(artifact);
             }
         }
+    }
+    if !unmatched_skill_ids.is_empty() {
+        return Err(route_error(
+            source_context,
+            format!(
+                "Confirmed Skill ids are not available in the selected scope: {}",
+                unmatched_skill_ids
+                    .into_iter()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        ));
     }
     if let (Some(source_port), Some(target_port)) =
         (source_adapter.plugins(), target_adapter.plugins())
@@ -428,9 +449,11 @@ fn build_settings_route(
                 append_marketplace_artifacts(&mut artifacts, &source, &value);
                 continue;
             }
-            let permission_rule_count = (field == "permissions")
-                .then(|| count_permission_rules(&value))
-                .unwrap_or(0);
+            let permission_rule_count = if field == "permissions" {
+                count_permission_rules(&value)
+            } else {
+                0
+            };
             let Some(mapping) = resolved_setting_mapping(&field, &value, options) else {
                 continue;
             };
@@ -479,6 +502,7 @@ fn build_settings_route(
                 disposition,
                 resolution: mapping.resolution,
                 risk: mapping.risk,
+                item_count: None,
                 message,
             });
             if permission_rule_count > 0 {
@@ -490,6 +514,7 @@ fn build_settings_route(
                     disposition: ArtifactDisposition::Unsupported,
                     resolution: None,
                     risk: ConversionRiskLevel::Safe,
+                    item_count: Some(permission_rule_count),
                     message: format!(
                         "{permission_rule_count} fine-grained Claude permission rules have no lossless Codex mapping"
                     ),
@@ -547,6 +572,17 @@ fn append_marketplace_artifacts(
     value: &Value,
 ) {
     let Some(marketplaces) = value.as_object() else {
+        artifacts.push(ConversionArtifact {
+            id: format!("{}:marketplaces", source.resource.logical_id),
+            kind: ResourceKind::Plugins,
+            source: source.clone(),
+            target: None,
+            disposition: ArtifactDisposition::Unsupported,
+            resolution: None,
+            risk: ConversionRiskLevel::Safe,
+            item_count: None,
+            message: "Claude marketplace configuration must be an object".into(),
+        });
         return;
     };
     for marketplace_id in marketplaces.keys() {
@@ -558,6 +594,7 @@ fn append_marketplace_artifacts(
             disposition: ArtifactDisposition::Unsupported,
             resolution: None,
             risk: ConversionRiskLevel::Confirmation,
+            item_count: None,
             message: format!(
                 "Marketplace {marketplace_id} must be configured through the Codex plugin marketplace"
             ),

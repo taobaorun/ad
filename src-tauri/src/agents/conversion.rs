@@ -73,6 +73,8 @@ pub struct ConversionArtifact {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolution: Option<ResolutionRequirement>,
     pub risk: ConversionRiskLevel,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_count: Option<usize>,
     pub message: String,
 }
 
@@ -330,6 +332,7 @@ pub(super) fn map_skill_artifact(
         disposition,
         resolution,
         risk: ConversionRiskLevel::Confirmation,
+        item_count: None,
         message,
     })
 }
@@ -377,6 +380,7 @@ pub(super) fn map_plugin_artifact(
         disposition,
         resolution,
         risk: ConversionRiskLevel::Confirmation,
+        item_count: None,
         message,
     }
 }

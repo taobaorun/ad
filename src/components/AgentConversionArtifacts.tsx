@@ -156,5 +156,10 @@ function artifactMessage(artifact: ConversionArtifact, t: ReturnType<typeof useT
   if (artifact.resolution) {
     return t(`agentConversion.artifactMessage.resolution.${artifact.resolution.kind}`);
   }
+  if (artifact.kind === 'rules' && artifact.itemCount !== undefined) {
+    return t('agentConversion.artifactMessage.permissionRules', {
+      count: artifact.itemCount,
+    });
+  }
   return t(`agentConversion.artifactMessage.disposition.${artifact.disposition}`);
 }

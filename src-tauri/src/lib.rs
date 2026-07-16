@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 // ad library entry — composes filesystem primitives, commands, and the tray.
 
 pub mod fs;

@@ -1,6 +1,6 @@
 # 多 Agent 支持产品规格
 
-> 状态：已实现，发布门禁验证中（2026-07-15）
+> 状态：已实现，发布门禁验证中（2026-07-16）
 >
 > 设计依据：`docs/design-docs/multi-agent-architecture.md`
 
@@ -22,7 +22,8 @@
 
 - Claude Code 与 Codex 的 Settings、Profiles、Skills、Plugins、进程探测和终端入口已统一到 AgentContext/capability-driven UI。
 - Profile 创建、编辑、应用、history 和 rollback 使用 adapter-owned payload 与共享安全执行路径。
-- Claude Code → Codex 转换逐 artifact 展示无法转换、需确认和冲突项，source 保持只读，target 支持 backup 和 rollback。
+- Claude Code → Codex 转换按 Settings、Permissions/Rules、Skills、Plugins/Marketplaces 分组展示真实 source/target 路径、无法转换、需确认和冲突项；source 保持只读，Settings/Skills target 支持 backup 和 rollback。
+- 单一配置实例不再显示误导性的 `~/.claude` / `~/.codex` 下拉框；危险的 `never + danger-full-access` 必须经过独立确认和后端 plan-bound acknowledgement。
 - Plugin install 不做能力伪装：Claude 当前无 install operation；Codex marketplace/cache/授权尚未纳入安全 MutationPlan，因此 descriptor 标记 degraded，调用返回结构化 `Unsupported`。列表和 enable/disable 已实现。
 - legacy Claude template/import/shortcut façade 仍保留给兼容入口，不属于未来 Agent 扩展面。
 
@@ -81,7 +82,7 @@ adapter allowlist 中的配置对象，例如 settings、instructions、skills�
 
 1. adapter 根据当前 snapshots 生成 backend-owned MutationPlan。
 2. UI 展示变更、冲突、限制和目标位置；不接收可修改的真实 mutation plan。
-3. 用户确认时只提交 planId。
+3. 普通计划确认时提交 planId；转换计划同时提交后端 plan view 声明的 typed acknowledgements。
 4. shared ExecutionEngine 重新检查 digest，先完成全部备份，再逐文件原子写。
 5. UI 展示 complete、compensated 或 partial failure receipt。
 
@@ -101,20 +102,23 @@ adapter allowlist 中的配置对象，例如 settings、instructions、skills�
 6. `maxContextTokens` 自动转换为 `model_context_window`；Claude model 和 permissions 不猜测，分别通过内置 Codex model 输入和权限预设解决。
 7. 无安全可写项时明确提示 source 已读取并汇总受阻项，不显示成执行成功。
 8. source resource 只能进入 read-set，永远不能进入 write-set。
-9. 用户确认后通过相同 ExecutionEngine 写入 Codex target；Claude setup 保持不动。
+9. Project Skill 经用户确认本地来源后写入同项目 `.agents/skills`，并与 Settings 变更组成同一个可回滚计划。
+10. Project-only Plugin 和每个 marketplace 来源必须可见；没有安全安装/授权 API 时标为 manual/unsupported，不伪造 TOML 安装成功。
+11. 细粒度 permission rules 与权限预设分开报告；危险预设必须经过独立确认，后端拒绝缺失或错误 acknowledgement。
+12. 用户确认后通过相同 ExecutionEngine 写入 Codex target；Claude setup 保持不动。
 
 ## Capability Parity
 
-| 用户能力 | Claude Code | Codex | 验收要求 |
-|---|---|---|---|
-| Settings | P0 | P0 | user/project 读取、编辑、预览、apply、backup、history、rollback，未知字段保留 |
-| Profiles | P0 | P0 | `(agentId, profileId)` 隔离，adapter-owned payload；创建、编辑、plan/apply、history、rollback |
-| Skills | P0 | P0 | 列表、来源识别、安装/启用/禁用及真实 scope |
-| Plugins | P0 | P0 | 列表和启用/禁用对等；install 只在真实安全实现存在时声明，否则 degraded/unsupported |
-| Process detection | P0 | P0 | 不误报另一个 Agent 或 config instance |
-| Terminal launch | P0 | P0 | 正确 launcher、env、cwd 和 terminal backend |
-| Conversion source | P0 | 不适用 | Claude setup 只读 |
-| Conversion target | 不适用 | P0 | user/project 单作用域隔离、preview、conflict、backup、apply、rollback |
+| 用户能力          | Claude Code | Codex  | 验收要求                                                                                      |
+| ----------------- | ----------- | ------ | --------------------------------------------------------------------------------------------- |
+| Settings          | P0          | P0     | user/project 读取、编辑、预览、apply、backup、history、rollback，未知字段保留                 |
+| Profiles          | P0          | P0     | `(agentId, profileId)` 隔离，adapter-owned payload；创建、编辑、plan/apply、history、rollback |
+| Skills            | P0          | P0     | 列表、来源识别、安装/启用/禁用及真实 scope                                                    |
+| Plugins           | P0          | P0     | 列表和启用/禁用对等；install 只在真实安全实现存在时声明，否则 degraded/unsupported            |
+| Process detection | P0          | P0     | 不误报另一个 Agent 或 config instance                                                         |
+| Terminal launch   | P0          | P0     | 正确 launcher、env、cwd 和 terminal backend                                                   |
+| Conversion source | P0          | 不适用 | Claude setup 只读                                                                             |
+| Conversion target | 不适用      | P0     | user/project 单作用域隔离、preview、conflict、backup、apply、rollback                         |
 
 “对等”表示用户任务和安全保证对等，不表示字段或底层文件结构相同。真实平台缺少某项 operation 时必须报告 degraded/unavailable，不能伪造成功。
 
@@ -124,14 +128,15 @@ adapter allowlist 中的配置对象，例如 settings、instructions、skills�
 - capability descriptor 控制入口、操作状态和 disabled reason。
 - profile、project state、history 和 receipt 按 AgentContext 隔离。
 - conversion 允许明确选择 User / Project；Project 绑定当前选中项目并显示路径，切换 scope 或项目后旧预览失效。
-- conversion preview 展示 artifact、目标位置、差异、disposition 和所需用户输入。
-- conversion 提供内置 Codex model 和权限决策；默认保留目标权限，危险的无审批完全访问必须显式选择并显示风险。
+- conversion preview 按 carrier 分组展示 artifact、真实源/目标位置、summary、disposition、risk 和所需 typed resolution。
+- 单 installation 时隐藏配置实例选择器；多 installation 收入高级区并说明它不代表实际写入路径。
+- conversion 提供内置 Codex model、权限和本地 Skill 决策；默认保留目标权限，危险的无审批完全访问必须显式选择并通过独立 alert dialog 确认。
 - 所有用户文案进入 zh/en i18n；后端错误 message 保持英文，前端按 error code 映射可操作提示。
 - Agent-specific editor 只能在集中 registry 注册，通用组件和 store 不散布 agentId 业务分支。
 
 ## Data Safety
 
-- 用户文件写入必须经过 MutationPlan + explicit confirmation。
+- 用户文件写入必须经过 MutationPlan + explicit confirmation；危险 conversion acknowledgement 必须与 backend-owned plan 精确匹配。
 - 写入前保存所有目标 backup 和 manifest；任一 backup 失败时不得开始写入。
 - 每个文件使用 APFS atomic rename；多文件更新使用补偿恢复，不宣称整体原子事务。
 - source/target 外部修改通过 digest 检测；过期 plan 必须重新预览。

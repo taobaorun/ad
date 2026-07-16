@@ -6,6 +6,7 @@ import { Button } from './ui/button';
 interface AgentConversionRiskDialogProps {
   open: boolean;
   projectPath: string | null;
+  targetPaths: string[];
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -14,6 +15,7 @@ interface AgentConversionRiskDialogProps {
 export function AgentConversionRiskDialog({
   open,
   projectPath,
+  targetPaths,
   busy,
   onCancel,
   onConfirm,
@@ -55,6 +57,16 @@ export function AgentConversionRiskDialog({
         <pre className="mt-3 overflow-x-auto rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
           {'approval_policy = "never"\nsandbox_mode = "danger-full-access"'}
         </pre>
+        <div className="mt-3">
+          <div className="text-xs font-medium">{t('agentConversion.dangerDialog.targets')}</div>
+          <ul className="mt-1 space-y-1">
+            {targetPaths.map((path) => (
+              <li key={path} className="break-all font-mono text-xs text-muted-foreground">
+                {path}
+              </li>
+            ))}
+          </ul>
+        </div>
         <p className="mt-3 text-xs text-muted-foreground">
           {t('agentConversion.dangerDialog.sourceUnchanged')}
         </p>

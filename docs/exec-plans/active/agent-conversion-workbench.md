@@ -57,7 +57,7 @@
 - [x] (2026-07-16 08:28 CST) Milestone 3：实现 backend-owned acknowledgement 门禁（PlanStore 精确集合校验；conversion command 改为 typed acknowledgement；危险集成测试证明缺少专用 ack 不消费 plan，完整 ack 才能 Apply）。
 - [x] (2026-07-16 08:40 CST) Milestone 4：完成 Project Settings/Permissions/Skills/Plugins 路由（Settings merge、permission preset 与细粒度 rules 分离；Skill Apply/rollback；Project-only Plugin key union；marketplace 逐项呈现均由测试覆盖）。
 - [x] (2026-07-16 08:40 CST) Milestone 5：重构转换 UI 为工作台（单 installation 隐藏；多实例进入高级区；真实 locations、分组 summary、Skill inline resolver 与独立危险 alertdialog 已通过组件测试）。
-- [ ] Milestone 6：同步文档并执行多轴代码审查与修复（验证标准：设计、产品规格、i18n 和实现一致，无 P0/P1 review finding）。
+- [x] (2026-07-16 09:56 CST) Milestone 6：同步文档并执行多轴代码审查与修复（架构/产品 MD+HTML 已同步；修复未知 Skill decision、重复 Skill target、异常 marketplace 静默遗漏、Project Plugin scope/path 和危险对话框目标路径；无未解决 Critical/Required finding）。
 - [ ] Milestone 7：全量门禁、构建、安装和只读原生验收（验证标准：全部测试/构建通过，旧应用已备份，`sofampy` preview 完整且所有源/目标 digest 不变）。
 - [ ] 完成结果回顾并将 MD + 冻结 HTML 一起移到 `docs/exec-plans/completed/`。
 
@@ -77,6 +77,10 @@
   证据：只读 filesystem inventory 与 key/count 汇总；未读取或输出任何 credential/runtime 状态。
 - 发现：collection snapshot 的 digest 是展示 metadata digest，而 ExecutionEngine precondition 校验的是物理 file/symlink digest，二者不能混用。
   证据：Project Skill 首次集成测试在 Apply 前返回 `ResourceChanged`；改为通过 source port resolve 后观察 symlink target digest，测试通过。
+- 发现：Project Plugin port 复用 legacy “全局 + 项目有效值”列表后，会把用户级继承项错误标成 Project scope，并给出错误的 `.claude/settings.local.json` source location。
+  证据：首次真实 `sofampy` preview 得到 12 个 Plugin，而项目文件实际声明 6 个；port 改为读取所选 scope 声明文件后精确为 6 个。
+- 发现：Rust 1.95 的 Clippy 对既有 `AgentError` API 全局触发 `result_large_err`（119 个位置），与本次行为无关。
+  证据：定向测试通过后 `cargo clippy -D warnings` 失败；保留 IPC 错误结构并在 crate 级仅豁免该 lint 后，其余 Clippy warnings 清零。
 
 ## 决策日志
 
@@ -89,6 +93,9 @@
 - 决策：Skill source 的 read-only precondition 使用 source port 解析出的物理载体 digest，artifact preview 仍保留 metadata snapshot digest 语义。
   理由：执行层按物理目标检查并发变化，必须与其 digest 算法一致，才能在不修改 source 的前提下可靠阻止 symlink 被替换。
   日期/作者：2026-07-16 / Codex
+- 决策：Plugin 管理 UI 的 effective union 与 conversion inventory 的 selected-scope declarations 分开实现。
+  理由：前者回答“当前项目有效状态”，后者回答“本次 Project 转换实际来自哪个文件”；混用会造成 scope 泄漏和虚假 source path。
+  日期/作者：2026-07-16 / Codex code review
 
 ## 结果回顾
 

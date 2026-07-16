@@ -395,11 +395,13 @@
     "dangerDialog": {
       "title": "确认 Codex 无限制权限",
       "description": "此转换会允许命令在无审批提示、无沙箱限制下运行。继续前请核对以下精确配置。",
+      "targets": "将修改的 Codex 目标",
       "sourceUnchanged": "Claude Code 源始终只读；AD 只修改预览列出的 Codex 目标，并在写入前创建备份。",
       "cancel": "取消",
       "confirm": "应用无限制权限"
     },
     "artifactMessage": {
+      "permissionRules": "{{count}} 条 Claude 细粒度权限规则目前没有经过验证的 Codex 无损映射。",
       "resolution": {
         "select_target_model": "请选择 Codex 模型，或保留目标中已有的模型。",
         "select_permission_preset": "请选择明确的 Codex 审批与沙箱策略，或保留目标设置。",

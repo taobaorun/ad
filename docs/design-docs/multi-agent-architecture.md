@@ -1,6 +1,6 @@
 # 多 Agent 抽象架构
 
-> 状态：已实现（2026-07-15；设计已获用户 LGTM）
+> 状态：已实现（2026-07-16；设计已获用户 LGTM）
 >
 > 范围：Claude Code、Codex，以及未来由 AD 内置代码接入的 Agent
 >
@@ -25,7 +25,8 @@
 - Claude Code 与 Codex 已实现 Settings、Skills、Plugins、Process、Launch ports，descriptor 从真实 port operation 推导，并由共享 parity contract 验证。
 - `AgentProfile` envelope 已按 `(agentId, profileId)` 持久化；adapter 负责 payload 验证和 Profile→Settings 内容转换，应用仍经过安全 plan、receipt 和 rollback。
 - `ExecutionEngine` 提供 digest precondition、写前全量备份、APFS 单文件原子写、失败补偿、history 和防覆盖 rollback。
-- Claude Code → Codex 已实现 artifact route；source 只进入 read-set，target plan 必须显式确认，冲突和无法映射字段逐项展示。
+- Claude Code → Codex 已实现多载体 artifact route；Project Settings 写入 `.codex/config.toml`，Project Skills 写入 `.agents/skills`，Plugin/marketplace 无安全安装接口时逐项报告后续设置。source 只进入 read-set，target plan 必须显式确认。
+- 转换 artifact 携带 source/target `ResourceLocation`、typed resolution、risk 和 summary；危险权限计划要求 plan-bound `dangerous_permission_expansion` acknowledgement，不能用通用 boolean 绕过。
 - Plugin install 仅在真实实现存在时声明。当前 Claude 不声明 install；Codex 因 marketplace/cache/授权流程未纳入安全执行而标记 degraded，并返回结构化 `Unsupported`。
 
 ## 目标与非目标
@@ -169,7 +170,7 @@ struct AgentProfile {
 adapter 负责理解格式和生成变更计划，但不能直接写用户文件。共享 `ExecutionEngine` 负责：
 
 1. 保存 backend-owned plan，IPC 只返回 plan view；
-2. 用户确认时只提交 `planId`，不回传可伪造的路径或目标内容；
+2. 用户确认时提交 `planId`；转换计划同时提交后端预览声明的 typed acknowledgements，不回传可伪造的路径或目标内容；
 3. 对所有 read-set 和 write-set 重新校验 digest；
 4. 在任何写入前完成全部目标备份并写 backup manifest；
 5. 每个文件使用现有 `write_atomic`；
@@ -209,7 +210,9 @@ source context
 
 一次转换只处理一个作用域。`AgentContext.projectPath` 为空时 route 只处理 user resources；存在时只处理该 canonical project 的 project resources。Project Settings 将 Claude `.claude/settings.json` 与 `.claude/settings.local.json` 按 shared → local 优先级合并，再写入同项目 `.codex/config.toml`。另一个 scope 的 artifact 不进入预览、read-set 或 write-set，避免 Project 转换隐式修改用户配置。
 
-字段映射也遵循“确认过的语义才自动转换”：`maxContextTokens` 映射为 Codex `model_context_window`；Claude 原生 model 名不直接写入 Codex，用户可通过 route 的内置 `targetModel` 决策显式选择目标模型。Claude permissions 只有在用户选择内置预设后才生成 `approval_policy` + `sandbox_mode`，其中 bypass 对等预设必须明确显示 `never` + `danger-full-access` 风险。用户不能通过配置扩展或替换这些规则。
+字段映射也遵循“确认过的语义才自动转换”：`maxContextTokens` 映射为 Codex `model_context_window`；Claude 原生 model 名不直接写入 Codex，用户可通过 route 的内置 `targetModel` 决策显式选择目标模型。Claude permissions 只有在用户选择内置预设后才生成 `approval_policy` + `sandbox_mode`；细粒度 allow/ask/deny rules 单独标记 unsupported，不能由宽泛预设冒充无损迁移。bypass 对等预设明确显示 `never` + `danger-full-access`，并要求独立危险确认。用户不能通过配置扩展或替换这些规则。
+
+转换按目标 carrier 组合计划：Settings 由 target SettingsPort 规划；确认本地来源后的 Skills 由 target SkillsPort 规划可回滚 symlink；Plugins 和 marketplaces 在 Codex marketplace/授权流程未纳入安全端口前只逐项报告 manual setup。`requires_input` 必须携带可执行 typed resolution；没有 resolver 的项目必须是 `unsupported`，不能形成无操作的等待状态。
 
 每个转换项必须标记：
 
@@ -222,6 +225,8 @@ source context
 
 转换计划的 write-set 永远不能包含 source resource。目标已存在时默认是 merge/skip/conflict 计划，不把整份 `config.toml` 当作可直接覆盖的字符串。源和目标任何 digest 变化都会使 plan 失效，要求重新预览。
 当 plan 为空时，UI 必须明确说明 source 已成功读取，并汇总 requires-input、unsupported 和 conflict 数量，不能把“没有安全可写项”表现成执行成功或静默无效。
+
+单 installation 时转换 UI 隐藏配置实例选择器；多 installation 时只在高级区显示，并明确它是 config home 而不是实际资源路径。主区只能展示 adapter 返回的 source/target location。危险 acknowledgement 由 PlanStore 与具体 plan 一起保存，Apply 必须精确匹配 requirement 集合；失败确认不消费 plan。
 
 ### 8. 运行时能力复用 macOS 服务
 
@@ -306,13 +311,13 @@ Rust `message` 保持英文且可诊断；前端按 `code` 映射 zh/en 操作�
 
 “对等”不再比较 enum，而比较用户任务：
 
-| 能力 | 两个 Agent 都必须满足 |
-|---|---|
-| Settings | 识别 user/project scope；读取、编辑、预览、apply、备份、history、rollback；保留未知字段 |
-| Skills | 列表、来源识别、安装/启用/禁用，以及 user/project scope 中目标 Agent 实际支持的等价行为 |
-| Plugins | 列表、来源识别、安装/启用/禁用；若产品表面或授权流程不同，必须明确状态而非假成功 |
-| Process detection | 识别当前 installation 的运行进程，不误报另一个 Agent 或配置实例 |
-| Terminal launch | 使用选定 installation 的 launcher、环境和项目 cwd，在现有四种 terminal backend 中启动 |
+| 能力              | 两个 Agent 都必须满足                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| Settings          | 识别 user/project scope；读取、编辑、预览、apply、备份、history、rollback；保留未知字段 |
+| Skills            | 列表、来源识别、安装/启用/禁用，以及 user/project scope 中目标 Agent 实际支持的等价行为 |
+| Plugins           | 列表、来源识别、安装/启用/禁用；若产品表面或授权流程不同，必须明确状态而非假成功        |
+| Process detection | 识别当前 installation 的运行进程，不误报另一个 Agent 或配置实例                         |
+| Terminal launch   | 使用选定 installation 的 launcher、环境和项目 cwd，在现有四种 terminal backend 中启动   |
 
 若目标 Agent 在某个 operation 上不存在真实等价能力，状态必须是 `degraded/unavailable` 并解释差异；不能为了通过 parity test 伪造成功。
 

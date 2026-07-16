@@ -442,6 +442,14 @@ function AgentConversionDialog({
       <AgentConversionRiskDialog
         open={dangerConfirmOpen}
         projectPath={scope === 'project' ? activeProjectPath : null}
+        targetPaths={[
+          ...new Set(
+            preview?.artifacts
+              .filter((artifact) => artifact.risk === 'dangerous')
+              .flatMap((artifact) => (artifact.target ? [artifact.target.location.path] : [])) ??
+              [],
+          ),
+        ]}
         busy={busy}
         onCancel={() => setDangerConfirmOpen(false)}
         onConfirm={() => void submitConversion()}

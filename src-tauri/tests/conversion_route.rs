@@ -50,8 +50,19 @@ fn route_reports_artifact_dispositions_and_builds_a_target_only_plan() {
             },
         )
         .unwrap();
+    let unknown_skill = route
+        .preview_with_options(
+            &source,
+            &target,
+            &ClaudeToCodexOptions {
+                confirmed_skill_ids: BTreeSet::from(["missing-skill".into()]),
+                ..ClaudeToCodexOptions::default()
+            },
+        )
+        .unwrap_err();
 
     restore_env(previous_home, previous_codex_home);
+    assert!(unknown_skill.message.contains("missing-skill"));
 
     let dispositions = result
         .artifacts

@@ -395,11 +395,13 @@
     "dangerDialog": {
       "title": "Confirm unrestricted Codex permissions",
       "description": "This conversion lets commands run without approval prompts or sandbox restrictions. Review the exact values before continuing.",
+      "targets": "Codex targets to be changed",
       "sourceUnchanged": "The Claude Code source remains read-only. Only the listed Codex targets will be changed, with backups created first.",
       "cancel": "Cancel",
       "confirm": "Apply unrestricted permissions"
     },
     "artifactMessage": {
+      "permissionRules": "{{count}} fine-grained Claude permission rules have no verified lossless Codex mapping.",
       "resolution": {
         "select_target_model": "Select a Codex model or leave the existing target model unchanged.",
         "select_permission_preset": "Choose an explicit Codex approval and sandbox policy, or preserve the target.",

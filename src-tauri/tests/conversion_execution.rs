@@ -80,11 +80,15 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
 
     let user_source = include_bytes!("fixtures/conversion/claude-settings.json");
     let user_target = include_bytes!("fixtures/conversion/codex-config.toml");
-    let shared_source = br#"{"model":"project-shared","model_reasoning_effort":"medium"}"#;
+    let shared_source = br#"{
+      "model":"project-shared",
+      "model_reasoning_effort":"medium",
+      "enabledPlugins":{"shared-plugin":true,"overridden":true}
+    }"#;
     let local_source = br#"{
       "model":"project-local",
       "model_verbosity":"low",
-      "enabledPlugins":{"project-only@marketplace":true},
+      "enabledPlugins":{"project-only@marketplace":true,"overridden":false},
       "extraKnownMarketplaces":{"team-marketplace":{"source":"internal"},"tools":{"source":"github"}},
       "permissions":{"allow":["Read"],"ask":["Bash"]}
     }"#;
@@ -152,6 +156,26 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
         plugin.disposition,
         ad_lib::agents::ArtifactDisposition::Unsupported
     );
+    let shared_plugin = route_plan
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.id == "plugin:shared-plugin")
+        .unwrap();
+    assert!(shared_plugin
+        .source
+        .location
+        .path
+        .ends_with("/.claude/settings.json"));
+    let overridden_plugin = route_plan
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.id == "plugin:overridden")
+        .unwrap();
+    assert!(overridden_plugin
+        .source
+        .location
+        .path
+        .ends_with("/.claude/settings.local.json"));
     assert!(route_plan
         .artifacts
         .iter()
@@ -160,10 +184,12 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
         .artifacts
         .iter()
         .any(|artifact| artifact.id == "marketplace:tools"));
-    assert!(route_plan
+    let rules = route_plan
         .artifacts
         .iter()
-        .any(|artifact| artifact.id.ends_with(":permissions:rules")));
+        .find(|artifact| artifact.id.ends_with(":permissions:rules"))
+        .unwrap();
+    assert_eq!(rules.item_count, Some(2));
     assert!(!route_plan
         .artifacts
         .iter()

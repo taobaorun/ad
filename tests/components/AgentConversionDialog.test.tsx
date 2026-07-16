@@ -348,6 +348,10 @@ describe('AgentConversionButton', () => {
     const safe = await previewClaudeToCodexRoute();
     previewClaudeToCodexRoute.mockReset().mockResolvedValue({
       ...safe,
+      artifacts: safe.artifacts.map((artifact: { risk: string }) => ({
+        ...artifact,
+        risk: 'dangerous',
+      })),
       summary: { ...safe.summary, dangerous: 1 },
       plan: {
         ...safe.plan,

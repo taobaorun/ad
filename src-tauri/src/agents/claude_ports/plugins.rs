@@ -1,8 +1,6 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Duration, Utc};
-
-use crate::commands::skills::list_plugins;
 
 use super::super::{
     AgentContext, AgentError, AgentErrorCode, AgentId, CapabilityAvailability,
@@ -85,48 +83,44 @@ impl PluginsPort for ClaudePluginsPort {
 
     fn list(&self, context: &AgentContext) -> Result<Vec<ResourceSnapshot>, AgentError> {
         let claude_home = resolve_claude_home(context)?;
-        let (scope, project_path, location, origin) =
+        let (scope, project_path, origin, plugins) =
             if let Some(project_path) = &context.project_path {
                 let project = validate_project_path(context, project_path)?;
+                let shared = project.join(".claude/settings.json");
+                let local = project.join(".claude/settings.local.json");
+                let mut plugins = read_declared_plugins(context, &shared)?
+                    .into_iter()
+                    .map(|(id, enabled)| (id, (enabled, shared.clone())))
+                    .collect::<BTreeMap<_, _>>();
+                plugins.extend(
+                    read_declared_plugins(context, &local)?
+                        .into_iter()
+                        .map(|(id, enabled)| (id, (enabled, local.clone()))),
+                );
                 (
                     ResourceScope::Project,
                     Some(project_path.clone()),
-                    project.join(".claude/settings.local.json"),
                     ResourceOrigin::Project,
+                    plugins,
                 )
             } else {
-                (
-                    ResourceScope::User,
-                    None,
-                    claude_home.join("settings.json"),
-                    ResourceOrigin::User,
-                )
+                let location = claude_home.join("settings.json");
+                let plugins = read_declared_plugins(context, &location)?
+                    .into_iter()
+                    .map(|(id, enabled)| (id, (enabled, location.clone())))
+                    .collect();
+                (ResourceScope::User, None, ResourceOrigin::User, plugins)
             };
-        let plugins = list_plugins(context.project_path.clone()).map_err(|error| {
-            agent_error(
-                AgentErrorCode::Io,
-                context,
-                None,
-                format!("Failed to inspect Claude plugins: {error}"),
-            )
-        })?;
         plugins
             .into_iter()
-            .map(|plugin| {
-                let content = serde_json::to_value(&plugin).map_err(|error| {
-                    agent_error(
-                        AgentErrorCode::Io,
-                        context,
-                        None,
-                        format!("Failed to serialize Claude plugin {}: {error}", plugin.id),
-                    )
-                })?;
+            .map(|(plugin_id, (enabled, location))| {
+                let content = serde_json::json!({"id": plugin_id.clone(), "enabled": enabled});
                 let bytes = serde_json::to_vec(&content).map_err(|error| {
                     agent_error(
                         AgentErrorCode::Io,
                         context,
                         None,
-                        format!("Failed to digest Claude plugin {}: {error}", plugin.id),
+                        format!("Failed to digest Claude plugin {plugin_id}: {error}"),
                     )
                 })?;
                 Ok(ResourceSnapshot {
@@ -135,7 +129,7 @@ impl PluginsPort for ClaudePluginsPort {
                         project_path: project_path.clone(),
                         kind: ResourceKind::Plugins,
                         scope,
-                        logical_id: plugin.id,
+                        logical_id: plugin_id,
                     },
                     location: ResourceLocation {
                         path: location.to_string_lossy().into_owned(),
@@ -259,4 +253,39 @@ impl PluginsPort for ClaudePluginsPort {
             expires_at: Utc::now() + Duration::minutes(5),
         })
     }
+}
+
+fn read_declared_plugins(
+    context: &AgentContext,
+    location: &std::path::PathBuf,
+) -> Result<BTreeMap<String, bool>, AgentError> {
+    let Some(bytes) = read_optional(location, context, None)? else {
+        return Ok(BTreeMap::new());
+    };
+    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            format!(
+                "Invalid Claude settings JSON at {}: {error}",
+                location.display()
+            ),
+        )
+    })?;
+    let Some(plugins) = value.get("enabledPlugins") else {
+        return Ok(BTreeMap::new());
+    };
+    let plugins = plugins.as_object().ok_or_else(|| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            format!("enabledPlugins must be an object in {}", location.display()),
+        )
+    })?;
+    Ok(plugins
+        .iter()
+        .map(|(id, enabled)| (id.clone(), enabled.as_bool().unwrap_or(false)))
+        .collect())
 }

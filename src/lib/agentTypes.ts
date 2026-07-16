@@ -317,6 +317,7 @@ export const ConversionArtifactSchema = z
     disposition: ArtifactDispositionSchema,
     resolution: ResolutionRequirementSchema.optional(),
     risk: ConversionRiskLevelSchema,
+    itemCount: z.number().int().positive().optional(),
     message: z.string().min(1),
   })
   .strict();
