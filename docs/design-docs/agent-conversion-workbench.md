@@ -4,7 +4,7 @@
 >
 > 范围：Claude Code → Codex；同时约束未来内置 Agent 转换路线
 >
-> 关联计划：`docs/exec-plans/active/agent-conversion-workbench.md`
+> 关联计划：`docs/exec-plans/completed/agent-conversion-workbench.md`
 
 ## 结论
 

@@ -58,8 +58,8 @@
 - [x] (2026-07-16 08:40 CST) Milestone 4：完成 Project Settings/Permissions/Skills/Plugins 路由（Settings merge、permission preset 与细粒度 rules 分离；Skill Apply/rollback；Project-only Plugin key union；marketplace 逐项呈现均由测试覆盖）。
 - [x] (2026-07-16 08:40 CST) Milestone 5：重构转换 UI 为工作台（单 installation 隐藏；多实例进入高级区；真实 locations、分组 summary、Skill inline resolver 与独立危险 alertdialog 已通过组件测试）。
 - [x] (2026-07-16 09:56 CST) Milestone 6：同步文档并执行多轴代码审查与修复（架构/产品 MD+HTML 已同步；修复未知 Skill decision、重复 Skill target、异常 marketplace 静默遗漏、Project Plugin scope/path 和危险对话框目标路径；无未解决 Critical/Required finding）。
-- [ ] Milestone 7：全量门禁、构建、安装和只读原生验收（验证标准：全部测试/构建通过，旧应用已备份，`sofampy` preview 完整且所有源/目标 digest 不变）。
-- [ ] 完成结果回顾并将 MD + 冻结 HTML 一起移到 `docs/exec-plans/completed/`。
+- [x] (2026-07-16 10:08 CST) Milestone 7：全量门禁、构建、安装和只读原生验收（前端/Rust/Clippy/生产构建全部通过；旧应用已备份；`sofampy` 只读 preview 与前后 digest/symlink 状态一致；新应用已安装并启动）。
+- [x] (2026-07-16 10:08 CST) 完成结果回顾并将 MD + 冻结 HTML 一起移到 `docs/exec-plans/completed/`。
 
 ## 意外发现
 
@@ -99,7 +99,16 @@
 
 ## 结果回顾
 
-待实施完成后填写：实际覆盖率、风险门禁证据、真实项目只读验收、构建与安装结果、遗留的 Plugin 授权边界。
+已交付 Claude Code → Codex 多载体配置工作台：
+
+- Project Settings/Permissions 路由到 `.codex/config.toml`；确认后的 Project Skill 路由到 `.agents/skills`，同一 backend-owned plan 可 Apply、备份和 rollback。Claude source 全程只读，target-only invariant 与 digest conflict 测试通过。
+- artifact IPC 现包含真实 source/target location、typed resolution、risk、item count 和 summary。单 installation 不再显示 config home 下拉框；多实例只在高级区显示。工作台按 carrier 分组，并显示实际路径、116 条细粒度规则数量及 Plugin/marketplace 后续设置。
+- 危险 `approval_policy = "never"` + `sandbox_mode = "danger-full-access"` 需要独立 alert dialog；PlanStore 精确校验 `conversion_apply` 与 `dangerous_permission_expansion`，缺失/错误 acknowledgement 不写盘且不消费 plan。
+- 临时 Project fixture 证明 Settings + Skill 组合 Apply/rollback、Project-only Plugin、shared/local Plugin 来源和 marketplace 盘点。真实 `sofampy` 只读 preview 得到 17 个转换项，其中 6 个项目 Plugin、2 个 marketplace、116 条 permission rule 和 `skillspy_delivery` Skill 均可见；preview 前后 `.claude/settings.local.json`、`.codex/config.toml` 摘要及 Skill symlink 状态完全一致，未创建 `.agents/skills/skillspy_delivery`。
+- 门禁结果：前端 14 files / 57 tests 全通过；Rust library 209 passed / 4 ignored，全部 integration tests 通过；`cargo check`、Clippy `-D warnings`、Vite production build 和 `pnpm tauri build` 通过。
+- 生产 bundle 已安装到 `/Applications/AD.app`（`com.jiaxy.ad`，1.0.1）并成功启动。旧应用备份为 `/Users/yuanxuan/.ad/app-backups/AD-20260716-100751.app`；源/安装二进制摘要一致，安装应用完成 ad-hoc 重签名并通过严格验证。
+
+保留边界：Codex Plugin marketplace/connector 授权没有纳入安全 MutationPlan，转换逐项报告 manual setup，不宣称自动安装成功。未来内置 Agent 复用 endpoint/resolution/risk/carrier/acknowledgement contract；不支持用户配置转换规则。
 
 ## 上下文和方向
 
