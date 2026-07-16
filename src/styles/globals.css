@@ -43,6 +43,7 @@
     --color-border-strong: var(--ctp-surface-1);
     --color-action-primary: var(--ctp-sapphire);
     --color-on-primary: 17 17 27;
+    --color-on-danger: var(--ctp-base);
     --color-link: var(--ctp-blue);
     --color-info: var(--ctp-sky);
     --color-success: var(--ctp-green);
@@ -67,7 +68,7 @@
     --accent: var(--color-bg-surface-hover);
     --accent-foreground: var(--color-text-primary);
     --destructive: var(--color-danger);
-    --destructive-foreground: var(--color-on-primary);
+    --destructive-foreground: var(--color-on-danger);
     --border: var(--color-border-subtle);
     --input: var(--color-border-strong);
     --ring: var(--color-action-primary);
@@ -81,6 +82,8 @@
     --ds-bg-inset: rgb(var(--color-bg-pane));
     --ds-bg-card: rgb(var(--color-bg-surface));
     --ds-bg-card-hov: rgb(var(--color-bg-surface-hover));
+    --ds-bg-hover: rgb(var(--color-bg-surface-hover));
+    --ds-fg-1: rgb(var(--color-text-primary));
     --ds-fg-2: rgb(var(--color-text-secondary));
     --ds-fg-3: rgb(var(--color-text-muted));
     --ds-fg-4: rgb(var(--color-text-disabled));
@@ -125,6 +128,7 @@
     --ctp-lavender: 180 190 254;
 
     --color-on-primary: var(--ctp-crust);
+    --color-on-danger: var(--ctp-crust);
     --scrollbar-thumb: rgb(var(--ctp-overlay-0) / 0.52);
     --scrollbar-thumb-hover: rgb(var(--ctp-overlay-1) / 0.74);
   }
@@ -152,6 +156,15 @@ body,
 button, [role="button"], label, nav, header, aside {
   -webkit-user-select: none;
   user-select: none;
+}
+
+/* All native controls get the same keyboard-only focus treatment. Sapphire
+   carries product identity; the outer Text outline preserves visibility on
+   Latte surfaces where Sapphire alone is below 3:1 against the background. */
+:root :is(button, a[href], input, textarea, select):focus-visible {
+  box-shadow: 0 0 0 2px rgb(var(--color-action-primary));
+  outline: 1px solid rgb(var(--color-text-primary));
+  outline-offset: 3px;
 }
 
 /* Theme-aware scrollbars use non-critical Overlay roles in both flavors. */

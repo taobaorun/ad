@@ -29,6 +29,21 @@ describe('theme contract', () => {
     expect(themeCss).toContain('--color-success: var(--ctp-green);');
     expect(themeCss).toContain('--color-warning: var(--ctp-yellow);');
     expect(themeCss).toContain('--color-danger: var(--ctp-red);');
+    expect(themeCss).toContain('--color-on-danger: var(--ctp-base);');
+    expect(themeCss).toContain('--destructive-foreground: var(--color-on-danger);');
+  });
+
+  it('keeps normal action labels readable in Latte', () => {
+    expect(contrastRatio('#11111b', '#209fb5')).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio('#eff1f5', '#d20f39')).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('gives native controls a dual-tone semantic focus indicator', () => {
+    expect(themeCss).toContain(
+      ':root :is(button, a[href], input, textarea, select):focus-visible',
+    );
+    expect(themeCss).toContain('box-shadow: 0 0 0 2px rgb(var(--color-action-primary));');
+    expect(themeCss).toContain('outline: 1px solid rgb(var(--color-text-primary));');
   });
 
   it('derives compatibility aliases and Tailwind opacity from semantic roles', () => {
@@ -60,3 +75,23 @@ describe('theme contract', () => {
     for (const token of semanticTokens) expect(themeGuide).toContain(`\`${token}\``);
   });
 });
+
+function contrastRatio(foreground: string, background: string): number {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function relativeLuminance(hex: string): number {
+  const red = linearChannel(hex, 1);
+  const green = linearChannel(hex, 3);
+  const blue = linearChannel(hex, 5);
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function linearChannel(hex: string, offset: number): number {
+  const channel = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
+  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+}
