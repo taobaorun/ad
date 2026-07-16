@@ -68,7 +68,9 @@
       "runAnything": "执行任意命令…",
       "openPaletteTitle": "打开命令面板 (⌘K)",
       "agentSelectorLabel": "选择 Agent",
-      "agentSelectorTitle": "切换当前 Agent"
+      "agentSelectorTitle": "切换当前 Agent",
+      "switchToLight": "切换到浅色主题",
+      "switchToDark": "切换到深色主题"
     }
   },
   "advanced": {

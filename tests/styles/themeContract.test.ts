@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const themeCss = readFileSync('src/styles/globals.css', 'utf8');
 const tailwindConfig = readFileSync('tailwind.config.ts', 'utf8');
+const indexHtml = readFileSync('index.html', 'utf8');
 
 describe('theme contract', () => {
   it('defines the official Latte and Mocha foundation as RGB channels', () => {
@@ -39,5 +40,11 @@ describe('theme contract', () => {
   it('does not retain the previous Zinc, Indigo, or Anthropic foundations', () => {
     expect(themeCss).not.toMatch(/Zinc\/Indigo|#0a0a0b|#5b5bd6|#8c8cf5/i);
     expect(tailwindConfig).not.toMatch(/Anthropic palette|#D97757|#B04A3F|#788C5D/i);
+  });
+
+  it('uses matching Catppuccin roots before the React bundle loads', () => {
+    expect(indexHtml).toContain("var bg = dark ? '#1e1e2e' : '#eff1f5';");
+    expect(indexHtml).toContain("var fg = dark ? '#cdd6f4' : '#4c4f69';");
+    expect(indexHtml).not.toMatch(/#0a0a0b|#ffffff|#09090b/i);
   });
 });

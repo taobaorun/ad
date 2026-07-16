@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './i18n';
 import { tauri } from './lib/tauri';
+import { applyDocumentTheme } from './lib/theme';
 import { useUiSettings } from './store/uiSettings';
 import './styles/globals.css';
 
@@ -10,6 +11,8 @@ import './styles/globals.css';
 // App and SettingsApp — the settings window then never downloads the main
 // app's editor/codemirror code, and vice versa.
 const isSettings = window.location.hash.startsWith('#/settings');
+
+applyDocumentTheme(useUiSettings.getState().darkMode);
 
 // Main window owns global-shortcut registration. The settings window shares
 // localStorage and would otherwise double-register on its own boot.

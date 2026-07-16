@@ -41,8 +41,8 @@
 ## 进展
 
 - [x] (2026-07-16 14:20 CST) 步骤一：建立 Mocha/Latte palette 与语义 token 合同，并用测试固定核心映射（验证：`tests/styles/themeContract.test.ts` 先出现 4 个预期合同失败，迁移后 4/4 通过；`pnpm typecheck`、`pnpm lint` 通过）。
-- [ ] (进行中) 步骤二：对齐 native background、HTML splash、React class、跨窗口持久化和 i18n（验证标准：Rust/前端测试通过，双模式启动无错误底色闪烁）。
-- [ ] 步骤三：把 CodeMirror 替换为官方 Mocha/Latte 主题（验证标准：切换不 remount、不丢内容，编辑器依旧 lazy-load）。
+- [x] (2026-07-16 14:25 CST) 步骤二：对齐 native background、HTML splash、React class、跨窗口持久化和 i18n（验证：主题 helper 与 Rust helper 测试均先因实现缺失失败；完成后前端主题/store/i18n 9/9、Rust 定向测试、`pnpm typecheck`、`pnpm lint` 通过）。
+- [ ] (进行中) 步骤三：把 CodeMirror 替换为官方 Mocha/Latte 主题（验证标准：切换不 remount、不丢内容，编辑器依旧 lazy-load）。
 - [ ] 步骤四：迁移主窗口、Settings 和所有 overlay/状态控件（验证标准：静态 raw-color inventory 清零或仅剩已记录例外；组件测试与双模式浏览器截图通过）。
 - [ ] 步骤五：按 as-built 更新主题文档，执行完整审查、构建、PR 和 CI（验证标准：所有门禁通过，文档同步，PR 打开并 CI 决定为 green）。
 

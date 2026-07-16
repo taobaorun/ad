@@ -68,7 +68,9 @@
       "runAnything": "run anything…",
       "openPaletteTitle": "Open command palette (⌘K)",
       "agentSelectorLabel": "Select Agent",
-      "agentSelectorTitle": "Switch current Agent"
+      "agentSelectorTitle": "Switch current Agent",
+      "switchToLight": "Switch to light theme",
+      "switchToDark": "Switch to dark theme"
     }
   },
   "advanced": {

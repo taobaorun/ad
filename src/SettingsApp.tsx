@@ -15,6 +15,7 @@ import { setLanguage, type Lang } from '@/i18n';
 import type { TerminalBackendId } from '@/lib/tauri';
 import { Keyboard, Languages, Terminal as TerminalIcon, History, Puzzle } from 'lucide-react';
 import { SkillSourcesSection } from '@/components/SkillSources';
+import { applyDocumentTheme } from '@/lib/theme';
 
 const TERMINAL_BACKENDS: TerminalBackendId[] = ['ghostty', 'cmux', 'apple-terminal', 'custom'];
 
@@ -26,7 +27,7 @@ export function SettingsApp() {
 
   const dark = useUiSettings((s) => s.darkMode);
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
+    applyDocumentTheme(dark);
   }, [dark]);
 
   useEffect(() => {
