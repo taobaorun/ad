@@ -165,7 +165,7 @@ export function SwitchTemplateDialog({
           <LayerPicker layers={layers} onToggle={toggleLayer} />
 
           {dirtyBlocked && (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-foreground">
               <div className="mb-1 flex items-center gap-1.5 font-medium">
                 <AlertTriangle className="h-3.5 w-3.5" />
                 {t('switchTemplate.dirtyTitle')}
@@ -238,7 +238,7 @@ function LayerPicker({
                   {t(`switchTemplate.layers.${item.key}.label`)}
                 </span>
                 {item.gitTracked && (
-                  <span className="rounded border border-amber-700/20 bg-amber-500/10 px-1.5 py-px font-mono text-[10px] text-amber-700 dark:text-amber-300">
+                  <span className="rounded border border-warning/30 bg-warning/10 px-1.5 py-px font-mono text-[10px] text-foreground">
                     {t('switchTemplate.layers.gitTracked')}
                   </span>
                 )}
@@ -280,7 +280,7 @@ function TemplateList({
             key={p.id}
             type="button"
             onClick={() => onPick(p.id)}
-            className="grid cursor-pointer grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border border-border bg-muted/30 px-3.5 py-2.5 text-left transition-colors hover:border-clay/60"
+            className="grid cursor-pointer grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border border-border bg-muted/30 px-3.5 py-2.5 text-left transition-colors hover:border-primary/60"
           >
             <span
               className="h-2.5 w-2.5 rounded-full"
@@ -297,7 +297,7 @@ function TemplateList({
               )}
             </div>
             {isCurrent && (
-              <span className="rounded border border-clay/30 bg-clay/10 px-1.5 py-0.5 font-mono text-[10.5px] text-clay">
+              <span className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[10.5px] text-primary">
                 {t('switchTemplate.currentTag')}
               </span>
             )}

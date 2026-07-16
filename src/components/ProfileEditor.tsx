@@ -254,7 +254,7 @@ export function ProfileEditor({ profileId, onDirty }: ProfileEditorProps = {}) {
         </div>
       )}
       {activateError && (
-        <div className="border-y border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+        <div className="border-y border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-foreground">
           {activateError}
         </div>
       )}

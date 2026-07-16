@@ -40,6 +40,8 @@ describe('theme contract', () => {
   it('does not retain the previous Zinc, Indigo, or Anthropic foundations', () => {
     expect(themeCss).not.toMatch(/Zinc\/Indigo|#0a0a0b|#5b5bd6|#8c8cf5/i);
     expect(tailwindConfig).not.toMatch(/Anthropic palette|#D97757|#B04A3F|#788C5D/i);
+    expect(themeCss).not.toContain('--ds-clay');
+    expect(tailwindConfig).not.toMatch(/\b(?:clay|rust|olive|oat|slate2):/);
   });
 
   it('uses matching Catppuccin roots before the React bundle loads', () => {

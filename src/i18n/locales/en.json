@@ -1,4 +1,7 @@
 {
+  "common": {
+    "close": "Close"
+  },
   "palette": {
     "placeholder": "Type an action or project…",
     "noMatches": "No matches",

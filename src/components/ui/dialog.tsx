@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { X } from 'lucide-react';
 
@@ -33,6 +34,8 @@ export function Dialog({
   size = 'md',
   footer,
 }: DialogProps) {
+  const { t } = useTranslation();
+
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape' && open) onOpenChange(false);
@@ -43,20 +46,20 @@ export function Dialog({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay/65 p-4">
       <div
         role="dialog"
         aria-modal="true"
         className={cn(
-          'relative flex max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden rounded-lg border border-border bg-background shadow-lg',
+          'relative flex max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-lg',
           sizes[size],
         )}
       >
         <button
           type="button"
           onClick={() => onOpenChange(false)}
-          className="absolute right-3 top-3 z-10 rounded p-1 text-muted-foreground hover:bg-muted"
-          aria-label="Close"
+          className="absolute right-3 top-3 z-10 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={t('common.close')}
         >
           <X className="h-4 w-4" />
         </button>
@@ -81,7 +84,7 @@ export function Dialog({
         </div>
 
         {footer && (
-          <div className="shrink-0 border-t border-border bg-background px-6 py-3">
+          <div className="shrink-0 border-t border-border bg-card px-6 py-3">
             {footer}
           </div>
         )}

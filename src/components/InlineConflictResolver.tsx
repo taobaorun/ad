@@ -34,8 +34,8 @@ export function InlineConflictResolver({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="rounded-md border border-clay/40 bg-clay/5 p-3">
-      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-clay">
+    <div className="rounded-md border border-primary/40 bg-primary/5 p-3">
+      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary">
         {t(conflicts.length === 1 ? 'conflict.headerOne' : 'conflict.headerMany', { count: conflicts.length })}
       </div>
       <ul className="flex flex-col gap-3">
@@ -134,7 +134,7 @@ function ConflictRow({
               onChange={(e) => pickCustomFromText(e.target.value)}
               placeholder={t('conflict.jsonPlaceholder')}
               rows={3}
-              className="w-full rounded border border-input bg-background p-2 font-mono text-[11px] outline-none focus:border-clay"
+              className="w-full rounded border border-input bg-background p-2 font-mono text-[11px] outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
             />
             {customError && (
               <div className="mt-1 text-[11px] text-destructive">

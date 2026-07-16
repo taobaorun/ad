@@ -430,7 +430,7 @@ function AgentConversionDialog({
         {receipt && (
           <div
             role="status"
-            className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-200"
+            className="mt-4 rounded-md border border-success/40 bg-success/10 p-3 text-sm text-foreground"
           >
             <div className="font-medium">{t('agentConversion.applied')}</div>
             <div className="mt-1 text-xs">

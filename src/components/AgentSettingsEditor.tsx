@@ -184,7 +184,7 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
         {status && (
           <span
             role="status"
-            className="flex items-center gap-1 whitespace-nowrap text-xs text-emerald-600"
+            className="flex items-center gap-1 whitespace-nowrap text-xs text-success"
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
             {status}

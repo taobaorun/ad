@@ -367,9 +367,9 @@ function SkillRow({
             onClick={onDemote}
             className="rounded-full px-2 py-0.5 text-[10px] transition-colors"
             style={{
-              background: 'color-mix(in srgb, var(--ds-clay) 15%, transparent)',
-              color: 'var(--ds-clay)',
-              border: '1px solid color-mix(in srgb, var(--ds-clay) 30%, transparent)',
+              background: 'rgb(var(--color-action-primary) / 0.15)',
+              color: 'rgb(var(--color-action-primary))',
+              border: '1px solid rgb(var(--color-action-primary) / 0.3)',
             }}
           >
             全局
@@ -399,7 +399,7 @@ function DemoteDialog({
   const { t } = useTranslation();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay/65">
       <div
         className="w-[400px] rounded-xl p-5"
         style={{ background: 'var(--ds-bg-card)', border: '1px solid var(--ds-line)' }}

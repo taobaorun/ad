@@ -5,13 +5,6 @@ var config = {
     theme: {
         extend: {
             colors: {
-                // Temporary aliases keep existing components themed during the U4
-                // semantic-class migration. They contain no independent color values.
-                clay: 'rgb(var(--color-action-primary) / <alpha-value>)',
-                rust: 'rgb(var(--color-danger) / <alpha-value>)',
-                olive: 'rgb(var(--color-success) / <alpha-value>)',
-                oat: 'rgb(var(--color-bg-surface) / <alpha-value>)',
-                slate2: 'rgb(var(--color-info) / <alpha-value>)',
                 border: 'rgb(var(--border) / <alpha-value>)',
                 input: 'rgb(var(--input) / <alpha-value>)',
                 ring: 'rgb(var(--ring) / <alpha-value>)',

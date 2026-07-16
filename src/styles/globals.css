@@ -89,7 +89,6 @@
     --ds-accent-hover: rgb(var(--color-action-primary) / 0.82);
     --ds-accent-soft: rgb(var(--color-action-primary) / 0.14);
     --ds-accent-line: rgb(var(--color-action-primary) / 0.42);
-    --ds-clay: rgb(var(--color-action-primary));
     --ds-ok: rgb(var(--color-success));
     --ds-warning: rgb(var(--color-warning));
     --ds-warning-soft: rgb(var(--color-warning) / 0.14);

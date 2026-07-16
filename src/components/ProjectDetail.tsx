@@ -177,7 +177,7 @@ function Detail({ project }: { project: Project }) {
   return (
     <div
       className="flex h-full w-full flex-col overflow-hidden"
-      style={{ background: 'hsl(var(--background))' }}
+      style={{ background: 'rgb(var(--background))' }}
     >
       <div
         className="flex-shrink-0"
@@ -198,7 +198,7 @@ function Detail({ project }: { project: Project }) {
                 fontSize: 24,
                 fontWeight: 600,
                 letterSpacing: '-0.02em',
-                color: 'hsl(var(--foreground))',
+                color: 'rgb(var(--foreground))',
                 margin: 0,
               }}
             >
@@ -485,13 +485,13 @@ function StatusPill({ ok, warn, children }: { ok?: boolean; warn?: boolean; chil
   let borderColor = 'var(--ds-line)';
   if (ok) {
     color = 'var(--ds-ok)';
-    bg = 'rgba(21,128,61,0.06)';
-    borderColor = 'rgba(21,128,61,0.18)';
+    bg = 'rgb(var(--color-success) / 0.1)';
+    borderColor = 'rgb(var(--color-success) / 0.35)';
   }
   if (warn) {
     color = 'var(--ds-warning)';
     bg = 'var(--ds-warning-soft)';
-    borderColor = 'rgba(194,65,12,0.18)';
+    borderColor = 'rgb(var(--color-warning) / 0.35)';
   }
 
   return (
@@ -545,7 +545,7 @@ function KbdChip({
         background: 'var(--ds-bg-soft)',
         border: '0.5px solid var(--ds-line)',
         color: 'var(--ds-fg-3)',
-        boxShadow: 'inset 0 -1px 0 rgba(0,0,0,0.06)',
+        boxShadow: 'inset 0 -1px 0 rgb(var(--color-text-primary) / 0.12)',
         fontSize: 10.5,
         whiteSpace: 'nowrap',
         flexShrink: 0,
@@ -590,10 +590,10 @@ function TabButton({
         padding: '8px 16px',
         fontSize: 13,
         fontWeight: 500,
-        color: active ? 'var(--ds-clay)' : 'var(--ds-fg-3)',
+        color: active ? 'var(--ds-accent)' : 'var(--ds-fg-3)',
         background: 'transparent',
         border: 'none',
-        borderBottom: active ? '2px solid var(--ds-clay)' : '2px solid transparent',
+        borderBottom: active ? '2px solid var(--ds-accent)' : '2px solid transparent',
         cursor: 'pointer',
         marginBottom: -1,
       }}

@@ -340,7 +340,7 @@ export function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center bg-black/40 pt-20 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-start justify-center bg-overlay/65 pt-20 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) close();
       }}
