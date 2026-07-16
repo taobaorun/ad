@@ -49,7 +49,7 @@ UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 | Surface hierarchy | `--color-bg-surface` / `--color-bg-surface-hover` / `--color-bg-surface-active` | `surface` / `surface-hover` / `surface-active` |
 | Text hierarchy | `--color-text-primary` / `--color-text-secondary` / `--color-text-muted` / `--color-text-disabled` | `foreground` / `muted-foreground`，其余通过基础组件消费 |
 | Border / focus | `--color-border-subtle` / `--color-border-strong` / `--color-action-primary` | `border` / `input` / `ring` |
-| Action / navigation | `--color-action-primary` / `--color-on-primary` / `--color-link` | `primary` / `primary-foreground` / `link` |
+| Action / navigation | `--color-action-primary` / `--color-on-primary` / `--color-on-danger` / `--color-link` | `primary` / `primary-foreground` / `destructive-foreground` / `link` |
 | Feedback | `--color-info` / `--color-success` / `--color-warning` / `--color-danger` | `info` / `success` / `warning` / `destructive` |
 | Overlay / editor | `--color-overlay` / `--color-editor-cursor` | `overlay` / 由官方 CodeMirror theme 消费 |
 
@@ -75,13 +75,15 @@ UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 | Muted text | Subtext 0 / Overlay 2 | 元数据、占位符；关键操作不得低于此层 |
 | Disabled text | Overlay 1 | 必须配合透明度或 disabled 状态 |
 | Border subtle / strong | Surface 0 / Surface 1 | 通过层级而非白色透明度构造边界 |
-| Primary action / focus | Sapphire | 主要按钮、选中、focus ring；Mocha on-primary 使用 Crust，Latte 使用稳定深色 `#11111b`，避免 Base/Text 在 Sapphire 上低于可读对比 |
+| Primary action / focus | Sapphire | 主要按钮、选中、focus ring；Mocha on-primary 使用 Crust，Latte 使用稳定深色 `#11111b`，避免 Base/Text 在 Sapphire 上低于可读对比；focus 外缘同时使用 Text，保证 Latte 背景上的轮廓可见 |
 | Link | Blue | 链接和可导航文本 |
 | Information | Sky | 信息提示和非阻断说明 |
 | Success | Green | 成功、干净状态、完成 |
 | Warning | Yellow | 警告、待处理、风险提示 |
 | Error / destructive | Red | 错误、删除、危险操作 |
 | Editor cursor | Rosewater | CodeMirror caret；选区使用 Overlay 2 的 20%–30% |
+
+危险按钮标签使用独立的 `--color-on-danger`：Latte 映射 Base、Mocha 映射 Crust。不要复用为 Sapphire 优化的 `--color-on-primary`，否则 Latte Red 上的常规字号标签无法达到 4.5:1。
 
 ## 组件状态契约
 
@@ -124,7 +126,7 @@ UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 ## 无障碍与验证
 
 1. 主要正文、按钮标签和输入内容满足 WCAG AA 常规文本对比要求；较弱 Overlay 色只用于非关键辅助信息。
-2. 所有可交互控件在键盘 focus 时具有可见 ring，hover 不是唯一反馈。
+2. 所有原生可交互控件在键盘 focus 时使用 Sapphire 内圈和 Text 外轮廓，hover 不是唯一反馈。
 3. 错误、警告和成功同时包含文案或图标，不只依赖红黄绿。
 4. 主窗口、Settings、所有 overlay、CodeMirror 和首帧 splash 在 Mocha/Latte 下均做浏览器截图巡检。
 5. 主题契约测试固定官方 palette 值和核心语义映射，避免未来改动悄然引入第三套色表。
