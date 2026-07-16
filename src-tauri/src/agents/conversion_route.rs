@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
@@ -6,12 +6,15 @@ use serde_json::Value;
 
 use super::conversion::{
     explicit_targets, map_claude_setting, map_plugin_artifact, map_skill_artifact,
-    ArtifactDisposition, ConversionArtifact, FieldMapping,
+    ArtifactDisposition, ConversionArtifact, ConversionEndpoint, ConversionRiskLevel,
+    ConversionSummary, FieldMapping,
 };
+use super::execution_fs::observe_target;
 use super::{
     builtin_registry, AdapterRegistry, AgentAdapter, AgentContext, AgentError, AgentErrorCode,
-    AgentId, ContentDigest, MutationPlan, MutationPlanView, PlanId, ReadPrecondition, ResourceKind,
-    ResourceRef, ResourceScope, ResourceSnapshot, SettingsEdit, WritePolicy,
+    AgentId, CollectionInstallRequest, ContentDigest, MutationPlan, MutationPlanView, PlanId,
+    ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin, ResourceRef, ResourceScope,
+    ResourceSnapshot, SettingsEdit, WritePolicy,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,6 +23,7 @@ pub struct ConversionRoutePreview {
     pub source_agent_id: AgentId,
     pub target_agent_id: AgentId,
     pub artifacts: Vec<ConversionArtifact>,
+    pub summary: ConversionSummary,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<MutationPlanView>,
 }
@@ -31,6 +35,7 @@ pub struct ConversionRoutePlan {
     pub source_agent_id: AgentId,
     pub target_agent_id: AgentId,
     pub artifacts: Vec<ConversionArtifact>,
+    pub summary: ConversionSummary,
     pub plan: MutationPlan,
 }
 
@@ -41,6 +46,8 @@ pub struct ClaudeToCodexOptions {
     pub target_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission_preset: Option<CodexPermissionPreset>,
+    #[serde(default)]
+    pub confirmed_skill_ids: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,8 +133,10 @@ impl ClaudeToCodexRoute {
             source_context,
             target_context,
             scope,
-            &mut result.artifacts,
+            options,
+            &mut result,
         )?;
+        result.summary = ConversionSummary::from_artifacts(&result.artifacts);
         validate_route_plan(&result, source_context, target_context)?;
         Ok(result)
     }
@@ -159,7 +168,8 @@ fn append_collection_artifacts(
     source_context: &AgentContext,
     target_context: &AgentContext,
     scope: ResourceScope,
-    artifacts: &mut Vec<ConversionArtifact>,
+    options: &ClaudeToCodexOptions,
+    result: &mut ConversionRoutePlan,
 ) -> Result<(), AgentError> {
     if let (Some(source_port), Some(target_port)) =
         (source_adapter.skills(), target_adapter.skills())
@@ -173,8 +183,56 @@ fn append_collection_artifacts(
                         && target.resource.logical_id == name
                 })
             });
-            if let Some(artifact) = map_skill_artifact(&source, target_context, target) {
-                artifacts.push(artifact);
+            let Some(name) = name else {
+                continue;
+            };
+            let target_resource = target
+                .map(|snapshot| snapshot.resource.clone())
+                .unwrap_or_else(|| {
+                    collection_resource(target_context, ResourceKind::Skills, scope, name)
+                });
+            let target_location = target_port
+                .resolve(target_context, &target_resource)?
+                .path()
+                .to_string_lossy()
+                .into_owned();
+            let confirmed = options.confirmed_skill_ids.contains(name);
+            if let Some(artifact) = map_skill_artifact(
+                &source,
+                target_context,
+                target,
+                ResourceLocation {
+                    path: target_location,
+                    origin: scope_origin(scope),
+                },
+                confirmed,
+            ) {
+                if target.is_none() && confirmed {
+                    let source_digest =
+                        observe_target(&source_port.resolve(source_context, &source.resource)?)?
+                            .digest()
+                            .ok_or_else(|| {
+                                route_error(
+                                    source_context,
+                                    "Confirmed Skill source no longer exists",
+                                )
+                            })?;
+                    let install = target_port.plan_install(
+                        target_context,
+                        CollectionInstallRequest {
+                            logical_id: name.into(),
+                            source: serde_json::json!({"path": source.location.path}),
+                        },
+                    )?;
+                    result.plan.read_set.push(ReadPrecondition {
+                        resource: source.resource.clone(),
+                        expected_digest: source_digest,
+                        write_policy: WritePolicy::ReadOnly,
+                    });
+                    result.plan.read_set.extend(install.read_set);
+                    result.plan.mutations.extend(install.mutations);
+                }
+                result.artifacts.push(artifact);
             }
         }
     }
@@ -187,11 +245,64 @@ fn append_collection_artifacts(
                 target.resource.logical_id == source.resource.logical_id
                     && target.resource.scope == source.resource.scope
             });
-            artifacts.push(map_plugin_artifact(&source, target_context, target));
+            let target_resource = target
+                .map(|snapshot| snapshot.resource.clone())
+                .or_else(|| {
+                    (scope == ResourceScope::User).then(|| {
+                        collection_resource(
+                            target_context,
+                            ResourceKind::Plugins,
+                            scope,
+                            &source.resource.logical_id,
+                        )
+                    })
+                });
+            let target_location = target_resource.as_ref().and_then(|resource| {
+                target_port
+                    .resolve(target_context, resource)
+                    .ok()
+                    .map(|resolved| ResourceLocation {
+                        path: resolved.path().to_string_lossy().into_owned(),
+                        origin: scope_origin(scope),
+                    })
+            });
+            result.artifacts.push(map_plugin_artifact(
+                &source,
+                target_context,
+                target,
+                target_location,
+            ));
         }
     }
-    artifacts.sort_by(|left, right| left.id.cmp(&right.id));
+    result
+        .artifacts
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    result.plan.read_set = deduplicate_preconditions(std::mem::take(&mut result.plan.read_set))?;
     Ok(())
+}
+
+fn collection_resource(
+    context: &AgentContext,
+    kind: ResourceKind,
+    scope: ResourceScope,
+    logical_id: &str,
+) -> ResourceRef {
+    ResourceRef {
+        installation_id: context.installation_id.clone(),
+        project_path: (scope == ResourceScope::Project)
+            .then(|| context.project_path.clone())
+            .flatten(),
+        kind,
+        scope,
+        logical_id: logical_id.into(),
+    }
+}
+
+fn scope_origin(scope: ResourceScope) -> ResourceOrigin {
+    match scope {
+        ResourceScope::User => ResourceOrigin::User,
+        ResourceScope::Project => ResourceOrigin::Project,
+    }
 }
 
 fn conversion_scope(context: &AgentContext) -> ResourceScope {
@@ -295,6 +406,17 @@ fn build_settings_route(
             .as_ref()
             .map(|snapshot| snapshot.resource.clone())
             .unwrap_or_else(|| target_resource(target_context, scope));
+        let target_location = target_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.location.clone())
+            .unwrap_or(ResourceLocation {
+                path: target_settings
+                    .resolve(target_context, &target_resource)?
+                    .path()
+                    .to_string_lossy()
+                    .into_owned(),
+                origin: scope_origin(scope),
+            });
         let original = target_table(target_context, target_snapshot.as_ref())?;
         let mut merged = original.clone();
 
@@ -302,10 +424,13 @@ fn build_settings_route(
             let Some(mapping) = resolved_setting_mapping(&field, &value, options) else {
                 continue;
             };
-            let id = format!("{}:{field}", source.logical_id);
+            let id = format!("{}:{field}", source.resource.logical_id);
             let mut disposition = mapping.disposition;
             let mut message = mapping.message;
-            let target = (!mapping.target_values.is_empty()).then(|| target_resource.clone());
+            let target = (!mapping.target_values.is_empty()).then(|| ConversionEndpoint {
+                resource: target_resource.clone(),
+                location: target_location.clone(),
+            });
 
             if !mapping.target_values.is_empty() {
                 let mut changed = false;
@@ -342,6 +467,8 @@ fn build_settings_route(
                 source,
                 target,
                 disposition,
+                resolution: mapping.resolution,
+                risk: mapping.risk,
                 message,
             });
         }
@@ -383,6 +510,7 @@ fn build_settings_route(
         source_agent_id: AgentId::from("claude-code"),
         target_agent_id: AgentId::from("codex"),
         artifacts,
+        summary: ConversionSummary::default(),
         plan,
     };
     validate_route_plan(&result, source_context, target_context)?;
@@ -422,7 +550,7 @@ fn resolved_setting_mapping(
                         "User explicitly selected the bypass-permissions equivalent",
                     ),
                 };
-                explicit_targets(
+                let mut mapping = explicit_targets(
                     ResourceKind::Settings,
                     [
                         (
@@ -435,7 +563,11 @@ fn resolved_setting_mapping(
                         ),
                     ],
                     message,
-                )
+                );
+                if preset == CodexPermissionPreset::NeverDangerFullAccess {
+                    mapping.risk = ConversionRiskLevel::Dangerous;
+                }
+                mapping
             })
             .or(Some(default_mapping)),
         _ => Some(default_mapping),
@@ -499,14 +631,17 @@ fn validate_route_plan(
 fn effective_source_fields(
     context: &AgentContext,
     snapshots: &[ResourceSnapshot],
-) -> Result<BTreeMap<String, (ResourceRef, Value)>, AgentError> {
+) -> Result<BTreeMap<String, (ConversionEndpoint, Value)>, AgentError> {
     let mut fields = BTreeMap::new();
     for snapshot in snapshots {
         let object = snapshot.content.as_object().ok_or_else(|| {
             route_error(context, "Claude settings snapshot must be a JSON object")
         })?;
         for (field, value) in object {
-            fields.insert(field.clone(), (snapshot.resource.clone(), value.clone()));
+            fields.insert(
+                field.clone(),
+                (ConversionEndpoint::from(snapshot), value.clone()),
+            );
         }
     }
     Ok(fields)
@@ -637,6 +772,7 @@ mod tests {
             source_agent_id: AgentId::from("claude-code"),
             target_agent_id: AgentId::from("codex"),
             artifacts: Vec::new(),
+            summary: ConversionSummary::default(),
             plan: MutationPlan {
                 id: PlanId::from("plan"),
                 agent_id: AgentId::from("codex"),

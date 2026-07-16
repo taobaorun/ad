@@ -52,9 +52,9 @@
 
 ## 进展
 
-- [ ] (待开始) Milestone 1：建立失败测试与完整 inventory fixture（验证标准：当前实现因危险 ack 可绕过、Skill 无 mutation、Project-only Plugin 遗漏、UI 路径含混而失败）。
+- [x] (2026-07-16 08:28 CST) Milestone 1：建立失败测试与完整 inventory fixture（已记录 contract 编译失败、Project-only Plugin 遗漏和危险 acknowledgement 缺失的 RED；Project fixture 覆盖 settings.local、Skill symlink、Project-only Plugin）。
 - [ ] Milestone 2：实现 artifact endpoint、resolution、carrier、summary 和 risk contract（验证标准：Rust serde/plan invariants 与 TS zod contract tests 通过）。
-- [ ] Milestone 3：实现 backend-owned acknowledgement 门禁（验证标准：空 ack、错误 ack、旧 plan ack、通用 boolean 路径全部拒绝；正确危险 ack 才能 Apply）。
+- [x] (2026-07-16 08:28 CST) Milestone 3：实现 backend-owned acknowledgement 门禁（PlanStore 精确集合校验；conversion command 改为 typed acknowledgement；危险集成测试证明缺少专用 ack 不消费 plan，完整 ack 才能 Apply）。
 - [ ] Milestone 4：完成 Project Settings/Permissions/Skills/Plugins 路由（验证标准：Skill 可 Apply/rollback；Plugin key union 正确；不支持项无静默遗漏）。
 - [ ] Milestone 5：重构转换 UI 为工作台（验证标准：单 installation 隐藏选择器；真实 locations、分组 summary、inline resolver 和危险确认可访问）。
 - [ ] Milestone 6：同步文档并执行多轴代码审查与修复（验证标准：设计、产品规格、i18n 和实现一致，无 P0/P1 review finding）。
@@ -75,6 +75,8 @@
   证据：Codex Configuration Reference、Build skills、Plugins、Import from another agent 官方文档（2026-07-16 核验）。
 - 发现：真实 `sofampy` 当前包含 9 类 settings、116 条 permission rule、1 个 Project Skill、6 个 Plugin 声明和 2 个 marketplace 来源，而 target `config.toml` 只有 model/context window。
   证据：只读 filesystem inventory 与 key/count 汇总；未读取或输出任何 credential/runtime 状态。
+- 发现：collection snapshot 的 digest 是展示 metadata digest，而 ExecutionEngine precondition 校验的是物理 file/symlink digest，二者不能混用。
+  证据：Project Skill 首次集成测试在 Apply 前返回 `ResourceChanged`；改为通过 source port resolve 后观察 symlink target digest，测试通过。
 
 ## 决策日志
 
@@ -84,6 +86,9 @@
 - 决策：危险权限确认由 plan requirement 驱动，前端仅负责展示和提交 acknowledgement。
   理由：风险是否存在只能由 backend-owned mutation plan 判断，不能依赖前端当前下拉值。
   日期/作者：2026-07-16 / 用户批准，Codex 记录
+- 决策：Skill source 的 read-only precondition 使用 source port 解析出的物理载体 digest，artifact preview 仍保留 metadata snapshot digest 语义。
+  理由：执行层按物理目标检查并发变化，必须与其 digest 算法一致，才能在不修改 source 的前提下可靠阻止 symlink 被替换。
+  日期/作者：2026-07-16 / Codex
 
 ## 结果回顾
 

@@ -23,7 +23,10 @@ mod types;
 pub use capabilities::*;
 pub use claude::ClaudeAdapter;
 pub use codex::CodexAdapter;
-pub use conversion::{convert_claude_profile_to_codex, ArtifactDisposition, ConversionArtifact};
+pub use conversion::{
+    convert_claude_profile_to_codex, ArtifactDisposition, ConversionArtifact, ConversionEndpoint,
+    ConversionResolutionKind, ConversionRiskLevel, ConversionSummary, ResolutionRequirement,
+};
 pub use conversion_route::*;
 pub use discovery::*;
 pub use execution::*;

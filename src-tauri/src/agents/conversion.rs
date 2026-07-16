@@ -7,7 +7,7 @@ use crate::models::ProfileFile;
 
 use super::{
     AgentContext, ConversionIssue, ConversionIssueKind, ConversionPreview, ResourceKind,
-    ResourceRef, ResourceScope, ResourceSnapshot,
+    ResourceLocation, ResourceRef, ResourceScope, ResourceSnapshot,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -21,16 +21,95 @@ pub enum ArtifactDisposition {
     Unchanged,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConversionRiskLevel {
+    Safe,
+    Confirmation,
+    Dangerous,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConversionResolutionKind {
+    SelectTargetModel,
+    SelectPermissionPreset,
+    ConfirmLocalSkillSource,
+    CompletePluginSetup,
+    ResolveConflict,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolutionRequirement {
+    pub kind: ConversionResolutionKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionEndpoint {
+    pub resource: ResourceRef,
+    pub location: ResourceLocation,
+}
+
+impl From<&ResourceSnapshot> for ConversionEndpoint {
+    fn from(snapshot: &ResourceSnapshot) -> Self {
+        Self {
+            resource: snapshot.resource.clone(),
+            location: snapshot.location.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConversionArtifact {
     pub id: String,
     pub kind: ResourceKind,
-    pub source: ResourceRef,
+    pub source: ConversionEndpoint,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<ResourceRef>,
+    pub target: Option<ConversionEndpoint>,
     pub disposition: ArtifactDisposition,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<ResolutionRequirement>,
+    pub risk: ConversionRiskLevel,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionSummary {
+    pub total: usize,
+    pub automatic: usize,
+    pub requires_input: usize,
+    pub unsupported: usize,
+    pub conflicts: usize,
+    pub unchanged: usize,
+    pub dangerous: usize,
+}
+
+impl ConversionSummary {
+    pub fn from_artifacts(artifacts: &[ConversionArtifact]) -> Self {
+        let mut summary = Self {
+            total: artifacts.len(),
+            ..Self::default()
+        };
+        for artifact in artifacts {
+            match artifact.disposition {
+                ArtifactDisposition::Exact | ArtifactDisposition::Mapped => {
+                    summary.automatic += 1;
+                }
+                ArtifactDisposition::RequiresInput => summary.requires_input += 1,
+                ArtifactDisposition::Unsupported => summary.unsupported += 1,
+                ArtifactDisposition::Conflict => summary.conflicts += 1,
+                ArtifactDisposition::Unchanged => summary.unchanged += 1,
+            }
+            if artifact.risk == ConversionRiskLevel::Dangerous {
+                summary.dangerous += 1;
+            }
+        }
+        summary
+    }
 }
 
 pub(super) struct FieldMapping {
@@ -38,6 +117,8 @@ pub(super) struct FieldMapping {
     pub target_values: BTreeMap<String, toml::Value>,
     pub replace_existing: bool,
     pub disposition: ArtifactDisposition,
+    pub resolution: Option<ResolutionRequirement>,
+    pub risk: ConversionRiskLevel,
     pub message: String,
 }
 
@@ -123,6 +204,8 @@ pub(super) fn map_claude_setting(field: &str, value: &Value) -> Option<FieldMapp
             target_values: BTreeMap::new(),
             replace_existing: false,
             disposition: ArtifactDisposition::Unsupported,
+            resolution: None,
+            risk: ConversionRiskLevel::Safe,
             message: format!("Claude Code field has no confirmed Codex equivalent: {field}"),
         }),
         "permissions" => Some(FieldMapping {
@@ -130,10 +213,15 @@ pub(super) fn map_claude_setting(field: &str, value: &Value) -> Option<FieldMapp
             target_values: BTreeMap::new(),
             replace_existing: false,
             disposition: ArtifactDisposition::RequiresInput,
+            resolution: Some(ResolutionRequirement {
+                kind: ConversionResolutionKind::SelectPermissionPreset,
+            }),
+            risk: ConversionRiskLevel::Confirmation,
             message: "Claude permissions require approval_policy and sandbox_mode choices".into(),
         }),
         "model" => Some(requires_input(
             kind,
+            ConversionResolutionKind::SelectTargetModel,
             if value.is_string() {
                 "Claude model names have no automatic Codex equivalent; select a Codex model".into()
             } else {
@@ -150,6 +238,7 @@ pub(super) fn map_claude_setting(field: &str, value: &Value) -> Option<FieldMapp
             )),
             _ => Some(requires_input(
                 kind,
+                ConversionResolutionKind::ResolveConflict,
                 "Claude maxContextTokens must be a positive integer".into(),
             )),
         },
@@ -162,13 +251,19 @@ pub(super) fn map_claude_setting(field: &str, value: &Value) -> Option<FieldMapp
                 format!("Field {field} has a direct Codex representation"),
             )),
             Ok(None) => None,
-            Err(message) => Some(requires_input(kind, message)),
+            Err(message) => Some(requires_input(
+                kind,
+                ConversionResolutionKind::ResolveConflict,
+                message,
+            )),
         },
         _ => Some(FieldMapping {
             kind,
             target_values: BTreeMap::new(),
             replace_existing: false,
             disposition: ArtifactDisposition::Unsupported,
+            resolution: None,
+            risk: ConversionRiskLevel::Safe,
             message: format!("Claude Code field has no confirmed Codex equivalent: {field}"),
         }),
     }
@@ -178,6 +273,8 @@ pub(super) fn map_skill_artifact(
     source: &ResourceSnapshot,
     target_context: &AgentContext,
     target: Option<&ResourceSnapshot>,
+    target_location: ResourceLocation,
+    confirmed: bool,
 ) -> Option<ConversionArtifact> {
     let scope = source.content.get("scope").and_then(Value::as_str)?;
     if scope == "none" {
@@ -194,26 +291,45 @@ pub(super) fn map_skill_artifact(
                 name,
             )
         });
-    let (disposition, message) = match target {
+    let (disposition, resolution, message) = match target {
         Some(target) if locations_are_equivalent(source, target) => (
             ArtifactDisposition::Unchanged,
+            None,
             "Target already references the same Skill source".into(),
         ),
         Some(_) => (
             ArtifactDisposition::Conflict,
+            Some(ResolutionRequirement {
+                kind: ConversionResolutionKind::ResolveConflict,
+            }),
             "Target already has a Skill with this name from a different source".into(),
+        ),
+        None if confirmed => (
+            ArtifactDisposition::Mapped,
+            None,
+            "Confirmed local Skill source will be linked into Codex".into(),
         ),
         None => (
             ArtifactDisposition::RequiresInput,
+            Some(ResolutionRequirement {
+                kind: ConversionResolutionKind::ConfirmLocalSkillSource,
+            }),
             "Skill source must be confirmed before Codex installation".into(),
         ),
     };
     Some(ConversionArtifact {
         id: format!("skill:{name}"),
         kind: ResourceKind::Skills,
-        source: source.resource.clone(),
-        target: Some(target_resource),
+        source: ConversionEndpoint::from(source),
+        target: Some(ConversionEndpoint {
+            resource: target_resource,
+            location: target
+                .map(|snapshot| snapshot.location.clone())
+                .unwrap_or(target_location),
+        }),
         disposition,
+        resolution,
+        risk: ConversionRiskLevel::Confirmation,
         message,
     })
 }
@@ -222,6 +338,7 @@ pub(super) fn map_plugin_artifact(
     source: &ResourceSnapshot,
     target_context: &AgentContext,
     target: Option<&ResourceSnapshot>,
+    target_location: Option<ResourceLocation>,
 ) -> ConversionArtifact {
     let target_resource = target
         .map(|snapshot| snapshot.resource.clone())
@@ -235,23 +352,31 @@ pub(super) fn map_plugin_artifact(
                 )
             })
         });
-    let (disposition, message) = if target.is_some() {
+    let (disposition, resolution, message) = if target.is_some() {
         (
             ArtifactDisposition::Conflict,
+            Some(ResolutionRequirement {
+                kind: ConversionResolutionKind::CompletePluginSetup,
+            }),
             "Target plugin identity exists but marketplace equivalence is not confirmed".into(),
         )
     } else {
         (
-            ArtifactDisposition::RequiresInput,
-            "Plugin marketplace source and authorization must be selected".into(),
+            ArtifactDisposition::Unsupported,
+            None,
+            "Plugin must be installed and authorized through the Codex plugin marketplace".into(),
         )
     };
     ConversionArtifact {
         id: format!("plugin:{}", source.resource.logical_id),
         kind: ResourceKind::Plugins,
-        source: source.resource.clone(),
-        target: target_resource,
+        source: ConversionEndpoint::from(source),
+        target: target_resource
+            .zip(target_location)
+            .map(|(resource, location)| ConversionEndpoint { resource, location }),
         disposition,
+        resolution,
+        risk: ConversionRiskLevel::Confirmation,
         message,
     }
 }
@@ -314,12 +439,18 @@ fn artifact_kind(field: &str) -> ResourceKind {
     }
 }
 
-fn requires_input(kind: ResourceKind, message: String) -> FieldMapping {
+fn requires_input(
+    kind: ResourceKind,
+    resolution: ConversionResolutionKind,
+    message: String,
+) -> FieldMapping {
     FieldMapping {
         kind,
         target_values: BTreeMap::new(),
         replace_existing: false,
         disposition: ArtifactDisposition::RequiresInput,
+        resolution: Some(ResolutionRequirement { kind: resolution }),
+        risk: ConversionRiskLevel::Confirmation,
         message,
     }
 }
@@ -334,6 +465,8 @@ pub(super) fn explicit_targets(
         target_values: values.into_iter().collect(),
         replace_existing: true,
         disposition: ArtifactDisposition::Mapped,
+        resolution: None,
+        risk: ConversionRiskLevel::Confirmation,
         message: message.into(),
     }
 }
@@ -350,6 +483,8 @@ fn single_target(
         target_values: BTreeMap::from([(key.into(), value)]),
         replace_existing: false,
         disposition,
+        resolution: None,
+        risk: ConversionRiskLevel::Safe,
         message,
     }
 }

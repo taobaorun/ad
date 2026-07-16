@@ -1,11 +1,12 @@
 use crate::agents::{
-    builtin_registry, convert_claude_profile_to_codex, profile_settings_content, AgentContext,
-    AgentError, AgentErrorCode, AgentId, AgentInstallation, AgentMetadata, CapabilityDescriptor,
-    ClaudeToCodexOptions, ClaudeToCodexRoute, CollectionInstallRequest, ConversionPreview,
-    ConversionRoutePreview, ExecutionEngine, InstallationId, MutationPlanView,
-    OperationHistoryEntry, OperationReceipt, PlanId, PlanStore, ProcessObservation, ProfileId,
-    ReceiptId, ResourceKind, ResourceRef, ResourceScope, ResourceSnapshot, SettingsDocument,
-    SettingsEdit,
+    builtin_registry, convert_claude_profile_to_codex, profile_settings_content,
+    AcknowledgementRequirement, AgentContext, AgentError, AgentErrorCode, AgentId,
+    AgentInstallation, AgentMetadata, CapabilityDescriptor, ClaudeToCodexOptions,
+    ClaudeToCodexRoute, CollectionInstallRequest, ConversionPreview, ConversionRoutePreview,
+    ExecutionEngine, InstallationId, MutationPlanView, OperationHistoryEntry, OperationReceipt,
+    PlanAcknowledgement, PlanAcknowledgementCode, PlanId, PlanRiskLevel, PlanStore,
+    ProcessObservation, ProfileId, ReceiptId, ResourceKind, ResourceRef, ResourceScope,
+    ResourceSnapshot, SettingsDocument, SettingsEdit,
 };
 use crate::models::ProfileFile;
 use tauri::State;
@@ -203,12 +204,23 @@ pub fn preview_claude_to_codex_route(
     let plan = if result.plan.mutations.is_empty() {
         None
     } else {
-        Some(plans.insert_confirmation_required(result.plan)?)
+        let mut requirements = vec![AcknowledgementRequirement {
+            code: PlanAcknowledgementCode::ConversionApply,
+            risk: PlanRiskLevel::Confirmation,
+        }];
+        if result.summary.dangerous > 0 {
+            requirements.push(AcknowledgementRequirement {
+                code: PlanAcknowledgementCode::DangerousPermissionExpansion,
+                risk: PlanRiskLevel::Dangerous,
+            });
+        }
+        Some(plans.insert_with_acknowledgements(result.plan, requirements)?)
     };
     Ok(ConversionRoutePreview {
         source_agent_id: result.source_agent_id,
         target_agent_id: result.target_agent_id,
         artifacts: result.artifacts,
+        summary: result.summary,
         plan,
     })
 }
@@ -276,11 +288,10 @@ pub fn apply_agent_plan(
 #[tauri::command]
 pub fn apply_conversion_plan(
     plan_id: PlanId,
-    confirmed: bool,
+    acknowledgements: Vec<PlanAcknowledgement>,
     plans: State<'_, PlanStore>,
 ) -> Result<OperationReceipt, AgentError> {
-    require_confirmation(confirmed, "Conversion apply requires explicit confirmation")?;
-    ExecutionEngine.apply_confirmed(&plan_id, plans.inner())
+    ExecutionEngine.apply_acknowledged(&plan_id, plans.inner(), &acknowledgements)
 }
 
 #[tauri::command]

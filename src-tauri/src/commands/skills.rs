@@ -26,8 +26,8 @@ use crate::fs::paths::{
     skill_sources_path,
 };
 use crate::models::{
-    ProjectSkillConfig, SkillEntry, SkillEntrySource,
-    SkillListMode, SkillScope, SkillSource, SkillSourceType, SkillUpdateResult,
+    ProjectSkillConfig, SkillEntry, SkillEntrySource, SkillListMode, SkillScope, SkillSource,
+    SkillSourceType, SkillUpdateResult,
 };
 
 use super::{CmdResult, CommandError};
@@ -258,13 +258,18 @@ fn auto_register_discovered(sources: &mut Vec<SkillSource>) -> CmdResult<bool> {
             }
             let is_git = entry.path().join(".git").exists();
             let url = if is_git {
-                git_remote_url(&entry.path()).unwrap_or_else(|| entry.path().to_string_lossy().into_owned())
+                git_remote_url(&entry.path())
+                    .unwrap_or_else(|| entry.path().to_string_lossy().into_owned())
             } else {
                 entry.path().to_string_lossy().into_owned()
             };
             sources.push(SkillSource {
                 id: name,
-                source_type: if is_git { SkillSourceType::Git } else { SkillSourceType::Local },
+                source_type: if is_git {
+                    SkillSourceType::Git
+                } else {
+                    SkillSourceType::Local
+                },
                 url,
                 branch: None,
                 subdirectory: None,
@@ -287,7 +292,11 @@ fn git_remote_url(repo: &Path) -> Option<String> {
         return None;
     }
     let url = String::from_utf8(out.stdout).ok()?.trim().to_string();
-    if url.is_empty() { None } else { Some(url) }
+    if url.is_empty() {
+        None
+    } else {
+        Some(url)
+    }
 }
 
 #[tauri::command]
@@ -479,7 +488,9 @@ fn find_skill_dirs(dir: &Path, max_depth: usize, out: &mut Vec<PathBuf>) {
     if max_depth == 0 {
         return;
     }
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in rd {
         let Ok(entry) = entry else { continue };
         let path = entry.path();
@@ -745,18 +756,16 @@ pub struct PluginInfo {
 
 #[tauri::command]
 pub fn list_plugins(project_path: Option<String>) -> CmdResult<Vec<PluginInfo>> {
-    let global = read_global_enabled_plugins()?;
+    let mut effective = read_global_enabled_plugins()?;
     let project_overrides = match &project_path {
         Some(pp) => read_project_plugin_overrides(pp)?,
         None => BTreeMap::new(),
     };
+    effective.extend(project_overrides);
 
-    let mut result: Vec<PluginInfo> = global
+    let mut result: Vec<PluginInfo> = effective
         .into_iter()
-        .map(|(id, enabled)| {
-            let effective = project_overrides.get(&id).copied().unwrap_or(enabled);
-            PluginInfo { id, enabled: effective }
-        })
+        .map(|(id, enabled)| PluginInfo { id, enabled })
         .collect();
     result.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(result)
@@ -766,8 +775,8 @@ pub fn list_plugins(project_path: Option<String>) -> CmdResult<Vec<PluginInfo>> 
 pub fn toggle_plugin(project_path: String, plugin_id: String, enabled: bool) -> CmdResult<()> {
     let local_path = Path::new(&project_path).join(".claude/settings.local.json");
     let mut local: serde_json::Value = if local_path.exists() {
-        let bytes = std::fs::read(&local_path)
-            .with_context(|| format!("read {}", local_path.display()))?;
+        let bytes =
+            std::fs::read(&local_path).with_context(|| format!("read {}", local_path.display()))?;
         serde_json::from_slice(&bytes)?
     } else {
         serde_json::json!({})
@@ -906,6 +915,40 @@ mod tests {
         assert!(entries.iter().any(|e| e.name == "skill-a"));
         assert!(entries.iter().any(|e| e.name == "skill-b"));
         assert_eq!(entries[0].source, SkillEntrySource::Managed);
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn list_plugins_includes_project_only_declarations() {
+        let temp = setup();
+        let claude = temp.path().join(".claude");
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        std::fs::create_dir_all(&claude).unwrap();
+        std::fs::write(
+            claude.join("settings.json"),
+            br#"{"enabledPlugins":{"global-plugin":true,"overridden":true}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            project.join(".claude/settings.local.json"),
+            br#"{"enabledPlugins":{"project-only":true,"overridden":false}}"#,
+        )
+        .unwrap();
+
+        let plugins = list_plugins(Some(project.to_string_lossy().into_owned())).unwrap();
+
+        assert_eq!(
+            plugins
+                .iter()
+                .map(|plugin| (plugin.id.as_str(), plugin.enabled))
+                .collect::<Vec<_>>(),
+            vec![
+                ("global-plugin", true),
+                ("overridden", false),
+                ("project-only", true),
+            ]
+        );
     }
 
     #[test]

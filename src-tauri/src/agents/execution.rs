@@ -14,8 +14,8 @@ use super::execution_fs::{
 use super::{
     builtin_registry, AgentContext, AgentError, AgentErrorCode, AppliedResourceState,
     ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan, OperationReceipt,
-    OperationStatus, PlanId, PlanStore, PlannedMutation, ReceiptId, ResourceRef, ResourceStateKind,
-    ResourceStorage,
+    OperationStatus, PlanAcknowledgement, PlanId, PlanStore, PlannedMutation, ReceiptId,
+    ResourceRef, ResourceStateKind, ResourceStorage,
 };
 
 static EXECUTION_LOCK: Mutex<()> = Mutex::new(());
@@ -104,6 +104,15 @@ impl ExecutionEngine {
         self.apply_internal_with_confirmation(plan_id, plans, &NoFaults, true)
     }
 
+    pub fn apply_acknowledged(
+        &self,
+        plan_id: &PlanId,
+        plans: &PlanStore,
+        acknowledgements: &[PlanAcknowledgement],
+    ) -> Result<OperationReceipt, AgentError> {
+        self.apply_internal_with_acknowledgements(plan_id, plans, &NoFaults, acknowledgements)
+    }
+
     pub fn rollback(&self, receipt_id: &ReceiptId) -> Result<OperationReceipt, AgentError> {
         let _guard = EXECUTION_LOCK
             .lock()
@@ -139,6 +148,25 @@ impl ExecutionEngine {
         faults: &dyn FaultInjector,
         confirmed: bool,
     ) -> Result<OperationReceipt, AgentError> {
+        let acknowledgements = confirmed.then_some(PlanAcknowledgement {
+            code: super::PlanAcknowledgementCode::ConversionApply,
+            accepted: true,
+        });
+        self.apply_internal_with_acknowledgements(
+            plan_id,
+            plans,
+            faults,
+            acknowledgements.as_slice(),
+        )
+    }
+
+    fn apply_internal_with_acknowledgements(
+        &self,
+        plan_id: &PlanId,
+        plans: &PlanStore,
+        faults: &dyn FaultInjector,
+        acknowledgements: &[PlanAcknowledgement],
+    ) -> Result<OperationReceipt, AgentError> {
         let _guard = EXECUTION_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -151,11 +179,7 @@ impl ExecutionEngine {
             let target = registry.resolve_resource(&context, resource)?;
             Ok(observe_target(&target)?.digest())
         };
-        let plan = if confirmed {
-            plans.claim_confirmed(plan_id, observe)?
-        } else {
-            plans.claim_validated(plan_id, observe)?
-        };
+        let plan = plans.claim_acknowledged(plan_id, acknowledgements, observe)?;
         execute_plan(plan, &registry, faults)
     }
 }

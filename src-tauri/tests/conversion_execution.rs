@@ -1,9 +1,11 @@
 use ad_lib::agents::{
-    builtin_registry, AgentContext, AgentErrorCode, ClaudeToCodexOptions, ClaudeToCodexRoute,
-    CodexPermissionPreset, ConversionRoute, ExecutionEngine, OperationStatus, PlanStore,
-    ResourceScope,
+    builtin_registry, AcknowledgementRequirement, AgentContext, AgentErrorCode,
+    ClaudeToCodexOptions, ClaudeToCodexRoute, CodexPermissionPreset, ConversionRoute,
+    ExecutionEngine, OperationStatus, PlanAcknowledgement, PlanAcknowledgementCode, PlanRiskLevel,
+    PlanStore, ResourceKind, ResourceScope,
 };
 use serial_test::serial;
+use std::collections::BTreeSet;
 
 #[test]
 #[serial(home_env)]
@@ -33,7 +35,7 @@ fn confirmed_conversion_applies_and_digest_protected_rollback_restores_target() 
     plans.insert_confirmation_required(route_plan.plan).unwrap();
 
     let unconfirmed = ExecutionEngine.apply(&plan_id, &plans).unwrap_err();
-    assert_eq!(unconfirmed.code, AgentErrorCode::PermissionDenied);
+    assert_eq!(unconfirmed.code, AgentErrorCode::ConfirmationRequired);
     assert_eq!(std::fs::read(&target_path).unwrap(), target_bytes);
 
     let applied = ExecutionEngine.apply_confirmed(&plan_id, &plans).unwrap();
@@ -79,7 +81,11 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     let user_source = include_bytes!("fixtures/conversion/claude-settings.json");
     let user_target = include_bytes!("fixtures/conversion/codex-config.toml");
     let shared_source = br#"{"model":"project-shared","model_reasoning_effort":"medium"}"#;
-    let local_source = br#"{"model":"project-local","model_verbosity":"low"}"#;
+    let local_source = br#"{
+      "model":"project-local",
+      "model_verbosity":"low",
+      "enabledPlugins":{"project-only@marketplace":true}
+    }"#;
     let project_target = b"project_only = true\n";
     let user_source_path = claude_home.join("settings.json");
     let user_target_path = codex_home.join("config.toml");
@@ -91,6 +97,7 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     std::fs::write(&shared_source_path, shared_source).unwrap();
     std::fs::write(&local_source_path, local_source).unwrap();
     std::fs::write(&project_target_path, project_target).unwrap();
+    create_project_skill(home.path(), &project, "review");
 
     let previous_home = std::env::var("AD_HOME").ok();
     let previous_codex_home = std::env::var("CODEX_HOME").ok();
@@ -111,6 +118,7 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
             &ClaudeToCodexOptions {
                 target_model: Some("project-local".into()),
                 permission_preset: None,
+                confirmed_skill_ids: BTreeSet::from(["review".into()]),
             },
         )
         .unwrap();
@@ -119,7 +127,7 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     assert!(route_plan
         .artifacts
         .iter()
-        .all(|artifact| artifact.source.scope == ResourceScope::Project));
+        .all(|artifact| artifact.source.resource.scope == ResourceScope::Project));
     assert!(route_plan
         .plan
         .read_set
@@ -130,6 +138,18 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
         .mutations
         .iter()
         .all(|mutation| mutation.resource.scope == ResourceScope::Project));
+    assert!(route_plan.plan.mutations.iter().any(|mutation| {
+        mutation.resource.kind == ResourceKind::Skills && mutation.resource.logical_id == "review"
+    }));
+    let plugin = route_plan
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.id == "plugin:project-only@marketplace")
+        .unwrap();
+    assert_eq!(
+        plugin.disposition,
+        ad_lib::agents::ArtifactDisposition::Unsupported
+    );
 
     let plan_id = route_plan.plan.id.clone();
     plans.insert_confirmation_required(route_plan.plan).unwrap();
@@ -145,6 +165,8 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     assert!(converted.contains("model_reasoning_effort = \"medium\""));
     assert!(converted.contains("model_verbosity = \"low\""));
     assert!(converted.contains("project_only = true"));
+    let codex_skill = project.join(".agents/skills/review");
+    assert!(codex_skill.is_symlink());
 
     let rollback = ExecutionEngine.rollback(&applied.id).unwrap();
 
@@ -152,6 +174,8 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     assert_eq!(rollback.status, OperationStatus::Complete);
     assert_eq!(std::fs::read(&project_target_path).unwrap(), project_target);
     assert_eq!(std::fs::read(&user_target_path).unwrap(), user_target);
+    assert!(!codex_skill.exists());
+    assert!(project.join(".claude/skills/review").is_symlink());
 }
 
 #[test]
@@ -217,10 +241,12 @@ fn project_conversion_applies_explicit_model_and_permission_decisions() {
     let options = ClaudeToCodexOptions {
         target_model: Some("gpt-5.6-sol".into()),
         permission_preset: Some(CodexPermissionPreset::NeverDangerFullAccess),
+        ..ClaudeToCodexOptions::default()
     };
     let route_plan = ClaudeToCodexRoute
         .preview_with_options(&source, &target, &options)
         .unwrap();
+    assert_eq!(route_plan.summary.dangerous, 1);
     let content = route_plan.plan.mutations[0]
         .content
         .as_ref()
@@ -229,7 +255,54 @@ fn project_conversion_applies_explicit_model_and_permission_decisions() {
         .parse::<toml::Value>()
         .unwrap();
 
+    let plan_id = route_plan.plan.id.clone();
+    let plans = PlanStore::default();
+    plans
+        .insert_with_acknowledgements(
+            route_plan.plan,
+            vec![
+                AcknowledgementRequirement {
+                    code: PlanAcknowledgementCode::ConversionApply,
+                    risk: PlanRiskLevel::Confirmation,
+                },
+                AcknowledgementRequirement {
+                    code: PlanAcknowledgementCode::DangerousPermissionExpansion,
+                    risk: PlanRiskLevel::Dangerous,
+                },
+            ],
+        )
+        .unwrap();
+    let missing = ExecutionEngine
+        .apply_acknowledged(
+            &plan_id,
+            &plans,
+            &[PlanAcknowledgement {
+                code: PlanAcknowledgementCode::ConversionApply,
+                accepted: true,
+            }],
+        )
+        .unwrap_err();
+    assert_eq!(missing.code, AgentErrorCode::ConfirmationRequired);
+    let applied = ExecutionEngine
+        .apply_acknowledged(
+            &plan_id,
+            &plans,
+            &[
+                PlanAcknowledgement {
+                    code: PlanAcknowledgementCode::ConversionApply,
+                    accepted: true,
+                },
+                PlanAcknowledgement {
+                    code: PlanAcknowledgementCode::DangerousPermissionExpansion,
+                    accepted: true,
+                },
+            ],
+        )
+        .unwrap();
+    let rollback = ExecutionEngine.rollback(&applied.id).unwrap();
+
     restore_env(previous_home, previous_codex_home);
+    assert_eq!(rollback.status, OperationStatus::Complete);
     assert_eq!(content["model"].as_str(), Some("gpt-5.6-sol"));
     assert_eq!(content["model_context_window"].as_integer(), Some(250_000));
     assert_eq!(content["approval_policy"].as_str(), Some("never"));
@@ -248,6 +321,34 @@ fn contexts(project_path: Option<String>) -> (AgentContext, AgentContext) {
         project_path: project_path.clone(),
     };
     (context("claude-code"), context("codex"))
+}
+
+fn create_project_skill(home: &std::path::Path, project: &std::path::Path, name: &str) {
+    let source_root = home.join(".ad/skill-library/local");
+    let skill = source_root.join(name);
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: Project skill\n---\n"),
+    )
+    .unwrap();
+    let state = home.join(".ad/state");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(
+        state.join("skill_sources.json"),
+        serde_json::to_vec(&serde_json::json!([{
+            "id": "local",
+            "sourceType": "local",
+            "url": source_root,
+            "autoUpdate": false,
+            "addedAt": "2026-07-16T00:00:00Z"
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    let skills = project.join(".claude/skills");
+    std::fs::create_dir_all(&skills).unwrap();
+    std::os::unix::fs::symlink(skill, skills.join(name)).unwrap();
 }
 
 fn restore_env(previous_home: Option<String>, previous_codex_home: Option<String>) {

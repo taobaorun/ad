@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 
 use ad_lib::agents::{
-    builtin_registry, ArtifactDisposition, ClaudeToCodexOptions, ClaudeToCodexRoute, WritePolicy,
+    builtin_registry, ArtifactDisposition, ClaudeToCodexOptions, ClaudeToCodexRoute,
+    ConversionResolutionKind, ConversionRiskLevel, ResourceKind, WritePolicy,
 };
 use serial_test::serial;
 
@@ -45,6 +46,7 @@ fn route_reports_artifact_dispositions_and_builds_a_target_only_plan() {
             &ClaudeToCodexOptions {
                 target_model: Some("gpt-5.4".into()),
                 permission_preset: None,
+                confirmed_skill_ids: BTreeSet::from(["review".into()]),
             },
         )
         .unwrap();
@@ -72,8 +74,41 @@ fn route_reports_artifact_dispositions_and_builds_a_target_only_plan() {
         .iter()
         .find(|artifact| artifact.id == "skill:review")
         .unwrap();
-    assert_eq!(skill.disposition, ArtifactDisposition::RequiresInput);
-    assert_eq!(skill.kind, ad_lib::agents::ResourceKind::Skills);
+    assert_eq!(skill.disposition, ArtifactDisposition::Mapped);
+    assert_eq!(skill.kind, ResourceKind::Skills);
+    assert_eq!(skill.risk, ConversionRiskLevel::Confirmation);
+    assert!(skill.resolution.is_none());
+    assert!(skill
+        .source
+        .location
+        .path
+        .ends_with("/.claude/skills/review"));
+    assert!(skill
+        .target
+        .as_ref()
+        .unwrap()
+        .location
+        .path
+        .ends_with("/.agents/skills/review"));
+
+    let unresolved_permission = result
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.id.ends_with(":permissions"))
+        .unwrap();
+    assert_eq!(
+        unresolved_permission.resolution.as_ref().unwrap().kind,
+        ConversionResolutionKind::SelectPermissionPreset
+    );
+    assert_eq!(result.summary.total, result.artifacts.len());
+    assert_eq!(
+        result.summary.requires_input,
+        result
+            .artifacts
+            .iter()
+            .filter(|artifact| artifact.disposition == ArtifactDisposition::RequiresInput)
+            .count()
+    );
 
     assert!(result.plan.read_set.iter().any(|precondition| {
         precondition.resource.installation_id == source.installation_id
@@ -89,8 +124,18 @@ fn route_reports_artifact_dispositions_and_builds_a_target_only_plan() {
         .mutations
         .iter()
         .all(|mutation| mutation.resource.installation_id != source.installation_id));
+    assert!(result.plan.mutations.iter().any(|mutation| {
+        mutation.resource.kind == ResourceKind::Skills
+            && mutation.resource.logical_id == "review"
+            && mutation.media_type == "application/vnd.ad.symlink"
+    }));
 
-    let content = result.plan.mutations[0]
+    let content = result
+        .plan
+        .mutations
+        .iter()
+        .find(|mutation| mutation.resource.kind == ResourceKind::Settings)
+        .unwrap()
         .content
         .as_ref()
         .unwrap()

@@ -212,18 +212,20 @@ fn skill_snapshot(
             format!("Failed to digest Claude skill {logical_id}: {error}"),
         )
     })?;
+    let resource = ResourceRef {
+        installation_id: context.installation_id.clone(),
+        project_path: (scope == ResourceScope::Project)
+            .then(|| context.project_path.clone())
+            .flatten(),
+        kind: ResourceKind::Skills,
+        scope,
+        logical_id,
+    };
+    let location = ClaudeSkillsPort.resolve(context, &resource)?;
     Ok(ResourceSnapshot {
-        resource: ResourceRef {
-            installation_id: context.installation_id.clone(),
-            project_path: (scope == ResourceScope::Project)
-                .then(|| context.project_path.clone())
-                .flatten(),
-            kind: ResourceKind::Skills,
-            scope,
-            logical_id,
-        },
+        resource,
         location: ResourceLocation {
-            path: entry.path,
+            path: location.path().to_string_lossy().into_owned(),
             origin: if scope == ResourceScope::Project {
                 ResourceOrigin::Project
             } else {
