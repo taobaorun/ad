@@ -212,9 +212,9 @@ describe('startup surface helpers', () => {
     expect(quote.style.backgroundPosition).toBe('10% 0px');
     frames.shift()!(0);
     const firstPosition = quote.style.backgroundPosition;
-    frames.shift()!(2);
-    expect(quote.style.backgroundPosition).not.toBe(firstPosition);
     frames.shift()!(10);
+    expect(quote.style.backgroundPosition).not.toBe(firstPosition);
+    frames.shift()!(300);
     expect(quote.style.backgroundPosition).toBe(firstPosition);
     expect(requestFrame).toHaveBeenCalledTimes(4);
   });
