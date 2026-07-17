@@ -92,7 +92,8 @@ describe('theme contract', () => {
   });
 
   it('provides spotlight, exit, reduced-motion, and readable clipping fallbacks', () => {
-    expect(startupSurface).toContain('const SPOTLIGHT_CYCLE_MS = 10;');
+    expect(startupSurface).toContain('const SPOTLIGHT_STEP_MS = 10;');
+    expect(startupSurface).toContain('const SPOTLIGHT_STEP_COUNT = 30;');
     expect(indexHtml).toContain('font-family: ui-serif, Georgia,');
     expect(indexHtml).toContain('font-size: 23px');
     expect(indexHtml).toContain('letter-spacing: 0.02em');

@@ -48,7 +48,7 @@ AD 已能在 React 之前绘制主题正确的 splash，但旧实现会在 `src/
 **品牌与动效**
 
 - R6. Loading 使用现有 AD 应用 logo 与精确文案 “Be Water, My Friend”。
-- R7. normal motion 模式下文字具有 10ms 探照灯扫过，效果只裁剪在字形内部；非高亮底色在 Mocha/Latte 中全程达到 WCAG AA 4.5:1。reduced-motion 模式静态、完整、可读。
+- R7. normal motion 模式下文字探照灯每 10ms 前进一步，30 步完成一轮 300ms 扫描；效果只裁剪在字形内部，非高亮底色在 Mocha/Latte 中全程达到 WCAG AA 4.5:1。reduced-motion 模式静态、完整、可读。
 - R8. Mocha 与 Latte 启动色继续与持久化偏好、React canvas、native WebView 背景一致。
 - R9. slogan 与无障碍 label 通过同步的中英文 i18n key 提供；两个 locale 的 slogan 都保留用户指定的英文原句。
 - R10. 可见构图没有第二行状态文案。唯一 localized `role="status"`、`aria-live="polite"`、`aria-atomic="true"` 区域以非视觉方式传达状态，logo 为装饰图。Splash 与 App 重叠时 `#root` 保持 inert 和 `aria-hidden`；260ms crossfade 完成并移除 splash 后恢复可访问性，不主动移动焦点。
@@ -77,7 +77,7 @@ AD 已能在 React 之前绘制主题正确的 splash，但旧实现会在 `src/
 - KTD2. 用一个明确的主窗口 startup coordinator 取代 mount 时 fire-and-forget。Projects 与 Agent discovery 并行，Profiles 等 Agent attempt；Settings route 不执行主窗口初始化。
 - KTD3. 按 settlement 或 12 秒整体 deadline 揭幕，而不是只等待成功。Rejection/timeout 返回英文 failure metadata；超时 read 是幂等操作，可以晚到更新。
 - KTD4. 使用现有 AD icon 和精确 slogan。（session-settled: user-directed — 用户明确选择品牌 logo + quote，替代匿名 skeleton。）
-- KTD5. 首帧 gradient/clip 与 Mocha/Latte 常量保持在 `index.html`；正常模式由 store-free `startupSurface` helper 以 requestAnimationFrame 驱动 10ms 文字 background-position，规避 WKWebView 只绘制 CSS keyframe 首帧的问题。背景不参与探照灯；`prefers-reduced-motion` 停止全部循环动效。
+- KTD5. 首帧 gradient/clip 与 Mocha/Latte 常量保持在 `index.html`；正常模式由 store-free `startupSurface` helper 以 requestAnimationFrame 驱动，每 10ms 前进一步、30 步完成一轮 300ms 文字 background-position，规避 WKWebView 只绘制 CSS keyframe 首帧及超短循环刷新率混叠问题。背景不参与探照灯；`prefers-reduced-motion` 停止全部循环动效。
 - KTD6. 即使两个 locale 的 quote 值相同，也必须添加 i18n key，遵守用户可见文案合同。
 - KTD7. 可见构图仅包含 logo 和 quote。（session-settled: user-directed — 用户明确删除 “Initializing AD”。）唯一不可见 live status 传达加载状态。
 - KTD8. React root 淡入与 splash 淡出共享 260ms opacity transition，形成连续 crossfade；splash 移除前 root 继续保持 inert/aria-hidden。
@@ -93,7 +93,7 @@ sequenceDiagram
   participant J as Projects store
   participant UI as React App
   H->>H: 绘制主题背景、logo、静态 quote
-  M->>H: 注入 i18n，并启动 10ms 文字探照灯
+  M->>H: 注入 i18n，并启动每步 10ms / 每轮 300ms 的文字探照灯
   par 独立启动任务
     M->>A: 加载 Agents 与 installations
   and
@@ -163,9 +163,9 @@ sequenceDiagram
 
 - **目标：** 用 logo、精确 quote 与只作用于文字的探照灯替换匿名 skeleton，不破坏主题首帧。
 - **文件：** `index.html`、`public/ad-logo.png`、`src/lib/startupSurface.ts`、zh/en locale、theme/i18n/startup tests。
-- **方法：** 复制现有 128px icon；居中显示 logo 与 quote；以 Mocha/Latte semantic colors 和 feature-gated text clipping 定义高光，surface helper 每 10ms 驱动 background-position；root 与 splash 以 260ms crossfade 揭幕。添加不可见 status、reduced-motion 和不支持 clipping 的 fallback。不增加最短 timer 或可见状态 caption。
+- **方法：** 复制现有 128px icon；居中显示 logo 与 quote；以 Mocha/Latte semantic colors 和 feature-gated text clipping 定义高光，surface helper 每 10ms 推进一步、30 步完成一轮 300ms background-position；root 与 splash 以 260ms crossfade 揭幕。添加不可见 status、reduced-motion 和不支持 clipping 的 fallback。不增加最短 timer 或可见状态 caption。
 - **需求：** R1、R5–R10；KTD1、KTD4–KTD8。
-- **测试：** 装饰 logo、单一 polite/atomic status、i18n hook、无背景探照灯、10ms helper、260ms crossfade、双主题、reduced motion、4.5:1 对比度、PNG signature 与源 icon SHA-256 一致。
+- **测试：** 装饰 logo、单一 polite/atomic status、i18n hook、无背景探照灯、10ms step / 30-step cycle helper、260ms crossfade、双主题、reduced motion、4.5:1 对比度、PNG signature 与源 icon SHA-256 一致。
 - **验证：** focused tests 与 `pnpm build` 通过，built HTML/asset 包含品牌 Loading。
 
 ### U4. 验证冷启动并同步持久设计记忆
