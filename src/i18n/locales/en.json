@@ -2,6 +2,10 @@
   "common": {
     "close": "Close"
   },
+  "startup": {
+    "loadingQuote": "Be Water, My Friend",
+    "loadingStatus": "AD is loading"
+  },
   "palette": {
     "placeholder": "Type an action or project…",
     "noMatches": "No matches",

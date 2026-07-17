@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAgents } from '@/store/agents';
 
@@ -34,13 +33,4 @@ export function AgentSelector() {
       </select>
     </label>
   );
-}
-
-// Hook and component intentionally share this small module because they initialize the same store.
-// eslint-disable-next-line react-refresh/only-export-components
-export function useLoadAgents(): void {
-  const loadAll = useAgents((state) => state.loadAll);
-  useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
 }

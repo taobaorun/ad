@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { ProjectDetail } from './components/ProjectDetail';
 import { GlobalKeymap } from './components/GlobalKeymap';
@@ -11,10 +10,11 @@ import { useProfiles } from './store/profiles';
 import { useProjects } from './store/projects';
 import { useUiState } from './store/ui';
 import { useUiSettings } from './store/uiSettings';
-import { AgentSelector, useLoadAgents } from './components/AgentSelector';
+import { AgentSelector } from './components/AgentSelector';
 import { AgentConversionButton } from './components/AgentConversionDialog';
 import { AgentProfilesButton } from './components/AgentProfilesDialog';
 import { useAgents } from './store/agents';
+import { useReloadProfilesOnAgentChange } from './hooks/useReloadProfilesOnAgentChange';
 import { profileFeaturesFor } from './lib/profileEditorRegistry';
 import { applyDocumentTheme } from './lib/theme';
 
@@ -51,42 +51,15 @@ function useHasBeenTrue(condition: boolean): boolean {
  * binds ⌘K, ⌘1-8, ⌘T, ⌘P, ⌘E, ⌘⇧K, esc.
  */
 export function App() {
-  const loadAll = useProfiles((s) => s.loadAll);
-  const loadProjects = useProjects((s) => s.loadAll);
   const sidebarCollapsed = useUiState((s) => s.sidebarCollapsed);
   const openPalette = useUiState((s) => s.openPalette);
   const darkMode = useUiSettings((s) => s.darkMode);
   const setDarkMode = useUiSettings((s) => s.setDarkMode);
-  const activeAgentId = useAgents((s) => s.activeAgentId);
-  const reloadProfiles = useProfiles((s) => s.loadAll);
-  useLoadAgents();
+  useReloadProfilesOnAgentChange();
 
   useEffect(() => {
     applyDocumentTheme(darkMode);
   }, [darkMode]);
-
-  useEffect(() => {
-    void loadAll();
-    void loadProjects();
-  }, [loadAll, loadProjects]);
-
-  useEffect(() => {
-    void reloadProfiles();
-  }, [activeAgentId, reloadProfiles]);
-
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        document.getElementById('ad-splash')?.remove();
-        getCurrentWindow()
-          .show()
-          .catch(() => {});
-        getCurrentWindow()
-          .setFocus()
-          .catch(() => {});
-      });
-    });
-  }, []);
 
   // Block WebKit gesture events (two-finger rotate/pinch) that cause page wobble.
   useEffect(() => {

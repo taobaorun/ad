@@ -7,6 +7,13 @@ describe('i18n locales', () => {
   it('keeps English and Chinese translation keys in sync', () => {
     expect(leafKeys(en)).toEqual(leafKeys(zh));
   });
+
+  it('keeps the exact startup slogan and localized loading status', () => {
+    expect(en.startup.loadingQuote).toBe('Be Water, My Friend');
+    expect(zh.startup.loadingQuote).toBe('Be Water, My Friend');
+    expect(en.startup.loadingStatus).toBe('AD is loading');
+    expect(zh.startup.loadingStatus).toBe('正在加载 AD');
+  });
 });
 
 function leafKeys(value: unknown, prefix = ''): string[] {

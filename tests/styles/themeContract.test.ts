@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
@@ -39,9 +40,7 @@ describe('theme contract', () => {
   });
 
   it('gives native controls a dual-tone semantic focus indicator', () => {
-    expect(themeCss).toContain(
-      ':root :is(button, a[href], input, textarea, select):focus-visible',
-    );
+    expect(themeCss).toContain(':root :is(button, a[href], input, textarea, select):focus-visible');
     expect(themeCss).toContain('box-shadow: 0 0 0 2px rgb(var(--color-action-primary));');
     expect(themeCss).toContain('outline: 1px solid rgb(var(--color-text-primary));');
   });
@@ -49,8 +48,8 @@ describe('theme contract', () => {
   it('derives compatibility aliases and Tailwind opacity from semantic roles', () => {
     expect(themeCss).toContain('--ds-bg-sidebar: rgb(var(--color-bg-pane));');
     expect(themeCss).toContain('--ds-accent: rgb(var(--color-action-primary));');
-    expect(tailwindConfig).toContain("rgb(var(--background) / <alpha-value>)");
-    expect(tailwindConfig).toContain("rgb(var(--color-success) / <alpha-value>)");
+    expect(tailwindConfig).toContain('rgb(var(--background) / <alpha-value>)');
+    expect(tailwindConfig).toContain('rgb(var(--color-success) / <alpha-value>)');
   });
 
   it('does not retain the previous Zinc, Indigo, or Anthropic foundations', () => {
@@ -64,6 +63,57 @@ describe('theme contract', () => {
     expect(indexHtml).toContain("var bg = dark ? '#1e1e2e' : '#eff1f5';");
     expect(indexHtml).toContain("var fg = dark ? '#cdd6f4' : '#4c4f69';");
     expect(indexHtml).not.toMatch(/#0a0a0b|#ffffff|#09090b/i);
+  });
+
+  it('renders the branded startup surface before React loads', () => {
+    const publicLogo = readFileSync('public/ad-logo.png');
+    const sourceLogo = readFileSync('src-tauri/icons/128x128.png');
+    expect(indexHtml).toContain('src="/ad-logo.png"');
+    expect(publicLogo.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+    expect(createHash('sha256').update(publicLogo).digest('hex')).toBe(
+      createHash('sha256').update(sourceLogo).digest('hex'),
+    );
+    expect(indexHtml).toContain('alt=""');
+    expect(indexHtml).toContain('aria-hidden="true"');
+    expect(indexHtml).toContain('id="ad-splash-quote"');
+    expect(indexHtml).toContain('data-i18n-key="startup.loadingQuote"');
+    expect(indexHtml).toContain('Be Water, My Friend');
+    expect(indexHtml).not.toContain('Initializing AD');
+  });
+
+  it('keeps the startup surface accessible while it covers the app', () => {
+    expect(indexHtml.match(/role="status"/g)).toHaveLength(1);
+    expect(indexHtml).toContain('id="ad-splash-status"');
+    expect(indexHtml).toContain('data-i18n-key="startup.loadingStatus"');
+    expect(indexHtml).toContain('aria-live="polite"');
+    expect(indexHtml).toContain('aria-atomic="true"');
+    expect(indexHtml).toContain('<div id="root" inert aria-hidden="true"></div>');
+  });
+
+  it('provides spotlight, exit, reduced-motion, and readable clipping fallbacks', () => {
+    expect(indexHtml).toContain('font-family: ui-serif, Georgia,');
+    expect(indexHtml).toContain('font-size: 23px');
+    expect(indexHtml).toContain('letter-spacing: 0.02em');
+    expect(indexHtml).toContain(
+      'linear-gradient(100deg, #a6adc8 34%, #fff 49%, #74c7ec 52%, #a6adc8 67%)',
+    );
+    expect(indexHtml).toContain('background-size: 260% 100%');
+    expect(indexHtml).toContain('-webkit-background-clip: text');
+    expect(indexHtml).toContain('-webkit-text-fill-color: transparent');
+    expect(indexHtml).not.toContain('@keyframes ad-spotlight');
+    expect(indexHtml).not.toContain('ad-splash-quote-text');
+    expect(indexHtml).not.toContain('ad-splash-ambient');
+    expect(indexHtml).not.toContain('@keyframes ad-ambient-sweep');
+    expect(indexHtml).not.toContain('function adAnimateSpotlight');
+    expect(indexHtml).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(indexHtml).toContain('#ad-splash.ad-splash-exit');
+    expect(indexHtml).toContain('transition: opacity 260ms ease');
+    expect(indexHtml).toContain('#root.ad-app-enter');
+  });
+
+  it('keeps the non-highlighted startup quote readable in Latte and Mocha', () => {
+    expect(contrastRatio('#5c5f77', '#eff1f5')).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio('#a6adc8', '#1e1e2e')).toBeGreaterThanOrEqual(4.5);
   });
 
   it('documents every implemented product semantic token', () => {
