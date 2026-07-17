@@ -13,6 +13,8 @@ interface StartupSpotlightOptions {
   reduceMotion?: boolean;
 }
 
+const SPOTLIGHT_CYCLE_MS = 10;
+
 export function injectStartupCopy(documentRef: Document, copy: StartupCopy): void {
   const quote = documentRef.getElementById('ad-splash-quote');
   if (quote) quote.textContent = copy.quote;
@@ -37,8 +39,8 @@ export function startStartupSpotlight(
 
   const tick = (timestamp: number) => {
     if (!quote.isConnected) return;
-    startedAt ??= timestamp - 375;
-    const quoteProgress = ((timestamp - startedAt) % 750) / 750;
+    startedAt ??= timestamp - SPOTLIGHT_CYCLE_MS / 2;
+    const quoteProgress = ((timestamp - startedAt) % SPOTLIGHT_CYCLE_MS) / SPOTLIGHT_CYCLE_MS;
     quote.style.backgroundPosition = `${140 - quoteProgress * 260}% 0`;
     requestFrame(tick);
   };

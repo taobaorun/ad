@@ -212,9 +212,11 @@ describe('startup surface helpers', () => {
     expect(quote.style.backgroundPosition).toBe('10% 0px');
     frames.shift()!(0);
     const firstPosition = quote.style.backgroundPosition;
-    frames.shift()!(225);
+    frames.shift()!(2);
     expect(quote.style.backgroundPosition).not.toBe(firstPosition);
-    expect(requestFrame).toHaveBeenCalledTimes(3);
+    frames.shift()!(10);
+    expect(quote.style.backgroundPosition).toBe(firstPosition);
+    expect(requestFrame).toHaveBeenCalledTimes(4);
   });
 
   it('keeps the quote static when reduced motion is requested', () => {
