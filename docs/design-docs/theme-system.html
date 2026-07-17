@@ -36,8 +36,8 @@
 </head>
 <body>
 <main class="page">
-  <header><div class="eyebrow">AD Design System · Theme</div><h1>Catppuccin Mocha，作为系统而非皮肤</h1><p class="lede">默认深色使用 Mocha，亮色兼容使用 Latte。所有界面先选择语义角色，再由主题映射颜色；主窗口、Settings、CodeMirror 与首帧原生背景共享同一视觉契约。</p><span class="status">已实现 · 2026-07-16</span></header>
-  <nav><a href="#principles">原则</a><a href="#palette">Palette</a><a href="#architecture">Token 架构</a><a href="#mapping">语义映射</a><a href="#components">组件状态</a><a href="#rules">未来约束</a></nav>
+  <header><div class="eyebrow">AD Design System · Theme</div><h1>Catppuccin Mocha，作为系统而非皮肤</h1><p class="lede">默认深色使用 Mocha，亮色兼容使用 Latte。所有界面先选择语义角色，再由主题映射颜色；主窗口、Settings、CodeMirror 与首帧原生背景共享同一视觉契约。</p><span class="status">已实现 · 2026-07-17</span></header>
+  <nav><a href="#principles">原则</a><a href="#palette">Palette</a><a href="#architecture">Token 架构</a><a href="#mapping">语义映射</a><a href="#components">组件状态</a><a href="#startup">启动 Loading</a><a href="#rules">未来约束</a></nav>
 
   <section id="principles"><h2>设计原则</h2><p class="intro">Catppuccin 提供色彩语言，AD 的语义层负责产品一致性。强调色用于意义，中性色负责空间。</p><div class="grid four">
     <article class="card"><div class="k">01 · Semantic</div><h3>语义优先</h3><p>组件使用 canvas、surface、text、action、status，不依赖 Mocha 色名。</p></article>
@@ -84,6 +84,13 @@
   <section id="components"><h2>组件状态样本</h2><p class="intro">这不是布局重设计，而是所有现有组件必须共享的颜色、边界与 focus 语言。</p><div class="grid two">
     <div class="demo"><div class="demo-head">AD / Mocha</div><div class="demo-body"><aside class="demo-side"><div class="nav-row active">sofampy</div><div class="nav-row">Agent profiles</div><div class="nav-row">Settings</div></aside><div class="demo-main"><div class="k">Project settings</div><h3 style="margin-top:7px">Configuration</h3><div class="panel"><span style="color:var(--subtext1)">Surface 0 card with semantic border</span><div class="controls"><button class="btn primary focus">Apply</button><button class="btn secondary">Preview</button><button class="btn danger">Delete</button></div></div></div></div></div>
     <div class="card"><h3>状态合同</h3><div class="rule"><div class="num">1</div><div><strong>Primary</strong><span>Sapphire + on-primary；focus 使用 Sapphire 内圈与 Text 外轮廓。</span></div></div><div class="rule"><div class="num">2</div><div><strong>Secondary / Ghost</strong><span>Surface 层级表达 hover，不引入透明白灰。</span></div></div><div class="rule"><div class="num">3</div><div><strong>Danger</strong><span>Red 搭配独立 on-danger；危险对话框仍需明确文案。</span></div></div><div class="rule"><div class="num">4</div><div><strong>CodeMirror</strong><span>官方 Mocha/Latte syntax；AD 只维护布局扩展。</span></div></div></div>
+  </div></section>
+
+  <section id="startup"><h2>启动 Loading 生命周期</h2><p class="intro">首帧在 React bundle 之前出现，真实初始化完成后才揭幕；它是启动状态边界，不是虚假进度条。</p><div class="grid two">
+    <article class="card"><div class="k">Visual contract</div><h3>Logo + “Be Water, My Friend”</h3><p>只显示现有 AD logo 和原句。750ms 探照灯只裁剪在字形内，并由启动 helper 驱动以保证 WKWebView 逐帧重绘；Mocha/Latte 非高亮对比度均不低于 4.5:1。reduced-motion 停止 logo 呼吸和高光循环。</p></article>
+    <article class="card"><div class="k">Ready contract</div><h3>真实 settlement + 12s deadline</h3><p>Agents 与 Projects 并行，Profiles 等 Agent attempt。全部 settle 后揭幕；rejection 或整体超时 fail-open，晚到的幂等 read 仍可渐进更新 store。</p></article>
+    <article class="card"><div class="k">Access boundary</div><h3>遮罩退出前保持 root 隔离</h3><p>Splash 存在和 260ms 交叉淡入淡出期间，React root 保持 inert + aria-hidden。静态层只暴露一个 localized polite/atomic status，移除遮罩后恢复且不抢焦点。</p></article>
+    <article class="card"><div class="k">Window scope</div><h3>主窗口协调，Settings 只复用首帧</h3><p>主窗口等待三组 store 初始化；Settings route 不触发这些读取，只在自身首次 paint 后执行相同揭幕协议。</p></article>
   </div></section>
 
   <section id="rules"><h2>未来功能必须遵循</h2><div class="grid two"><article class="card do"><h3>应当</h3><p>先选择语义角色；缺少角色时更新设计文档与基础层；双主题、键盘 focus、状态非颜色线索一起验收。</p></article><article class="card dont"><h3>禁止</h3><p>新增 raw hex、<code>bg-black/*</code>、framework emerald/red、透明白灰或新的 <code>--ds-*</code> 产品样式。用户 Profile 数据色是明确例外。</p></article></div><div class="grid two" style="margin-top:16px"><article class="card"><h3>自动守卫</h3><p><code>themeContract.test.ts</code> 固定 palette、首帧、label contrast 与 focus；<code>themeSurfaces.test.tsx</code> 递归拒绝产品 TSX 原始色并校验兼容 token 完整性。</p></article><article class="card"><h3>运行时边界</h3><p><code>theme.ts</code> 同步双窗口根节点；Rust 固定 native paint；JsonEditor 只切换官方 Catppuccin extension。</p></article></div></section>

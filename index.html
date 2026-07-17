@@ -29,61 +29,132 @@
     </script>
   </head>
   <body class="bg-background text-foreground">
-    <!-- Splash overlay: covers the window until React removes it.
-         Lives OUTSIDE #root so React.createRoot().render() cannot destroy it.
-         The main window starts hidden (visible:false in Rust); the settings
-         window shows immediately — either way the splash guarantees the user
-         sees the correct theme color, never a blank/wrong-color frame. -->
+    <!-- This stays outside #root so the first frame survives React mounting. -->
     <div id="ad-splash">
       <style>
-        #ad-splash{position:fixed;inset:0;z-index:9999;background:#eff1f5;color:#4c4f69}
-        .dark #ad-splash{background:#1e1e2e;color:#cdd6f4}
-        #ad-skel{display:flex;flex-direction:column;height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-        #ad-skel-bar{height:36px;display:flex;align-items:center;padding:0 12px;font-size:14px;font-weight:600}
-        #ad-skel-body{display:flex;flex:1;overflow:hidden}
-        #ad-skel-side{width:264px;flex-shrink:0;padding:12px}
-        #ad-skel-main{flex:1}
-        .ad-skel-pill{border-radius:6px;margin-bottom:8px}
-        #ad-skel-bar{background:#dce0e8;border-bottom:0.5px solid #ccd0da}
-        #ad-skel-side{background:#e6e9ef;border-right:0.5px solid #ccd0da}
-        .ad-skel-pill{background:#ccd0da}
-        .dark #ad-skel-bar{background:#11111b;border-bottom-color:#313244}
-        .dark #ad-skel-side{background:#181825;border-right-color:#313244}
-        .dark .ad-skel-pill{background:#313244}
+        #ad-splash {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          display: grid;
+          place-items: center;
+          overflow: hidden;
+          background: #eff1f5;
+          color: #4c4f69;
+          opacity: 1;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+        .dark #ad-splash {
+          background: #1e1e2e;
+          color: #cdd6f4;
+        }
+        #ad-splash.ad-splash-exit {
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 260ms ease;
+        }
+        #root {
+          opacity: 0;
+          transition: opacity 260ms ease;
+        }
+        #root.ad-app-enter {
+          opacity: 1;
+        }
+        #ad-splash-content {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 24px;
+          transform: translateY(-3vh);
+        }
+        #ad-splash-logo {
+          width: 88px;
+          height: 88px;
+          object-fit: contain;
+          filter: drop-shadow(0 12px 30px rgb(76 79 105 / 0.18));
+          animation: ad-logo-breathe 3.6s ease-in-out infinite;
+        }
+        .dark #ad-splash-logo {
+          filter: drop-shadow(0 12px 30px rgb(17 17 27 / 0.42));
+        }
+        #ad-splash-quote {
+          position: relative;
+          margin: 0;
+          color: #5c5f77;
+          font-family: ui-serif, Georgia, 'Times New Roman', serif;
+          font-size: 23px;
+          font-weight: 500;
+          line-height: 1.2;
+          letter-spacing: 0.02em;
+          white-space: nowrap;
+        }
+        .dark #ad-splash-quote {
+          color: #a6adc8;
+        }
+        #ad-splash-status {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          padding: 0;
+          margin: -1px;
+          overflow: hidden;
+          clip: rect(0, 0, 0, 0);
+          white-space: nowrap;
+          border: 0;
+        }
+        @keyframes ad-logo-breathe {
+          0%,
+          100% {
+            transform: scale(1);
+          }
+          50% {
+            transform: scale(1.025);
+          }
+        }
+        @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+          #ad-splash-quote {
+            color: #5c5f77;
+            background: linear-gradient(100deg, #5c5f77 34%, #11111b 49%, #209fb5 52%, #5c5f77 67%);
+            background-size: 260% 100%;
+            background-position: 140% 0;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+          }
+          .dark #ad-splash-quote {
+            background-image: linear-gradient(
+              100deg,
+              #a6adc8 34%,
+              #fff 49%,
+              #74c7ec 52%,
+              #a6adc8 67%
+            );
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          #ad-splash-logo,
+          #ad-splash-quote {
+            animation: none;
+          }
+        }
       </style>
-      <div id="ad-skel">
-        <div id="ad-skel-bar">AD</div>
-        <div id="ad-skel-body">
-          <div id="ad-skel-side">
-            <div class="ad-skel-pill" style="width:60%;height:12px"></div>
-            <div class="ad-skel-pill" style="width:80%;height:28px"></div>
-            <div class="ad-skel-pill" style="width:80%;height:28px"></div>
-            <div class="ad-skel-pill" style="width:80%;height:28px"></div>
-          </div>
-          <div id="ad-skel-main"></div>
-        </div>
+      <div id="ad-splash-content">
+        <img id="ad-splash-logo" src="/ad-logo.png" alt="" aria-hidden="true" draggable="false" />
+        <p id="ad-splash-quote" data-i18n-key="startup.loadingQuote">Be Water, My Friend</p>
+      </div>
+      <div
+        id="ad-splash-status"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-i18n-key="startup.loadingStatus"
+      >
+        AD is loading
       </div>
     </div>
-    <script>
-      // Main window starts visible:false in Rust. Show after double-rAF
-      // guarantees two compositor frames — the splash is painted.
-      // Settings window is pre-created hidden; only shown via the gear button.
-      (function () {
-        try {
-          var T = window.__TAURI_INTERNALS__;
-          if (!T) return;
-          var label = T.metadata.currentWindow.label;
-          if (label !== 'main') return;
-          requestAnimationFrame(function () {
-            requestAnimationFrame(function () {
-              T.invoke('plugin:window|show', { label: label });
-              T.invoke('plugin:window|set_focus', { label: label });
-            });
-          });
-        } catch (_) {}
-      })();
-    </script>
-    <div id="root"></div>
-<script type="module" src="/src/main.tsx"></script>
+    <div id="root" inert aria-hidden="true"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

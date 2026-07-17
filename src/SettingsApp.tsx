@@ -30,14 +30,6 @@ export function SettingsApp() {
     applyDocumentTheme(dark);
   }, [dark]);
 
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        document.getElementById('ad-splash')?.remove();
-      });
-    });
-  }, []);
-
   const nav: { id: SectionId; label: string; icon: ReactNode }[] = [
     { id: 'general', label: t('settings.nav.general'), icon: <Languages className="h-4 w-4" /> },
     { id: 'terminal', label: t('settings.nav.terminal'), icon: <TerminalIcon className="h-4 w-4" /> },

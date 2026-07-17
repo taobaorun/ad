@@ -2,6 +2,10 @@
   "common": {
     "close": "关闭"
   },
+  "startup": {
+    "loadingQuote": "Be Water, My Friend",
+    "loadingStatus": "正在加载 AD"
+  },
   "palette": {
     "placeholder": "输入命令或项目…",
     "noMatches": "无匹配",

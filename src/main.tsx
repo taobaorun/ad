@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import './i18n';
+import i18n from './i18n';
+import { injectStartupCopy, revealStartup, startStartupSpotlight } from './lib/startupSurface';
 import { tauri } from './lib/tauri';
 import { applyDocumentTheme } from './lib/theme';
 import { useUiSettings } from './store/uiSettings';
@@ -25,6 +26,11 @@ if (!isSettings) {
 tauri.writeThemeHint(useUiSettings.getState().darkMode).catch(() => {});
 
 async function bootstrap() {
+  injectStartupCopy(document, {
+    quote: i18n.t('startup.loadingQuote'),
+    status: i18n.t('startup.loadingStatus'),
+  });
+  startStartupSpotlight(document);
   const root = ReactDOM.createRoot(document.getElementById('root')!);
   if (isSettings) {
     const { SettingsApp } = await import('./SettingsApp');
@@ -33,13 +39,21 @@ async function bootstrap() {
         <SettingsApp />
       </React.StrictMode>,
     );
+    await revealStartup(document);
   } else {
-    const { App } = await import('./App');
+    const [{ App }, startupResult] = await Promise.all([
+      import('./App'),
+      import('./lib/startup').then(({ coordinateStartup }) => coordinateStartup()),
+    ]);
+    for (const failure of startupResult.failures) {
+      console.error('AD startup task failed', failure);
+    }
     root.render(
       <React.StrictMode>
         <App />
       </React.StrictMode>,
     );
+    await revealStartup(document);
   }
 }
 
