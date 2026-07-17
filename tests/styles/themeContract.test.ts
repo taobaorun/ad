@@ -7,6 +7,7 @@ const themeCss = readFileSync('src/styles/globals.css', 'utf8');
 const tailwindConfig = readFileSync('tailwind.config.ts', 'utf8');
 const indexHtml = readFileSync('index.html', 'utf8');
 const themeGuide = readFileSync('docs/design-docs/theme-system.md', 'utf8');
+const startupSurface = readFileSync('src/lib/startupSurface.ts', 'utf8');
 
 describe('theme contract', () => {
   it('defines the official Latte and Mocha foundation as RGB channels', () => {
@@ -91,11 +92,12 @@ describe('theme contract', () => {
   });
 
   it('provides spotlight, exit, reduced-motion, and readable clipping fallbacks', () => {
+    expect(startupSurface).toContain('const SPOTLIGHT_CYCLE_MS = 10;');
     expect(indexHtml).toContain('font-family: ui-serif, Georgia,');
     expect(indexHtml).toContain('font-size: 23px');
     expect(indexHtml).toContain('letter-spacing: 0.02em');
-    expect(indexHtml).toContain(
-      'linear-gradient(100deg, #a6adc8 34%, #fff 49%, #74c7ec 52%, #a6adc8 67%)',
+    expect(indexHtml).toMatch(
+      /linear-gradient\(\s*100deg,\s*#a6adc8 34%,\s*#fff 49%,\s*#74c7ec 52%,\s*#a6adc8 67%\s*\)/,
     );
     expect(indexHtml).toContain('background-size: 260% 100%');
     expect(indexHtml).toContain('-webkit-background-clip: text');

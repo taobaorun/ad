@@ -125,7 +125,7 @@ UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 
 ## 启动 Loading 生命周期
 
-主窗口首帧由 `index.html` 在 React bundle 执行前绘制。可见内容固定为现有 AD logo 与 “Be Water, My Friend”，不显示百分比、预计时间或第二行状态。原句使用静态可读底色叠加仅裁剪在字形内的探照灯高光；Mocha/Latte 的非高亮状态都必须保持至少 4.5:1 对比度。正常模式由 store-free `src/lib/startupSurface.ts` 以 750ms 周期驱动 background-position，避免 WKWebView 只绘制 CSS 动画首帧；`prefers-reduced-motion` 下 logo 呼吸与探照灯循环全部停止，但内容和层级不变。
+主窗口首帧由 `index.html` 在 React bundle 执行前绘制。可见内容固定为现有 AD logo 与 “Be Water, My Friend”，不显示百分比、预计时间或第二行状态。原句使用静态可读底色叠加仅裁剪在字形内的探照灯高光；Mocha/Latte 的非高亮状态都必须保持至少 4.5:1 对比度。正常模式由 store-free `src/lib/startupSurface.ts` 以 10ms 周期驱动 background-position，避免 WKWebView 只绘制 CSS 动画首帧；`prefers-reduced-motion` 下 logo 呼吸与探照灯循环全部停止，但内容和层级不变。
 
 `src/lib/startup.ts` 是启动生命周期的唯一协调入口：Agent discovery 与 Projects 并行开始，Profiles 等 Agent attempt 结束后开始。三项 load 全部 settle 后揭幕；任一任务 rejection 会记录英文诊断信息但不阻断，其余任务永不返回时由 12 秒整体 deadline fail-open。超时不取消晚到的幂等 read，store 仍可在主界面出现后渐进更新。
 

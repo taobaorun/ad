@@ -87,7 +87,7 @@
   </div></section>
 
   <section id="startup"><h2>启动 Loading 生命周期</h2><p class="intro">首帧在 React bundle 之前出现，真实初始化完成后才揭幕；它是启动状态边界，不是虚假进度条。</p><div class="grid two">
-    <article class="card"><div class="k">Visual contract</div><h3>Logo + “Be Water, My Friend”</h3><p>只显示现有 AD logo 和原句。750ms 探照灯只裁剪在字形内，并由启动 helper 驱动以保证 WKWebView 逐帧重绘；Mocha/Latte 非高亮对比度均不低于 4.5:1。reduced-motion 停止 logo 呼吸和高光循环。</p></article>
+    <article class="card"><div class="k">Visual contract</div><h3>Logo + “Be Water, My Friend”</h3><p>只显示现有 AD logo 和原句。10ms 探照灯只裁剪在字形内，并由启动 helper 驱动以保证 WKWebView 逐帧重绘；Mocha/Latte 非高亮对比度均不低于 4.5:1。reduced-motion 停止 logo 呼吸和高光循环。</p></article>
     <article class="card"><div class="k">Ready contract</div><h3>真实 settlement + 12s deadline</h3><p>Agents 与 Projects 并行，Profiles 等 Agent attempt。全部 settle 后揭幕；rejection 或整体超时 fail-open，晚到的幂等 read 仍可渐进更新 store。</p></article>
     <article class="card"><div class="k">Access boundary</div><h3>遮罩退出前保持 root 隔离</h3><p>Splash 存在和 260ms 交叉淡入淡出期间，React root 保持 inert + aria-hidden。静态层只暴露一个 localized polite/atomic status，移除遮罩后恢复且不抢焦点。</p></article>
     <article class="card"><div class="k">Window scope</div><h3>主窗口协调，Settings 只复用首帧</h3><p>主窗口等待三组 store 初始化；Settings route 不触发这些读取，只在自身首次 paint 后执行相同揭幕协议。</p></article>
