@@ -12,7 +12,7 @@ AD 当前已有用于避免闪白的 pre-React splash，但主窗口 React 挂�
 
 ## 确认状态
 
-- [x] **用户已评审** — HTML 路径：`docs/exec-plans/active/branded-startup-loading.html`
+- [x] **用户已评审** — HTML 路径：`docs/exec-plans/completed/branded-startup-loading.html`
 - [x] 用户已确认，开始执行（2026-07-17 09:37 CST）
 
 ## 假设
@@ -64,7 +64,7 @@ docs/design-docs/theme-system.{md,html} [M] 完成后同步 as-built 启动状�
 - [x] (2026-07-17 10:10 CST) 步骤三：把初始化接入 `src/main.tsx`，清理 `App`/`AgentSelector` 的重复 mount load（验证：focused 24 tests、typecheck、目标 ESLint 全部通过；Settings 无关格式化 diff 已清除）。
 - [x] (2026-07-17 13:07 CST) 步骤四：实现 logo + slogan 文字探照灯 loading、260ms 交叉淡入淡出与同步 i18n（验证：logo 与 app icon SHA-256 一致；无可见 “Initializing AD”；真实浏览器 180ms 间隔三帧 background-position 均变化；交叉过渡中间帧 root/splash opacity 约 0.61/0.39；normal/reduced-motion 与 i18n 合同通过）。
 - [x] (2026-07-17 14:02 CST) 步骤五：执行完整 frontend gates、production Tauri build 与真实冷启动 QA（验证：21 个测试文件 / 97 个测试、typecheck、lint、Vite production build 与 Tauri `.app`/DMG 全部通过；真实 Chrome 以 140ms 间隔采样四帧文字 background-position 均不同，splash 背景 `background-image: none`；260ms crossfade 中间帧 root/splash opacity 约 0.61/0.39；production bundle 已覆盖安装并启动，PID 48051）。
-- [ ] 步骤六：更新 `theme-system` MD/HTML 为 as-built，完成 LFG 简化、review、browser QA、提交、PR 与 CI；归档本 ExecPlan MD/HTML。
+- [x] (2026-07-17 14:10 CST) 步骤六：更新 `theme-system` MD/HTML 为 as-built，完成 LFG 简化、review、browser QA、提交、PR 与 CI；归档本 ExecPlan MD/HTML（验证：10 个 actionable review finding 全部修复且复核后无剩余；commit `878a5c1` 已推送；PR [#3](https://github.com/taobaorun/ad/pull/3) 已创建并处于 `MERGEABLE/CLEAN`。仓库 CI 仅监听 base `main`，本 PR 按既定要求以 `feat/agent-conversion-workbench` 为 base，因此 GitHub 未创建 check run；本地等价 frontend gates 与 production Tauri build 已通过）。
 
 ## 意外发现
 
@@ -110,6 +110,8 @@ docs/design-docs/theme-system.{md,html} [M] 完成后同步 as-built 启动状�
 主窗口现在先并行下载 App chunk、加载 Agents/Projects，Profiles 在 Agent attempt 后加载；三项 settle 或 12 秒 deadline 后才渲染和揭幕。第一可见帧只显示现有 AD logo 与 “Be Water, My Friend”，750ms 探照灯只在字形内循环，背景保持纯主题色；主界面与 loading 用 260ms 互补 opacity 自然交叉切换。rejection 会记录英文诊断后 fail-open，永不 resolve 的任务由 deadline 兜底，晚到 read 仍可更新 store；Settings 不执行主窗口 coordinator。
 
 自动验证覆盖 21 个测试文件 / 97 个测试，typecheck、lint、Vite production build、Tauri `.app` 与 DMG 均通过。真实浏览器逐帧采样证明动画位置连续变化且背景无探照灯，交叉过渡存在中间透明度；production bundle 已重新安装到 `/Applications/AD.app` 并启动。全仓 `pnpm format:check` 仍会命中 72 个历史未格式化文件和一个既有 malformed completed ExecPlan HTML，本任务未扩大范围修改这些无关文件；本次 diff 自身通过 `git diff --check` 与目标 Prettier 检查。
+
+LFG 简化与多维代码审查共识别 10 个 actionable finding，全部修复并加入 bootstrap、Agent reload、production reduced-motion、logo hash 与 transition bubbling 回归合同；最终无未解决 actionable finding。跨模型 Claude/Opus review 已尝试，但上游 API 未返回可用结果，未把它伪装成已完成审查。PR [#3](https://github.com/taobaorun/ad/pull/3) 已创建，GitHub 报告 `MERGEABLE/CLEAN`；由于 CI workflow 只对 base `main` 的 PR 触发，而该 PR 依赖尚未合并的 `feat/agent-conversion-workbench`，所以没有远端 check run，可验证结论以本地完整门禁为准。
 
 ## 上下文和方向
 

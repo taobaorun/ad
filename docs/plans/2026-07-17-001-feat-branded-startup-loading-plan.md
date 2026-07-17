@@ -13,7 +13,7 @@ execution: code
 ## 目标摘要
 
 - **目标：** 用品牌化 AD Loading 替换过早消失的 skeleton，在首次启动初始化期间持续可见，并在启动任务结束后自然显示主界面。
-- **权威来源：** 用户指定 logo、精确文案 “Be Water, My Friend”、文字探照灯与 Loading 到主界面的过渡。`AGENTS.md`、`docs/CODE_STYLE.md`、`docs/DESIGN.md`、`docs/design-docs/theme-system.md` 和已批准的 `docs/exec-plans/active/branded-startup-loading.md` 共同约束实现。
+- **权威来源：** 用户指定 logo、精确文案 “Be Water, My Friend”、文字探照灯与 Loading 到主界面的过渡。`AGENTS.md`、`docs/CODE_STYLE.md`、`docs/DESIGN.md`、`docs/design-docs/theme-system.md` 和已批准的 `docs/exec-plans/completed/branded-startup-loading.md` 共同约束实现。
 - **执行方式：** 先写生命周期和静态合同测试，再实现、构建 production 包，并在真实 macOS 冷启动中验证视觉效果。
 - **停止条件：** 如果真实冷启动证明主要耗时发生在 WebView 创建前的 Rust migration，或实现需要第二个 Tauri 窗口、延迟主窗口显示、修改 Agent 数据合同或引入第三套主题色，则停止扩展本任务。
 - **尾部责任：** ExecPlan 获批后，由 LFG 完成实现、简化、审查修复、浏览器/Tauri QA、提交、推送、PR 与 CI 跟进。
