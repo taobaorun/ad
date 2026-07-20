@@ -473,7 +473,7 @@ function ConversionSelect({ children, disabled, ...props }: ConversionSelectProp
       <select
         {...props}
         disabled={disabled}
-        className="h-9 w-full appearance-none rounded-md border border-input bg-background bg-none px-2 pr-8 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+        className="h-9 w-full appearance-none rounded-md border border-input bg-background bg-none px-2 pr-8 text-sm focus-visible:!outline-none focus-visible:!ring-2 focus-visible:!ring-link disabled:cursor-not-allowed disabled:opacity-50"
       >
         {children}
       </select>
