@@ -27,7 +27,7 @@
     .flow{padding:26px;background:var(--crust);border:1px solid var(--surface0);border-radius:16px;overflow:auto}.flow svg{display:block;min-width:820px;width:100%}.flow text{font-family:var(--mono)}
     table{width:100%;border-collapse:separate;border-spacing:0;background:var(--mantle);border:1px solid var(--surface0);border-radius:14px;overflow:hidden}th,td{text-align:left;padding:13px 15px;border-bottom:1px solid var(--surface0);vertical-align:top}tr:last-child td{border-bottom:0}th{font:600 10px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--overlay2);background:var(--crust)}td{font-size:13px;color:var(--subtext1)}td:first-child{color:var(--text);font-weight:650}
     .demo{background:var(--mantle);border:1px solid var(--surface0);border-radius:14px;overflow:hidden}.demo-head{height:38px;padding:0 14px;display:flex;align-items:center;background:var(--crust);border-bottom:1px solid var(--surface0);font:600 12px var(--mono)}.demo-body{display:grid;grid-template-columns:165px 1fr;min-height:190px}.demo-side{padding:14px;background:var(--mantle);border-right:1px solid var(--surface0)}.nav-row{padding:7px 9px;border-radius:7px;color:var(--subtext0);font-size:12px;margin-bottom:4px}.nav-row.active{background:var(--surface0);color:var(--text);box-shadow:inset 2px 0 var(--sapphire)}.demo-main{padding:22px;background:var(--base)}.panel{padding:14px;border:1px solid var(--surface0);border-radius:10px;background:var(--mantle)}
-    .controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.btn{border:0;border-radius:8px;padding:8px 12px;font:650 12px var(--sans)}.primary{background:var(--sapphire);color:var(--base)}.secondary{background:var(--surface0);color:var(--text);border:1px solid var(--surface1)}.danger{background:var(--red);color:var(--base)}.focus{box-shadow:0 0 0 2px var(--sapphire),0 0 0 3px var(--text)}
+    .controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.btn{border:0;border-radius:8px;padding:8px 12px;font:650 12px var(--sans)}.primary{background:var(--sapphire);color:var(--base)}.secondary{background:var(--surface0);color:var(--text);border:1px solid var(--surface1)}.danger{background:var(--red);color:var(--base)}.focus{box-shadow:0 0 0 2px var(--blue)}
     .rule{display:flex;gap:12px;padding:15px 0;border-bottom:1px solid var(--surface0)}.rule:last-child{border-bottom:0}.num{width:27px;height:27px;display:grid;place-items:center;flex:0 0 auto;border-radius:8px;background:var(--surface0);color:var(--sapphire);font:700 11px var(--mono)}.rule strong{display:block;margin-bottom:3px}.rule span{color:var(--subtext0);font-size:13px}
     .do{border-color:color-mix(in srgb,var(--green) 36%,var(--surface0))}.dont{border-color:color-mix(in srgb,var(--red) 36%,var(--surface0))}.do h3{color:var(--green)}.dont h3{color:var(--red)}
     footer{padding-top:22px;border-top:1px solid var(--surface0);color:var(--overlay2);font-size:12px}
@@ -46,7 +46,7 @@
     <article class="card"><div class="k">04 · Access</div><h3>可读性优先</h3><p>关键文本不降到 Overlay；状态同时依靠文案、图标、边框或形状。</p></article>
   </div></section>
 
-  <section id="palette"><h2>Mocha palette</h2><p class="intro">以下值来自 Catppuccin 官方 palette。Sapphire 是 primary/focus，Blue 是 link，Sky、Green、Yellow、Red 分别承担 info、success、warning、error，避免以紫色塑造产品身份。</p><div class="swatches">
+  <section id="palette"><h2>Mocha palette</h2><p class="intro">以下值来自 Catppuccin 官方 palette。Sapphire 是 primary，Blue 是 link/focus，Sky、Green、Yellow、Red 分别承担 info、success、warning、error，避免以紫色塑造产品身份。</p><div class="swatches">
     <div class="swatch"><div class="chip" style="background:#1e1e2e"></div><span class="name">Base</span><span class="hex">#1e1e2e</span></div>
     <div class="swatch"><div class="chip" style="background:#181825"></div><span class="name">Mantle</span><span class="hex">#181825</span></div>
     <div class="swatch"><div class="chip" style="background:#11111b"></div><span class="name">Crust</span><span class="hex">#11111b</span></div>
@@ -74,16 +74,16 @@
     <tr><td>Chrome</td><td>Crust · #11111b</td><td>Crust · #dce0e8</td><td>Titlebar、首帧与最外层</td></tr>
     <tr><td>Surface</td><td>Surface 0 / 1 / 2</td><td>Surface 0 / 1 / 2</td><td>Card、input、hover、active</td></tr>
     <tr><td>Text hierarchy</td><td>Text / Subtext / Overlay</td><td>Text / Subtext / Overlay</td><td>正文、说明、非关键细节</td></tr>
-    <tr><td>Action &amp; focus</td><td>Sapphire + Text outer edge</td><td>Sapphire + Text outer edge</td><td>Primary、selected、dual-tone focus ring</td></tr>
+    <tr><td>Primary action</td><td>Sapphire</td><td>Sapphire</td><td>Primary、selected</td></tr>
     <tr><td>On primary</td><td>Crust · #11111b</td><td>稳定深色 · #11111b</td><td>避免 Latte Base/Text 在 Sapphire 上对比不足</td></tr>
     <tr><td>On danger</td><td>Crust · #11111b</td><td>Base · #eff1f5</td><td>保证 Red 上常规按钮标签达到 4.5:1</td></tr>
-    <tr><td>Link / info</td><td>Blue / Sky</td><td>同名色</td><td>可导航文本 / 非阻断信息</td></tr>
+    <tr><td>Link / focus / info</td><td>Blue / Blue / Sky</td><td>同名色</td><td>可导航文本 / 2px 单层焦点环 / 非阻断信息</td></tr>
     <tr><td>Status</td><td>Green / Yellow / Red</td><td>同名色</td><td>Success / warning / error</td></tr>
   </tbody></table></section>
 
   <section id="components"><h2>组件状态样本</h2><p class="intro">这不是布局重设计，而是所有现有组件必须共享的颜色、边界与 focus 语言。</p><div class="grid two">
     <div class="demo"><div class="demo-head">AD / Mocha</div><div class="demo-body"><aside class="demo-side"><div class="nav-row active">sofampy</div><div class="nav-row">Agent profiles</div><div class="nav-row">Settings</div></aside><div class="demo-main"><div class="k">Project settings</div><h3 style="margin-top:7px">Configuration</h3><div class="panel"><span style="color:var(--subtext1)">Surface 0 card with semantic border</span><div class="controls"><button class="btn primary focus">Apply</button><button class="btn secondary">Preview</button><button class="btn danger">Delete</button></div></div></div></div></div>
-    <div class="card"><h3>状态合同</h3><div class="rule"><div class="num">1</div><div><strong>Primary</strong><span>Sapphire + on-primary；focus 使用 Sapphire 内圈与 Text 外轮廓。</span></div></div><div class="rule"><div class="num">2</div><div><strong>Secondary / Ghost</strong><span>Surface 层级表达 hover，不引入透明白灰。</span></div></div><div class="rule"><div class="num">3</div><div><strong>Danger</strong><span>Red 搭配独立 on-danger；危险对话框仍需明确文案。</span></div></div><div class="rule"><div class="num">4</div><div><strong>CodeMirror</strong><span>官方 Mocha/Latte syntax；AD 只维护布局扩展。</span></div></div></div>
+    <div class="card"><h3>状态合同</h3><div class="rule"><div class="num">1</div><div><strong>Primary</strong><span>Sapphire + on-primary；focus 统一使用 2px Blue 单层可见焦点环。</span></div></div><div class="rule"><div class="num">2</div><div><strong>Secondary / Ghost</strong><span>Surface 层级表达 hover，不引入透明白灰。</span></div></div><div class="rule"><div class="num">3</div><div><strong>Danger</strong><span>Red 搭配独立 on-danger；危险对话框仍需明确文案。</span></div></div><div class="rule"><div class="num">4</div><div><strong>CodeMirror</strong><span>官方 Mocha/Latte syntax；AD 只维护布局扩展。</span></div></div></div>
   </div></section>
 
   <section id="startup"><h2>启动 Loading 生命周期</h2><p class="intro">首帧在 React bundle 之前出现，真实初始化完成后才揭幕；它是启动状态边界，不是虚假进度条。</p><div class="grid two">

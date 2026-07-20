@@ -40,10 +40,16 @@ describe('theme contract', () => {
     expect(contrastRatio('#eff1f5', '#d20f39')).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('gives native controls a dual-tone semantic focus indicator', () => {
+  it('gives native controls a single semantic focus indicator', () => {
     expect(themeCss).toContain(':root :is(button, a[href], input, textarea, select):focus-visible');
-    expect(themeCss).toContain('box-shadow: 0 0 0 2px rgb(var(--color-action-primary));');
-    expect(themeCss).toContain('outline: 1px solid rgb(var(--color-text-primary));');
+    expect(themeCss).toContain('--ring: var(--color-link);');
+    expect(themeCss).toContain('box-shadow: 0 0 0 2px rgb(var(--ring));');
+    expect(themeCss).toContain('outline: 2px solid transparent;');
+    expect(themeCss).not.toContain('outline: 1px solid rgb(var(--color-text-primary));');
+    expect(contrastRatio('#1e66f5', '#eff1f5')).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio('#1e66f5', '#ccd0da')).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio('#89b4fa', '#1e1e2e')).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio('#89b4fa', '#313244')).toBeGreaterThanOrEqual(3);
   });
 
   it('derives compatibility aliases and Tailwind opacity from semantic roles', () => {
