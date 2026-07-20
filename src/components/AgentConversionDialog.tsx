@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowRightLeft, RotateCcw } from 'lucide-react';
+import { type ComponentPropsWithoutRef, useEffect, useMemo, useState } from 'react';
+import { ArrowRightLeft, ChevronDown, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { formatAgentError } from '@/lib/agentErrors';
@@ -103,14 +103,14 @@ function AgentConversionDialog({
     }
   }, [targetId, targetInstallations]);
   useEffect(() => {
-    if (!activeProjectPath && scope === 'project') setScope('user');
+    if (!activeProjectPath) setScope('user');
     setTargetModel('');
     setPermissionPreset('');
     setConfirmedSkillIds([]);
     setPreview(null);
     setReceipt(null);
     setError(null);
-  }, [activeProjectPath, scope]);
+  }, [activeProjectPath]);
 
   const source = useMemo(
     () => sourceInstallations.find((installation) => installation.id === sourceId),
@@ -274,7 +274,7 @@ function AgentConversionDialog({
           >
             {t('agentConversion.scope')}
           </label>
-          <select
+          <ConversionSelect
             id="conversion-scope"
             value={scope}
             disabled={busy}
@@ -283,13 +283,12 @@ function AgentConversionDialog({
               resetDecisions();
               resetResult();
             }}
-            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
           >
             <option value="user">{t('agentConversion.scopeUser')}</option>
             <option value="project" disabled={!activeProjectPath}>
               {t('agentConversion.scopeProject')}
             </option>
-          </select>
+          </ConversionSelect>
           <p className="mt-1 text-xs text-muted-foreground">
             {scope === 'project' && activeProjectPath ? (
               <>
@@ -373,7 +372,7 @@ function AgentConversionDialog({
               >
                 {t('agentConversion.codexPermissions')}
               </label>
-              <select
+              <ConversionSelect
                 id="conversion-permissions"
                 value={permissionPreset}
                 disabled={busy}
@@ -381,7 +380,6 @@ function AgentConversionDialog({
                   setPermissionPreset(event.target.value as PermissionPreset);
                   resetResult();
                 }}
-                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
               >
                 <option value="">{t('agentConversion.permissionsPreserve')}</option>
                 <option value="on_request_workspace_write">
@@ -390,7 +388,7 @@ function AgentConversionDialog({
                 <option value="never_danger_full_access">
                   {t('agentConversion.permissionsBypass')}
                 </option>
-              </select>
+              </ConversionSelect>
               <p
                 className={`mt-1 text-xs ${
                   permissionPreset === 'never_danger_full_access'
@@ -467,6 +465,28 @@ interface InstallationSelectProps {
   onChange: (id: AgentInstallation['id']) => void;
 }
 
+type ConversionSelectProps = Omit<ComponentPropsWithoutRef<'select'>, 'className'>;
+
+function ConversionSelect({ children, disabled, ...props }: ConversionSelectProps) {
+  return (
+    <span className="relative block">
+      <select
+        {...props}
+        disabled={disabled}
+        className="h-9 w-full appearance-none rounded-md border border-input bg-background bg-none px-2 pr-8 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {children}
+      </select>
+      <ChevronDown
+        aria-hidden="true"
+        className={`pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground ${
+          disabled ? 'opacity-50' : ''
+        }`}
+      />
+    </span>
+  );
+}
+
 function InstallationSelect({
   id,
   label,
@@ -480,7 +500,7 @@ function InstallationSelect({
       <label htmlFor={id} className="mb-1 block text-xs font-medium text-muted-foreground">
         {label}
       </label>
-      <select
+      <ConversionSelect
         id={id}
         value={value ?? ''}
         disabled={disabled}
@@ -490,14 +510,13 @@ function InstallationSelect({
           );
           if (selected) onChange(selected.id);
         }}
-        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
       >
         {installations.map((installation) => (
           <option key={installation.id} value={installation.id}>
             {installation.rootPath}
           </option>
         ))}
-      </select>
+      </ConversionSelect>
     </div>
   );
 }
