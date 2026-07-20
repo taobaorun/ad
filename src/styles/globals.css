@@ -71,7 +71,7 @@
     --destructive-foreground: var(--color-on-danger);
     --border: var(--color-border-subtle);
     --input: var(--color-border-strong);
-    --ring: var(--color-action-primary);
+    --ring: var(--color-link);
     --radius: 0.5rem;
 
     /* Compatibility bridge for existing inline styles. New UI uses semantic classes. */
@@ -158,13 +158,13 @@ button, [role="button"], label, nav, header, aside {
   user-select: none;
 }
 
-/* All native controls get the same keyboard-only focus treatment. Sapphire
-   carries product identity; the outer Text outline preserves visibility on
-   Latte surfaces where Sapphire alone is below 3:1 against the background. */
+/* All native controls get the same keyboard-only focus treatment. Blue keeps
+   the single visible ring above 3:1 contrast in both themes; the transparent
+   outline remains available to forced-colors mode without drawing a second line. */
 :root :is(button, a[href], input, textarea, select):focus-visible {
-  box-shadow: 0 0 0 2px rgb(var(--color-action-primary));
-  outline: 1px solid rgb(var(--color-text-primary));
-  outline-offset: 3px;
+  box-shadow: 0 0 0 2px rgb(var(--ring));
+  outline: 2px solid transparent;
+  outline-offset: 2px;
 }
 
 /* Theme-aware scrollbars use non-critical Overlay roles in both flavors. */

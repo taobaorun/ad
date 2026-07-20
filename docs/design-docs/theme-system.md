@@ -48,7 +48,7 @@ UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 | Canvas / pane / chrome | `--color-bg-canvas` / `--color-bg-pane` / `--color-bg-chrome`                                      | `background` / `pane` / `chrome`                                     |
 | Surface hierarchy      | `--color-bg-surface` / `--color-bg-surface-hover` / `--color-bg-surface-active`                    | `surface` / `surface-hover` / `surface-active`                       |
 | Text hierarchy         | `--color-text-primary` / `--color-text-secondary` / `--color-text-muted` / `--color-text-disabled` | `foreground` / `muted-foreground`，其余通过基础组件消费              |
-| Border / focus         | `--color-border-subtle` / `--color-border-strong` / `--color-action-primary`                       | `border` / `input` / `ring`                                          |
+| Border / focus         | `--color-border-subtle` / `--color-border-strong` / `--color-link`                                 | `border` / `input` / `ring`                                          |
 | Action / navigation    | `--color-action-primary` / `--color-on-primary` / `--color-on-danger` / `--color-link`             | `primary` / `primary-foreground` / `destructive-foreground` / `link` |
 | Feedback               | `--color-info` / `--color-success` / `--color-warning` / `--color-danger`                          | `info` / `success` / `warning` / `destructive`                       |
 | Overlay / editor       | `--color-overlay` / `--color-editor-cursor`                                                        | `overlay` / 由官方 CodeMirror theme 消费                             |
@@ -68,20 +68,20 @@ UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 
 ### 文本、边界与反馈
 
-| AD 语义角色            | Catppuccin 色         | 规则                                                                                                                                                                                   |
-| ---------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Primary text           | Text                  | 标题、正文、重要数值                                                                                                                                                                   |
-| Secondary text         | Subtext 1             | 标签、说明、次级正文                                                                                                                                                                   |
-| Muted text             | Subtext 0 / Overlay 2 | 元数据、占位符；关键操作不得低于此层                                                                                                                                                   |
-| Disabled text          | Overlay 1             | 必须配合透明度或 disabled 状态                                                                                                                                                         |
-| Border subtle / strong | Surface 0 / Surface 1 | 通过层级而非白色透明度构造边界                                                                                                                                                         |
-| Primary action / focus | Sapphire              | 主要按钮、选中、focus ring；Mocha on-primary 使用 Crust，Latte 使用稳定深色 `#11111b`，避免 Base/Text 在 Sapphire 上低于可读对比；focus 外缘同时使用 Text，保证 Latte 背景上的轮廓可见 |
-| Link                   | Blue                  | 链接和可导航文本                                                                                                                                                                       |
-| Information            | Sky                   | 信息提示和非阻断说明                                                                                                                                                                   |
-| Success                | Green                 | 成功、干净状态、完成                                                                                                                                                                   |
-| Warning                | Yellow                | 警告、待处理、风险提示                                                                                                                                                                 |
-| Error / destructive    | Red                   | 错误、删除、危险操作                                                                                                                                                                   |
-| Editor cursor          | Rosewater             | CodeMirror caret；选区使用 Overlay 2 的 20%–30%                                                                                                                                        |
+| AD 语义角色            | Catppuccin 色         | 规则                                                                                                                 |
+| ---------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Primary text           | Text                  | 标题、正文、重要数值                                                                                                 |
+| Secondary text         | Subtext 1             | 标签、说明、次级正文                                                                                                 |
+| Muted text             | Subtext 0 / Overlay 2 | 元数据、占位符；关键操作不得低于此层                                                                                 |
+| Disabled text          | Overlay 1             | 必须配合透明度或 disabled 状态                                                                                       |
+| Border subtle / strong | Surface 0 / Surface 1 | 通过层级而非白色透明度构造边界                                                                                       |
+| Primary action         | Sapphire              | 主要按钮、选中；Mocha on-primary 使用 Crust，Latte 使用稳定深色 `#11111b`，避免 Base/Text 在 Sapphire 上低于可读对比 |
+| Link / focus           | Blue                  | 链接、可导航文本和统一的 2px 单层 focus ring；在 Mocha/Latte 的 Base 与 Surface 0 上均达到至少 3:1 对比度            |
+| Information            | Sky                   | 信息提示和非阻断说明                                                                                                 |
+| Success                | Green                 | 成功、干净状态、完成                                                                                                 |
+| Warning                | Yellow                | 警告、待处理、风险提示                                                                                               |
+| Error / destructive    | Red                   | 错误、删除、危险操作                                                                                                 |
+| Editor cursor          | Rosewater             | CodeMirror caret；选区使用 Overlay 2 的 20%–30%                                                                      |
 
 危险按钮标签使用独立的 `--color-on-danger`：Latte 映射 Base、Mocha 映射 Crust。不要复用为 Sapphire 优化的 `--color-on-primary`，否则 Latte Red 上的常规字号标签无法达到 4.5:1。
 
@@ -94,11 +94,11 @@ UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 - Ghost：透明背景；hover 进入 Surface 0。
 - Destructive：Red 语义色；危险确认必须同时保留明确文案。
 - Disabled：降低整体对比并禁用 pointer event；不能只把文字变成 Overlay。
-- Focus：统一 2px Sapphire ring + canvas offset，键盘导航始终可见。
+- Focus：统一 2px Blue 单层 ring；透明 outline 只作为 forced-colors 后备，不绘制第二条可见线，键盘导航始终可见。
 
 ### 输入、选择器与编辑器
 
-- 默认 Surface 0，边框 Surface 1；hover 提升边框，focus 使用 Sapphire ring。
+- 默认 Surface 0，边框 Surface 1；hover 提升边框，focus 使用 Blue 单层 ring。
 - placeholder 使用 Overlay 2，错误状态使用 Red 边框并显示错误文本。
 - CodeMirror 深色使用官方 `catppuccinMocha`，亮色使用 `catppuccinLatte`；AD 只追加布局和尺寸扩展，不复制 syntax 色表。
 - 行号、gutter、active line、fold placeholder 和 scrollbar 必须使用主题 token，不能遗留 One Dark 或透明白灰。
@@ -134,7 +134,7 @@ Splash 存在和退出期间，`#root` 必须同时保持 `inert` 与 `aria-hidd
 ## 无障碍与验证
 
 1. 主要正文、按钮标签和输入内容满足 WCAG AA 常规文本对比要求；较弱 Overlay 色只用于非关键辅助信息。
-2. 所有原生可交互控件在键盘 focus 时使用 Sapphire 内圈和 Text 外轮廓，hover 不是唯一反馈。
+2. 所有原生可交互控件在键盘 focus 时使用 2px Blue 单层可见焦点环；透明 outline 仅用于 forced-colors 后备，hover 不是唯一反馈。
 3. 错误、警告和成功同时包含文案或图标，不只依赖红黄绿。
 4. 主窗口、Settings、所有 overlay、CodeMirror 和首帧 splash 在 Mocha/Latte 下均做浏览器截图巡检。
 5. 主题契约测试固定官方 palette 值和核心语义映射，避免未来改动悄然引入第三套色表。
