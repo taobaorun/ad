@@ -69,6 +69,7 @@ pub fn activate_profile_inner(id: String) -> CmdResult<ActivationResult> {
     // 4. Append to history (per-file, crash-safe via write_atomic).
     write_history_entry(&ActivationLogEntry {
         ts: Utc::now(),
+        agent_id: profile.agent_id.clone(),
         from: from.clone(),
         to: profile.id.clone(),
         backup_path: backup_path.as_ref().map(|p| p.display().to_string()),
@@ -89,7 +90,7 @@ pub fn detect_claude_processes() -> CmdResult<Vec<ClaudeProcess>> {
     Ok(detect_claude_processes_inner())
 }
 
-fn detect_claude_processes_inner() -> Vec<ClaudeProcess> {
+pub(crate) fn detect_claude_processes_inner() -> Vec<ClaudeProcess> {
     let me = std::process::id();
     let mut sys = System::new_with_specifics(
         RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),

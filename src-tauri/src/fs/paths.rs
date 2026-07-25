@@ -27,6 +27,30 @@ pub fn claude_dir() -> Result<PathBuf, FsError> {
     Ok(home()?.join(".claude"))
 }
 
+pub fn codex_dir() -> Result<PathBuf, FsError> {
+    Ok(home()?.join(".codex"))
+}
+
+pub fn codex_config_path() -> Result<PathBuf, FsError> {
+    Ok(codex_dir()?.join("config.toml"))
+}
+
+pub fn codex_agents_path() -> Result<PathBuf, FsError> {
+    Ok(codex_dir()?.join("AGENTS.md"))
+}
+
+pub fn codex_skills_dir() -> Result<PathBuf, FsError> {
+    Ok(codex_dir()?.join("skills"))
+}
+
+pub fn codex_plugins_dir() -> Result<PathBuf, FsError> {
+    Ok(codex_dir()?.join("plugins"))
+}
+
+pub fn codex_rules_dir() -> Result<PathBuf, FsError> {
+    Ok(codex_dir()?.join("rules"))
+}
+
 pub fn claude_settings_path() -> Result<PathBuf, FsError> {
     Ok(claude_dir()?.join("settings.json"))
 }
@@ -73,6 +97,14 @@ pub fn active_pointer_path() -> Result<PathBuf, FsError> {
 
 pub fn state_dir() -> Result<PathBuf, FsError> {
     Ok(ad_home()?.join("state"))
+}
+
+pub fn project_codex_homes_dir() -> Result<PathBuf, FsError> {
+    Ok(ad_home()?.join("codex-homes"))
+}
+
+pub fn project_codex_runtimes_dir() -> Result<PathBuf, FsError> {
+    Ok(state_dir()?.join("codex-project-runtimes"))
 }
 
 pub fn projects_state_path() -> Result<PathBuf, FsError> {
@@ -151,6 +183,12 @@ mod tests {
                 home.join(".claude/settings.json")
             );
             assert_eq!(cc_projects_dir().unwrap(), home.join(".claude/projects"));
+            assert_eq!(codex_dir().unwrap(), home.join(".codex"));
+            assert_eq!(
+                codex_config_path().unwrap(),
+                home.join(".codex/config.toml")
+            );
+            assert_eq!(codex_agents_path().unwrap(), home.join(".codex/AGENTS.md"));
 
             // AD's own data lives under ~/.ad/
             assert_eq!(ad_home().unwrap(), home.join(".ad"));
@@ -161,6 +199,14 @@ mod tests {
             assert_eq!(history_dir().unwrap(), home.join(".ad/history"));
             assert_eq!(active_pointer_path().unwrap(), home.join(".ad/active"));
             assert_eq!(state_dir().unwrap(), home.join(".ad/state"));
+            assert_eq!(
+                project_codex_homes_dir().unwrap(),
+                home.join(".ad/codex-homes")
+            );
+            assert_eq!(
+                project_codex_runtimes_dir().unwrap(),
+                home.join(".ad/state/codex-project-runtimes")
+            );
             assert_eq!(
                 projects_state_path().unwrap(),
                 home.join(".ad/state/projects.json")

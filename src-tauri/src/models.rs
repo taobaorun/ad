@@ -22,6 +22,8 @@ pub struct ProfileFile {
     pub display_name: String,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(default = "default_agent_id")]
+    pub agent_id: String,
     #[serde(default = "default_color")]
     pub color: String,
     pub created_at: DateTime<Utc>,
@@ -100,6 +102,8 @@ pub struct ClaudeProcess {
 #[serde(rename_all = "camelCase")]
 pub struct ActivationLogEntry {
     pub ts: DateTime<Utc>,
+    #[serde(default = "default_agent_id")]
+    pub agent_id: String,
     pub from: Option<String>,
     pub to: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -123,6 +127,10 @@ pub struct Project {
     /// so pre-existing registry entries deserialize without a `pinned` key.
     #[serde(default)]
     pub pinned: bool,
+    /// Whether the AD-managed Project Codex Home inherits the Base user
+    /// config. Existing projects keep the historical inheritance behavior.
+    #[serde(default = "default_true")]
+    pub inherit_base_config: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -208,6 +216,10 @@ pub struct DetectedProject {
 
 fn default_color() -> String {
     "#7C3AED".into()
+}
+
+fn default_agent_id() -> String {
+    "claude-code".into()
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +344,7 @@ impl ProfileFile {
             id: "sample".into(),
             display_name: "Sample".into(),
             description: Some("Schema parity fixture".into()),
+            agent_id: default_agent_id(),
             color: default_color(),
             created_at: now,
             updated_at: now,
@@ -412,10 +425,23 @@ mod tests {
         });
         let p: ProfileFile = serde_json::from_value(v1).unwrap();
         assert_eq!(p.id, "old");
+        assert_eq!(p.agent_id, "claude-code");
         assert_eq!(p.settings.env.get("K").map(String::as_str), Some("V"));
         assert!(p.layers.shared.is_none());
         assert!(p.layers.local.is_none());
         assert!(p.layers.env.is_empty());
+    }
+
+    #[test]
+    fn old_activation_history_defaults_to_claude_code() {
+        let raw = serde_json::json!({
+            "ts": "2026-01-01T00:00:00Z",
+            "from": null,
+            "to": "default"
+        });
+        let entry: ActivationLogEntry = serde_json::from_value(raw).unwrap();
+
+        assert_eq!(entry.agent_id, "claude-code");
     }
 
     #[test]
@@ -437,6 +463,7 @@ mod tests {
             id: "layered".into(),
             display_name: "Layered".into(),
             description: None,
+            agent_id: "codex".into(),
             color: "#7C3AED".into(),
             created_at: now,
             updated_at: now,

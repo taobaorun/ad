@@ -19,14 +19,18 @@ use crate::models::{Project, ProjectStatus};
 use super::{CmdResult, CommandError};
 
 pub(crate) fn load() -> CmdResult<Vec<Project>> {
+    load_snapshot().map(|(projects, _)| projects)
+}
+
+pub(crate) fn load_snapshot() -> CmdResult<(Vec<Project>, Vec<u8>)> {
     let path = projects_state_path()?;
     if !path.exists() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
     let projects: Vec<Project> =
         serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))?;
-    Ok(projects)
+    Ok((projects, bytes))
 }
 
 pub(crate) fn save(projects: &[Project]) -> CmdResult<()> {
@@ -102,6 +106,7 @@ pub fn add_project(path: String) -> CmdResult<Project> {
         current_profile_id: None,
         last_applied: None,
         pinned: false,
+        inherit_base_config: true,
     };
     projects.push(project.clone());
     save(&projects)?;
@@ -148,6 +153,23 @@ pub fn set_project_pinned(path: String, pinned: bool) -> CmdResult<Project> {
         .ok_or_else(|| CommandError::Generic(format!("project not found: {path}")))?;
     p.pinned = pinned;
     let updated = p.clone();
+    save(&projects)?;
+    Ok(updated)
+}
+
+#[tauri::command]
+pub fn set_project_codex_config_inheritance(
+    path: String,
+    inherit_base_config: bool,
+) -> CmdResult<Project> {
+    let mut projects = load()?;
+    let target = path_match_target(&path);
+    let project = projects
+        .iter_mut()
+        .find(|project| target.iter().any(|candidate| candidate == &project.path))
+        .ok_or_else(|| CommandError::Generic(format!("project not found: {path}")))?;
+    project.inherit_base_config = inherit_base_config;
+    let updated = project.clone();
     save(&projects)?;
     Ok(updated)
 }
@@ -264,7 +286,11 @@ pub fn read_project_settings(project_path: String, layer: String) -> CmdResult<S
 /// Writes content directly to a project's settings file (atomic write + backup).
 /// `layer` is `"shared"` or `"local"`.
 #[tauri::command]
-pub fn write_project_settings(project_path: String, layer: String, content: String) -> CmdResult<()> {
+pub fn write_project_settings(
+    project_path: String,
+    layer: String,
+    content: String,
+) -> CmdResult<()> {
     let _: serde_json::Value = serde_json::from_str(&content)
         .map_err(|e| CommandError::Generic(format!("invalid JSON: {e}")))?;
     let file = settings_file_for(&project_path, &layer)?;
@@ -277,8 +303,8 @@ fn settings_file_for(project_path: &str, layer: &str) -> CmdResult<std::path::Pa
     let base = std::path::Path::new(project_path).join(".claude");
     match layer {
         "shared" => Ok(base.join("settings.json")),
-        "local"  => Ok(base.join("settings.local.json")),
-        other    => Err(CommandError::Generic(format!("unknown layer: {other}"))),
+        "local" => Ok(base.join("settings.local.json")),
+        other => Err(CommandError::Generic(format!("unknown layer: {other}"))),
     }
 }
 
@@ -315,6 +341,7 @@ mod tests {
 
         let project = add_project(p.to_string_lossy().into_owned()).unwrap();
         assert_eq!(project.display_name, "foo");
+        assert!(project.inherit_base_config);
         let canonical = std::fs::canonicalize(&p).unwrap();
         assert_eq!(project.path, canonical.to_string_lossy());
 
@@ -416,6 +443,45 @@ mod tests {
 
     #[test]
     #[serial(home_env)]
+    fn legacy_project_defaults_to_base_config_inheritance() {
+        let g = setup_home();
+        let project_path = make_project_dir(g.path(), "legacy");
+        ensure_dir(&state_dir().unwrap()).unwrap();
+        std::fs::write(
+            projects_state_path().unwrap(),
+            format!(
+                r#"[{{
+                    "path": "{}",
+                    "displayName": "legacy",
+                    "addedAt": "2026-07-25T00:00:00Z",
+                    "pinned": false
+                }}]"#,
+                project_path.display()
+            ),
+        )
+        .unwrap();
+
+        let projects = list_projects().unwrap();
+
+        assert_eq!(projects.len(), 1);
+        assert!(projects[0].inherit_base_config);
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn codex_config_inheritance_setting_persists() {
+        let g = setup_home();
+        let project_path = make_project_dir(g.path(), "isolated");
+        add_project(project_path.to_string_lossy().into_owned()).unwrap();
+
+        let updated = set_project_codex_config_inheritance("~/isolated".into(), false).unwrap();
+
+        assert!(!updated.inherit_base_config);
+        assert!(!list_projects().unwrap()[0].inherit_base_config);
+    }
+
+    #[test]
+    #[serial(home_env)]
     fn rename_rejects_empty_name() {
         let g = setup_home();
         let p = make_project_dir(g.path(), "foo");
@@ -464,7 +530,12 @@ mod tests {
         let p = make_project_dir(g.path(), "proj");
         std::fs::create_dir(p.join(".claude")).unwrap();
         let content = r#"{"ANTHROPIC_BASE_URL":"https://example.com"}"#;
-        write_project_settings(p.to_string_lossy().into_owned(), "local".into(), content.into()).unwrap();
+        write_project_settings(
+            p.to_string_lossy().into_owned(),
+            "local".into(),
+            content.into(),
+        )
+        .unwrap();
         let back = read_project_settings(p.to_string_lossy().into_owned(), "local".into()).unwrap();
         assert!(back.contains("example.com"));
     }

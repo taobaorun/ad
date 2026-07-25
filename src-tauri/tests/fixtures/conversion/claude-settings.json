@@ -1,0 +1,13 @@
+{
+  "model": "gpt-5.4",
+  "model_reasoning_effort": "high",
+  "model_verbosity": "high",
+  "sandbox_mode": "read-only",
+  "permissions": {
+    "allow": ["Read"]
+  },
+  "hooks": {
+    "PreToolUse": []
+  },
+  "claudeOnlyFlag": true
+}

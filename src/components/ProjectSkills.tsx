@@ -118,7 +118,10 @@ export function ProjectSkills({ projectPath }: Props) {
 
   if (loading && entries.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center text-sm" style={{ color: 'var(--ds-fg-4)' }}>
+      <div
+        className="flex h-full items-center justify-center text-sm"
+        style={{ color: 'var(--ds-fg-4)' }}
+      >
         Loading skills...
       </div>
     );
@@ -126,7 +129,10 @@ export function ProjectSkills({ projectPath }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderBottom: '0.5px solid var(--ds-line)' }}>
+      <div
+        className="flex items-center gap-2 px-4 py-2.5"
+        style={{ borderBottom: '0.5px solid var(--ds-line)' }}
+      >
         <Search className="h-3.5 w-3.5" style={{ color: 'var(--ds-fg-4)' }} />
         <input
           type="text"
@@ -198,10 +204,11 @@ export function ProjectSkills({ projectPath }: Props) {
               className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[var(--ds-bg-hover)]"
               style={{ background: 'var(--ds-bg-inset)' }}
             >
-              {expanded['__plugins__']
-                ? <ChevronDown className="h-3 w-3" style={{ color: 'var(--ds-fg-4)' }} />
-                : <ChevronRight className="h-3 w-3" style={{ color: 'var(--ds-fg-4)' }} />
-              }
+              {expanded['__plugins__'] ? (
+                <ChevronDown className="h-3 w-3" style={{ color: 'var(--ds-fg-4)' }} />
+              ) : (
+                <ChevronRight className="h-3 w-3" style={{ color: 'var(--ds-fg-4)' }} />
+              )}
               <span className="text-[12px] font-semibold">Plugins</span>
               <span className="text-[11px]" style={{ color: 'var(--ds-fg-4)' }}>
                 {plugins.length} plugins
@@ -218,10 +225,18 @@ export function ProjectSkills({ projectPath }: Props) {
                     <div
                       key={p.id}
                       className="flex items-center gap-3 py-[7px] text-[13px] transition-colors hover:bg-[var(--ds-bg-hover)]"
-                      style={{ borderTop: '0.5px solid color-mix(in srgb, var(--ds-line) 50%, transparent)', paddingLeft: 28, paddingRight: 12 }}
+                      style={{
+                        borderTop:
+                          '0.5px solid color-mix(in srgb, var(--ds-line) 50%, transparent)',
+                        paddingLeft: 28,
+                        paddingRight: 12,
+                      }}
                     >
                       <div className="min-w-[120px] font-medium">{name}</div>
-                      <div className="flex-1 truncate text-[12px]" style={{ color: 'var(--ds-fg-3)' }}>
+                      <div
+                        className="flex-1 truncate text-[12px]"
+                        style={{ color: 'var(--ds-fg-3)' }}
+                      >
                         {registry ?? ''}
                       </div>
                       <div className="w-9">
@@ -299,10 +314,11 @@ function SourceGroup({
         className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[var(--ds-bg-hover)]"
         style={{ background: 'var(--ds-bg-inset)' }}
       >
-        {collapsed
-          ? <ChevronRight className="h-3 w-3" style={{ color: 'var(--ds-fg-4)' }} />
-          : <ChevronDown className="h-3 w-3" style={{ color: 'var(--ds-fg-4)' }} />
-        }
+        {collapsed ? (
+          <ChevronRight className="h-3 w-3" style={{ color: 'var(--ds-fg-4)' }} />
+        ) : (
+          <ChevronDown className="h-3 w-3" style={{ color: 'var(--ds-fg-4)' }} />
+        )}
         <span className="text-[12px] font-semibold">{title}</span>
         <span className="text-[11px]" style={{ color: 'var(--ds-fg-4)' }}>
           {subtitle}
@@ -354,7 +370,11 @@ function SkillRow({
   return (
     <div
       className="flex items-center gap-3 py-[7px] text-[13px] transition-colors hover:bg-[var(--ds-bg-hover)]"
-      style={{ borderTop: '0.5px solid color-mix(in srgb, var(--ds-line) 50%, transparent)', paddingLeft: 28, paddingRight: 12 }}
+      style={{
+        borderTop: '0.5px solid color-mix(in srgb, var(--ds-line) 50%, transparent)',
+        paddingLeft: 28,
+        paddingRight: 12,
+      }}
     >
       <div className="min-w-[120px] font-medium">{entry.name}</div>
       <div className="flex-1 truncate text-[12px]" style={{ color: 'var(--ds-fg-3)' }}>
@@ -367,9 +387,9 @@ function SkillRow({
             onClick={onDemote}
             className="rounded-full px-2 py-0.5 text-[10px] transition-colors"
             style={{
-              background: 'color-mix(in srgb, var(--ds-clay) 15%, transparent)',
-              color: 'var(--ds-clay)',
-              border: '1px solid color-mix(in srgb, var(--ds-clay) 30%, transparent)',
+              background: 'rgb(var(--color-action-primary) / 0.15)',
+              color: 'rgb(var(--color-action-primary))',
+              border: '1px solid rgb(var(--color-action-primary) / 0.3)',
             }}
           >
             全局
@@ -378,7 +398,9 @@ function SkillRow({
       </div>
       <div className="w-9">
         {disabled ? (
-          <span className="text-[10px]" style={{ color: 'var(--ds-fg-4)', opacity: 0.5 }}>read-only</span>
+          <span className="text-[10px]" style={{ color: 'var(--ds-fg-4)', opacity: 0.5 }}>
+            read-only
+          </span>
         ) : (
           <Toggle on={enabled} onChange={onToggle} disabled={isGlobal} />
         )}
@@ -399,7 +421,7 @@ function DemoteDialog({
   const { t } = useTranslation();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay/65">
       <div
         className="w-[400px] rounded-xl p-5"
         style={{ background: 'var(--ds-bg-card)', border: '1px solid var(--ds-line)' }}

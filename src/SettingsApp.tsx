@@ -15,6 +15,7 @@ import { setLanguage, type Lang } from '@/i18n';
 import type { TerminalBackendId } from '@/lib/tauri';
 import { Keyboard, Languages, Terminal as TerminalIcon, History, Puzzle } from 'lucide-react';
 import { SkillSourcesSection } from '@/components/SkillSources';
+import { applyDocumentTheme } from '@/lib/theme';
 
 const TERMINAL_BACKENDS: TerminalBackendId[] = ['ghostty', 'cmux', 'apple-terminal', 'custom'];
 
@@ -26,20 +27,16 @@ export function SettingsApp() {
 
   const dark = useUiSettings((s) => s.darkMode);
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
+    applyDocumentTheme(dark);
   }, [dark]);
-
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        document.getElementById('ad-splash')?.remove();
-      });
-    });
-  }, []);
 
   const nav: { id: SectionId; label: string; icon: ReactNode }[] = [
     { id: 'general', label: t('settings.nav.general'), icon: <Languages className="h-4 w-4" /> },
-    { id: 'terminal', label: t('settings.nav.terminal'), icon: <TerminalIcon className="h-4 w-4" /> },
+    {
+      id: 'terminal',
+      label: t('settings.nav.terminal'),
+      icon: <TerminalIcon className="h-4 w-4" />,
+    },
     { id: 'skills', label: t('settings.skills.nav'), icon: <Puzzle className="h-4 w-4" /> },
     { id: 'shortcuts', label: t('settings.nav.shortcuts'), icon: <Keyboard className="h-4 w-4" /> },
     { id: 'legacy', label: t('settings.nav.legacy'), icon: <History className="h-4 w-4" /> },
@@ -94,15 +91,7 @@ function SectionHeader({ title, desc }: { title: string; desc?: string }) {
   );
 }
 
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: ReactNode;
-}) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <div className="mb-5">
       <div className="mb-1.5 text-[12px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -119,10 +108,7 @@ function GeneralSection() {
   const currentLang = (i18n.language as Lang) === 'zh' ? 'zh' : 'en';
   return (
     <>
-      <SectionHeader
-        title={t('settings.general.title')}
-        desc={t('settings.general.desc')}
-      />
+      <SectionHeader title={t('settings.general.title')} desc={t('settings.general.desc')} />
       <Field label={t('advanced.language')} hint={t('advanced.languageDesc')}>
         <div className="flex gap-2">
           <LangButton on={currentLang === 'zh'} onClick={() => setLanguage('zh')}>
@@ -144,10 +130,7 @@ function TerminalSection() {
 
   return (
     <>
-      <SectionHeader
-        title={t('settings.terminal.title')}
-        desc={t('settings.terminal.desc')}
-      />
+      <SectionHeader title={t('settings.terminal.title')} desc={t('settings.terminal.desc')} />
 
       <Field label={t('terminal.backendLabel')}>
         <div className="grid grid-cols-2 gap-2">
@@ -161,8 +144,8 @@ function TerminalSection() {
                 className={
                   'flex flex-col gap-1 rounded-md border p-2.5 text-left transition-colors ' +
                   (selected
-                    ? 'border-clay bg-clay/10 text-foreground'
-                    : 'border-border bg-background hover:border-clay/60')
+                    ? 'border-primary bg-primary/10 text-foreground'
+                    : 'border-border bg-background hover:border-primary/60')
                 }
               >
                 <span className="text-sm font-medium">{t(`terminal.backend.${id}`)}</span>
@@ -175,16 +158,6 @@ function TerminalSection() {
         </div>
       </Field>
 
-      <Field label={t('terminal.claudeBinLabel')} hint={t('terminal.claudeBinHint')}>
-        <input
-          type="text"
-          value={terminal.claudeBinPath}
-          onChange={(e) => setTerminal({ claudeBinPath: e.target.value })}
-          placeholder={t('terminal.claudeBinPlaceholder')}
-          className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-clay"
-        />
-      </Field>
-
       {terminal.backend === 'custom' && (
         <Field label={t('terminal.customTemplateLabel')} hint={t('terminal.customTemplateHint')}>
           <textarea
@@ -192,7 +165,7 @@ function TerminalSection() {
             onChange={(e) => setTerminal({ customCommand: e.target.value })}
             rows={3}
             placeholder="open -na WezTerm.app --args start --cwd {{cwd}} -- {{cmd}}"
-            className="w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-clay"
+            className="w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
           />
         </Field>
       )}
@@ -280,9 +253,7 @@ function ShortcutsSection() {
       const formatted = formatShortcut(e);
       if (!formatted) return;
       setRecording(false);
-      void setGlobalShortcut({ binding: formatted, enabled: true }).then((err) =>
-        setError(err),
-      );
+      void setGlobalShortcut({ binding: formatted, enabled: true }).then((err) => setError(err));
     };
     window.addEventListener('keydown', onKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
@@ -293,17 +264,12 @@ function ShortcutsSection() {
   }
 
   async function onReset() {
-    setError(
-      await setGlobalShortcut({ enabled: true, binding: DEFAULT_GLOBAL_SHORTCUT }),
-    );
+    setError(await setGlobalShortcut({ enabled: true, binding: DEFAULT_GLOBAL_SHORTCUT }));
   }
 
   return (
     <>
-      <SectionHeader
-        title={t('settings.shortcuts.title')}
-        desc={t('settings.shortcuts.desc')}
-      />
+      <SectionHeader title={t('settings.shortcuts.title')} desc={t('settings.shortcuts.desc')} />
 
       <label className="mb-5 flex cursor-pointer items-start gap-3 rounded-md border border-border p-3">
         <input
@@ -314,18 +280,14 @@ function ShortcutsSection() {
         />
         <div>
           <div className="text-sm font-medium">{t('settings.shortcuts.enableTitle')}</div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {t('settings.shortcuts.enableDesc')}
-          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{t('settings.shortcuts.enableDesc')}</p>
         </div>
       </label>
 
       <Field
         label={t('settings.shortcuts.bindingLabel')}
         hint={
-          recording
-            ? t('settings.shortcuts.recordingHint')
-            : t('settings.shortcuts.bindingHint')
+          recording ? t('settings.shortcuts.recordingHint') : t('settings.shortcuts.bindingHint')
         }
       >
         <div className="flex items-center gap-2">
@@ -336,8 +298,8 @@ function ShortcutsSection() {
             className={
               'inline-flex min-w-[140px] items-center justify-center gap-2 rounded-md border px-3 py-1.5 font-mono text-sm transition-colors ' +
               (recording
-                ? 'border-clay bg-clay/10 text-foreground'
-                : 'border-border bg-background hover:border-clay disabled:cursor-not-allowed disabled:opacity-50')
+                ? 'border-primary bg-primary/10 text-foreground'
+                : 'border-border bg-background hover:border-primary disabled:cursor-not-allowed disabled:opacity-50')
             }
           >
             {recording ? t('settings.shortcuts.recording') : prettyShortcut(gs.binding)}
@@ -345,7 +307,7 @@ function ShortcutsSection() {
           <button
             type="button"
             onClick={() => void onReset()}
-            className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground hover:border-clay hover:text-foreground"
+            className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground hover:border-primary hover:text-foreground"
           >
             {t('settings.shortcuts.reset')}
           </button>
@@ -367,10 +329,7 @@ function LegacySection() {
   const setShow = useUiSettings((s) => s.setShowLegacyActivation);
   return (
     <>
-      <SectionHeader
-        title={t('settings.legacy.title')}
-        desc={t('settings.legacy.desc')}
-      />
+      <SectionHeader title={t('settings.legacy.title')} desc={t('settings.legacy.desc')} />
       <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3">
         <input
           type="checkbox"
@@ -404,7 +363,7 @@ function LangButton({
         'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs ' +
         (on
           ? 'border-foreground bg-foreground text-background'
-          : 'border-border bg-background text-foreground hover:border-clay')
+          : 'border-border bg-background text-foreground hover:border-primary')
       }
     >
       {children}

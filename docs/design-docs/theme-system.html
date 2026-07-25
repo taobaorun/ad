@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AD 主题系统 · Catppuccin Mocha</title>
+  <style>
+    :root {
+      --rosewater:#f5e0dc;--flamingo:#f2cdcd;--pink:#f5c2e7;--sapphire:#74c7ec;
+      --red:#f38ba8;--peach:#fab387;--yellow:#f9e2af;--green:#a6e3a1;
+      --teal:#94e2d5;--sky:#89dceb;--blue:#89b4fa;--lavender:#b4befe;--text:#cdd6f4;
+      --subtext1:#bac2de;--subtext0:#a6adc8;--overlay2:#9399b2;--overlay1:#7f849c;
+      --overlay0:#6c7086;--surface2:#585b70;--surface1:#45475a;--surface0:#313244;
+      --base:#1e1e2e;--mantle:#181825;--crust:#11111b;
+      --sans:system-ui,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,"SF Mono",Menlo,monospace;
+    }
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--base);color:var(--text);font:15px/1.62 var(--sans);-webkit-font-smoothing:antialiased}
+    a{color:var(--blue)}code{font-family:var(--mono);font-size:.9em;color:var(--rosewater)}
+    .page{max-width:1120px;margin:auto;padding:54px 28px 96px}.eyebrow{font:600 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--sapphire)}
+    h1{margin:14px 0 14px;font-size:42px;line-height:1.12;letter-spacing:-.035em}h2{margin:0 0 8px;font-size:24px;letter-spacing:-.02em}h3{margin:0 0 10px;font-size:15px}
+    .lede{max-width:780px;color:var(--subtext1);font-size:17px}.status{display:inline-flex;margin-top:18px;padding:5px 10px;border:1px solid color-mix(in srgb,var(--yellow) 42%,transparent);border-radius:999px;color:var(--yellow);background:color-mix(in srgb,var(--yellow) 9%,transparent);font:600 11px var(--mono)}
+    nav{position:sticky;top:0;z-index:4;margin:38px 0 48px;padding:10px 12px;display:flex;gap:7px;flex-wrap:wrap;background:color-mix(in srgb,var(--mantle) 92%,transparent);backdrop-filter:blur(16px);border:1px solid var(--surface0);border-radius:12px}
+    nav a{padding:6px 10px;color:var(--subtext1);text-decoration:none;border-radius:7px;font-size:12px}nav a:hover{background:var(--surface0);color:var(--text)}
+    section{margin:0 0 62px}.intro{margin:0 0 24px;color:var(--subtext0);max-width:760px}.grid{display:grid;gap:16px}.four{grid-template-columns:repeat(4,1fr)}.three{grid-template-columns:repeat(3,1fr)}.two{grid-template-columns:repeat(2,1fr)}
+    .card{background:var(--mantle);border:1px solid var(--surface0);border-radius:14px;padding:20px}.card p{margin:7px 0 0;color:var(--subtext0);font-size:13px}.k{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--overlay2)}
+    .swatches{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}.swatch{min-width:0}.chip{height:70px;border-radius:10px;border:1px solid color-mix(in srgb,var(--text) 12%,transparent);margin-bottom:8px}.name{font:600 11px var(--mono);white-space:nowrap}.hex{font:10px var(--mono);color:var(--overlay2)}
+    .flow{padding:26px;background:var(--crust);border:1px solid var(--surface0);border-radius:16px;overflow:auto}.flow svg{display:block;min-width:820px;width:100%}.flow text{font-family:var(--mono)}
+    table{width:100%;border-collapse:separate;border-spacing:0;background:var(--mantle);border:1px solid var(--surface0);border-radius:14px;overflow:hidden}th,td{text-align:left;padding:13px 15px;border-bottom:1px solid var(--surface0);vertical-align:top}tr:last-child td{border-bottom:0}th{font:600 10px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--overlay2);background:var(--crust)}td{font-size:13px;color:var(--subtext1)}td:first-child{color:var(--text);font-weight:650}
+    .demo{background:var(--mantle);border:1px solid var(--surface0);border-radius:14px;overflow:hidden}.demo-head{height:38px;padding:0 14px;display:flex;align-items:center;background:var(--crust);border-bottom:1px solid var(--surface0);font:600 12px var(--mono)}.demo-body{display:grid;grid-template-columns:165px 1fr;min-height:190px}.demo-side{padding:14px;background:var(--mantle);border-right:1px solid var(--surface0)}.nav-row{padding:7px 9px;border-radius:7px;color:var(--subtext0);font-size:12px;margin-bottom:4px}.nav-row.active{background:var(--surface0);color:var(--text);box-shadow:inset 2px 0 var(--sapphire)}.demo-main{padding:22px;background:var(--base)}.panel{padding:14px;border:1px solid var(--surface0);border-radius:10px;background:var(--mantle)}
+    .controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.btn{border:0;border-radius:8px;padding:8px 12px;font:650 12px var(--sans)}.primary{background:var(--sapphire);color:var(--base)}.secondary{background:var(--surface0);color:var(--text);border:1px solid var(--surface1)}.danger{background:var(--red);color:var(--base)}.focus{box-shadow:0 0 0 2px var(--blue)}
+    .rule{display:flex;gap:12px;padding:15px 0;border-bottom:1px solid var(--surface0)}.rule:last-child{border-bottom:0}.num{width:27px;height:27px;display:grid;place-items:center;flex:0 0 auto;border-radius:8px;background:var(--surface0);color:var(--sapphire);font:700 11px var(--mono)}.rule strong{display:block;margin-bottom:3px}.rule span{color:var(--subtext0);font-size:13px}
+    .do{border-color:color-mix(in srgb,var(--green) 36%,var(--surface0))}.dont{border-color:color-mix(in srgb,var(--red) 36%,var(--surface0))}.do h3{color:var(--green)}.dont h3{color:var(--red)}
+    footer{padding-top:22px;border-top:1px solid var(--surface0);color:var(--overlay2);font-size:12px}
+    @media(max-width:850px){.four,.three,.two{grid-template-columns:1fr 1fr}.swatches{grid-template-columns:repeat(3,1fr)}}@media(max-width:580px){.page{padding:36px 18px 72px}h1{font-size:34px}.four,.three,.two{grid-template-columns:1fr}.demo-body{grid-template-columns:1fr}.demo-side{display:none}}
+  </style>
+</head>
+<body>
+<main class="page">
+  <header><div class="eyebrow">AD Design System · Theme</div><h1>Catppuccin Mocha，作为系统而非皮肤</h1><p class="lede">默认深色使用 Mocha，亮色兼容使用 Latte。所有界面先选择语义角色，再由主题映射颜色；主窗口、Settings、CodeMirror 与首帧原生背景共享同一视觉契约。</p><span class="status">已实现 · 2026-07-17</span></header>
+  <nav><a href="#principles">原则</a><a href="#palette">Palette</a><a href="#architecture">Token 架构</a><a href="#mapping">语义映射</a><a href="#components">组件状态</a><a href="#startup">启动 Loading</a><a href="#rules">未来约束</a></nav>
+
+  <section id="principles"><h2>设计原则</h2><p class="intro">Catppuccin 提供色彩语言，AD 的语义层负责产品一致性。强调色用于意义，中性色负责空间。</p><div class="grid four">
+    <article class="card"><div class="k">01 · Semantic</div><h3>语义优先</h3><p>组件使用 canvas、surface、text、action、status，不依赖 Mocha 色名。</p></article>
+    <article class="card"><div class="k">02 · Hierarchy</div><h3>中性色建层级</h3><p>Base、Mantle、Crust、Surface 建立窗口、pane 与控件深度。</p></article>
+    <article class="card"><div class="k">03 · Parity</div><h3>双主题同构</h3><p>Mocha 是默认；Latte 保留已发布 light mode，但语义角色完全一致。</p></article>
+    <article class="card"><div class="k">04 · Access</div><h3>可读性优先</h3><p>关键文本不降到 Overlay；状态同时依靠文案、图标、边框或形状。</p></article>
+  </div></section>
+
+  <section id="palette"><h2>Mocha palette</h2><p class="intro">以下值来自 Catppuccin 官方 palette。Sapphire 是 primary，Blue 是 link/focus，Sky、Green、Yellow、Red 分别承担 info、success、warning、error，避免以紫色塑造产品身份。</p><div class="swatches">
+    <div class="swatch"><div class="chip" style="background:#1e1e2e"></div><span class="name">Base</span><span class="hex">#1e1e2e</span></div>
+    <div class="swatch"><div class="chip" style="background:#181825"></div><span class="name">Mantle</span><span class="hex">#181825</span></div>
+    <div class="swatch"><div class="chip" style="background:#11111b"></div><span class="name">Crust</span><span class="hex">#11111b</span></div>
+    <div class="swatch"><div class="chip" style="background:#313244"></div><span class="name">Surface 0</span><span class="hex">#313244</span></div>
+    <div class="swatch"><div class="chip" style="background:#45475a"></div><span class="name">Surface 1</span><span class="hex">#45475a</span></div>
+    <div class="swatch"><div class="chip" style="background:#585b70"></div><span class="name">Surface 2</span><span class="hex">#585b70</span></div>
+    <div class="swatch"><div class="chip" style="background:#cdd6f4"></div><span class="name">Text</span><span class="hex">#cdd6f4</span></div>
+    <div class="swatch"><div class="chip" style="background:#bac2de"></div><span class="name">Subtext 1</span><span class="hex">#bac2de</span></div>
+    <div class="swatch"><div class="chip" style="background:#9399b2"></div><span class="name">Overlay 2</span><span class="hex">#9399b2</span></div>
+    <div class="swatch"><div class="chip" style="background:#74c7ec"></div><span class="name">Sapphire</span><span class="hex">#74c7ec</span></div>
+    <div class="swatch"><div class="chip" style="background:#89b4fa"></div><span class="name">Blue</span><span class="hex">#89b4fa</span></div>
+    <div class="swatch"><div class="chip" style="background:#f38ba8"></div><span class="name">Red</span><span class="hex">#f38ba8</span></div>
+  </div></section>
+
+  <section id="architecture"><h2>Token 架构</h2><p class="intro">Palette 只在 <code>globals.css</code> 出现一次。新组件不得跳过 AD semantic token 直接引用 palette 或 hex；旧 clay/rust/olive/oat/slate2 aliases 已删除。</p><div class="flow"><svg viewBox="0 0 900 250" role="img" aria-label="Catppuccin palette 到 AD 界面消费者的 token 流程">
+    <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#6c7086"/></marker></defs>
+    <g fill="#181825" stroke="#45475a"><rect x="20" y="85" width="190" height="80" rx="12"/><rect x="275" y="85" width="210" height="80" rx="12"/><rect x="555" y="20" width="320" height="48" rx="10"/><rect x="555" y="83" width="320" height="48" rx="10"/><rect x="555" y="146" width="320" height="48" rx="10"/><rect x="555" y="209" width="320" height="28" rx="10"/></g>
+    <g fill="#cdd6f4" font-size="13" text-anchor="middle"><text x="115" y="116">Official palette</text><text x="115" y="139" fill="#74c7ec">Mocha / Latte</text><text x="380" y="116">AD semantic roles</text><text x="380" y="139" fill="#bac2de">canvas · text · action · status</text><text x="715" y="50">Tailwind aliases + UI primitives</text><text x="715" y="113">temporary --ds-* compatibility bridge</text><text x="715" y="176">official CodeMirror themes</text><text x="715" y="228" font-size="11">HTML splash + Rust native paint</text></g>
+    <g stroke="#6c7086" stroke-width="2" fill="none" marker-end="url(#arrow)"><path d="M210 125H275"/><path d="M485 125C520 125 515 44 555 44"/><path d="M485 125H555"/><path d="M485 125C520 125 515 170 555 170"/><path d="M485 125C520 125 515 223 555 223"/></g>
+  </svg></div></section>
+
+  <section id="mapping"><h2>核心语义映射</h2><p class="intro">Mocha/Latte 的角色保持一致，组件无需知道当前 flavor。</p><table><thead><tr><th>AD role</th><th>Mocha</th><th>Latte</th><th>用途</th></tr></thead><tbody>
+    <tr><td>Canvas</td><td>Base · #1e1e2e</td><td>Base · #eff1f5</td><td>主内容与 editor 背景</td></tr>
+    <tr><td>Pane</td><td>Mantle · #181825</td><td>Mantle · #e6e9ef</td><td>Sidebar 与次级区域</td></tr>
+    <tr><td>Chrome</td><td>Crust · #11111b</td><td>Crust · #dce0e8</td><td>Titlebar、首帧与最外层</td></tr>
+    <tr><td>Surface</td><td>Surface 0 / 1 / 2</td><td>Surface 0 / 1 / 2</td><td>Card、input、hover、active</td></tr>
+    <tr><td>Text hierarchy</td><td>Text / Subtext / Overlay</td><td>Text / Subtext / Overlay</td><td>正文、说明、非关键细节</td></tr>
+    <tr><td>Primary action</td><td>Sapphire</td><td>Sapphire</td><td>Primary、selected</td></tr>
+    <tr><td>On primary</td><td>Crust · #11111b</td><td>稳定深色 · #11111b</td><td>避免 Latte Base/Text 在 Sapphire 上对比不足</td></tr>
+    <tr><td>On danger</td><td>Crust · #11111b</td><td>Base · #eff1f5</td><td>保证 Red 上常规按钮标签达到 4.5:1</td></tr>
+    <tr><td>Link / focus / info</td><td>Blue / Blue / Sky</td><td>同名色</td><td>可导航文本 / 2px 单层焦点环 / 非阻断信息</td></tr>
+    <tr><td>Status</td><td>Green / Yellow / Red</td><td>同名色</td><td>Success / warning / error</td></tr>
+  </tbody></table></section>
+
+  <section id="components"><h2>组件状态样本</h2><p class="intro">这不是布局重设计，而是所有现有组件必须共享的颜色、边界与 focus 语言。</p><div class="grid two">
+    <div class="demo"><div class="demo-head">AD / Mocha</div><div class="demo-body"><aside class="demo-side"><div class="nav-row active">sofampy</div><div class="nav-row">Agent profiles</div><div class="nav-row">Settings</div></aside><div class="demo-main"><div class="k">Project settings</div><h3 style="margin-top:7px">Configuration</h3><div class="panel"><span style="color:var(--subtext1)">Surface 0 card with semantic border</span><div class="controls"><button class="btn primary focus">Apply</button><button class="btn secondary">Preview</button><button class="btn danger">Delete</button></div></div></div></div></div>
+    <div class="card"><h3>状态合同</h3><div class="rule"><div class="num">1</div><div><strong>Primary</strong><span>Sapphire + on-primary；focus 统一使用 2px Blue 单层可见焦点环。</span></div></div><div class="rule"><div class="num">2</div><div><strong>Secondary / Ghost</strong><span>Surface 层级表达 hover，不引入透明白灰。</span></div></div><div class="rule"><div class="num">3</div><div><strong>Danger</strong><span>Red 搭配独立 on-danger；危险对话框仍需明确文案。</span></div></div><div class="rule"><div class="num">4</div><div><strong>CodeMirror</strong><span>官方 Mocha/Latte syntax；AD 只维护布局扩展。</span></div></div></div>
+  </div></section>
+
+  <section id="startup"><h2>启动 Loading 生命周期</h2><p class="intro">首帧在 React bundle 之前出现，真实初始化完成后才揭幕；它是启动状态边界，不是虚假进度条。</p><div class="grid two">
+    <article class="card"><div class="k">Visual contract</div><h3>Logo + “Be Water, My Friend”</h3><p>只显示现有 AD logo 和原句。探照灯每 10ms 前进一步，30 步完成一轮 300ms 扫描；高光只裁剪在字形内，并由启动 helper 驱动以保证 WKWebView 逐帧重绘且不与屏幕刷新率混叠。Mocha/Latte 非高亮对比度均不低于 4.5:1。reduced-motion 停止 logo 呼吸和高光循环。</p></article>
+    <article class="card"><div class="k">Ready contract</div><h3>真实 settlement + 12s deadline</h3><p>Agents 与 Projects 并行，Profiles 等 Agent attempt。全部 settle 后揭幕；rejection 或整体超时 fail-open，晚到的幂等 read 仍可渐进更新 store。</p></article>
+    <article class="card"><div class="k">Access boundary</div><h3>遮罩退出前保持 root 隔离</h3><p>Splash 存在和 260ms 交叉淡入淡出期间，React root 保持 inert + aria-hidden。静态层只暴露一个 localized polite/atomic status，移除遮罩后恢复且不抢焦点。</p></article>
+    <article class="card"><div class="k">Window scope</div><h3>主窗口协调，Settings 只复用首帧</h3><p>主窗口等待三组 store 初始化；Settings route 不触发这些读取，只在自身首次 paint 后执行相同揭幕协议。</p></article>
+  </div></section>
+
+  <section id="rules"><h2>未来功能必须遵循</h2><div class="grid two"><article class="card do"><h3>应当</h3><p>先选择语义角色；缺少角色时更新设计文档与基础层；双主题、键盘 focus、状态非颜色线索一起验收。</p></article><article class="card dont"><h3>禁止</h3><p>新增 raw hex、<code>bg-black/*</code>、framework emerald/red、透明白灰或新的 <code>--ds-*</code> 产品样式。用户 Profile 数据色是明确例外。</p></article></div><div class="grid two" style="margin-top:16px"><article class="card"><h3>自动守卫</h3><p><code>themeContract.test.ts</code> 固定 palette、首帧、label contrast 与 focus；<code>themeSurfaces.test.tsx</code> 递归拒绝产品 TSX 原始色并校验兼容 token 完整性。</p></article><article class="card"><h3>运行时边界</h3><p><code>theme.ts</code> 同步双窗口根节点；Rust 固定 native paint；JsonEditor 只切换官方 Catppuccin extension。</p></article></div></section>
+  <footer>已实现真理源：<code>docs/design-docs/theme-system.md</code> · 官方依据：Catppuccin palette、Style Guide 与 CodeMirror 6 port。</footer>
+</main>
+</body>
+</html>

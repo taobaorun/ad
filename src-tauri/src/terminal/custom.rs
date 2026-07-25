@@ -5,7 +5,7 @@
 //
 // We substitute:
 //   {{cwd}} -> POSIX-quoted project path
-//   {{cmd}} -> POSIX-quoted full claude invocation (currently just claude_bin)
+//   {{cmd}} -> POSIX-quoted Agent program, arguments, and environment
 //
 // The substituted string is then handed to `sh -c`. We intentionally pre-quote
 // the substitutions so the template author doesn't have to worry about paths
@@ -27,7 +27,7 @@ pub fn launch(spec: &LaunchSpec<'_>) -> Result<()> {
         .to_str()
         .ok_or_else(|| anyhow!("non-utf8 project path"))?;
 
-    let cmd = render_template(template, cwd, spec.claude_bin);
+    let cmd = render_template(template, cwd, &spec.command());
 
     let status = Command::new("sh")
         .arg("-c")
@@ -40,10 +40,10 @@ pub fn launch(spec: &LaunchSpec<'_>) -> Result<()> {
     Ok(())
 }
 
-fn render_template(template: &str, cwd: &str, claude_bin: &str) -> String {
+fn render_template(template: &str, cwd: &str, command: &str) -> String {
     template
         .replace("{{cwd}}", &shell_quote(cwd))
-        .replace("{{cmd}}", &shell_quote(claude_bin))
+        .replace("{{cmd}}", command)
 }
 
 #[cfg(test)]
@@ -55,7 +55,7 @@ mod tests {
         let out = render_template(
             "open -na WezTerm.app --args start --cwd {{cwd}} -- {{cmd}}",
             "/Users/me/dev/proj",
-            "claude",
+            "'claude'",
         );
         assert_eq!(
             out,
@@ -68,7 +68,7 @@ mod tests {
         let out = render_template(
             "alacritty --working-directory {{cwd}} -e {{cmd}}",
             "/tmp/a b",
-            "claude",
+            "'claude'",
         );
         assert_eq!(out, "alacritty --working-directory '/tmp/a b' -e 'claude'");
     }

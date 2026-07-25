@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useProjects } from '@/store/projects';
 import { useProfiles } from '@/store/profiles';
@@ -25,7 +25,11 @@ export function ProjectSidebar() {
   useEffect(() => {
     void (async () => {
       await loadAll();
-      try { await refreshDetected(); } catch { /* backend logs */ }
+      try {
+        await refreshDetected();
+      } catch {
+        /* backend logs */
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -45,9 +49,7 @@ export function ProjectSidebar() {
   const q = query.trim().toLowerCase();
   const filtered = q
     ? projects.filter(
-        (p) =>
-          p.displayName.toLowerCase().includes(q) ||
-          p.path.toLowerCase().includes(q),
+        (p) => p.displayName.toLowerCase().includes(q) || p.path.toLowerCase().includes(q),
       )
     : projects;
   const pinnedCount = filtered.filter((p) => p.pinned).length;
@@ -103,10 +105,12 @@ export function ProjectSidebar() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Escape') setQuery(''); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setQuery('');
+              }}
               placeholder={t('sidebar.searchPlaceholder')}
               className="min-w-0 flex-1 bg-transparent text-[12px] outline-none"
-              style={{ color: 'hsl(var(--foreground))' }}
+              style={{ color: 'rgb(var(--foreground))' }}
             />
             {query && (
               <button
@@ -115,7 +119,13 @@ export function ProjectSidebar() {
                 title={t('sidebar.searchClear')}
                 aria-label={t('sidebar.searchClear')}
                 className="inline-flex items-center justify-center rounded hover:opacity-70"
-                style={{ color: 'var(--ds-fg-4)', background: 'transparent', border: 0, cursor: 'pointer', flexShrink: 0 }}
+                style={{
+                  color: 'var(--ds-fg-4)',
+                  background: 'transparent',
+                  border: 0,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
               >
                 <X className="h-3 w-3" />
               </button>
@@ -125,15 +135,24 @@ export function ProjectSidebar() {
       )}
 
       {/* List */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div
+        className="min-h-0 flex-1 overflow-y-auto px-2 py-2"
+        style={{ display: 'flex', flexDirection: 'column', gap: 2 }}
+      >
         {projects.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-4 text-center text-xs" style={{ color: 'var(--ds-fg-4)' }}>
+          <div
+            className="flex h-full items-center justify-center px-4 text-center text-xs"
+            style={{ color: 'var(--ds-fg-4)' }}
+          >
             {t('sidebar.noProjectsPrefix')}
             <KbdChip className="mx-1">⌘T</KbdChip>
             {t('sidebar.noProjectsSuffix')}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-4 text-center text-xs" style={{ color: 'var(--ds-fg-4)' }}>
+          <div
+            className="flex h-full items-center justify-center px-4 text-center text-xs"
+            style={{ color: 'var(--ds-fg-4)' }}
+          >
             {t('sidebar.noMatch', { query: query.trim() })}
           </div>
         ) : (
@@ -166,7 +185,11 @@ export function ProjectSidebar() {
           <>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-                <path d="M8 2l1.2 3.6 3.6 1.2-3.6 1.2L8 11.6 6.8 8 3.2 6.8 6.8 5.6 8 2z" fill="currentColor" opacity="0.7"/>
+                <path
+                  d="M8 2l1.2 3.6 3.6 1.2-3.6 1.2L8 11.6 6.8 8 3.2 6.8 6.8 5.6 8 2z"
+                  fill="currentColor"
+                  opacity="0.7"
+                />
               </svg>
               {t('sidebar.detectedCount', { count: unaddedDetected.length })}
             </span>
@@ -174,7 +197,12 @@ export function ProjectSidebar() {
               type="button"
               onClick={() => void openDetectedModal()}
               className="rounded px-1.5 py-0.5 text-xs font-medium hover:opacity-80"
-              style={{ color: 'var(--ds-accent)', background: 'transparent', border: 0, cursor: 'pointer' }}
+              style={{
+                color: 'var(--ds-accent)',
+                background: 'transparent',
+                border: 0,
+                cursor: 'pointer',
+              }}
             >
               {t('sidebar.review')}
             </button>
@@ -211,8 +239,11 @@ function ProjectRow({
   const [status, setStatus] = useState<ProjectStatus | null>(null);
   useEffect(() => {
     void (async () => {
-      try { setStatus(await tauri.getProjectStatus(project.path)); }
-      catch { setStatus(null); }
+      try {
+        setStatus(await tauri.getProjectStatus(project.path));
+      } catch {
+        setStatus(null);
+      }
     })();
   }, [project.path, project.lastApplied]);
 
@@ -244,9 +275,7 @@ function ProjectRow({
         padding: '10px 12px',
         // Active tint + 3px left accent bar use the bound profile color, so
         // the selection state and the profile binding read as one cue.
-        background: active
-          ? `color-mix(in srgb, ${dotColor} 12%, transparent)`
-          : 'transparent',
+        background: active ? `color-mix(in srgb, ${dotColor} 12%, transparent)` : 'transparent',
         boxShadow: active
           ? `inset 3px 0 0 ${dotColor}, 0 0 0 0.5px color-mix(in srgb, ${dotColor} 40%, transparent)`
           : undefined,
@@ -276,7 +305,10 @@ function ProjectRow({
           aria-pressed={pinned}
           title={pinned ? t('sidebar.unpin') : t('sidebar.pin')}
           aria-label={pinned ? t('sidebar.unpin') : t('sidebar.pin')}
-          onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePin();
+          }}
           className="inline-flex items-center justify-center rounded"
           style={{
             position: 'absolute',
@@ -309,16 +341,20 @@ function ProjectRow({
       </span>
       <span
         className="truncate text-[13px] font-medium"
-        style={{ color: 'hsl(var(--foreground))', gridRow: 1, gridColumn: 2 }}
+        style={{ color: 'rgb(var(--foreground))', gridRow: 1, gridColumn: 2 }}
       >
         {project.displayName}
       </span>
       <span
         style={{
-          width: 7, height: 7, borderRadius: '50%',
+          width: 7,
+          height: 7,
+          borderRadius: '50%',
           background: dotColor,
-          gridRow: 1, gridColumn: 3,
-          justifySelf: 'end', display: 'block',
+          gridRow: 1,
+          gridColumn: 3,
+          justifySelf: 'end',
+          display: 'block',
           flexShrink: 0,
         }}
         aria-label={profile ? t('sidebar.profileAria', { name: profile.displayName }) : undefined}
@@ -337,9 +373,13 @@ function ProjectRow({
         className="font-mono text-[10.5px]"
         style={{
           color: dirty ? 'var(--ds-warning)' : 'var(--ds-fg-3)',
-          gridRow: 3, gridColumn: '2 / 4',
-          display: 'flex', alignItems: 'center', gap: 6,
-          whiteSpace: 'nowrap', overflow: 'hidden',
+          gridRow: 3,
+          gridColumn: '2 / 4',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
           marginTop: 2,
         }}
       >
@@ -348,8 +388,18 @@ function ProjectRow({
         ) : (
           <>
             {gitStatus && <span>{gitStatus}</span>}
-            {lastLayer && <><span style={{ color: 'var(--ds-fg-5)' }}>·</span><span style={{ color: 'var(--ds-fg-3)' }}>{lastLayer}</span></>}
-            {lastTime && <><span style={{ color: 'var(--ds-fg-5)' }}>·</span><span style={{ color: 'var(--ds-fg-3)' }}>{lastTime}</span></>}
+            {lastLayer && (
+              <>
+                <span style={{ color: 'var(--ds-fg-5)' }}>·</span>
+                <span style={{ color: 'var(--ds-fg-3)' }}>{lastLayer}</span>
+              </>
+            )}
+            {lastTime && (
+              <>
+                <span style={{ color: 'var(--ds-fg-5)' }}>·</span>
+                <span style={{ color: 'var(--ds-fg-3)' }}>{lastTime}</span>
+              </>
+            )}
           </>
         )}
       </div>
@@ -357,7 +407,7 @@ function ProjectRow({
   );
 }
 
-function KbdChip({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+function KbdChip({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <span
       className={`inline-flex items-center justify-center rounded font-mono text-[10.5px] ${className}`}
@@ -368,7 +418,7 @@ function KbdChip({ children, className = '' }: { children: React.ReactNode; clas
         background: 'var(--ds-bg-soft)',
         border: '0.5px solid var(--ds-line)',
         color: 'var(--ds-fg-3)',
-        boxShadow: 'inset 0 -1px 0 rgba(0,0,0,0.06)',
+        boxShadow: 'inset 0 -1px 0 rgb(var(--color-text-primary) / 0.12)',
         whiteSpace: 'nowrap',
         flexShrink: 0,
       }}
@@ -386,7 +436,9 @@ function relativeTime(iso: string): string {
   const ts = new Date(iso).getTime();
   if (Number.isNaN(ts)) return iso;
   const diff = Math.max(0, Date.now() - ts);
-  const m = 60_000, h = 60 * m, d = 24 * h;
+  const m = 60_000,
+    h = 60 * m,
+    d = 24 * h;
   if (diff < m) return '刚刚';
   if (diff < h) return `${Math.floor(diff / m)}m ago`;
   if (diff < d) return `${Math.floor(diff / h)}h ago`;

@@ -30,7 +30,7 @@ pub fn open_settings_window(app: tauri::AppHandle) -> CmdResult<()> {
     let _ = win.eval(
         "requestAnimationFrame(function(){document.body.style.display='none';\
          void document.body.offsetHeight;\
-         document.body.style.display=''})"
+         document.body.style.display=''})",
     );
     Ok(())
 }

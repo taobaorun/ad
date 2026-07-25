@@ -65,8 +65,9 @@ export function ProfileEditor({ profileId, onDirty }: ProfileEditorProps = {}) {
     if (Object.keys(layers.env).length === 0) {
       const legacyEnv = (parsed.settings as Record<string, unknown>).env;
       if (legacyEnv && typeof legacyEnv === 'object' && !Array.isArray(legacyEnv)) {
-        const envEntries = Object.entries(legacyEnv as Record<string, unknown>)
-          .filter(([, v]) => typeof v === 'string');
+        const envEntries = Object.entries(legacyEnv as Record<string, unknown>).filter(
+          ([, v]) => typeof v === 'string',
+        );
         if (envEntries.length > 0) {
           layers = { ...layers, env: Object.fromEntries(envEntries) as Record<string, string> };
         }
@@ -179,9 +180,7 @@ export function ProfileEditor({ profileId, onDirty }: ProfileEditorProps = {}) {
 
   async function onCopyExport() {
     if (!draft) return;
-    const lines = Object.entries(draft.layers.env).map(
-      ([k, v]) => `export ${k}=${shellQuote(v)}`,
-    );
+    const lines = Object.entries(draft.layers.env).map(([k, v]) => `export ${k}=${shellQuote(v)}`);
     if (lines.length === 0) return;
     await navigator.clipboard.writeText(lines.join('\n') + '\n');
     setEnvCopied(true);
@@ -212,11 +211,7 @@ export function ProfileEditor({ profileId, onDirty }: ProfileEditorProps = {}) {
             </span>
           )}
         </div>
-        <Button
-          onClick={() => void onSave()}
-          disabled={!allValid || busy}
-          size="sm"
-        >
+        <Button onClick={() => void onSave()} disabled={!allValid || busy} size="sm">
           <Save className="h-4 w-4" />
           Save
         </Button>
@@ -254,7 +249,7 @@ export function ProfileEditor({ profileId, onDirty }: ProfileEditorProps = {}) {
         </div>
       )}
       {activateError && (
-        <div className="border-y border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+        <div className="border-y border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-foreground">
           {activateError}
         </div>
       )}

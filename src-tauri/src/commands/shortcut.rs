@@ -9,7 +9,9 @@
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager, Runtime};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState as ShortcutEventState};
+use tauri_plugin_global_shortcut::{
+    GlobalShortcutExt, Shortcut, ShortcutState as ShortcutEventState,
+};
 
 /// Default binding shipped with the app: `⌥⌘A`.
 pub const DEFAULT_BINDING: &str = "Alt+Cmd+KeyA";

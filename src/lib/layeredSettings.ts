@@ -7,9 +7,7 @@
  * components — keeps Vite fast-refresh happy.
  */
 
-export type LayerParse =
-  | { ok: true; value: unknown | undefined }
-  | { ok: false; message: string };
+export type LayerParse = { ok: true; value: unknown | undefined } | { ok: false; message: string };
 
 export function parseLayer(text: string): LayerParse {
   const trimmed = text.trim();

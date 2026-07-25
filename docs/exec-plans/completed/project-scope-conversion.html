@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ExecPlan — Project 级配置转换</title>
+  <style>
+    :root{--ivory:#FAF9F5;--paper:#FFF;--slate:#141413;--clay:#D97757;--oat:#E3DACC;--olive:#788C5D;--rust:#B04A3F;--g150:#F0EEE6;--g300:#D1CFC5;--g500:#87867F;--g700:#3D3D3A;--serif:ui-serif,Georgia,"Times New Roman",serif;--sans:system-ui,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,"SF Mono",Menlo,monospace}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--ivory);color:var(--g700);font:15px/1.6 var(--sans)}nav{position:sticky;top:0;z-index:5;background:rgba(250,249,245,.94);backdrop-filter:blur(12px);border-bottom:1px solid var(--g300)}nav div{max-width:1080px;margin:auto;padding:10px 28px;display:flex;gap:20px;overflow:auto}nav a{color:var(--g500);text-decoration:none;font:12px var(--mono);white-space:nowrap}nav a:hover{color:var(--clay)}main{max-width:1080px;margin:auto;padding:56px 28px 100px}header{max-width:860px;margin-bottom:40px}.eyebrow{font:12px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--clay)}h1,h2,h3{font-family:var(--serif);font-weight:500;color:var(--slate)}h1{font-size:42px;line-height:1.12;margin:12px 0 18px}h2{font-size:27px;margin:0 0 8px}h3{font-size:19px;margin:0 0 6px}.lead{font-size:17px;color:var(--g500)}.status{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:8px 12px;border:1px solid var(--oat);border-radius:999px;background:var(--paper);font:12px var(--mono)}.dot{width:8px;height:8px;border-radius:50%;background:var(--clay)}section{margin-top:58px}.intro{color:var(--g500);max-width:760px;margin:0 0 22px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card{background:var(--paper);border:1.5px solid var(--g300);border-radius:12px;padding:20px}.card .k{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--g500);margin-bottom:6px}.card .v{font-weight:650;color:var(--slate)}.accent{color:var(--clay)!important}.diagram{background:var(--paper);border:1.5px solid var(--g300);border-radius:14px;padding:24px;overflow:auto}.diagram svg{display:block;min-width:800px;width:100%;height:auto}.diagram text{font-family:var(--mono)}.decision{display:grid;grid-template-columns:35px 1fr;gap:14px;padding:16px 0;border-bottom:1px solid var(--g300)}.decision:last-child{border:0}.num{width:30px;height:30px;border-radius:9px;background:var(--oat);display:grid;place-items:center;font:12px var(--mono);color:var(--slate)}.timeline{border-left:2px solid var(--g300);margin-left:10px}.step{position:relative;padding:0 0 28px 28px}.step:last-child{padding-bottom:0}.step:before{content:"";position:absolute;left:-8px;top:4px;width:12px;height:12px;background:var(--paper);border:3px solid var(--clay);border-radius:50%}.step p{margin:3px 0;color:var(--g500)}code,.path{font-family:var(--mono);font-size:.9em}.files{display:grid;grid-template-columns:1fr 1fr;gap:14px}.file{padding:14px 16px;background:var(--g150);border:1px solid var(--g300);border-radius:10px}.file b{display:block;font:12px var(--mono);color:var(--slate);margin-bottom:4px}.checks{background:var(--paper);border:1.5px solid var(--g300);border-radius:12px;overflow:hidden}.check{display:flex;gap:12px;padding:13px 16px;border-bottom:1px solid var(--g300)}.check:last-child{border:0}.box{width:16px;height:16px;border:1.5px solid var(--g500);border-radius:4px;flex:none;margin-top:3px}.risk{border-left:4px solid var(--rust)}.note{border-left:4px solid var(--olive)}footer{margin-top:62px;padding-top:18px;border-top:1px solid var(--g300);font:12px var(--mono);color:var(--g500)}@media(max-width:780px){h1{font-size:34px}.grid,.files{grid-template-columns:1fr}main{padding:38px 18px 70px}}
+  </style>
+</head>
+<body>
+  <nav><div><a href="#goal">目标</a><a href="#flow">边界</a><a href="#decisions">决策</a><a href="#steps">步骤</a><a href="#files">文件</a><a href="#acceptance">验收</a><a href="#risks">风险</a></div></nav>
+  <main>
+    <header id="goal">
+      <div class="eyebrow">AD · ExecPlan review</div>
+      <h1>Project 级 Claude Code → Codex 配置转换</h1>
+      <p class="lead">在转换对话框中选择 Project 后，只把当前项目的 Claude shared/local 配置转换到该项目的 <span class="path">.codex/config.toml</span>。User 配置与全部 Claude 源保持不动。</p>
+      <div class="status"><span class="dot"></span>待用户确认 · 确认后自动完成实现、验证、构建与安装</div>
+    </header>
+
+    <div class="grid">
+      <div class="card"><div class="k">Scope contract</div><div class="v accent">一次只转换一个作用域</div></div>
+      <div class="card"><div class="k">Safety</div><div class="v">Source read-only · Target backup + rollback</div></div>
+      <div class="card"><div class="k">Delivery</div><div class="v">3 个里程碑 · 不推送远端</div></div>
+    </div>
+
+    <section id="flow">
+      <h2>作用域边界</h2>
+      <p class="intro">当前后端已有 Project 路径能力，但会同时扫描 User 与 Project；UI 又从未传入项目路径。本计划同时补齐可达性和隔离性。</p>
+      <div class="diagram">
+        <svg viewBox="0 0 940 330" role="img" aria-label="User 与 Project 转换的数据边界">
+          <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#D97757"/></marker></defs>
+          <rect x="24" y="28" width="410" height="120" rx="12" fill="#F0EEE6" stroke="#D1CFC5" stroke-width="1.5"/>
+          <text x="46" y="55" font-size="13" fill="#87867F">USER MODE</text><text x="46" y="86" font-size="14" fill="#141413">~/.claude/settings.json</text><path d="M205 99H322" stroke="#D97757" stroke-width="2" marker-end="url(#a)"/><text x="46" y="127" font-size="14" fill="#141413">only user scope</text><text x="330" y="86" font-size="14" fill="#141413">~/.codex/config.toml</text>
+          <rect x="24" y="180" width="892" height="122" rx="12" fill="#FFF" stroke="#D1CFC5" stroke-width="1.5"/>
+          <text x="46" y="208" font-size="13" fill="#87867F">PROJECT MODE · CURRENT PROJECT</text><text x="46" y="240" font-size="14" fill="#141413">.claude/settings.json</text><text x="46" y="266" font-size="14" fill="#141413">.claude/settings.local.json</text><path d="M302 244H602" stroke="#D97757" stroke-width="2" marker-end="url(#a)"/><text x="350" y="232" font-size="12" fill="#87867F">shared + local precedence</text><text x="625" y="252" font-size="14" fill="#141413">.codex/config.toml</text><text x="625" y="277" font-size="12" fill="#788C5D">User configs excluded</text>
+          <rect x="488" y="28" width="428" height="120" rx="12" fill="#FFF" stroke="#788C5D" stroke-width="1.5"/><text x="510" y="56" font-size="13" fill="#788C5D">SHARED SAFETY PIPELINE</text><text x="510" y="86" font-size="13" fill="#141413">preview → confirm → backup → atomic apply</text><text x="510" y="115" font-size="13" fill="#141413">receipt → digest-protected rollback</text>
+        </svg>
+      </div>
+    </section>
+
+    <section id="decisions"><h2>关键决策</h2><p class="intro">不引入新的 Agent 专属命令或第二套项目选择状态。</p>
+      <div class="card">
+        <div class="decision"><div class="num">1</div><div><h3>projectPath 推导唯一 scope</h3><p>无 projectPath 为 User；有 projectPath 为 Project。route 只处理该 scope 的 Settings、Skills 和 Plugins。</p></div></div>
+        <div class="decision"><div class="num">2</div><div><h3>绑定当前项目</h3><p>复用主窗口当前选中项目；Project 模式先由后端 canonicalize 两端 context。</p></div></div>
+        <div class="decision"><div class="num">3</div><div><h3>保持 backend-owned plan</h3><p>前端只显示 artifact 和提交 planId，不能指定物理路径或 mutation 内容。</p></div></div>
+      </div>
+    </section>
+
+    <section id="steps"><h2>实施步骤</h2><p class="intro">每个增量先写失败测试，再做最小实现并验证。</p>
+      <div class="timeline">
+        <div class="step"><h3>1. 后端作用域不变量</h3><p>集成测试复现 Project route 混入 User；过滤后验证真实 apply / rollback 只触达项目目标。</p></div>
+        <div class="step"><h3>2. UI 可达性</h3><p>加入 User / Project selector；Project 绑定当前项目并清除失效的旧 plan/receipt。</p></div>
+        <div class="step"><h3>3. 文档与交付</h3><p>同步中英文、as-built 设计和产品规格；跑全量门禁后构建、备份、安装并只读验收。</p></div>
+      </div>
+    </section>
+
+    <section id="files"><h2>影响文件</h2><div class="files">
+      <div class="file"><b>conversion_route.rs</b>单作用域过滤与 route 不变量</div><div class="file"><b>conversion_execution.rs</b>Project apply / rollback 隔离集成测试</div><div class="file"><b>AgentConversionDialog.tsx</b>作用域选择与当前项目上下文</div><div class="file"><b>AgentConversionDialog.test.tsx</b>Project 上下文和交互行为</div><div class="file"><b>zh.json · en.json</b>双语 scope 与项目提示</div><div class="file"><b>multi-agent docs · MD + HTML</b>设计语义与产品验收同步</div>
+    </div></section>
+
+    <section id="acceptance"><h2>验收清单</h2><div class="checks">
+      <div class="check"><span class="box"></span><span>User 模式不带 projectPath，只触达 Codex user config。</span></div><div class="check"><span class="box"></span><span>Project 模式只触达当前项目 <code>.codex/config.toml</code>。</span></div><div class="check"><span class="box"></span><span>Claude user/shared/local 与 Codex user 配置字节保持不变。</span></div><div class="check"><span class="box"></span><span>shared/local 按 local 覆盖后转换，冲突仍可见。</span></div><div class="check"><span class="box"></span><span>目标有备份，rollback 恢复；外部修改后拒绝静默覆盖。</span></div><div class="check"><span class="box"></span><span>前后端全量检查、生产 build、签名和原生只读验收通过。</span></div>
+    </div></section>
+
+    <section id="risks"><h2>风险与控制</h2><div class="grid">
+      <div class="card risk"><div class="k">Scope leak</div><div class="v">Project 误改 User</div><p>以 read-set、mutations、磁盘字节三层断言锁定边界。</p></div><div class="card note"><div class="k">Stale plan</div><div class="v">切换项目后沿用旧预览</div><p>scope / installation / project 变化即清空 preview 与 receipt。</p></div><div class="card note"><div class="k">Path alias</div><div class="v">macOS canonical path</div><p>调用既有 resolve_agent_context，不在前端自行处理。</p></div>
+    </div></section>
+    <footer>Truth source: docs/exec-plans/active/project-scope-conversion.md · Approved plan baseline (frozen at 2026-07-15 Asia/Shanghai). Live execution state: see docs/exec-plans/active/project-scope-conversion.md</footer>
+  </main>
+</body>
+</html>

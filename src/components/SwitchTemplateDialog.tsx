@@ -165,7 +165,7 @@ export function SwitchTemplateDialog({
           <LayerPicker layers={layers} onToggle={toggleLayer} />
 
           {dirtyBlocked && (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-foreground">
               <div className="mb-1 flex items-center gap-1.5 font-medium">
                 <AlertTriangle className="h-3.5 w-3.5" />
                 {t('switchTemplate.dirtyTitle')}
@@ -222,10 +222,7 @@ function LayerPicker({
       {items.map((item) => {
         const checked = layers.has(item.key);
         return (
-          <label
-            key={item.key}
-            className="flex cursor-pointer items-start gap-2.5 px-0.5 py-1"
-          >
+          <label key={item.key} className="flex cursor-pointer items-start gap-2.5 px-0.5 py-1">
             <input
               type="checkbox"
               checked={checked}
@@ -238,7 +235,7 @@ function LayerPicker({
                   {t(`switchTemplate.layers.${item.key}.label`)}
                 </span>
                 {item.gitTracked && (
-                  <span className="rounded border border-amber-700/20 bg-amber-500/10 px-1.5 py-px font-mono text-[10px] text-amber-700 dark:text-amber-300">
+                  <span className="rounded border border-warning/30 bg-warning/10 px-1.5 py-px font-mono text-[10px] text-foreground">
                     {t('switchTemplate.layers.gitTracked')}
                   </span>
                 )}
@@ -280,24 +277,17 @@ function TemplateList({
             key={p.id}
             type="button"
             onClick={() => onPick(p.id)}
-            className="grid cursor-pointer grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border border-border bg-muted/30 px-3.5 py-2.5 text-left transition-colors hover:border-clay/60"
+            className="grid cursor-pointer grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border border-border bg-muted/30 px-3.5 py-2.5 text-left transition-colors hover:border-primary/60"
           >
-            <span
-              className="h-2.5 w-2.5 rounded-full"
-              style={{ background: p.color }}
-            />
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: p.color }} />
             <div>
-              <div className="text-[13.5px] font-medium text-foreground">
-                {p.displayName}
-              </div>
+              <div className="text-[13.5px] font-medium text-foreground">{p.displayName}</div>
               {p.description && (
-                <div className="mt-0.5 text-[11.5px] text-muted-foreground">
-                  {p.description}
-                </div>
+                <div className="mt-0.5 text-[11.5px] text-muted-foreground">{p.description}</div>
               )}
             </div>
             {isCurrent && (
-              <span className="rounded border border-clay/30 bg-clay/10 px-1.5 py-0.5 font-mono text-[10.5px] text-clay">
+              <span className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[10.5px] text-primary">
                 {t('switchTemplate.currentTag')}
               </span>
             )}
@@ -319,18 +309,11 @@ function ChosenTemplateBanner({
   if (!profile) return null;
   return (
     <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted/40 px-3.5 py-2.5">
-      <span
-        className="h-2.5 w-2.5 shrink-0 rounded-full"
-        style={{ background: profile.color }}
-      />
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: profile.color }} />
       <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium text-foreground">
-          {profile.displayName}
-        </div>
+        <div className="text-[13px] font-medium text-foreground">{profile.displayName}</div>
         {profile.description && (
-          <div className="mt-0.5 text-[11.5px] text-muted-foreground">
-            {profile.description}
-          </div>
+          <div className="mt-0.5 text-[11.5px] text-muted-foreground">{profile.description}</div>
         )}
       </div>
       <Button variant="ghost" size="sm" onClick={onCancel}>

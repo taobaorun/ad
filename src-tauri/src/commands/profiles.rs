@@ -1,13 +1,23 @@
 use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard};
 
 use anyhow::Context;
 use chrono::Utc;
 
+use crate::agents::{builtin_registry, decode_profile, AgentProfile};
 use crate::fs::atomic::write_atomic;
 use crate::fs::paths::{active_pointer_path, ensure_dir, profiles_dir};
 use crate::models::ProfileFile;
 
 use super::{CmdResult, CommandError};
+
+static PROFILE_SAVE_LOCK: Mutex<()> = Mutex::new(());
+
+pub(super) fn lock_profile_saves() -> CmdResult<MutexGuard<'static, ()>> {
+    PROFILE_SAVE_LOCK
+        .lock()
+        .map_err(|_| CommandError::Generic("Profile save lock is poisoned".into()))
+}
 
 /// Validates a profile id. Strict allowlist: must start with alphanumeric and
 /// contain only `[A-Za-z0-9._-]`, max 64 bytes. Rejects empty, NUL bytes,
@@ -41,32 +51,89 @@ pub(crate) fn validate_id(id: &str) -> Result<(), CommandError> {
     Ok(())
 }
 
-fn profile_path(id: &str) -> CmdResult<PathBuf> {
+pub(crate) fn profile_path(id: &str) -> CmdResult<PathBuf> {
     validate_id(id)?;
     Ok(profiles_dir()?.join(format!("{id}.json")))
 }
 
-/// Returns true if a profile with the given id (case-insensitive) already
-/// exists on disk. Used to refuse case-collisions on APFS-CI volumes.
-fn id_collides_existing(id: &str) -> CmdResult<bool> {
-    let dir = profiles_dir()?;
+pub(crate) fn validate_agent_id(agent_id: &str) -> CmdResult<()> {
+    if builtin_registry().adapter(agent_id).is_none() {
+        return Err(CommandError::Generic(format!(
+            "unknown built-in agent id: {agent_id}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_legacy_agent_id(agent_id: &str) -> CmdResult<()> {
+    validate_agent_id(agent_id)?;
+    if agent_id != "claude-code" {
+        return Err(CommandError::Generic(
+            "legacy ProfileFile operations only support claude-code; use AgentProfile envelope"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn id_collides_in_dir(dir: &std::path::Path, id: &str) -> CmdResult<bool> {
     if !dir.exists() {
         return Ok(false);
     }
     let lower = id.to_ascii_lowercase();
-    for entry in std::fs::read_dir(&dir)? {
-        let entry = entry?;
-        let p = entry.path();
-        if p.extension().and_then(|s| s.to_str()) != Some("json") {
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|suffix| suffix.to_str()) != Some("json") {
             continue;
         }
-        if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+        if let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) {
             if stem != id && stem.eq_ignore_ascii_case(&lower) {
                 return Ok(true);
             }
         }
     }
     Ok(false)
+}
+
+pub(crate) fn agent_profile_path(agent_id: &str, id: &str) -> CmdResult<PathBuf> {
+    validate_agent_id(agent_id)?;
+    validate_id(id)?;
+    Ok(profiles_dir()?.join(agent_id).join(format!("{id}.json")))
+}
+
+pub(super) fn write_claude_profile_pair(
+    canonical_path: &std::path::Path,
+    canonical_bytes: &[u8],
+    legacy_path: &std::path::Path,
+    legacy_bytes: &[u8],
+) -> CmdResult<()> {
+    let previous_canonical = canonical_path
+        .is_file()
+        .then(|| std::fs::read(canonical_path))
+        .transpose()?;
+    write_atomic(canonical_path, canonical_bytes)?;
+    if let Err(write_error) = write_atomic(legacy_path, legacy_bytes) {
+        let rollback = match previous_canonical {
+            Some(previous) => write_atomic(canonical_path, &previous).map_err(CommandError::from),
+            None if canonical_path.exists() => {
+                std::fs::remove_file(canonical_path).map_err(CommandError::from)
+            }
+            None => Ok(()),
+        };
+        return match rollback {
+            Ok(()) => Err(CommandError::from(write_error)),
+            Err(rollback_error) => Err(CommandError::Generic(format!(
+                "{write_error}; failed to restore canonical Claude profile: {rollback_error}"
+            ))),
+        };
+    }
+    Ok(())
+}
+
+/// Returns true if a profile with the given id (case-insensitive) already
+/// exists on disk. Used to refuse case-collisions on APFS-CI volumes.
+fn id_collides_existing(id: &str) -> CmdResult<bool> {
+    id_collides_in_dir(&profiles_dir()?, id)
 }
 
 #[tauri::command]
@@ -106,9 +173,13 @@ pub fn get_profile(id: String) -> CmdResult<ProfileFile> {
 
 #[tauri::command]
 pub fn save_profile(profile: ProfileFile) -> CmdResult<ProfileFile> {
+    let _save_guard = lock_profile_saves()?;
     let mut profile = profile;
     let path = profile_path(&profile.id)?;
     ensure_dir(path.parent().unwrap())?;
+    let canonical_path = (profile.agent_id == "claude-code")
+        .then(|| agent_profile_path("claude-code", &profile.id))
+        .transpose()?;
 
     // Case-collision check must run BEFORE path.exists() because APFS volumes
     // are case-insensitive: `path.exists()` for "homi.json" returns true when
@@ -118,6 +189,14 @@ pub fn save_profile(profile: ProfileFile) -> CmdResult<ProfileFile> {
             "id collides with an existing profile (case-insensitive): {}",
             profile.id
         )));
+    }
+    if let Some(canonical_path) = canonical_path.as_ref() {
+        if id_collides_in_dir(canonical_path.parent().unwrap(), &profile.id)? {
+            return Err(CommandError::Generic(format!(
+                "id collides with an existing canonical profile (case-insensitive): {}",
+                profile.id
+            )));
+        }
     }
 
     if path.exists() {
@@ -133,20 +212,78 @@ pub fn save_profile(profile: ProfileFile) -> CmdResult<ProfileFile> {
             profile.created_at = prev.created_at;
         }
     }
+    if let Some(canonical_path) = canonical_path.as_ref().filter(|path| path.is_file()) {
+        let previous = decode_profile(&std::fs::read(canonical_path)?)
+            .map_err(|error| CommandError::Generic(error.to_string()))?;
+        if previous.metadata.updated_at > profile.updated_at {
+            return Err(CommandError::Generic(format!(
+                "conflict: on-disk {} is newer ({} > {})",
+                profile.id, previous.metadata.updated_at, profile.updated_at
+            )));
+        }
+        profile.created_at = profile.created_at.min(previous.metadata.created_at);
+    }
 
     profile.updated_at = Utc::now();
     let bytes = serde_json::to_vec_pretty(&profile)?;
-    write_atomic(&path, &bytes)?;
+    if let Some(canonical_path) = canonical_path {
+        let envelope = AgentProfile::from_legacy_claude(profile.clone())
+            .map_err(|error| CommandError::Generic(error.to_string()))?;
+        write_claude_profile_pair(
+            &canonical_path,
+            &serde_json::to_vec_pretty(&envelope)?,
+            &path,
+            &bytes,
+        )?;
+    } else {
+        write_atomic(&path, &bytes)?;
+    }
     Ok(profile)
 }
 
 #[tauri::command]
 pub fn delete_profile(id: String) -> CmdResult<()> {
+    let _save_guard = lock_profile_saves()?;
     let path = profile_path(&id)?;
     if path.exists() {
         std::fs::remove_file(&path).with_context(|| format!("delete {}", path.display()))?;
     }
+    let canonical_path = agent_profile_path("claude-code", &id)?;
+    if canonical_path.exists() {
+        std::fs::remove_file(&canonical_path)
+            .with_context(|| format!("delete {}", canonical_path.display()))?;
+    }
     Ok(())
+}
+
+#[tauri::command]
+pub fn list_agent_profiles(agent_id: String) -> CmdResult<Vec<ProfileFile>> {
+    validate_agent_id(&agent_id)?;
+    if agent_id != "claude-code" {
+        return Ok(Vec::new());
+    }
+    Ok(list_profiles()?
+        .into_iter()
+        .filter(|profile| profile.agent_id == agent_id)
+        .collect())
+}
+
+#[tauri::command]
+pub fn get_agent_profile(agent_id: String, id: String) -> CmdResult<ProfileFile> {
+    validate_legacy_agent_id(&agent_id)?;
+    get_profile(id)
+}
+
+#[tauri::command]
+pub fn save_agent_profile(profile: ProfileFile) -> CmdResult<ProfileFile> {
+    validate_legacy_agent_id(&profile.agent_id)?;
+    save_profile(profile)
+}
+
+#[tauri::command]
+pub fn delete_agent_profile(agent_id: String, id: String) -> CmdResult<()> {
+    validate_legacy_agent_id(&agent_id)?;
+    delete_profile(id)
 }
 
 #[tauri::command]
@@ -202,11 +339,59 @@ mod tests {
 
     #[test]
     #[serial(home_env)]
+    fn legacy_agent_profile_api_rejects_codex_payloads() {
+        let _g = setup_home();
+        let mut profile = ProfileFile::sample();
+        profile.agent_id = "codex".into();
+        profile.id = "default".into();
+
+        let error = save_agent_profile(profile).unwrap_err();
+
+        assert!(format!("{error}").contains("AgentProfile envelope"));
+        assert!(list_agent_profiles("codex".into()).unwrap().is_empty());
+        assert!(!profiles_dir().unwrap().join("codex/default.json").exists());
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn agent_profile_rejects_unknown_agent() {
+        let _g = setup_home();
+        let mut profile = ProfileFile::sample();
+        profile.agent_id = "unknown".into();
+
+        assert!(save_agent_profile(profile).is_err());
+        assert!(list_agent_profiles("unknown".into()).is_err());
+    }
+
+    #[test]
+    #[serial(home_env)]
     fn delete_removes_file() {
         let _g = setup_home();
         save_profile(ProfileFile::sample()).unwrap();
+        let canonical_path = agent_profile_path("claude-code", "sample").unwrap();
+        assert!(canonical_path.is_file());
+
         delete_profile("sample".into()).unwrap();
+
         assert_eq!(list_profiles().unwrap().len(), 0);
+        assert!(!canonical_path.exists());
+    }
+
+    #[test]
+    #[serial(home_env)]
+    fn legacy_save_keeps_canonical_claude_profile_in_sync() {
+        let _g = setup_home();
+        let mut profile = save_profile(ProfileFile::sample()).unwrap();
+        profile.display_name = "Updated through legacy API".into();
+
+        save_profile(profile).unwrap();
+
+        let envelope = crate::commands::profile_envelopes::get_profile_envelope(
+            "claude-code".into(),
+            "sample".into(),
+        )
+        .unwrap();
+        assert_eq!(envelope.metadata.display_name, "Updated through legacy API");
     }
 
     #[test]

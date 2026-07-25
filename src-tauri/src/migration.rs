@@ -274,6 +274,7 @@ fn migrate_one(path: &Path) -> Result<()> {
         id: id.clone(),
         display_name: legacy.display_name.unwrap_or_else(|| id.clone()),
         description: None,
+        agent_id: "claude-code".into(),
         color: "#7C3AED".into(),
         created_at: now,
         updated_at: now,

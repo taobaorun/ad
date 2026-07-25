@@ -1,4 +1,14 @@
 {
+  "common": {
+    "close": "Close"
+  },
+  "startup": {
+    "loadingQuote": "Be Water, My Friend",
+    "loadingStatus": "AD is loading",
+    "failureTitle": "AD could not start",
+    "failureMessage": "A required application component could not be loaded. Retry after checking that the installation is complete.",
+    "retry": "Retry"
+  },
   "palette": {
     "placeholder": "Type an action or project…",
     "noMatches": "No matches",
@@ -66,7 +76,11 @@
   "app": {
     "titlebar": {
       "runAnything": "run anything…",
-      "openPaletteTitle": "Open command palette (⌘K)"
+      "openPaletteTitle": "Open command palette (⌘K)",
+      "agentSelectorLabel": "Select Agent",
+      "agentSelectorTitle": "Switch current Agent",
+      "switchToLight": "Switch to light theme",
+      "switchToDark": "Switch to dark theme"
     }
   },
   "advanced": {
@@ -119,7 +133,23 @@
     "removeScanRoot": "Remove {{path}}"
   },
   "history": {
-    "title": "Activation history"
+    "title": "History",
+    "operationTitle": "Operation history",
+    "operationEmpty": "No Agent operations yet.",
+    "activationTitle": "Legacy activation history",
+    "activationEmpty": "No profile activations yet.",
+    "refresh": "Refresh",
+    "rollback": "Rollback",
+    "operationRollbackConfirm": "Rollback this operation? Current resources will be backed up before restoration.",
+    "restore": "Restore",
+    "restoreConfirm": "Restore this backup? Your current settings.json will itself be backed up first.",
+    "noBackup": "No backup",
+    "noResources": "No changed resources",
+    "status": {
+      "complete": "Complete",
+      "compensated": "Compensated",
+      "partial_failure": "Partial failure"
+    }
   },
   "drawer": {
     "editTemplate": "Edit template",
@@ -190,9 +220,30 @@
       "env": "settings.local.json top-level env — auto-loaded by Claude Code at startup"
     }
   },
+  "projectCodexRuntime": {
+    "title": "Project Codex runtime",
+    "ready": "Project Codex · {{count}} Plugins",
+    "needsRefresh": "Project Codex needs refresh",
+    "home": "Project CODEX_HOME",
+    "profile": "Profile",
+    "inheritBaseConfig": "Inherit Base config",
+    "inheritanceHint": "When enabled, AD structurally composes ~/.codex/config.toml into this project's isolated CODEX_HOME. Login sharing is independent.",
+    "checking": "Checking Project Codex runtime…",
+    "checkFailed": "Could not inspect the Project Codex runtime",
+    "notPrepared": "Project Codex has not been prepared",
+    "policyPending": "The selected policy needs Preview → Apply",
+    "diskDrift": "Generated configuration changed; Preview again",
+    "authBlocked": "The Base login cannot be reused by this CODEX_HOME",
+    "policySummary": "Desired: {{desired}} · Applied: {{applied}}",
+    "inherited": "Inherited",
+    "isolated": "Isolated",
+    "preview": "Preview setup",
+    "previewApply": "Preview changes",
+    "retry": "Retry"
+  },
   "terminal": {
     "openInTerminal": "Open in terminal",
-    "openTooltip": "Launch claude in {{backend}} at {{path}}",
+    "openTooltip": "Launch the active Agent in {{backend}} at {{path}}",
     "openTooltipDisabled": "Configure a custom command template in Settings first",
     "section": "Terminal",
     "backendLabel": "Backend",
@@ -208,15 +259,13 @@
       "apple-terminal": "Built into macOS; reuses front window for a new tab when running",
       "custom": "Custom command template"
     },
-    "claudeBinLabel": "Claude binary path",
-    "claudeBinPlaceholder": "claude",
-    "claudeBinHint": "Defaults to PATH lookup; leave empty to use `claude`",
     "customTemplateLabel": "Command template",
-    "customTemplateHint": "Placeholders: {{cwd}} = project path, {{cmd}} = full claude command",
+    "customTemplateHint": "Placeholders: {{cwd}} = project path, {{cmd}} = full Agent command",
     "launchFailed": "Could not open terminal",
+    "dismissLaunchError": "Dismiss terminal launch error",
     "openSettings": "Open Settings",
     "paletteEntry": "Open in terminal: {{project}}",
-    "paletteSubtitle": "Launch claude in {{backend}} (cwd: {{path}})"
+    "paletteSubtitle": "Launch the active Agent in {{backend}} (cwd: {{path}})"
   },
   "settings": {
     "title": "Settings",
@@ -233,7 +282,7 @@
     },
     "terminal": {
       "title": "Terminal",
-      "desc": "Behavior when launching Claude in an external terminal"
+      "desc": "Behavior when launching the active Agent in an external terminal"
     },
     "shortcuts": {
       "title": "Shortcuts",
@@ -291,6 +340,232 @@
         "addingSource": "Adding source…"
       }
     }
+  },
+  "agentProfiles": {
+    "open": "Manage profiles",
+    "shortLabel": "Profiles",
+    "title": "Agent profiles",
+    "description": "Profiles for {{agent}} use an adapter-owned payload and remain isolated from other Agents.",
+    "list": "Profiles",
+    "loading": "Loading profiles…",
+    "empty": "No profiles yet.",
+    "select": "Select or create a profile.",
+    "create": "New profile",
+    "save": "Save profile",
+    "previewApply": "Preview profile apply",
+    "applyRequiresSave": "Save profile changes before applying.",
+    "rollback": "Rollback profile apply",
+    "rollbackConfirm": "Rollback the settings written by this profile?",
+    "delete": "Delete",
+    "deleteConfirm": "Delete profile “{{name}}”?",
+    "discardConfirm": "Discard unsaved profile changes?",
+    "invalidPayload": "The profile payload is invalid.",
+    "color": "Profile color",
+    "name": "Profile name",
+    "profileDescription": "Profile description",
+    "descriptionPlaceholder": "Optional description"
+  },
+  "agentConversion": {
+    "open": "Convert configuration",
+    "shortLabel": "Convert",
+    "title": "Claude Code → Codex",
+    "description": "Generate an equivalent Codex configuration while preserving the existing Claude Code configuration.",
+    "scope": "Conversion scope",
+    "scopeUser": "User",
+    "scopeProject": "Project",
+    "scopeUserHint": "Convert only user configuration and exclude all project configuration.",
+    "scopeProjectHint": "Convert only the current project:",
+    "source": "Claude Code source",
+    "target": "Codex target",
+    "advancedInstances": "Advanced: configuration instances",
+    "instanceHint": "Selects the Agent configuration home used for discovery. These are not the paths written by this conversion.",
+    "sourceInstance": "Claude Code configuration instance",
+    "targetInstance": "Codex configuration instance",
+    "decisions": "Conversion decisions",
+    "codexModel": "Codex model",
+    "codexModelPlaceholder": "Leave blank to preserve the target",
+    "codexModelHint": "Claude model names cannot be assumed equivalent to Codex models; enter a value only to replace the target model.",
+    "codexPermissions": "Codex permissions",
+    "permissionsPreserve": "Preserve target settings",
+    "permissionsSafe": "Prompt + workspace write (recommended)",
+    "permissionsBypass": "No prompts + full access (dangerous)",
+    "permissionsHint": "Permission semantics cannot be inferred losslessly, so target permissions are preserved by default.",
+    "permissionsDangerHint": "Commands can run without approval or sandbox restrictions. Use only when you explicitly need the bypassPermissions equivalent.",
+    "sourceUnchanged": "The Claude Code source is read-only. AD only writes target resources after explicit confirmation.",
+    "projectRuntimeHint": "Project conversion automatically creates an isolated CODEX_HOME. Marketplace, Plugin cache, and enabled state apply only when this project is launched from AD. The user login is reused without per-project sign-in.",
+    "profileId": "Codex Profile (optional)",
+    "profileIdPlaceholder": "For example, project_api",
+    "profileIdHint": "Use for project API key, model, or environment differences. Leave blank to reuse the user login and base configuration.",
+    "profileDisabledHint": "Profiles from the Base config are unavailable while Base config inheritance is off.",
+    "preview": "Preview conversion",
+    "previewing": "Previewing…",
+    "progress": {
+      "phase": {
+        "resolving_contexts": "Resolving configuration instances",
+        "reading_configuration": "Reading and mapping configuration",
+        "inspecting_skills": "Inspecting Skills",
+        "inspecting_plugins": "Inspecting Plugins",
+        "preparing_project_plugin": "Preparing Project Plugin",
+        "verifying_inherited_plugins": "Verifying inherited Codex Plugins",
+        "finalizing_plan": "Finalizing conversion plan"
+      },
+      "itemCount": "{{item}} · {{current}} / {{total}}",
+      "elapsed": "{{seconds}}s",
+      "slowHint": "The first verification of large base Plugins may take some time."
+    },
+    "apply": "Apply conversion",
+    "applying": "Applying…",
+    "close": "Close",
+    "artifacts": "Conversion artifacts",
+    "sourcePath": "Source path",
+    "targetPath": "Target path",
+    "manualTarget": "Complete setup in the Codex plugin marketplace",
+    "confirmSkill": "Include this Skill",
+    "skillConfirmed": "Skill included",
+    "noChanges": "The source was read, but no safe automatic target changes are available. {{count}} items require input, conflict, or are unsupported. Adjust the conversion decisions above and preview again.",
+    "applied": "Conversion applied",
+    "compensated": "Conversion failed; all applied changes were restored",
+    "partialFailure": "Conversion partially applied; rollback is available",
+    "backupCount_one": "{{count}} backup created",
+    "backupCount_other": "{{count}} backups created",
+    "rollback": "Rollback target",
+    "rollbackConfirm": "Rollback the generated Codex configuration? This will not change the Claude Code source.",
+    "summary": {
+      "automatic": "Automatic",
+      "requiresInput": "Needs decision",
+      "unsupported": "Unsupported",
+      "conflicts": "Conflicts",
+      "dangerous": "Dangerous"
+    },
+    "pluginDetail": {
+      "source_disabled": "The source Plugin is disabled, so no Codex write is needed.",
+      "package_copy": "The existing Codex-compatible package will be installed automatically into the isolated project runtime.",
+      "package_transform": "AD will transform the Claude package in staging and install it automatically into the isolated project runtime.",
+      "partial": "Some components are portable, but unresolved components remain; this is not reported as a complete conversion.",
+      "lsp_unsupported": "This Plugin contains only a Claude LSP component; Codex currently has no native LSP Plugin carrier.",
+      "unresolved": "AD could not verify the Plugin package, marketplace, or component mapping, so no install change was generated."
+    },
+    "kind": {
+      "settings": "Settings and permissions",
+      "instructions": "Instructions",
+      "skills": "Skills",
+      "plugins": "Plugins",
+      "hooks": "Hooks",
+      "mcp": "MCP",
+      "agents": "Agents",
+      "rules": "Rules"
+    },
+    "dangerDialog": {
+      "title": "Confirm unrestricted Codex permissions",
+      "description": "This conversion lets commands run without approval prompts or sandbox restrictions. Review the exact values before continuing.",
+      "targets": "Codex targets to be changed",
+      "sourceUnchanged": "The Claude Code source remains read-only. Only the listed Codex targets will be changed, with backups created first.",
+      "cancel": "Cancel",
+      "confirm": "Apply unrestricted permissions"
+    },
+    "artifactMessage": {
+      "permissionRules": "{{count}} fine-grained Claude permission rules have no verified lossless Codex mapping.",
+      "resolution": {
+        "select_target_model": "Select a Codex model or leave the existing target model unchanged.",
+        "select_permission_preset": "Choose an explicit Codex approval and sandbox policy, or preserve the target.",
+        "confirm_local_skill_source": "Confirm the resolved local Skill source before linking it into Codex.",
+        "complete_plugin_setup": "Resolve unmapped components or target conflicts before continuing.",
+        "resolve_conflict": "The target already contains a different value; it is preserved by default."
+      },
+      "disposition": {
+        "exact": "This value has a direct Codex representation.",
+        "mapped": "This item will be converted to the listed Codex target.",
+        "partial": "Portable components will be installed automatically; incompatible components remain explicit residuals.",
+        "requires_input": "A conversion decision is required before this item can be included.",
+        "unsupported": "No verified automatic Codex equivalent is available; the source remains unchanged.",
+        "conflict": "The existing target is preserved because it differs from the converted value.",
+        "unchanged": "The target already has an equivalent value or source."
+      }
+    },
+    "disposition": {
+      "exact": "Exact",
+      "mapped": "Mapped",
+      "partial": "Partial",
+      "requires_input": "Input required",
+      "unsupported": "Unsupported",
+      "conflict": "Conflict",
+      "unchanged": "Unchanged"
+    }
+  },
+  "agentErrors": {
+    "conversion_preview": "Conversion preview failed: {{message}}",
+    "invalid_plan": "The operation is no longer valid. Preview it again.",
+    "resource_changed": "The resource changed after preview. Preview the operation again.",
+    "permission_denied": "Permission was denied. Check the target and try again.",
+    "unsupported": "This operation is not supported by the selected Agent.",
+    "plan_expired": "The preview expired. Create a new preview before applying.",
+    "partial_failure": "The operation only completed partially. Review the receipt before continuing.",
+    "io": "AD could not read or write an Agent resource. Check file permissions and try again."
+  },
+  "agents": {
+    "capabilities": {
+      "pluginInstallNotManaged": "Plugin installation is not managed for this Agent; existing Plugins can still be enabled or disabled.",
+      "gitAcquisitionUsesLegacyFlow": "Git acquisition still uses the legacy source flow; local Skill changes use the safe plan engine.",
+      "codexPluginInstallRequiresMarketplace": "AD can install Project Plugins automatically; User installation still uses the Codex Marketplace flow.",
+      "projectWritePending": "Project writes are not currently available."
+    }
+  },
+  "agentWorkspace": {
+    "tabs": {
+      "settings": "Settings",
+      "resources": "Skills & Plugins"
+    },
+    "settingsUnavailable": "Settings are unavailable for this Agent and project context.",
+    "resourcesUnavailable": "Skills and Plugins are unavailable until an Agent installation is selected.",
+    "runningProcesses_one": "{{count}} Agent process running",
+    "runningProcesses_other": "{{count}} Agent processes running"
+  },
+  "agentSettings": {
+    "loading": "Loading Agent settings…",
+    "empty": "No editable settings were found for this Agent context.",
+    "loadError": "Failed to load Agent settings: {{error}}",
+    "resources": "Settings resources",
+    "scope": {
+      "user": "User",
+      "project": "Project"
+    },
+    "unsaved": "unsaved",
+    "preview": "Preview changes",
+    "invalidJson": "Settings must be valid JSON before preview.",
+    "applySuccess": "Applied",
+    "compensated": "Apply failed; all changes were restored.",
+    "partialFailure": "Apply only completed partially; rollback is available.",
+    "rollback": "Rollback",
+    "rollbackConfirm": "Rollback the last settings change? This will only proceed if the resource has not changed since apply.",
+    "rollbackSuccess": "Rolled back"
+  },
+  "agentCollections": {
+    "loading": "Loading Skills and Plugins…",
+    "filter": "Filter Skills and Plugins",
+    "skills": "Skills",
+    "plugins": "Plugins",
+    "empty": "No matching Skills or Plugins were found.",
+    "enable": "Enable {{name}}",
+    "disable": "Disable {{name}}",
+    "applySuccess": "Applied",
+    "compensated": "Apply failed; all collection changes were restored.",
+    "partialFailure": "Apply only completed partially; rollback is available.",
+    "rollback": "Rollback",
+    "rollbackConfirm": "Rollback the last collection change? This will only proceed if its resources have not changed since Apply.",
+    "rollbackSuccess": "Rolled back"
+  },
+  "agentPlan": {
+    "title": "Review changes",
+    "description": "AD will verify the resources again, create backups, and then apply this plan.",
+    "changes": "Planned resource changes",
+    "operation": {
+      "create": "Create",
+      "replace": "Replace",
+      "delete": "Delete"
+    },
+    "cancel": "Cancel",
+    "apply": "Apply",
+    "applying": "Applying…"
   },
   "projectSkills": {
     "demote": {
