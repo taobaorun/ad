@@ -148,7 +148,7 @@ describe('AgentProfilesButton', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Manage profiles' }));
     await screen.findByRole('button', { name: 'Claude Default' });
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
 
     await waitFor(() =>
       expect(deleteProfileEnvelope).toHaveBeenCalledWith('claude-code', 'default'),
