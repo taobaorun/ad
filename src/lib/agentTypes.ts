@@ -228,7 +228,7 @@ export const MutationPlanViewSchema = z
 
 export const OperationStatusSchema = z.enum(['complete', 'compensated', 'partial_failure']);
 
-export const ResourceStateKindSchema = z.enum(['missing', 'file', 'symlink']);
+export const ResourceStateKindSchema = z.enum(['missing', 'file', 'symlink', 'directory']);
 
 export const AppliedResourceStateSchema = z
   .object({
