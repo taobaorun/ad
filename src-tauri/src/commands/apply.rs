@@ -161,7 +161,10 @@ pub fn apply_profile_to_project(
             "local" => {
                 // Profile template content lives in the shared layer; apply it
                 // to settings.local.json so the project has its own editable copy.
-                let incoming = profile.layers.shared.as_ref()
+                let incoming = profile
+                    .layers
+                    .shared
+                    .as_ref()
                     .or(profile.layers.local.as_ref());
                 let Some(incoming) = incoming else {
                     warnings.push("profile has no settings; nothing to apply".into());
@@ -722,10 +725,9 @@ mod tests {
             other => panic!("expected Applied, got {other:?}"),
         };
         assert_eq!(r.backup_paths.len(), 1, "existing file backed up");
-        let merged: Value = serde_json::from_slice(
-            &std::fs::read(claude_dir.join("settings.local.json")).unwrap(),
-        )
-        .unwrap();
+        let merged: Value =
+            serde_json::from_slice(&std::fs::read(claude_dir.join("settings.local.json")).unwrap())
+                .unwrap();
         // Existing top-level key preserved.
         assert_eq!(merged["theme"], "dark");
         // Existing env key preserved + profile env key added.

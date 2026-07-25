@@ -24,6 +24,7 @@ interface State {
   removeProject: (path: string) => Promise<void>;
   renameProject: (path: string, displayName: string) => Promise<Project>;
   setPinned: (path: string, pinned: boolean) => Promise<void>;
+  setCodexConfigInheritance: (path: string, inheritBaseConfig: boolean) => Promise<void>;
 
   openDetectedModal: () => Promise<void>;
   closeDetectedModal: () => void;
@@ -81,6 +82,11 @@ export const useProjects = create<State>((set, get) => ({
 
   setPinned: async (path, pinned) => {
     await tauri.setProjectPinned(path, pinned);
+    await get().loadAll();
+  },
+
+  setCodexConfigInheritance: async (path, inheritBaseConfig) => {
+    await tauri.setProjectCodexConfigInheritance(path, inheritBaseConfig);
     await get().loadAll();
   },
 

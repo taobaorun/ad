@@ -10,7 +10,7 @@
 //     prints `OK <workspace_ref>` to stdout. We capture that ref and then
 //     send `<cmd>\n` to that workspace via `cmux send --workspace <ref> --
 //     <cmd>\n` so the user ends up with exactly one workspace containing
-//     a running claude.
+//     a running Agent.
 
 use std::process::Command;
 use std::thread;
@@ -32,12 +32,12 @@ pub fn launch(spec: &LaunchSpec<'_>) -> Result<()> {
     })?;
 
     if cmux_socket_exists() {
-        return new_workspace_with_command(&cmux, cwd, spec.claude_bin);
+        return new_workspace_with_command(&cmux, cwd, &spec.command());
     }
 
     let ws_ref = bootstrap_cmux(&cmux, cwd)?;
     thread::sleep(Duration::from_millis(400));
-    send_text_to_workspace(&cmux, &ws_ref, &format!("{}\n", spec.claude_bin))
+    send_text_to_workspace(&cmux, &ws_ref, &format!("{}\n", spec.command()))
 }
 
 fn cmux_socket_exists() -> bool {
@@ -76,14 +76,14 @@ fn parse_workspace_ref(stdout: &str) -> Option<String> {
     None
 }
 
-fn new_workspace_with_command(cmux: &str, cwd: &str, claude_bin: &str) -> Result<()> {
+fn new_workspace_with_command(cmux: &str, cwd: &str, command: &str) -> Result<()> {
     let output = Command::new(cmux)
         .args([
             "new-workspace",
             "--cwd",
             cwd,
             "--command",
-            claude_bin,
+            command,
             "--focus",
             "true",
         ])
@@ -133,7 +133,10 @@ mod tests {
 
     #[test]
     fn parses_workspace_ref_from_stdout() {
-        assert_eq!(parse_workspace_ref("OK workspace:1\n").as_deref(), Some("workspace:1"));
+        assert_eq!(
+            parse_workspace_ref("OK workspace:1\n").as_deref(),
+            Some("workspace:1")
+        );
         assert_eq!(
             parse_workspace_ref("noise\nOK abc-123\nmore\n").as_deref(),
             Some("abc-123")
@@ -142,4 +145,3 @@ mod tests {
         assert_eq!(parse_workspace_ref("OK\n").as_deref(), None);
     }
 }
-

@@ -18,7 +18,6 @@ export const DEFAULT_GLOBAL_SHORTCUT = 'Alt+Cmd+KeyA';
 
 interface TerminalPrefs {
   backend: TerminalBackendId;
-  claudeBinPath: string;
   customCommand: string;
 }
 
@@ -42,7 +41,6 @@ const defaults: Persisted = {
   darkMode: true,
   terminal: {
     backend: 'ghostty',
-    claudeBinPath: '',
     customCommand: '',
   },
   globalShortcut: {
@@ -59,7 +57,10 @@ function load(): Persisted {
     return {
       ...defaults,
       ...parsed,
-      terminal: { ...defaults.terminal, ...(parsed.terminal ?? {}) },
+      terminal: {
+        backend: parsed.terminal?.backend ?? defaults.terminal.backend,
+        customCommand: parsed.terminal?.customCommand ?? defaults.terminal.customCommand,
+      },
       globalShortcut: { ...defaults.globalShortcut, ...(parsed.globalShortcut ?? {}) },
     };
   } catch {

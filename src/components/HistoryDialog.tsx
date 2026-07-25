@@ -10,12 +10,7 @@ import { HistoryPanel } from './HistoryPanel';
 export function HistoryDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => !o && onClose()}
-      title={t('history.title')}
-      size="lg"
-    >
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()} title={t('history.title')} size="lg">
       <HistoryPanel />
     </Dialog>
   );

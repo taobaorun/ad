@@ -39,11 +39,7 @@ export function ProfileEditDrawer() {
   return (
     <>
       {open && (
-        <div
-          className="fixed inset-0 z-[80] bg-black/30"
-          onClick={tryClose}
-          aria-hidden
-        />
+        <div className="fixed inset-0 z-[80] bg-overlay/55" onClick={tryClose} aria-hidden />
       )}
       <aside
         className={
@@ -70,7 +66,9 @@ export function ProfileEditDrawer() {
             <ProfileEditor
               key={editingId}
               profileId={editingId}
-              onDirty={(d) => { dirtyRef.current = d; }}
+              onDirty={(d) => {
+                dirtyRef.current = d;
+              }}
             />
           )}
         </div>

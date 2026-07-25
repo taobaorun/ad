@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AD · 转换预览真实进度 · ExecPlan</title>
+  <style>
+    :root{--base:#1e1e2e;--mantle:#181825;--crust:#11111b;--surface:#313244;--overlay:#6c7086;--text:#cdd6f4;--sub:#a6adc8;--blue:#89b4fa;--sapphire:#74c7ec;--green:#a6e3a1;--yellow:#f9e2af;--red:#f38ba8;--mono:ui-monospace,"SF Mono",Menlo,monospace;--sans:system-ui,-apple-system,"Segoe UI",sans-serif}
+    *{box-sizing:border-box}body{margin:0;background:var(--base);color:var(--text);font-family:var(--sans);line-height:1.6}.page{max-width:1100px;margin:auto;padding:54px 28px 96px}.eyebrow{font:600 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--sapphire)}h1{font-size:43px;line-height:1.06;max-width:850px;margin:14px 0 18px}h2{font-size:26px;margin:0 0 12px}h3{font-size:15px;margin:0 0 7px}.lead{max-width:830px;color:var(--sub);font-size:17px}.meta{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:34px 0 44px}.meta>div,.card,.tree,.mock{border:1px solid var(--surface);background:var(--mantle);border-radius:14px}.meta>div,.card{padding:18px}.k{font:500 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--overlay)}.v{margin-top:7px;font-weight:650}.status{color:var(--yellow)}nav{position:sticky;top:12px;z-index:3;display:flex;gap:5px;flex-wrap:wrap;width:max-content;max-width:100%;padding:6px;background:rgba(17,17,27,.9);border:1px solid var(--surface);border-radius:10px;margin-bottom:42px}nav a{padding:6px 9px;color:var(--sub);text-decoration:none;font:500 11px/1 var(--mono)}nav a:hover{color:var(--text);background:var(--surface)}section{margin-bottom:50px}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.card p,.card li{color:var(--sub);font-size:14px}.card ul{padding-left:18px}.tag{display:inline-flex;margin-bottom:9px;padding:5px 8px;border:1px solid var(--surface);border-radius:999px;color:var(--sapphire);font:600 10px/1 var(--mono)}.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.step{position:relative;min-height:120px;padding:16px 13px;border:1px solid var(--surface);border-radius:12px;background:var(--mantle)}.step:not(:last-child)::after{content:"→";position:absolute;right:-17px;top:43%;z-index:2;color:var(--sapphire)}.step b{display:block;font-size:13px}.step span{display:block;margin-top:7px;color:var(--overlay);font-size:12px}.tree{padding:20px;font:12px/1.75 var(--mono);color:var(--sub);white-space:pre-wrap}.m{color:var(--blue)}.n{color:var(--green)}.mock{padding:22px}.progress{display:flex;align-items:center;gap:12px;padding:15px;border:1px solid var(--surface);border-radius:10px;background:#24273a}.spinner{width:18px;height:18px;border:2px solid var(--surface);border-top-color:var(--sapphire);border-radius:50%}.progress strong{display:block;font-size:14px}.progress small{display:block;color:var(--sub);margin-top:3px}.elapsed{margin-left:auto;color:var(--blue);font:600 11px/1 var(--mono)}.notice{border-left:3px solid var(--yellow);background:rgba(249,226,175,.06);padding:14px 16px;color:var(--sub);font-size:14px}.check{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.check div{border:1px solid var(--surface);border-radius:10px;padding:13px 15px;color:var(--sub);font-size:13px}.check div::before{content:"□";color:var(--green);margin-right:9px}.path{font-family:var(--mono);color:var(--blue)}.footer{border-top:1px solid var(--surface);padding-top:22px;color:var(--overlay);font-size:12px}@media(max-width:820px){.meta,.grid,.check{grid-template-columns:1fr 1fr}.flow{grid-template-columns:1fr}.step:not(:last-child)::after{content:"↓";right:auto;left:50%;top:auto;bottom:-19px}}@media(max-width:560px){.page{padding:36px 18px 72px}.meta,.grid,.check{grid-template-columns:1fr}h1{font-size:32px}nav{position:static}.progress{align-items:flex-start}.elapsed{margin-left:0}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div class="eyebrow">AD · ExecPlan · 2026-07-20</div>
+      <h1>把“预览中…”变成可验证的真实处理进度。</h1>
+      <p class="lead">从 Rust Plugin 校验点通过 per-invoke Channel 回传阶段、logical id 和计数；React 展示当前工作与耗时。Preview 结果、安全计划和 Apply 门控均不改变。</p>
+    </header>
+    <div class="meta">
+      <div><div class="k">状态</div><div class="v status">待确认</div></div>
+      <div><div class="k">里程碑</div><div class="v">5</div></div>
+      <div><div class="k">新增依赖</div><div class="v">0</div></div>
+      <div><div class="k">关键边界</div><div class="v">Preview only</div></div>
+    </div>
+    <nav aria-label="计划导航"><a href="#goal">目标</a><a href="#ui">效果</a><a href="#flow">数据流</a><a href="#scope">范围</a><a href="#decisions">决策</a><a href="#steps">步骤</a><a href="#verify">验收</a></nav>
+
+    <section id="goal">
+      <h2>目标与非目标</h2>
+      <div class="grid">
+        <article class="card"><span class="tag">OUTCOME</span><h3>真实、可解释的等待</h3><p>显示读取 Settings、Skills、Plugins、准备 Project Plugin、校验继承 Base Plugin 与计划收尾，并显示当前 logical id 和耗时。</p></article>
+        <article class="card"><span class="tag">NON-GOAL</span><h3>不伪造精度</h3><p>本轮不做取消、字节级百分比、ETA 或 Apply 进度。目录大小不线性，current/total 只表达项目计数。</p></article>
+      </div>
+    </section>
+
+    <section id="ui">
+      <h2>建议等待态</h2>
+      <div class="mock">
+        <div class="progress">
+          <span class="spinner" aria-hidden="true"></span>
+          <div><strong>正在校验继承的 Codex Plugins</strong><small>browser@openai-bundled · 2 / 9</small></div>
+          <span class="elapsed">18 秒</span>
+        </div>
+      </div>
+      <p class="notice">阶段来自真实后端边界。状态区使用 polite live region，不抢焦点；Channel 断开不影响最终 Preview。</p>
+    </section>
+
+    <section id="flow">
+      <h2>端到端数据流</h2>
+      <div class="flow">
+        <div class="step"><b>React</b><span>每次 Preview 创建独立 Channel</span></div>
+        <div class="step"><b>Tauri Command</b><span>转换 domain event 并旁路 send</span></div>
+        <div class="step"><b>Route</b><span>报告 Settings / Skills / Plugins</span></div>
+        <div class="step"><b>Codex Port</b><span>报告 Marketplace / Base package</span></div>
+        <div class="step"><b>UI</b><span>i18n 阶段 + item + count + elapsed</span></div>
+      </div>
+    </section>
+
+    <section id="scope">
+      <h2>影响范围</h2>
+      <div class="tree"><span class="m">src-tauri/src/agents/</span>
+  capabilities.rs                 progress-aware PluginsPort
+  conversion_route.rs             route 阶段 + no-op 兼容
+  codex_plugins.rs                Base Plugin 校验明细
+<span class="m">src-tauri/src/commands/agents.rs</span>   typed Tauri Channel
+<span class="m">src-tauri/tests/</span>                     route / install progress contracts
+<span class="m">src/lib/</span>
+  agentTypes.ts                   zod event schema
+  tauri.ts                        per-invoke Channel
+<span class="m">src/components/AgentConversionDialog.tsx</span>
+<span class="m">src/i18n/locales/{zh,en}.json</span>
+<span class="m">tests/components/AgentConversionDialog.test.tsx</span>
+<span class="n">docs/design-docs/conversion-preview-progress.{md,html}</span></div>
+      <p class="notice"><strong>隔离：</strong>工作区现有 startup/theme 修改保持未暂存，不格式化、不提交。</p>
+    </section>
+
+    <section id="decisions">
+      <h2>关键决策</h2>
+      <div class="grid">
+        <article class="card"><span class="tag">D1</span><h3>Per-invoke Channel</h3><p>比全局 event bus 更容易隔离重试和多窗口，无需 correlation id。</p></article>
+        <article class="card"><span class="tag">D2</span><h3>Domain 与 Tauri 解耦</h3><p>Agent port 接收普通 reporter；只有 command 层知道 Tauri Channel。</p></article>
+        <article class="card"><span class="tag">D3</span><h3>旁路失败</h3><p>进度 send 失败不改变 Preview；invoke result 仍是唯一业务事实。</p></article>
+        <article class="card"><span class="tag">D4</span><h3>目录级粒度</h3><p>报告 Plugin/Marketplace 边界，不侵入逐文件 digest；已足以解释当前主要等待。</p></article>
+      </div>
+    </section>
+
+    <section id="steps">
+      <h2>预计 5 个里程碑</h2>
+      <div class="flow">
+        <div class="step"><b>1 · RED</b><span>后端顺序、旁路失败、前端慢调用合同</span></div>
+        <div class="step"><b>2 · Backend</b><span>reporter、route、Codex port、Channel</span></div>
+        <div class="step"><b>3 · Frontend</b><span>schema、IPC、状态区、耗时、a11y</span></div>
+        <div class="step"><b>4 · Verify</b><span>全量门禁 + harness 只读 Preview</span></div>
+        <div class="step"><b>5 · Close</b><span>as-built 文档、归档、精准提交</span></div>
+      </div>
+    </section>
+
+    <section id="verify">
+      <h2>验收清单</h2>
+      <div class="check">
+        <div>点击后立即出现 context 阶段</div><div>后端阶段按真实顺序更新</div><div>显示 Project/Base Plugin logical id</div><div>current/total 单调前进</div><div>耗时完成或失败后停止</div><div>Channel 失败不影响 Preview</div><div>重复 Preview 不串事件</div><div>不显示 auth、mutation 或虚假 ETA</div><div>zh/en 与 zod schema 对等</div><div>真实项目验证不执行 Apply</div>
+      </div>
+      <p class="notice">上游设计：<a class="path" href="../../design-docs/conversion-preview-progress.html">转换预览真实进度反馈</a></p>
+    </section>
+
+    <footer class="footer">Approved plan baseline (frozen at 2026-07-20 19:33:30 +0800). Live execution state: <span class="path">docs/exec-plans/active/conversion-preview-progress.md</span></footer>
+  </main>
+</body>
+</html>

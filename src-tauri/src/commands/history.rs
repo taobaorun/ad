@@ -129,6 +129,7 @@ pub fn restore_backup(backup_path: String) -> CmdResult<()> {
     // so the UI can render it distinctly.
     write_history_entry(&ActivationLogEntry {
         ts: chrono::Utc::now(),
+        agent_id: "claude-code".into(),
         from: super::profiles::get_active_profile_id().ok().flatten(),
         to: format!(
             "restore:{}",

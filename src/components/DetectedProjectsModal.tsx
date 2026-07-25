@@ -95,24 +95,19 @@ export function DetectedProjectsModal() {
     <Dialog open={open} onOpenChange={(o) => !o && close()} size="lg">
       <div className="flex max-h-[70vh] flex-col gap-3">
         <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-clay" />
+          <Sparkles className="h-4 w-4 text-primary" />
           <h2 className="text-base font-semibold">{t('detected.title')}</h2>
           <span className="text-xs text-muted-foreground">
             {t('detected.summary', { total: detected.length, unadded: visible.length })}
           </span>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => void refresh()}
-            className="ml-auto"
-          >
+          <Button size="sm" variant="ghost" onClick={() => void refresh()} className="ml-auto">
             {t('detected.rescan')}
           </Button>
         </div>
 
         <div className="relative">
           <Search
-            className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-clay/70"
+            className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-primary/70"
             aria-hidden
           />
           <Input
@@ -120,16 +115,14 @@ export function DetectedProjectsModal() {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder={t('detected.searchPlaceholder')}
-            className="h-9 border-clay/40 pl-8 text-sm focus:border-clay focus:ring-1 focus:ring-clay/30"
+            className="h-9 border-primary/40 pl-8 text-sm focus:border-primary focus:ring-2 focus:ring-ring/30"
           />
         </div>
 
         <div className="flex-1 overflow-auto rounded border border-border">
           {visible.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground">
-              {detected.length === 0
-                ? t('detected.noneDetected')
-                : t('detected.allTracked')}
+              {detected.length === 0 ? t('detected.noneDetected') : t('detected.allTracked')}
             </div>
           ) : (
             <ul className="divide-y divide-border">
@@ -143,12 +136,16 @@ export function DetectedProjectsModal() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-mono text-xs">{d.path}</div>
                     <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                      <span>{d.sourceKind === 'cc_projects_meta' ? t('detected.sourceCcHistory') : t('detected.sourceCustom')}</span>
+                      <span>
+                        {d.sourceKind === 'cc_projects_meta'
+                          ? t('detected.sourceCcHistory')
+                          : t('detected.sourceCustom')}
+                      </span>
                       {d.signals.length > 0 && <span>· {d.signals.join(', ')}</span>}
                     </div>
                   </div>
                   {d.signals.includes('missing') && (
-                    <span title={t('detected.pathMissing')} className="text-rust">
+                    <span title={t('detected.pathMissing')} className="text-destructive">
                       <AlertCircle className="h-4 w-4" />
                     </span>
                   )}
@@ -199,7 +196,9 @@ export function DetectedProjectsModal() {
         )}
 
         <div className="flex items-center justify-between">
-          <div className="text-xs text-muted-foreground">{t('detected.selectedCount', { count: selected.size })}</div>
+          <div className="text-xs text-muted-foreground">
+            {t('detected.selectedCount', { count: selected.size })}
+          </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={close} disabled={busy}>
               {t('detected.skip')}
@@ -231,8 +230,8 @@ function ScanRootChip({
   return (
     <div
       className={
-        'inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-mono ' +
-        (enabled ? 'border-olive/60 bg-olive/10' : 'border-border bg-muted/30 opacity-60')
+        'inline-flex items-center gap-1.5 rounded-full border px-2 py-1 font-mono text-[11px] ' +
+        (enabled ? 'border-success/60 bg-success/10' : 'border-border bg-muted/30 opacity-60')
       }
     >
       <button
@@ -249,7 +248,7 @@ function ScanRootChip({
           type="button"
           onClick={onRemove}
           aria-label={t('detected.removeScanRoot', { path })}
-          className="rounded p-0.5 text-rust hover:bg-rust/10"
+          className="rounded p-0.5 text-destructive hover:bg-destructive/10"
         >
           <X className="h-3 w-3" />
         </button>
@@ -257,4 +256,3 @@ function ScanRootChip({
     </div>
   );
 }
-

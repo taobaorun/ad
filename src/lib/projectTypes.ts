@@ -14,6 +14,8 @@ export interface Project {
   lastApplied?: LastApplied | null;
   /** Pinned projects sort to the top of the sidebar. */
   pinned?: boolean;
+  /** Whether the derived Project Codex Home inherits the Base user config. */
+  inheritBaseConfig: boolean;
 }
 
 export interface LastApplied {

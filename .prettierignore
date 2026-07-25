@@ -1,0 +1,7 @@
+# Generated and long-form documentation is reviewed in its source-specific workflow.
+docs/**
+AGENTS.md
+tasks/**
+
+# pnpm owns this generated file; formatting it creates noisy semantic-free diffs.
+pnpm-lock.yaml

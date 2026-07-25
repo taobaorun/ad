@@ -83,9 +83,11 @@ export function ProjectConfigEditor({ projectPath }: ProjectConfigEditorProps) {
       }
       if (localDirty || envDirty) {
         const localParse = parseLayer(localText);
-        const localObj = (localParse.ok && localParse.value && typeof localParse.value === 'object'
-          ? (localParse.value as Record<string, unknown>)
-          : {}) as Record<string, unknown>;
+        const localObj = (
+          localParse.ok && localParse.value && typeof localParse.value === 'object'
+            ? (localParse.value as Record<string, unknown>)
+            : {}
+        ) as Record<string, unknown>;
         // Strip any inline `env` from localObj — Env tab is the source of truth.
         const { env: _drop, ...rest } = localObj;
         void _drop;
@@ -108,9 +110,23 @@ export function ProjectConfigEditor({ projectPath }: ProjectConfigEditorProps) {
   }
 
   return (
-    <div className="flex h-full flex-col" style={{ borderRadius: 10, border: '0.5px solid var(--ds-line)', background: 'var(--ds-bg-card)', overflow: 'hidden' }}>
-      <div className="flex flex-shrink-0 items-center gap-3 border-b" style={{ borderColor: 'var(--ds-line)', padding: '10px 14px' }}>
-        <span className="font-mono uppercase text-[11px]" style={{ letterSpacing: '0.10em', color: 'var(--ds-fg-4)' }}>
+    <div
+      className="flex h-full flex-col"
+      style={{
+        borderRadius: 10,
+        border: '0.5px solid var(--ds-line)',
+        background: 'var(--ds-bg-card)',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        className="flex flex-shrink-0 items-center gap-3 border-b"
+        style={{ borderColor: 'var(--ds-line)', padding: '10px 14px' }}
+      >
+        <span
+          className="font-mono text-[11px] uppercase"
+          style={{ letterSpacing: '0.10em', color: 'var(--ds-fg-4)' }}
+        >
           {t('projectEditor.title')}
         </span>
         {dirty && (
@@ -125,7 +141,11 @@ export function ProjectConfigEditor({ projectPath }: ProjectConfigEditorProps) {
               {t('projectEditor.saved')}
             </span>
           )}
-          <Button onClick={() => void handleSave()} disabled={!dirty || !allValid || busy} size="sm">
+          <Button
+            onClick={() => void handleSave()}
+            disabled={!dirty || !allValid || busy}
+            size="sm"
+          >
             <Save className="h-4 w-4" />
             {busy ? t('projectEditor.saving') : t('projectEditor.save')}
           </Button>

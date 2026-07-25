@@ -51,6 +51,9 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Prepare Tauri frontend directory
+        run: mkdir -p dist
+
       - name: cargo fmt --check
         working-directory: src-tauri
         run: cargo fmt --check

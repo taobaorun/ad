@@ -1,4 +1,14 @@
 {
+  "common": {
+    "close": "关闭"
+  },
+  "startup": {
+    "loadingQuote": "Be Water, My Friend",
+    "loadingStatus": "正在加载 AD",
+    "failureTitle": "AD 无法启动",
+    "failureMessage": "无法加载必要的应用组件。请确认安装完整后重试。",
+    "retry": "重试"
+  },
   "palette": {
     "placeholder": "输入命令或项目…",
     "noMatches": "无匹配",
@@ -66,7 +76,11 @@
   "app": {
     "titlebar": {
       "runAnything": "执行任意命令…",
-      "openPaletteTitle": "打开命令面板 (⌘K)"
+      "openPaletteTitle": "打开命令面板 (⌘K)",
+      "agentSelectorLabel": "选择 Agent",
+      "agentSelectorTitle": "切换当前 Agent",
+      "switchToLight": "切换到浅色主题",
+      "switchToDark": "切换到深色主题"
     }
   },
   "advanced": {
@@ -119,7 +133,23 @@
     "removeScanRoot": "移除 {{path}}"
   },
   "history": {
-    "title": "激活历史"
+    "title": "历史记录",
+    "operationTitle": "操作历史",
+    "operationEmpty": "暂无 Agent 操作记录。",
+    "activationTitle": "旧版激活历史",
+    "activationEmpty": "暂无 Profile 激活记录。",
+    "refresh": "刷新",
+    "rollback": "回滚",
+    "operationRollbackConfirm": "确定回滚本次操作吗？恢复前会先备份当前资源。",
+    "restore": "恢复",
+    "restoreConfirm": "确定恢复此备份吗？当前 settings.json 会先生成备份。",
+    "noBackup": "无备份",
+    "noResources": "无变更资源",
+    "status": {
+      "complete": "已完成",
+      "compensated": "已补偿",
+      "partial_failure": "部分失败"
+    }
   },
   "drawer": {
     "editTemplate": "编辑模板",
@@ -190,9 +220,30 @@
       "env": "settings.local.json 顶层 env — Claude Code 启动时自动加载"
     }
   },
+  "projectCodexRuntime": {
+    "title": "项目 Codex 运行时",
+    "ready": "项目 Codex · {{count}} 个 Plugins",
+    "needsRefresh": "项目 Codex 需要刷新",
+    "home": "项目 CODEX_HOME",
+    "profile": "Profile",
+    "inheritBaseConfig": "继承基础配置",
+    "inheritanceHint": "开启时，AD 会把 ~/.codex/config.toml 结构化合成到项目隔离的 CODEX_HOME；登录态共享不受此开关影响。",
+    "checking": "正在检查项目 Codex 运行时…",
+    "checkFailed": "无法检查项目 Codex 运行时",
+    "notPrepared": "项目 Codex 尚未准备",
+    "policyPending": "所选策略需要 Preview → Apply",
+    "diskDrift": "生成配置已变化，请重新预览",
+    "authBlocked": "基础登录态无法复用于此 CODEX_HOME",
+    "policySummary": "期望：{{desired}} · 已应用：{{applied}}",
+    "inherited": "继承",
+    "isolated": "隔离",
+    "preview": "预览准备",
+    "previewApply": "预览变更",
+    "retry": "重试"
+  },
   "terminal": {
     "openInTerminal": "在终端打开",
-    "openTooltip": "在 {{backend}} 中以 {{path}} 启动 claude",
+    "openTooltip": "在 {{backend}} 中以 {{path}} 启动当前 Agent",
     "openTooltipDisabled": "请先在 Settings 配置 custom 命令模板",
     "section": "终端",
     "backendLabel": "终端类型",
@@ -208,15 +259,13 @@
       "apple-terminal": "macOS 自带,已运行时复用窗口开新 tab",
       "custom": "自定义命令模板"
     },
-    "claudeBinLabel": "Claude 二进制路径",
-    "claudeBinPlaceholder": "claude",
-    "claudeBinHint": "默认依赖 PATH，留空使用 `claude`",
     "customTemplateLabel": "命令模板",
-    "customTemplateHint": "可用占位符：{{cwd}}=项目路径，{{cmd}}=完整 claude 启动命令",
+    "customTemplateHint": "可用占位符：{{cwd}}=项目路径，{{cmd}}=完整 Agent 启动命令",
     "launchFailed": "无法打开终端",
+    "dismissLaunchError": "关闭终端启动错误",
     "openSettings": "打开 Settings",
     "paletteEntry": "在终端打开：{{project}}",
-    "paletteSubtitle": "在 {{backend}} 启动 claude（cwd: {{path}}）"
+    "paletteSubtitle": "在 {{backend}} 启动当前 Agent（cwd: {{path}}）"
   },
   "settings": {
     "title": "设置",
@@ -233,7 +282,7 @@
     },
     "terminal": {
       "title": "终端",
-      "desc": "在外部终端启动 Claude 时的行为"
+      "desc": "在外部终端启动当前 Agent 时的行为"
     },
     "shortcuts": {
       "title": "快捷键",
@@ -291,6 +340,232 @@
         "addingSource": "正在添加 source…"
       }
     }
+  },
+  "agentProfiles": {
+    "open": "管理 Profiles",
+    "shortLabel": "Profiles",
+    "title": "Agent Profiles",
+    "description": "{{agent}} 的 Profile 使用 adapter 自有 payload，并与其他 Agent 隔离。",
+    "list": "Profiles",
+    "loading": "正在加载 Profiles…",
+    "empty": "暂无 Profile。",
+    "select": "选择或新建一个 Profile。",
+    "create": "新建 Profile",
+    "save": "保存 Profile",
+    "previewApply": "预览应用 Profile",
+    "applyRequiresSave": "应用前请先保存 Profile 变更。",
+    "rollback": "回滚 Profile 应用",
+    "rollbackConfirm": "回滚此 Profile 写入的设置？",
+    "delete": "删除",
+    "deleteConfirm": "删除 Profile“{{name}}”？",
+    "discardConfirm": "放弃未保存的 Profile 变更？",
+    "invalidPayload": "Profile payload 格式无效。",
+    "color": "Profile 颜色",
+    "name": "Profile 名称",
+    "profileDescription": "Profile 描述",
+    "descriptionPlaceholder": "可选描述"
+  },
+  "agentConversion": {
+    "open": "转换配置",
+    "shortLabel": "转换",
+    "title": "Claude Code → Codex",
+    "description": "在保留现有 Claude Code 配置的同时，生成能力对等的 Codex 配置。",
+    "scope": "转换作用域",
+    "scopeUser": "用户级",
+    "scopeProject": "项目级",
+    "scopeUserHint": "只转换用户级配置，不处理任何项目配置。",
+    "scopeProjectHint": "只转换当前项目：",
+    "source": "Claude Code 源",
+    "target": "Codex 目标",
+    "advancedInstances": "高级：配置实例",
+    "instanceHint": "配置实例用于选择 Agent 的配置 Home，不代表本次转换实际读取或写入的路径。",
+    "sourceInstance": "Claude Code 配置实例",
+    "targetInstance": "Codex 配置实例",
+    "decisions": "需确认的转换决策",
+    "codexModel": "Codex 模型",
+    "codexModelPlaceholder": "留空则保留现有目标值",
+    "codexModelHint": "Claude 模型名不能自动认定为 Codex 等价模型；仅在需要替换目标模型时填写。",
+    "codexPermissions": "Codex 权限",
+    "permissionsPreserve": "保留现有目标设置",
+    "permissionsSafe": "交互审批 + 工作区写入（推荐）",
+    "permissionsBypass": "不审批 + 完全访问（危险）",
+    "permissionsHint": "权限语义无法无损推断，默认不修改目标权限。",
+    "permissionsDangerHint": "此选项允许命令在无审批、无沙箱限制下运行，仅在明确需要对等 bypassPermissions 时使用。",
+    "sourceUnchanged": "Claude Code 源仅用于读取。只有明确确认后，AD 才会写入目标资源。",
+    "projectRuntimeHint": "项目级转换会自动创建隔离的 CODEX_HOME；Marketplace、Plugin 缓存和启用状态只在从 AD 启动该项目时生效。用户登录态复用，不需要按项目重复登录。",
+    "profileId": "Codex Profile（可选）",
+    "profileIdPlaceholder": "例如 project_api",
+    "profileIdHint": "用于项目 API Key、模型或环境差异；留空时复用用户登录与基础配置。",
+    "profileDisabledHint": "关闭基础配置继承时，不能使用仅存在于基础配置中的 Profile。",
+    "preview": "预览转换",
+    "previewing": "预览中…",
+    "progress": {
+      "phase": {
+        "resolving_contexts": "正在解析配置实例",
+        "reading_configuration": "正在读取并映射配置",
+        "inspecting_skills": "正在盘点 Skills",
+        "inspecting_plugins": "正在盘点 Plugins",
+        "preparing_project_plugin": "正在准备项目 Plugin",
+        "verifying_inherited_plugins": "正在校验继承的 Codex Plugins",
+        "finalizing_plan": "正在汇总转换计划"
+      },
+      "itemCount": "{{item}} · {{current}} / {{total}}",
+      "elapsed": "{{seconds}} 秒",
+      "slowHint": "首次校验较大的基础 Plugin 可能需要一些时间。"
+    },
+    "apply": "应用转换",
+    "applying": "应用中…",
+    "close": "关闭",
+    "artifacts": "转换项",
+    "sourcePath": "源路径",
+    "targetPath": "目标路径",
+    "manualTarget": "需要在 Codex Plugin Marketplace 中完成设置",
+    "confirmSkill": "转换此 Skill",
+    "skillConfirmed": "已纳入 Skill",
+    "noChanges": "源配置已读取，但没有安全的自动写入项；其中 {{count}} 项需要输入、存在冲突或无法转换。可调整上方转换决策后重新预览。",
+    "applied": "转换已应用",
+    "compensated": "转换失败；已恢复所有已应用的更改",
+    "partialFailure": "转换仅部分应用；可执行回滚",
+    "backupCount_one": "已创建 {{count}} 份备份",
+    "backupCount_other": "已创建 {{count}} 份备份",
+    "rollback": "回滚目标",
+    "rollbackConfirm": "回滚生成的 Codex 配置？此操作不会修改 Claude Code 源。",
+    "summary": {
+      "automatic": "自动转换",
+      "requiresInput": "需要决策",
+      "unsupported": "无法转换",
+      "conflicts": "存在冲突",
+      "dangerous": "危险变更"
+    },
+    "pluginDetail": {
+      "source_disabled": "源 Plugin 已禁用，无需写入 Codex。",
+      "package_copy": "现有 Codex-compatible package 将自动安装到项目隔离运行时。",
+      "package_transform": "Claude package 将在 AD 临时区转换后自动安装到项目隔离运行时。",
+      "partial": "部分组件可移植，但仍有组件需要处理；当前不会报告为完整成功。",
+      "lsp_unsupported": "该 Plugin 仅包含 Claude LSP 组件；Codex 当前没有原生 LSP Plugin 载体。",
+      "unresolved": "无法验证 Plugin package、Marketplace 或组件映射，未生成安装变更。"
+    },
+    "kind": {
+      "settings": "设置与权限",
+      "instructions": "指令",
+      "skills": "Skills",
+      "plugins": "Plugins",
+      "hooks": "Hooks",
+      "mcp": "MCP",
+      "agents": "Agents",
+      "rules": "Rules"
+    },
+    "dangerDialog": {
+      "title": "确认 Codex 无限制权限",
+      "description": "此转换会允许命令在无审批提示、无沙箱限制下运行。继续前请核对以下精确配置。",
+      "targets": "将修改的 Codex 目标",
+      "sourceUnchanged": "Claude Code 源始终只读；AD 只修改预览列出的 Codex 目标，并在写入前创建备份。",
+      "cancel": "取消",
+      "confirm": "应用无限制权限"
+    },
+    "artifactMessage": {
+      "permissionRules": "{{count}} 条 Claude 细粒度权限规则目前没有经过验证的 Codex 无损映射。",
+      "resolution": {
+        "select_target_model": "请选择 Codex 模型，或保留目标中已有的模型。",
+        "select_permission_preset": "请选择明确的 Codex 审批与沙箱策略，或保留目标设置。",
+        "confirm_local_skill_source": "确认已解析的本地 Skill 来源后，才能链接到 Codex。",
+        "complete_plugin_setup": "需要处理未映射组件或目标冲突后才能继续。",
+        "resolve_conflict": "目标中已有不同值，默认保留现有目标。"
+      },
+      "disposition": {
+        "exact": "此值在 Codex 中有直接对应形式。",
+        "mapped": "此项将转换到列出的 Codex 目标。",
+        "partial": "可移植组件将自动安装；不兼容组件会保留为明确的剩余项。",
+        "requires_input": "需要完成转换决策后才能纳入此项。",
+        "unsupported": "目前没有经过验证的 Codex 自动等价能力；源配置保持不变。",
+        "conflict": "转换值与现有目标不同，默认保留现有目标。",
+        "unchanged": "目标中已有等价值或相同来源，无需变更。"
+      }
+    },
+    "disposition": {
+      "exact": "完全转换",
+      "mapped": "已映射",
+      "partial": "部分转换",
+      "requires_input": "需要输入",
+      "unsupported": "无法转换",
+      "conflict": "存在冲突",
+      "unchanged": "无需变更"
+    }
+  },
+  "agentErrors": {
+    "conversion_preview": "转换预览失败：{{message}}",
+    "invalid_plan": "该操作已失效，请重新预览。",
+    "resource_changed": "资源在预览后发生了变化，请重新预览操作。",
+    "permission_denied": "权限被拒绝，请检查目标后重试。",
+    "unsupported": "所选 Agent 不支持该操作。",
+    "plan_expired": "预览已过期，请重新生成预览后再应用。",
+    "partial_failure": "操作仅部分完成，请检查回执后再继续。",
+    "io": "AD 无法读取或写入 Agent 资源，请检查文件权限后重试。"
+  },
+  "agents": {
+    "capabilities": {
+      "pluginInstallNotManaged": "当前 Agent 的 Plugin 安装不由 AD 管理；仍可管理已有 Plugin 的启停状态。",
+      "gitAcquisitionUsesLegacyFlow": "Git 获取仍使用旧版 Source 流程；本地 Skill 变更使用安全计划引擎。",
+      "codexPluginInstallRequiresMarketplace": "项目级 Plugin 可由 AD 自动安装；用户级安装仍需使用 Codex Marketplace 流程。",
+      "projectWritePending": "当前尚不支持项目级写入。"
+    }
+  },
+  "agentWorkspace": {
+    "tabs": {
+      "settings": "配置",
+      "resources": "Skills 与 Plugins"
+    },
+    "settingsUnavailable": "当前 Agent 与项目上下文不支持配置管理。",
+    "resourcesUnavailable": "选择 Agent installation 后才能管理 Skills 与 Plugins。",
+    "runningProcesses_one": "{{count}} 个 Agent 进程正在运行",
+    "runningProcesses_other": "{{count}} 个 Agent 进程正在运行"
+  },
+  "agentSettings": {
+    "loading": "正在加载 Agent 配置…",
+    "empty": "当前 Agent 上下文中没有找到可编辑配置。",
+    "loadError": "加载 Agent 配置失败：{{error}}",
+    "resources": "配置资源",
+    "scope": {
+      "user": "用户级",
+      "project": "项目级"
+    },
+    "unsaved": "未保存",
+    "preview": "预览变更",
+    "invalidJson": "预览前请修复 JSON 格式。",
+    "applySuccess": "已应用",
+    "compensated": "应用失败；所有变更均已恢复。",
+    "partialFailure": "应用仅部分完成；可执行回滚。",
+    "rollback": "回滚",
+    "rollbackConfirm": "回滚上一次配置变更？仅当应用后资源未被再次修改时才会执行。",
+    "rollbackSuccess": "已回滚"
+  },
+  "agentCollections": {
+    "loading": "正在加载 Skills 与 Plugins…",
+    "filter": "筛选 Skills 与 Plugins",
+    "skills": "Skills",
+    "plugins": "Plugins",
+    "empty": "没有找到匹配的 Skill 或 Plugin。",
+    "enable": "启用 {{name}}",
+    "disable": "禁用 {{name}}",
+    "applySuccess": "已应用",
+    "compensated": "应用失败；所有集合变更均已恢复。",
+    "partialFailure": "应用仅部分完成；可执行回滚。",
+    "rollback": "回滚",
+    "rollbackConfirm": "回滚上一次集合变更？仅当应用后相关资源未再变化时才会继续。",
+    "rollbackSuccess": "已回滚"
+  },
+  "agentPlan": {
+    "title": "检查变更",
+    "description": "AD 会再次校验资源、创建备份，然后应用此计划。",
+    "changes": "计划中的资源变更",
+    "operation": {
+      "create": "创建",
+      "replace": "替换",
+      "delete": "删除"
+    },
+    "cancel": "取消",
+    "apply": "应用",
+    "applying": "应用中…"
   },
   "projectSkills": {
     "demote": {

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent 配置转换工作台设计</title>
+  <style>
+    :root {
+      --paper:#f7f5ef; --ink:#1d211c; --muted:#697067; --line:#d7d5cc;
+      --card:#fff; --green:#4f6f52; --green-soft:#e7efe5; --amber:#ad6f20;
+      --amber-soft:#f7ead2; --red:#a33f32; --red-soft:#f7dfd9; --blue:#426579;
+      --blue-soft:#e3edf1; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+      --sans:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      --serif:ui-serif,Georgia,"Songti SC",serif;
+    }
+    *{box-sizing:border-box} html{scroll-behavior:smooth}
+    body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.6}
+    nav{position:sticky;top:0;z-index:5;background:rgba(247,245,239,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+    nav .inner{max-width:1160px;margin:auto;padding:12px 24px;display:flex;gap:18px;align-items:center;overflow:auto;white-space:nowrap}
+    nav strong{font-family:var(--serif);margin-right:auto} nav a{font-size:13px;color:var(--muted);text-decoration:none}
+    main{max-width:1160px;margin:auto;padding:64px 24px 100px}
+    header{max-width:900px;margin-bottom:46px}.eyebrow{font:12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--green)}
+    h1,h2,h3{font-family:var(--serif);font-weight:550;line-height:1.2} h1{font-size:44px;margin:12px 0 18px} h2{font-size:29px;margin:0 0 10px} h3{font-size:18px;margin:0 0 8px}
+    .lede{font-size:18px;color:var(--muted);max-width:820px}.status{display:inline-flex;margin-top:20px;padding:7px 11px;border-radius:999px;background:var(--amber-soft);color:#7c4a0d;font:12px var(--mono)}
+    section{margin:64px 0}.intro{color:var(--muted);max-width:780px;margin:0 0 24px}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.grid.two{grid-template-columns:repeat(2,1fr)}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px}.card p{font-size:14px;color:var(--muted);margin:0}.card .tag{display:inline-block;font:11px var(--mono);padding:4px 7px;border-radius:6px;margin-bottom:12px}
+    .safe{background:var(--green-soft);color:var(--green)}.warn{background:var(--amber-soft);color:var(--amber)}.danger{background:var(--red-soft);color:var(--red)}.info{background:var(--blue-soft);color:var(--blue)}
+    .flow{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;overflow:auto}.flow svg{display:block;min-width:940px;width:100%;height:auto}.flow text{font-family:var(--mono)}
+    .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;font-size:12px;color:var(--muted)}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+    .mock{background:#171a17;color:#f3f4ef;border-radius:16px;padding:24px;box-shadow:0 16px 40px rgba(30,33,29,.12)}
+    .scope{border:1px solid #3b403b;border-radius:10px;padding:14px;display:flex;justify-content:space-between;gap:14px}.scope code,.path{font:12px var(--mono);color:#b8c9b7;word-break:break-all}
+    .summary{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:16px 0}.metric{background:#232723;border:1px solid #3b403b;border-radius:9px;padding:12px}.metric b{display:block;font-size:22px}.metric span{font-size:11px;color:#aeb4ad}
+    .group{border:1px solid #3b403b;border-radius:10px;margin-top:10px;overflow:hidden}.group-head{padding:11px 14px;background:#232723;font-weight:650}.row{display:grid;grid-template-columns:1.1fr 1.35fr 110px;gap:14px;padding:12px 14px;border-top:1px solid #343934;font-size:12px}.row:first-of-type{border-top:0}.row .state{text-align:right}.pill{display:inline-block;padding:3px 7px;border-radius:999px;font:10px var(--mono)}
+    .confirm{border:2px solid var(--red);background:#fff7f4;border-radius:14px;padding:22px}.confirm h3{color:var(--red)}.code{background:#2a211f;color:#ffe8e2;border-radius:9px;padding:12px 14px;font:13px/1.7 var(--mono);margin:14px 0}.buttons{display:flex;justify-content:flex-end;gap:10px}.button{padding:9px 14px;border-radius:8px;border:1px solid var(--line);font-size:13px}.button.red{background:var(--red);color:#fff;border-color:var(--red)}
+    table{width:100%;border-collapse:separate;border-spacing:0;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;font-size:13px}th,td{text-align:left;padding:13px 15px;border-bottom:1px solid var(--line);vertical-align:top}th{background:#eeece5;font-size:12px}tr:last-child td{border-bottom:0}code{font-family:var(--mono)}
+    .rule{border-left:4px solid var(--green);padding:14px 18px;background:var(--green-soft);border-radius:0 10px 10px 0}.rule strong{display:block;margin-bottom:4px}
+    footer{margin-top:80px;padding-top:20px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+    @media(max-width:820px){h1{font-size:35px}.grid,.grid.two{grid-template-columns:1fr}.summary{grid-template-columns:repeat(2,1fr)}.row{grid-template-columns:1fr}.row .state{text-align:left}}
+  </style>
+</head>
+<body>
+  <nav><div class="inner"><strong>AD · Conversion Workbench</strong><a href="#feedback">反馈</a><a href="#route">载体路由</a><a href="#ui">工作台</a><a href="#risk">风险确认</a><a href="#baseline">sofampy</a><a href="#acceptance">验收</a></div></nav>
+  <main>
+    <header>
+      <div class="eyebrow">Product + architecture design · 2026-07-20</div>
+      <h1>Agent 配置转换工作台</h1>
+      <p class="lede">转换不再等于“生成一份很短的 config.toml”。新模型先完整盘点 Claude 配置，再把每项路由到 Codex 的真实载体；无法迁移可以明确失败，危险权限不能静默放行。</p>
+      <span class="status">已实现 · 2026-07-20</span>
+    </header>
+
+    <section id="feedback">
+      <h2>四条反馈，一个根因</h2>
+      <p class="intro">当前界面把配置实例、本次资源、转换决策和应用确认混在一起，导致“看得到状态，但无法完成任务”。</p>
+      <div class="grid">
+        <article class="card"><span class="tag info">路径表意</span><h3>Project 仍显示用户目录</h3><p><code>~/.claude</code> 与 <code>~/.codex</code> 是 installation home，不是本次 Project 资源。单实例时隐藏，多实例时放进高级区。</p></article>
+        <article class="card"><span class="tag warn">覆盖率</span><h3>config.toml 只有少数字段</h3><p>Settings、Skills、Plugins 使用不同载体。问题不是文件短，而是其他项目没有明确目标、动作和结果。</p></article>
+        <article class="card"><span class="tag danger">安全</span><h3>危险权限没有真正确认</h3><p>红色提示不等于确认。现有通用 <code>confirmed: true</code> 无法绑定具体风险，必须由后端 plan 声明和校验。</p></article>
+      </div>
+    </section>
+
+    <section id="route">
+      <h2>Artifact → Carrier 路由</h2>
+      <p class="intro">通用层只管理 inventory、状态、风险和执行安全；每个内置 adapter/route 决定真实载体与可转换语义。</p>
+      <div class="flow">
+        <svg viewBox="0 0 980 440" role="img" aria-label="Claude 配置到 Codex 多载体的转换流程">
+          <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#697067"/></marker></defs>
+          <g font-size="12" fill="#1d211c">
+            <rect x="20" y="170" width="190" height="90" rx="13" fill="#e7efe5" stroke="#4f6f52"/><text x="115" y="201" text-anchor="middle" font-weight="700">Claude inventory</text><text x="115" y="225" text-anchor="middle" fill="#697067">Project scope · read-only</text><text x="115" y="246" text-anchor="middle" fill="#697067">settings / skill / plugin</text>
+            <rect x="290" y="30" width="190" height="70" rx="12" fill="#fff" stroke="#d7d5cc"/><text x="385" y="59" text-anchor="middle" font-weight="700">Settings + permissions</text><text x="385" y="81" text-anchor="middle" fill="#697067">typed field mappings</text>
+            <rect x="290" y="135" width="190" height="70" rx="12" fill="#fff" stroke="#d7d5cc"/><text x="385" y="164" text-anchor="middle" font-weight="700">Project Skills</text><text x="385" y="186" text-anchor="middle" fill="#697067">confirmed local sources</text>
+            <rect x="290" y="240" width="190" height="70" rx="12" fill="#fff" stroke="#d7d5cc"/><text x="385" y="269" text-anchor="middle" font-weight="700">Plugins + marketplaces</text><text x="385" y="291" text-anchor="middle" fill="#697067">identity / authorization</text>
+            <rect x="290" y="345" width="190" height="70" rx="12" fill="#fff" stroke="#d7d5cc"/><text x="385" y="374" text-anchor="middle" font-weight="700">No confirmed equivalent</text><text x="385" y="396" text-anchor="middle" fill="#697067">unsupported + alternative</text>
+            <rect x="570" y="30" width="210" height="70" rx="12" fill="#e3edf1" stroke="#426579"/><text x="675" y="59" text-anchor="middle" font-weight="700">.codex/config.toml</text><text x="675" y="81" text-anchor="middle" fill="#426579">Project settings carrier</text>
+            <rect x="570" y="135" width="210" height="70" rx="12" fill="#e3edf1" stroke="#426579"/><text x="675" y="164" text-anchor="middle" font-weight="700">.agents/skills/&lt;name&gt;</text><text x="675" y="186" text-anchor="middle" fill="#426579">Project skill carrier</text>
+            <rect x="570" y="240" width="210" height="70" rx="12" fill="#f7ead2" stroke="#ad6f20"/><text x="675" y="269" text-anchor="middle" font-weight="700">Project Codex Home</text><text x="675" y="291" text-anchor="middle" fill="#ad6f20">marketplace / cache / config</text>
+            <rect x="840" y="135" width="120" height="175" rx="13" fill="#1d211c"/><text x="900" y="173" text-anchor="middle" fill="#fff" font-weight="700">MutationPlan</text><text x="900" y="201" text-anchor="middle" fill="#c8cdc5">digest</text><text x="900" y="223" text-anchor="middle" fill="#c8cdc5">backup</text><text x="900" y="245" text-anchor="middle" fill="#c8cdc5">risk ack</text><text x="900" y="267" text-anchor="middle" fill="#c8cdc5">receipt</text><text x="900" y="289" text-anchor="middle" fill="#c8cdc5">rollback</text>
+          </g>
+          <g stroke="#697067" stroke-width="1.5" fill="none" marker-end="url(#arrow)"><path d="M210 195C245 195 250 65 290 65"/><path d="M210 210C245 210 250 170 290 170"/><path d="M210 225C245 225 250 275 290 275"/><path d="M210 240C245 240 250 380 290 380"/><path d="M480 65H570"/><path d="M480 170H570"/><path d="M480 275H570"/><path d="M780 65C815 65 815 175 840 175"/><path d="M780 170H840"/><path d="M780 275C815 275 815 260 840 260"/></g>
+        </svg>
+        <div class="legend"><span><i class="dot" style="background:#4f6f52"></i>source 永远只读</span><span><i class="dot" style="background:#426579"></i>可安全写入的 target carrier</span><span><i class="dot" style="background:#ad6f20"></i>需要后续设置，不报告假成功</span></div>
+      </div>
+    </section>
+
+    <section id="ui">
+      <h2>工作台信息层级</h2>
+      <p class="intro">先回答“本次转换什么、写到哪里、有哪些风险”，installation 选择不再抢占主视觉。</p>
+      <div class="mock">
+        <div class="scope"><div><strong>项目级转换</strong><div class="path">/Users/yuanxuan/python_workspace/sofampy</div></div><div><span class="pill safe">Claude source 保持不变</span></div></div>
+        <div class="summary"><div class="metric"><b>3</b><span>自动转换</span></div><div class="metric"><b>2</b><span>需要决策</span></div><div class="metric"><b>9</b><span>无法转换</span></div><div class="metric"><b>0</b><span>冲突</span></div><div class="metric"><b>1</b><span>危险变更</span></div></div>
+        <div class="group"><div class="group-head">Settings · /sofampy/.codex/config.toml</div><div class="row"><span>maxContextTokens</span><span>250000 → model_context_window</span><span class="state"><i class="pill safe">自动</i></span></div><div class="row"><span>model</span><span>选择 Codex model 或明确跳过</span><span class="state"><i class="pill warn">待决策</i></span></div></div>
+        <div class="group"><div class="group-head">Skills · /sofampy/.agents/skills</div><div class="row"><span>skillspy_delivery</span><span>/sofampy/.claude/skills/skillspy_delivery → 已解析本地 source</span><span class="state"><i class="pill warn">确认安装</i></span></div></div>
+        <div class="group"><div class="group-head">Plugins · isolated Project runtime</div><div class="row"><span>6 项声明 · 2 个来源</span><span>兼容 package 自动安装；未验证组件保留 partial residual</span><span class="state"><i class="pill safe">自动 / partial</i></span></div></div>
+      </div>
+    </section>
+
+    <section id="risk">
+      <h2>危险权限：提示不等于确认</h2>
+      <div class="grid two">
+        <div class="confirm"><span class="tag danger">独立二次确认</span><h3>允许 Codex 无审批、无沙箱运行？</h3><p>此变更会扩大项目中的命令执行权限。Claude Code 配置不会被修改，但 Codex 可在本机拥有完全访问。</p><div class="code">approval_policy = "never"<br>sandbox_mode = "danger-full-access"</div><label style="display:block;font-size:13px;margin:13px 0"><input type="checkbox" disabled> 我理解此配置允许命令无需审批并绕过沙箱</label><div class="buttons"><span class="button">取消</span><span class="button red">确认危险变更并应用</span></div></div>
+        <div class="card"><span class="tag info">后端硬门禁</span><h3>Plan-bound acknowledgement</h3><p>风险来自 backend-owned mutation plan。PlanStore 保存 <code>dangerous_permission_expansion</code> requirement；Apply 必须提交精确 acknowledgement。空值、未知 code、旧 plan、通用 boolean 都拒绝且不消费计划。</p><div class="rule" style="margin-top:18px"><strong>不可绕过的不变量</strong><span style="font-size:13px">只有当前 plan 的所有 required acknowledgements 满足后，才进入 digest 复查、备份和写入。</span></div></div>
+      </div>
+    </section>
+
+    <section id="baseline">
+      <h2><code>sofampy</code> 验收基准</h2>
+      <p class="intro">真实项目只做 preview；Apply/rollback 使用同形临时 fixture。合法结果可以是“不支持”，但每类来源必须可见。</p>
+      <table><thead><tr><th>来源清单</th><th>目标载体</th><th>预期行为</th></tr></thead><tbody>
+        <tr><td>9 类 settings</td><td><code>.codex/config.toml</code> 或对应 resource</td><td>逐项自动、决策或 unsupported；不按“是否产生 TOML”过滤</td></tr>
+        <tr><td>116 条 permission rules</td><td>Codex permissions/rules</td><td>宽泛 preset 不冒充细粒度迁移；危险 preset 独立确认</td></tr>
+        <tr><td>1 个 Project Skill symlink</td><td><code>.agents/skills/skillspy_delivery</code></td><td>确认 source 后生成可备份、可 rollback 的 symlink mutation</td></tr>
+        <tr><td>6 个 Plugin + 2 marketplace</td><td>AD Managed Project Codex Home</td><td>Project-only key 不遗漏；package-first 自动安装，partial/LSP-only 显示具体 residual</td></tr>
+        <tr><td>statusLine / skip prompt</td><td>无已确认等价载体</td><td>明确 unsupported 和原因</td></tr>
+      </tbody></table>
+    </section>
+
+    <section id="acceptance">
+      <h2>设计验收</h2>
+      <div class="grid two">
+        <div class="card"><span class="tag safe">完整性</span><h3>每个源 artifact 恰好一次</h3><p>自动、待决策、unsupported、conflict、unchanged 五类都可追踪；没有 resolver 的项目不能标 requires_input。</p></div>
+        <div class="card"><span class="tag safe">数据安全</span><h3>源不变，目标可恢复</h3><p>source 只进入 read-set；target 全量写前备份；文件和 symlink 均有 receipt 与 digest-protected rollback。</p></div>
+        <div class="card"><span class="tag safe">可理解</span><h3>真实载体优先</h3><p>Project path 和实际 resource locations 在主区；installation home 仅在高级选择中出现。</p></div>
+        <div class="card"><span class="tag danger">强制确认</span><h3>危险风险绑定计划</h3><p>普通 Apply 不能带过危险权限；前后端测试共同证明确认路径存在且不可由 generic boolean 绕过。</p></div>
+      </div>
+    </section>
+    <footer>设计真理源：docs/design-docs/agent-conversion-workbench.md · 此 HTML 在用户批准后冻结为评审基线。</footer>
+  </main>
+</body>
+</html>

@@ -47,9 +47,7 @@ pub fn probe_git(remote_url: &str) -> Result<ProbeResult> {
 
 /// Clone a repo into `dest`. Shallow clone (depth=1) by default.
 pub fn clone(url: &str, dest: &Path, branch: Option<&str>) -> Result<()> {
-    let dest_str = dest
-        .to_str()
-        .ok_or_else(|| anyhow!("non-utf8 dest path"))?;
+    let dest_str = dest.to_str().ok_or_else(|| anyhow!("non-utf8 dest path"))?;
     let branch_flag = branch
         .map(|b| format!(" --branch '{b}'"))
         .unwrap_or_default();
@@ -122,13 +120,18 @@ mod tests {
     #[ignore] // network-dependent
     fn probe_public_repo() {
         let result = probe_git("https://github.com/anthropics/anthropic-sdk-python.git").unwrap();
-        assert!(result.auth_ok, "public repo should be accessible: {:?}", result.error);
+        assert!(
+            result.auth_ok,
+            "public repo should be accessible: {:?}",
+            result.error
+        );
     }
 
     #[test]
     #[ignore] // network-dependent
     fn probe_invalid_url() {
-        let result = probe_git("https://github.com/nonexistent/repo-does-not-exist-12345.git").unwrap();
+        let result =
+            probe_git("https://github.com/nonexistent/repo-does-not-exist-12345.git").unwrap();
         assert!(!result.auth_ok);
         assert!(result.error.is_some());
     }

@@ -1,5 +1,8 @@
+#![allow(clippy::result_large_err)]
+
 // ad library entry — composes filesystem primitives, commands, and the tray.
 
+pub mod agents;
 pub mod fs;
 mod migration;
 mod models;
@@ -8,7 +11,7 @@ mod tray;
 
 pub mod commands;
 
-use tauri::webview::Color;
+use tauri::webview::{Color, PageLoadEvent};
 use tauri::{Manager, WebviewWindowBuilder, WindowEvent};
 use tracing::info;
 
@@ -18,11 +21,19 @@ fn theme_bg() -> Color {
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|s| s.trim() != "light")
         .unwrap_or(true);
+    theme_bg_for(is_dark)
+}
+
+fn theme_bg_for(is_dark: bool) -> Color {
     if is_dark {
-        Color(0x0a, 0x0a, 0x0b, 0xff)
+        Color(0x1e, 0x1e, 0x2e, 0xff)
     } else {
-        Color(0xff, 0xff, 0xff, 0xff)
+        Color(0xef, 0xf1, 0xf5, 0xff)
     }
+}
+
+fn should_show_main_on_page_load(label: &str, event: PageLoadEvent) -> bool {
+    label == "main" && matches!(event, PageLoadEvent::Finished)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -39,6 +50,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(agents::PlanStore::default())
         .manage(commands::shortcut::ShortcutState::default())
         .setup(|app| {
             // First-run: relocate AD data from ~/.claude/ to ~/.ad/ if needed.
@@ -67,13 +79,16 @@ pub fn run() {
             // delegate — at that point the HTML/CSS splash is fully loaded and
             // composited, so the user sees the splash instead of a blank frame.
             let bg = theme_bg();
-            let main_win = WebviewWindowBuilder::from_config(
-                app.handle(),
-                &app.config().app.windows[0],
-            )?
-            .background_color(bg)
-            .visible(false)
-            .build()?;
+            WebviewWindowBuilder::from_config(app.handle(), &app.config().app.windows[0])?
+                .background_color(bg)
+                .visible(false)
+                .on_page_load(|window, payload| {
+                    if should_show_main_on_page_load(window.label(), payload.event()) {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                })
+                .build()?;
 
             // Pre-create settings window hidden so it's instantly ready when
             // the user clicks the gear icon — no loading flash.
@@ -98,10 +113,7 @@ pub fn run() {
             // Register the default OS-global shortcut for show/hide. The
             // frontend will re-register on boot with the user's persisted
             // binding, so this is mainly a fallback for the first frame.
-            commands::shortcut::register_default(
-                app.handle(),
-                commands::shortcut::DEFAULT_BINDING,
-            );
+            commands::shortcut::register_default(app.handle(), commands::shortcut::DEFAULT_BINDING);
 
             info!("ad ready");
             Ok(())
@@ -124,10 +136,38 @@ pub fn run() {
             commands::profiles::save_profile,
             commands::profiles::delete_profile,
             commands::profiles::get_active_profile_id,
+            commands::profiles::list_agent_profiles,
+            commands::profiles::get_agent_profile,
+            commands::profiles::save_agent_profile,
+            commands::profiles::delete_agent_profile,
+            commands::profile_envelopes::list_profile_envelopes,
+            commands::profile_envelopes::get_profile_envelope,
+            commands::profile_envelopes::save_profile_envelope,
+            commands::profile_envelopes::delete_profile_envelope,
             commands::settings::read_current_settings,
             commands::settings::write_theme_hint,
             commands::activate::activate_profile,
             commands::activate::detect_claude_processes,
+            commands::agents::list_agents,
+            commands::agents::discover_agents,
+            commands::agents::list_agent_capabilities,
+            commands::agents::resolve_agent_context,
+            commands::agents::inspect_agent_settings,
+            commands::agents::list_agent_settings_documents,
+            commands::agents::list_agent_skills,
+            commands::agents::list_agent_plugins,
+            commands::agents::detect_agent_processes,
+            commands::agents::inspect_project_codex_runtime,
+            commands::agents::list_agent_operation_history,
+            commands::agents::preview_claude_to_codex,
+            commands::agents::preview_claude_to_codex_route,
+            commands::agents::preview_agent_settings_edit,
+            commands::agents::preview_agent_profile_apply,
+            commands::agents::preview_agent_collection_install,
+            commands::agents::preview_agent_collection_toggle,
+            commands::agents::apply_agent_plan,
+            commands::agents::apply_conversion_plan,
+            commands::agents::rollback_agent_receipt,
             commands::history::read_history,
             commands::history::restore_backup,
             commands::importers::import_from_file,
@@ -138,6 +178,7 @@ pub fn run() {
             commands::projects::remove_project,
             commands::projects::rename_project,
             commands::projects::set_project_pinned,
+            commands::projects::set_project_codex_config_inheritance,
             commands::projects::get_project_status,
             commands::projects::read_project_settings,
             commands::projects::write_project_settings,
@@ -175,4 +216,42 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use tauri::webview::PageLoadEvent;
+
+    use super::{should_show_main_on_page_load, theme_bg_for};
+
+    #[test]
+    fn maps_theme_mode_to_catppuccin_window_backgrounds() {
+        let mocha = theme_bg_for(true);
+        let latte = theme_bg_for(false);
+
+        assert_eq!(
+            (mocha.0, mocha.1, mocha.2, mocha.3),
+            (0x1e, 0x1e, 0x2e, 0xff)
+        );
+        assert_eq!(
+            (latte.0, latte.1, latte.2, latte.3),
+            (0xef, 0xf1, 0xf5, 0xff)
+        );
+    }
+
+    #[test]
+    fn only_finished_main_page_load_reveals_a_window() {
+        assert!(!should_show_main_on_page_load(
+            "main",
+            PageLoadEvent::Started
+        ));
+        assert!(should_show_main_on_page_load(
+            "main",
+            PageLoadEvent::Finished
+        ));
+        assert!(!should_show_main_on_page_load(
+            "settings",
+            PageLoadEvent::Finished
+        ));
+    }
 }

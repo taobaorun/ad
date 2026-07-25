@@ -21,7 +21,10 @@ export type Handler = (e: KeyboardEvent) => void;
 export type ShortcutMap = Record<Shortcut, Handler>;
 
 function parseShortcut(s: Shortcut): { mod: boolean; shift: boolean; key: string } {
-  const parts = s.toLowerCase().split('+').map((x) => x.trim());
+  const parts = s
+    .toLowerCase()
+    .split('+')
+    .map((x) => x.trim());
   const mod = parts.includes('mod');
   const shift = parts.includes('shift');
   const key = parts[parts.length - 1] ?? '';

@@ -1,5 +1,10 @@
-import { invoke } from '@tauri-apps/api/core';
-import type { ProfileFile, ClaudeSettings } from './profileSchema';
+import { Channel, invoke } from '@tauri-apps/api/core';
+import {
+  AgentProfileSchema,
+  type AgentProfile,
+  type ProfileFile,
+  type ClaudeSettings,
+} from './profileSchema';
 import type {
   ApplyOptions,
   ApplyOutcome,
@@ -15,6 +20,61 @@ import type {
   SkillSource,
   SkillUpdateResult,
 } from './skillTypes';
+import {
+  AgentContextSchema,
+  CapabilityDescriptorSchema,
+  AgentInstallationSchema,
+  AgentMetadataSchema,
+  ConversionProgressEventSchema,
+  ConversionPreviewSchema,
+  ConversionRoutePreviewSchema,
+  MutationPlanViewSchema,
+  OperationHistoryEntrySchema,
+  OperationReceiptSchema,
+  ProcessObservationSchema,
+  ProjectCodexRuntimeStatusSchema,
+  ResourceSnapshotSchema,
+  SettingsDocumentSchema,
+  type AgentContext,
+  type AgentId,
+  type CapabilityDescriptor,
+  type ConversionPreview,
+  type ConversionProgressEvent,
+  type ConversionRoutePreview,
+  type InstallationId,
+  type MutationPlanView,
+  type OperationHistoryEntry,
+  type OperationReceipt,
+  type PlanAcknowledgement,
+  type PlanId,
+  type ProcessObservation,
+  type ProjectCodexRuntimeStatus,
+  type ReceiptId,
+  type ResourceKind,
+  type ResourceRef,
+  type ResourceSnapshot,
+  type SettingsDocument,
+  type JsonValue,
+} from './agentTypes';
+
+export interface AgentSettingsEdit {
+  resource: ResourceRef;
+  mediaType: string;
+  content: unknown;
+}
+
+export interface AgentCollectionInstallRequest {
+  logicalId: string;
+  source: JsonValue;
+}
+
+export interface ClaudeToCodexOptions {
+  targetModel?: string;
+  permissionPreset?: 'on_request_workspace_write' | 'never_danger_full_access';
+  confirmedSkillIds?: string[];
+  profileId?: string;
+  inheritBaseConfig?: boolean;
+}
 
 export interface ClaudeProcess {
   pid: number;
@@ -29,13 +89,141 @@ export interface ActivationResult {
 
 export interface ActivationLogEntry {
   ts: string;
+  agentId: string;
   from: string | null;
   to: string;
   backupPath?: string | null;
 }
 
 export const tauri = {
+  listAgents: async () => AgentMetadataSchema.array().parse(await invoke<unknown>('list_agents')),
+  discoverAgents: async () =>
+    AgentInstallationSchema.array().parse(await invoke<unknown>('discover_agents')),
+  listAgentCapabilities: async (agentId: AgentId): Promise<CapabilityDescriptor[]> =>
+    CapabilityDescriptorSchema.array().parse(
+      await invoke<unknown>('list_agent_capabilities', { agentId }),
+    ),
+  resolveAgentContext: async (installationId: InstallationId, projectPath?: string) =>
+    AgentContextSchema.parse(
+      await invoke<unknown>('resolve_agent_context', { installationId, projectPath }),
+    ),
+  previewClaudeToCodex: async (profile: ProfileFile): Promise<ConversionPreview> =>
+    ConversionPreviewSchema.parse(await invoke<unknown>('preview_claude_to_codex', { profile })),
+  previewClaudeToCodexRoute: async (
+    sourceContext: AgentContext,
+    targetContext: AgentContext,
+    options: ClaudeToCodexOptions = {},
+    onProgress: (event: ConversionProgressEvent) => void = () => {},
+  ): Promise<ConversionRoutePreview> => {
+    const progress = new Channel<unknown>((event) => {
+      onProgress(ConversionProgressEventSchema.parse(event));
+    });
+    return ConversionRoutePreviewSchema.parse(
+      await invoke<unknown>('preview_claude_to_codex_route', {
+        sourceContext,
+        targetContext,
+        options,
+        progress,
+      }),
+    );
+  },
+  previewAgentSettingsEdit: async (
+    context: AgentContext,
+    edit: AgentSettingsEdit,
+  ): Promise<MutationPlanView> =>
+    MutationPlanViewSchema.parse(
+      await invoke<unknown>('preview_agent_settings_edit', { context, edit }),
+    ),
+  previewAgentProfileApply: async (
+    context: AgentContext,
+    profileId: string,
+  ): Promise<MutationPlanView> =>
+    MutationPlanViewSchema.parse(
+      await invoke<unknown>('preview_agent_profile_apply', { context, profileId }),
+    ),
+  listAgentSettingsDocuments: async (context: AgentContext): Promise<SettingsDocument[]> =>
+    SettingsDocumentSchema.array().parse(
+      await invoke<unknown>('list_agent_settings_documents', { context }),
+    ),
+  listAgentSkills: async (context: AgentContext): Promise<ResourceSnapshot[]> =>
+    ResourceSnapshotSchema.array().parse(await invoke<unknown>('list_agent_skills', { context })),
+  listAgentPlugins: async (context: AgentContext): Promise<ResourceSnapshot[]> =>
+    ResourceSnapshotSchema.array().parse(await invoke<unknown>('list_agent_plugins', { context })),
+  detectAgentProcesses: async (context: AgentContext): Promise<ProcessObservation[]> =>
+    ProcessObservationSchema.array().parse(
+      await invoke<unknown>('detect_agent_processes', { context }),
+    ),
+  inspectProjectCodexRuntime: async (
+    context: AgentContext,
+  ): Promise<ProjectCodexRuntimeStatus | null> =>
+    ProjectCodexRuntimeStatusSchema.nullable().parse(
+      await invoke<unknown>('inspect_project_codex_runtime', { context }),
+    ),
+  previewAgentCollectionInstall: async (
+    context: AgentContext,
+    kind: ResourceKind,
+    request: AgentCollectionInstallRequest,
+  ): Promise<MutationPlanView> =>
+    MutationPlanViewSchema.parse(
+      await invoke<unknown>('preview_agent_collection_install', { context, kind, request }),
+    ),
+  previewAgentCollectionToggle: async (
+    context: AgentContext,
+    resource: ResourceRef,
+    enabled: boolean,
+  ): Promise<MutationPlanView> =>
+    MutationPlanViewSchema.parse(
+      await invoke<unknown>('preview_agent_collection_toggle', {
+        context,
+        resource,
+        enabled,
+      }),
+    ),
+  applyAgentPlan: async (planId: PlanId): Promise<OperationReceipt> =>
+    OperationReceiptSchema.parse(await invoke<unknown>('apply_agent_plan', { planId })),
+  applyConversionPlan: async (
+    planId: PlanId,
+    acknowledgements: PlanAcknowledgement[],
+  ): Promise<OperationReceipt> =>
+    OperationReceiptSchema.parse(
+      await invoke<unknown>('apply_conversion_plan', { planId, acknowledgements }),
+    ),
+  rollbackAgentReceipt: async (
+    receiptId: ReceiptId,
+    confirmed: boolean,
+  ): Promise<OperationReceipt> =>
+    OperationReceiptSchema.parse(
+      await invoke<unknown>('rollback_agent_receipt', { receiptId, confirmed }),
+    ),
+  listAgentOperationHistory: async (
+    installationId?: InstallationId,
+    limit = 50,
+    projectPath?: string,
+  ): Promise<OperationHistoryEntry[]> =>
+    OperationHistoryEntrySchema.array().parse(
+      await invoke<unknown>('list_agent_operation_history', {
+        installationId,
+        projectPath,
+        limit,
+      }),
+    ),
+
   listProfiles: () => invoke<ProfileFile[]>('list_profiles'),
+  listAgentProfiles: (agentId: string) => invoke<ProfileFile[]>('list_agent_profiles', { agentId }),
+  getAgentProfile: (agentId: string, id: string) =>
+    invoke<ProfileFile>('get_agent_profile', { agentId, id }),
+  saveAgentProfile: (profile: ProfileFile) =>
+    invoke<ProfileFile>('save_agent_profile', { profile }),
+  deleteAgentProfile: (agentId: string, id: string) =>
+    invoke<void>('delete_agent_profile', { agentId, id }),
+  listProfileEnvelopes: async (agentId: string) =>
+    AgentProfileSchema.array().parse(await invoke<unknown>('list_profile_envelopes', { agentId })),
+  getProfileEnvelope: async (agentId: string, id: string) =>
+    AgentProfileSchema.parse(await invoke<unknown>('get_profile_envelope', { agentId, id })),
+  saveProfileEnvelope: async (profile: AgentProfile) =>
+    AgentProfileSchema.parse(await invoke<unknown>('save_profile_envelope', { profile })),
+  deleteProfileEnvelope: (agentId: string, id: string) =>
+    invoke<void>('delete_profile_envelope', { agentId, id }),
   getProfile: (id: string) => invoke<ProfileFile>('get_profile', { id }),
   saveProfile: (profile: ProfileFile) => invoke<ProfileFile>('save_profile', { profile }),
   deleteProfile: (id: string) => invoke<void>('delete_profile', { id }),
@@ -60,17 +248,15 @@ export const tauri = {
     invoke<Project>('rename_project', { path, displayName }),
   setProjectPinned: (path: string, pinned: boolean) =>
     invoke<Project>('set_project_pinned', { path, pinned }),
+  setProjectCodexConfigInheritance: (path: string, inheritBaseConfig: boolean) =>
+    invoke<Project>('set_project_codex_config_inheritance', { path, inheritBaseConfig }),
   getProjectStatus: (path: string) => invoke<ProjectStatus>('get_project_status', { path }),
   readProjectSettings: (projectPath: string, layer: 'shared' | 'local') =>
     invoke<string>('read_project_settings', { projectPath, layer }),
   writeProjectSettings: (projectPath: string, layer: 'shared' | 'local', content: string) =>
     invoke<void>('write_project_settings', { projectPath, layer, content }),
 
-  applyProfileToProject: (
-    profileId: string,
-    projectPath: string,
-    options: ApplyOptions,
-  ) =>
+  applyProfileToProject: (profileId: string, projectPath: string, options: ApplyOptions) =>
     invoke<ApplyOutcome>('apply_profile_to_project', {
       profileId,
       projectPath,
@@ -84,38 +270,31 @@ export const tauri = {
     invoke<ScanRoot[]>('set_scan_root_enabled', { path, enabled }),
 
   scanForProjects: () => invoke<DetectedProject[]>('scan_for_projects'),
-  completePathPrefix: (prefix: string) =>
-    invoke<string[]>('complete_path_prefix', { prefix }),
+  completePathPrefix: (prefix: string) => invoke<string[]>('complete_path_prefix', { prefix }),
 
   // External terminal launcher
   listTerminalBackends: () =>
     invoke<{ id: TerminalBackendId; label: string }[]>('list_terminal_backends'),
   openInTerminal: (args: {
-    projectPath: string;
+    context: AgentContext;
     backend: TerminalBackendId;
-    claudeBin?: string;
     customTemplate?: string;
   }) => invoke<void>('open_in_terminal', args),
 
   // Global OS-level keyboard shortcut to toggle the main window.
   // Pass `null` to unregister; pass a Tauri shortcut string
   // (e.g. "Alt+Cmd+KeyA") to register / replace.
-  setGlobalShortcut: (binding: string | null) =>
-    invoke<void>('set_global_shortcut', { binding }),
+  setGlobalShortcut: (binding: string | null) => invoke<void>('set_global_shortcut', { binding }),
 
-  writeThemeHint: (dark: boolean) =>
-    invoke<void>('write_theme_hint', { dark }),
+  writeThemeHint: (dark: boolean) => invoke<void>('write_theme_hint', { dark }),
 
-  openSettingsWindow: () =>
-    invoke<void>('open_settings_window'),
+  openSettingsWindow: () => invoke<void>('open_settings_window'),
 
   // Skill management
   listSkillSources: () => invoke<SkillSource[]>('list_skill_sources'),
-  addSkillSource: (source: SkillSource) =>
-    invoke<SkillSource>('add_skill_source', { source }),
+  addSkillSource: (source: SkillSource) => invoke<SkillSource>('add_skill_source', { source }),
   removeSkillSource: (id: string) => invoke<void>('remove_skill_source', { id }),
-  updateSkillSource: (id: string) =>
-    invoke<SkillUpdateResult>('update_skill_source', { id }),
+  updateSkillSource: (id: string) => invoke<SkillUpdateResult>('update_skill_source', { id }),
   scanSkillLibrary: (projectPath?: string) =>
     invoke<SkillEntry[]>('scan_skill_library', { projectPath: projectPath ?? null }),
   getProjectSkills: (projectPath: string) =>

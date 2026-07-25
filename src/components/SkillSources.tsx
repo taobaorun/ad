@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSkills } from '@/store/skills';
 import type { SkillEntry } from '@/lib/skillTypes';
@@ -52,9 +59,7 @@ export function SkillSourcesSection() {
     <>
       <header className="mb-5">
         <h1 className="text-xl font-semibold leading-tight">{t('settings.skills.title')}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t('settings.skills.desc')}
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">{t('settings.skills.desc')}</p>
       </header>
 
       <div className="mb-4 flex items-center justify-between">
@@ -64,7 +69,7 @@ export function SkillSourcesSection() {
         <button
           type="button"
           onClick={() => setAddOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-md border border-clay bg-clay/10 px-2.5 py-1 text-xs text-clay hover:bg-clay/20"
+          className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1 text-xs text-primary hover:bg-primary/20"
         >
           <Plus className="h-3 w-3" /> {t('settings.skills.addSource')}
         </button>
@@ -84,7 +89,9 @@ export function SkillSourcesSection() {
               <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">{s.url}</div>
               <div className="mt-0.5 text-[11px] text-muted-foreground">
                 {s.sourceType === 'git'
-                  ? (s.branch ? t('settings.skills.branch', { branch: s.branch }) : t('settings.skills.branchDefault'))
+                  ? s.branch
+                    ? t('settings.skills.branch', { branch: s.branch })
+                    : t('settings.skills.branchDefault')
                   : t('settings.skills.localDir')}
                 {s.subdirectory ? ` · ${t('settings.skills.subdir', { dir: s.subdirectory })}` : ''}
                 {s.autoUpdate ? ` · ${t('settings.skills.autoUpdateOn')}` : ''}
@@ -92,10 +99,7 @@ export function SkillSourcesSection() {
             </div>
             <div className="flex gap-1.5">
               {s.sourceType === 'git' && (
-                <SmallBtn
-                  onClick={() => void handleUpdate(s.id)}
-                  disabled={updating === s.id}
-                >
+                <SmallBtn onClick={() => void handleUpdate(s.id)} disabled={updating === s.id}>
                   <RefreshCw className={`h-3 w-3 ${updating === s.id ? 'animate-spin' : ''}`} />
                   {updating === s.id ? t('settings.skills.updating') : t('settings.skills.update')}
                 </SmallBtn>
@@ -121,20 +125,18 @@ export function SkillSourcesSection() {
       {addOpen && (
         <AddSourceDialog
           onClose={() => setAddOpen(false)}
-          onAdded={() => { setAddOpen(false); void loadSources(); void scanLibrary(); }}
+          onAdded={() => {
+            setAddOpen(false);
+            void loadSources();
+            void scanLibrary();
+          }}
         />
       )}
     </>
   );
 }
 
-function AddSourceDialog({
-  onClose,
-  onAdded,
-}: {
-  onClose: () => void;
-  onAdded: () => void;
-}) {
+function AddSourceDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
   const { t } = useTranslation();
   const addSource = useSkills((s) => s.addSource);
   const [id, setId] = useState('');
@@ -156,7 +158,8 @@ function AddSourceDialog({
   function handleUrlChange(val: string) {
     setUrl(val);
     if (!idManual) {
-      const name = sourceType === 'git' ? extractRepoName(val) : val.split('/').filter(Boolean).pop() ?? '';
+      const name =
+        sourceType === 'git' ? extractRepoName(val) : (val.split('/').filter(Boolean).pop() ?? '');
       setId(name);
     }
   }
@@ -180,7 +183,7 @@ function AddSourceDialog({
         addedAt: new Date().toISOString(),
       });
       onAdded();
-    } catch (e: any) {
+    } catch (e) {
       setError(String(e));
     } finally {
       setSaving(false);
@@ -188,7 +191,7 @@ function AddSourceDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay/65">
       <div className="w-[440px] rounded-xl border border-border bg-background p-5 shadow-xl">
         <h3 className="mb-4 text-base font-semibold">{t('settings.skills.addDialog.title')}</h3>
 
@@ -198,7 +201,7 @@ function AddSourceDialog({
             value={id}
             onChange={(e) => handleIdChange(e.target.value)}
             placeholder={t('settings.skills.addDialog.namePlaceholder')}
-            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-clay"
+            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
           />
         </FieldLabel>
 
@@ -213,7 +216,13 @@ function AddSourceDialog({
           </div>
         </FieldLabel>
 
-        <FieldLabel label={sourceType === 'git' ? t('settings.skills.addDialog.gitUrl') : t('settings.skills.addDialog.path')}>
+        <FieldLabel
+          label={
+            sourceType === 'git'
+              ? t('settings.skills.addDialog.gitUrl')
+              : t('settings.skills.addDialog.path')
+          }
+        >
           <input
             type="text"
             value={url}
@@ -223,7 +232,7 @@ function AddSourceDialog({
                 ? t('settings.skills.addDialog.gitUrlPlaceholder')
                 : t('settings.skills.addDialog.pathPlaceholder')
             }
-            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-clay"
+            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
           />
         </FieldLabel>
 
@@ -234,7 +243,7 @@ function AddSourceDialog({
               value={branch}
               onChange={(e) => setBranch(e.target.value)}
               placeholder={t('settings.skills.addDialog.branchPlaceholder')}
-              className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-clay"
+              className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
             />
           </FieldLabel>
         )}
@@ -245,7 +254,7 @@ function AddSourceDialog({
             value={subdirectory}
             onChange={(e) => setSubdirectory(e.target.value)}
             placeholder={t('settings.skills.addDialog.subdirectoryPlaceholder')}
-            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-clay"
+            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
           />
         </FieldLabel>
 
@@ -269,11 +278,26 @@ function AddSourceDialog({
         {saving && (
           <div className="mt-4 flex items-center gap-2.5 rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5">
             <svg className="h-4 w-4 animate-spin text-primary" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="opacity-20" />
-              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+                className="opacity-20"
+              />
+              <path
+                d="M12 2a10 10 0 0 1 10 10"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
             </svg>
             <span className="text-xs text-primary">
-              {sourceType === 'git' ? t('settings.skills.addDialog.cloningGit') : t('settings.skills.addDialog.addingSource')}
+              {sourceType === 'git'
+                ? t('settings.skills.addDialog.cloningGit')
+                : t('settings.skills.addDialog.addingSource')}
             </span>
           </div>
         )}
@@ -293,7 +317,9 @@ function AddSourceDialog({
             disabled={!id || !url || saving}
             className="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
-            {saving ? t('settings.skills.addDialog.submitting') : t('settings.skills.addDialog.submit')}
+            {saving
+              ? t('settings.skills.addDialog.submitting')
+              : t('settings.skills.addDialog.submit')}
           </button>
         </div>
       </div>
@@ -310,7 +336,7 @@ function GlobalSkillsPanel({
 }: {
   managedBySource: [string, SkillEntry[]][];
   expanded: Record<string, boolean>;
-  setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  setExpanded: Dispatch<SetStateAction<Record<string, boolean>>>;
   setSkillScope: (skillId: string, scope: string) => Promise<void>;
   scanLibrary: () => Promise<void>;
 }) {
@@ -329,8 +355,20 @@ function GlobalSkillsPanel({
     setOptimistic((prev) => ({ ...prev, [id]: next }));
     setSkillScope(id, next ? 'global' : 'none')
       .then(() => scanLibrary())
-      .then(() => setOptimistic((prev) => { const c = { ...prev }; delete c[id]; return c; }))
-      .catch(() => setOptimistic((prev) => { const c = { ...prev }; delete c[id]; return c; }));
+      .then(() =>
+        setOptimistic((prev) => {
+          const c = { ...prev };
+          delete c[id];
+          return c;
+        }),
+      )
+      .catch(() =>
+        setOptimistic((prev) => {
+          const c = { ...prev };
+          delete c[id];
+          return c;
+        }),
+      );
   }
 
   function handleToggleAll(skills: SkillEntry[], enable: boolean) {
@@ -341,16 +379,20 @@ function GlobalSkillsPanel({
     }
     if (Object.keys(batch).length === 0) return;
     setOptimistic((prev) => ({ ...prev, ...batch }));
-    const cleanup = () => setOptimistic((prev) => {
-      const c = { ...prev };
-      for (const id of Object.keys(batch)) delete c[id];
-      return c;
-    });
+    const cleanup = () =>
+      setOptimistic((prev) => {
+        const c = { ...prev };
+        for (const id of Object.keys(batch)) delete c[id];
+        return c;
+      });
     (async () => {
       for (const [id, val] of Object.entries(batch)) {
         await setSkillScope(id, val ? 'global' : 'none');
       }
-    })().then(() => scanLibrary()).then(cleanup).catch(cleanup);
+    })()
+      .then(() => scanLibrary())
+      .then(cleanup)
+      .catch(cleanup);
   }
 
   return (
@@ -367,20 +409,18 @@ function GlobalSkillsPanel({
         const allOn = globalCount === skills.length;
         const isExpanded = expanded[sourceId] ?? false;
         return (
-          <div
-            key={sourceId}
-            className="mb-2 overflow-hidden rounded-lg border border-border"
-          >
+          <div key={sourceId} className="mb-2 overflow-hidden rounded-lg border border-border">
             <button
               type="button"
               onClick={() => setExpanded((p) => ({ ...p, [sourceId]: !p[sourceId] }))}
               className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-foreground/5"
               style={{ background: 'var(--muted)' }}
             >
-              {isExpanded
-                ? <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                : <ChevronRight className="h-3 w-3 text-muted-foreground" />
-              }
+              {isExpanded ? (
+                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-3 w-3 text-muted-foreground" />
+              )}
               <span className="text-[12px] font-semibold">{sourceId}</span>
               <span className="text-[11px] text-muted-foreground">
                 {t('settings.skills.skillCount', { count: skills.length })}
@@ -400,7 +440,11 @@ function GlobalSkillsPanel({
                     <div
                       key={id}
                       className="flex items-center gap-3 py-[7px] text-[13px] transition-colors hover:bg-foreground/5"
-                      style={{ paddingLeft: 28, paddingRight: 12, borderTop: '0.5px solid color-mix(in srgb, var(--border) 50%, transparent)' }}
+                      style={{
+                        paddingLeft: 28,
+                        paddingRight: 12,
+                        borderTop: '0.5px solid color-mix(in srgb, var(--border) 50%, transparent)',
+                      }}
                     >
                       <div className="min-w-[120px] font-medium">{entry.name}</div>
                       <div className="flex-1 truncate text-[12px] text-muted-foreground">
@@ -421,7 +465,7 @@ function GlobalSkillsPanel({
   );
 }
 
-function FieldLabel({ label, children }: { label: string; children: React.ReactNode }) {
+function FieldLabel({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="mb-3">
       <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -438,7 +482,7 @@ function SmallBtn({
   disabled,
   danger,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
@@ -467,7 +511,7 @@ function TypeBtn({
 }: {
   on: boolean;
   onClick: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <button
@@ -477,7 +521,7 @@ function TypeBtn({
         'rounded-md border px-3 py-1.5 text-xs transition-colors ' +
         (on
           ? 'border-foreground bg-foreground text-background'
-          : 'border-border hover:border-clay')
+          : 'border-border hover:border-primary')
       }
     >
       {children}
