@@ -1687,16 +1687,6 @@ fn append_inherited_package_mutations(
         if !matches!(state, TargetState::Missing | TargetState::Directory(_)) {
             return Err(storage_conflict(context, &resource));
         }
-        if let TargetState::Directory(existing) = &state {
-            if existing != &snapshot.package_digest {
-                return Err(agent_error(
-                    AgentErrorCode::ResourceChanged,
-                    context,
-                    Some(resource),
-                    "Inherited Project Plugin version has different target content",
-                ));
-            }
-        }
         push_directory_mutation(
             mutations,
             resource,
