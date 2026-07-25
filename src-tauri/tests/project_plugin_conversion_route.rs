@@ -313,6 +313,96 @@ fn legacy_runtime_with_unproven_plugin_ownership_fails_closed() {
 
 #[test]
 #[serial_test::serial(home_env)]
+fn legacy_runtime_accepts_inherited_marketplace_revision_drift() {
+    let temp = tempfile::tempdir().unwrap();
+    let claude_home = temp.path().join(".claude");
+    let codex_home = temp.path().join(".codex");
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&claude_home).unwrap();
+    std::fs::create_dir_all(&codex_home).unwrap();
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        codex_home.join("config.toml"),
+        concat!(
+            "cli_auth_credentials_store = \"file\"\n\n",
+            "[marketplaces.kami]\n",
+            "source_type = \"git\"\n",
+            "source = \"https://github.com/tw93/kami.git\"\n",
+            "last_revision = \"current-revision\"\n\n",
+            "[plugins.\"kami@kami\"]\n",
+            "enabled = true\n",
+        ),
+    )
+    .unwrap();
+    std::fs::write(codex_home.join("auth.json"), "shared-login").unwrap();
+    let previous_home = std::env::var("AD_HOME").ok();
+    let previous_codex_home = std::env::var("CODEX_HOME").ok();
+    std::env::set_var("AD_HOME", temp.path());
+    std::env::remove_var("CODEX_HOME");
+
+    let installations = builtin_registry().discover();
+    let claude = installations
+        .iter()
+        .find(|installation| installation.agent_id.as_str() == "claude-code")
+        .unwrap();
+    let base = installations
+        .iter()
+        .find(|installation| installation.agent_id.as_str() == "codex")
+        .unwrap();
+    let runtime = ProjectCodexRuntime::derive(base, &project).unwrap();
+    std::fs::create_dir_all(&runtime.runtime_home).unwrap();
+    std::fs::write(
+        runtime.runtime_home.join("config.toml"),
+        concat!(
+            "cli_auth_credentials_store = \"file\"\n\n",
+            "[marketplaces.kami]\n",
+            "source_type = \"git\"\n",
+            "source = \"https://github.com/tw93/kami.git\"\n",
+            "last_revision = \"legacy-revision\"\n\n",
+            "[plugins.\"kami@kami\"]\n",
+            "enabled = true\n",
+        ),
+    )
+    .unwrap();
+    persist_project_codex_runtime(&runtime).unwrap();
+    let source_context = AgentContext {
+        installation_id: claude.id.clone(),
+        project_path: Some(runtime.project_path.clone()),
+    };
+    let target_context = AgentContext {
+        installation_id: runtime.runtime_installation_id.clone(),
+        project_path: Some(runtime.project_path.clone()),
+    };
+
+    let preview = ClaudeToCodexRoute
+        .preview_with_options(
+            &source_context,
+            &target_context,
+            &ClaudeToCodexOptions {
+                inherit_base_config: false,
+                ..ClaudeToCodexOptions::default()
+            },
+        )
+        .unwrap();
+
+    match previous_home {
+        Some(value) => std::env::set_var("AD_HOME", value),
+        None => std::env::remove_var("AD_HOME"),
+    }
+    match previous_codex_home {
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
+    }
+
+    assert!(preview
+        .plan
+        .mutations
+        .iter()
+        .any(|mutation| mutation.resource.logical_id == "runtime-manifest"));
+}
+
+#[test]
+#[serial_test::serial(home_env)]
 fn legacy_runtime_drops_disabled_unowned_plugin_metadata() {
     let temp = tempfile::tempdir().unwrap();
     let claude_home = temp.path().join(".claude");
