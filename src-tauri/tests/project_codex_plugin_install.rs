@@ -77,6 +77,11 @@ fn project_plugin_install_applies_official_disk_contract_without_touching_base_h
     )
     .unwrap();
     std::fs::write(
+        base_home.join("plugins/cache/base-market/inherited/3.0.0/README.md"),
+        "current inherited",
+    )
+    .unwrap();
+    std::fs::write(
         local_marketplace.join(".agents/plugins/marketplace.json"),
         r#"{"name":"runtime-market"}"#,
     )
@@ -102,6 +107,16 @@ fn project_plugin_install_applies_official_disk_contract_without_touching_base_h
         .unwrap();
     let runtime = ProjectCodexRuntime::derive(&base, &project).unwrap();
     std::fs::create_dir_all(&runtime.runtime_home).unwrap();
+    let inherited_target = runtime
+        .runtime_home
+        .join("plugins/cache/base-market/inherited/3.0.0");
+    std::fs::create_dir_all(inherited_target.join(".codex-plugin")).unwrap();
+    std::fs::write(
+        inherited_target.join(".codex-plugin/plugin.json"),
+        r#"{"name":"inherited","version":"3.0.0"}"#,
+    )
+    .unwrap();
+    std::fs::write(inherited_target.join("README.md"), "stale inherited").unwrap();
     persist_project_codex_runtime(&runtime).unwrap();
     let context = AgentContext {
         installation_id: runtime.runtime_installation_id.clone(),
@@ -222,6 +237,10 @@ fn project_plugin_install_applies_official_disk_contract_without_touching_base_h
         .runtime_home
         .join("plugins/cache/base-market/inherited/3.0.0/.codex-plugin/plugin.json")
         .is_file());
+    assert_eq!(
+        std::fs::read_to_string(inherited_target.join("README.md")).unwrap(),
+        "current inherited"
+    );
     assert!(runtime
         .runtime_home
         .join("plugins/cache/runtime-market/bundled/4.0.0/.codex-plugin/plugin.json")
@@ -366,10 +385,10 @@ fn project_plugin_install_applies_official_disk_contract_without_touching_base_h
         .runtime_home
         .join("plugins/cache/team/demo/1.2.3")
         .exists());
-    assert!(!runtime
-        .runtime_home
-        .join("plugins/cache/base-market/inherited/3.0.0")
-        .exists());
+    assert_eq!(
+        std::fs::read_to_string(inherited_target.join("README.md")).unwrap(),
+        "stale inherited"
+    );
     assert!(!runtime
         .runtime_home
         .join("plugins/cache/runtime-market/bundled/4.0.0")
