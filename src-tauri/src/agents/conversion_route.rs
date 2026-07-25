@@ -355,6 +355,7 @@ fn append_collection_artifacts(
             false
         };
         let mut plugin_install_plans = Vec::new();
+        let mut inherited_base_plugin_ids = BTreeSet::new();
         if scope == ResourceScope::Project {
             let report_inherited = |progress: PluginInstallProgress| {
                 report(ConversionProgressEvent {
@@ -370,7 +371,8 @@ fn append_collection_artifacts(
                 options.profile_id.as_deref(),
                 &report_inherited,
             )? {
-                plugin_install_plans.push(bootstrap);
+                inherited_base_plugin_ids = bootstrap.inherited_plugin_ids;
+                plugin_install_plans.push(bootstrap.plan);
             }
         }
         let total = sources.len();
@@ -414,7 +416,18 @@ fn append_collection_artifacts(
                     "Legacy target will be revalidated from the explicit Project Plugin source"
                         .into();
             }
-            let needs_project_install = scope == ResourceScope::Project
+            let reuses_inherited_user_plugin = options.inherit_base_config
+                && source.location.origin == ResourceOrigin::User
+                && source.content.get("enabled").and_then(Value::as_bool) == Some(true)
+                && inherited_base_plugin_ids.contains(&source.resource.logical_id);
+            if reuses_inherited_user_plugin {
+                artifact.disposition = ArtifactDisposition::Unchanged;
+                artifact.resolution = None;
+                artifact.message =
+                    "User Plugin is already provided by inherited Base Codex configuration".into();
+            }
+            let needs_project_install = !reuses_inherited_user_plugin
+                && scope == ResourceScope::Project
                 && (matches!(
                     artifact.disposition,
                     ArtifactDisposition::Mapped | ArtifactDisposition::Partial
