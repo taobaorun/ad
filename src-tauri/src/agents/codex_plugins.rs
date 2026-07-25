@@ -1977,7 +1977,10 @@ pub(super) fn validate_legacy_project_plugin_ownership(
             continue;
         }
         if explicit_marketplaces.contains(name.as_str())
-            || inherited.marketplaces.get(name) == Some(marketplace)
+            || inherited
+                .marketplaces
+                .get(name)
+                .is_some_and(|inherited| marketplace_ownership_matches(inherited, marketplace))
         {
             continue;
         }
@@ -1991,6 +1994,12 @@ pub(super) fn validate_legacy_project_plugin_ownership(
         ));
     }
     Ok(true)
+}
+
+fn marketplace_ownership_matches(left: &MarketplaceOverlay, right: &MarketplaceOverlay) -> bool {
+    left.source_type == right.source_type
+        && left.source == right.source
+        && left.ref_name == right.ref_name
 }
 
 fn project_overlay_from_legacy_config(
