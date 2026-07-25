@@ -231,6 +231,31 @@ describe('Agent schemas', () => {
     ).toBe(true);
   });
 
+  it('accepts directory states in operation receipts', () => {
+    const receipt = OperationReceiptSchema.parse({
+      id: 'receipt-directory',
+      planId: 'plan-directory',
+      status: 'complete',
+      appliedResources: [],
+      backupPaths: [],
+      postApplyStates: [
+        {
+          resource: {
+            installationId: 'codex:project',
+            projectPath: '/Users/test/project',
+            kind: 'plugins',
+            scope: 'project',
+            logicalId: 'marketplace:team',
+          },
+          kind: 'directory',
+          digest: 'sha256:directory',
+        },
+      ],
+    });
+
+    expect(receipt.postApplyStates[0]?.kind).toBe('directory');
+  });
+
   it('validates operation history entries at the IPC boundary', () => {
     const entry = OperationHistoryEntrySchema.parse({
       createdAt: '2026-07-15T01:00:00Z',
