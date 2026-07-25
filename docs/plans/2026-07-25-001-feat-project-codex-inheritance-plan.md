@@ -124,7 +124,7 @@ execution: code
 
 ## Implementation Units
 
-`docs/exec-plans/active/codex-config-inheritance-toggle.{md,html}` 已在编码前建立并由本次 LFG 授权确认；各单元执行时持续更新 MD Progress。U6 只补结果并归档，不负责事后创建 ExecPlan。
+`docs/exec-plans/completed/codex-config-inheritance-toggle.{md,html}` 已在编码前建立并由本次 LFG 授权确认；各单元执行时持续更新 MD Progress。U6 只补结果并归档，不负责事后创建 ExecPlan。
 
 ### U1 — 项目期望设置与类型化 IPC
 
@@ -251,8 +251,8 @@ execution: code
 - **Files**：
   - `docs/design-docs/architecture.md`
   - `docs/design-docs/codex-plugin-conversion.md`
-  - `docs/exec-plans/active/codex-config-inheritance-toggle.md`
-  - `docs/exec-plans/active/codex-config-inheritance-toggle.html`
+  - `docs/exec-plans/completed/codex-config-inheritance-toggle.md`
+  - `docs/exec-plans/completed/codex-config-inheritance-toggle.html`
 - **Approach**：
   1. 记录 desired/applied/manifest/auth/project-native 四层边界与迁移策略。
   2. 跑前端、Rust、生产构建；在真实 app 中验证 toggle→Preview→Apply→Launch。
