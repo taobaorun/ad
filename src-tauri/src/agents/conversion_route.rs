@@ -349,6 +349,7 @@ fn append_collection_artifacts(
             super::codex_plugins::validate_legacy_project_plugin_ownership(
                 target_context,
                 &explicit_plugin_ids,
+                options.inherit_base_config,
             )?
         } else {
             false
