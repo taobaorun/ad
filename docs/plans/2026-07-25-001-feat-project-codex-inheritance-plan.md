@@ -124,7 +124,7 @@ execution: code
 
 ## Implementation Units
 
-`docs/exec-plans/completed/codex-config-inheritance-toggle.{md,html}` 已在编码前建立并由本次 LFG 授权确认；各单元执行时持续更新 MD Progress。U6 只补结果并归档，不负责事后创建 ExecPlan。
+`docs/exec-plans/active/codex-config-inheritance-toggle.{md,html}` 已在编码前建立并由本次 LFG 授权确认；各单元执行时持续更新 MD Progress。U6 只补结果并归档，不负责事后创建 ExecPlan。执行完成后，产物已移至 `docs/exec-plans/completed/codex-config-inheritance-toggle.{md,html}`。
 
 ### U1 — 项目期望设置与类型化 IPC
 
