@@ -69,12 +69,17 @@ struct InheritedPluginSnapshot {
 #[derive(Debug, Default)]
 pub(crate) struct CodexPluginsPort;
 
+pub(super) struct ProjectRuntimeBootstrapPlan {
+    pub(super) plan: MutationPlan,
+    pub(super) inherited_plugin_ids: BTreeSet<String>,
+}
+
 pub(super) fn plan_project_runtime_bootstrap(
     context: &AgentContext,
     inherit_base_config: bool,
     profile_id: Option<&str>,
     report: &PluginInstallProgressReporter<'_>,
-) -> Result<Option<MutationPlan>, AgentError> {
+) -> Result<Option<ProjectRuntimeBootstrapPlan>, AgentError> {
     let Some(runtime) = project_runtime_for_context(context)? else {
         return Ok(None);
     };
@@ -104,13 +109,19 @@ pub(super) fn plan_project_runtime_bootstrap(
     } else {
         Vec::new()
     };
-
     let config_resource = project_resource(context, "runtime-config");
     let config_target = ManagedResourceTarget::file(runtime.runtime_home.join("config.toml"));
     let config_state = observe_target(&config_target)?;
     validate_runtime_config_state(context, &runtime, &config_resource, &config_state)?;
     let (overlay, project_settings_keys) =
         project_overlays_for_plan(context, &runtime, &config_state, inherit_base_config)?;
+    let inherited_plugin_ids = inherited
+        .iter()
+        .filter_map(|snapshot| {
+            let logical_id = format!("{}@{}", snapshot.plugin, snapshot.marketplace);
+            (!overlay.enabled_plugins.contains_key(&logical_id)).then_some(logical_id)
+        })
+        .collect();
     let project_settings =
         project_settings_from_config(context, &config_state, &project_settings_keys)?;
     let inherited_config = inherit_base_config
@@ -175,13 +186,16 @@ pub(super) fn plan_project_runtime_bootstrap(
         });
     }
 
-    Ok(Some(MutationPlan {
-        id: PlanId::from(uuid::Uuid::new_v4().to_string()),
-        agent_id: AgentId::from("codex"),
-        context: context.clone(),
-        read_set,
-        mutations,
-        expires_at: Utc::now() + Duration::minutes(5),
+    Ok(Some(ProjectRuntimeBootstrapPlan {
+        plan: MutationPlan {
+            id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+            agent_id: AgentId::from("codex"),
+            context: context.clone(),
+            read_set,
+            mutations,
+            expires_at: Utc::now() + Duration::minutes(5),
+        },
+        inherited_plugin_ids,
     }))
 }
 

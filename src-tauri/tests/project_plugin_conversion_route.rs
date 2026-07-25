@@ -908,3 +908,246 @@ fn project_route_batches_compatible_plugins_and_activates_config_last() {
         None => std::env::remove_var("CODEX_HOME"),
     }
 }
+
+#[test]
+#[serial_test::serial(home_env)]
+fn project_route_reuses_user_plugin_from_inherited_base_config() {
+    let temp = tempfile::tempdir().unwrap();
+    let claude_home = temp.path().join(".claude");
+    let codex_home = temp.path().join(".codex");
+    let project = temp.path().join("project");
+    let claude_marketplace = claude_home.join("plugins/marketplaces/coopArk");
+    let claude_package = claude_home.join("plugins/cache/coopArk/skybase-dev-hook/1.1.6");
+    let codex_marketplace = codex_home.join("marketplaces/coopArk");
+    let codex_package = codex_home.join("plugins/cache/coopArk/skybase-dev-hook/1.1.6");
+    std::fs::create_dir_all(project.join(".claude")).unwrap();
+    std::fs::create_dir_all(claude_marketplace.join(".claude-plugin")).unwrap();
+    std::fs::create_dir_all(claude_package.join(".codex-plugin")).unwrap();
+    std::fs::create_dir_all(codex_marketplace.join(".agents/plugins")).unwrap();
+    std::fs::create_dir_all(codex_package.join(".codex-plugin")).unwrap();
+    write_json(
+        &claude_home.join("settings.json"),
+        serde_json::json!({
+            "enabledPlugins": {"skybase-dev-hook@coopArk": true}
+        }),
+    );
+    write_json(
+        &claude_marketplace.join(".claude-plugin/marketplace.json"),
+        serde_json::json!({"name": "coopArk"}),
+    );
+    write_json(
+        &claude_package.join(".codex-plugin/plugin.json"),
+        serde_json::json!({"name": "skybase-dev-hook", "version": "1.1.6"}),
+    );
+    write_json(
+        &claude_home.join("plugins/installed_plugins.json"),
+        serde_json::json!({
+            "version": 2,
+            "plugins": {
+                "skybase-dev-hook@coopArk": [{
+                    "scope": "user",
+                    "installPath": claude_package,
+                    "version": "1.1.6"
+                }]
+            }
+        }),
+    );
+    write_json(
+        &claude_home.join("plugins/known_marketplaces.json"),
+        serde_json::json!({
+            "coopArk": {
+                "source": {"source": "directory", "path": claude_marketplace},
+                "installLocation": claude_marketplace
+            }
+        }),
+    );
+    write_json(
+        &codex_marketplace.join(".agents/plugins/marketplace.json"),
+        serde_json::json!({"name": "coopArk"}),
+    );
+    write_json(
+        &codex_package.join(".codex-plugin/plugin.json"),
+        serde_json::json!({"name": "skybase-dev-hook", "version": "1.1.6"}),
+    );
+    std::fs::write(codex_package.join("README.md"), "base package").unwrap();
+    std::fs::write(
+        codex_home.join("config.toml"),
+        format!(
+            concat!(
+                "cli_auth_credentials_store = \"file\"\n\n",
+                "[marketplaces.coopArk]\n",
+                "source_type = \"local\"\n",
+                "source = \"{}\"\n\n",
+                "[plugins.\"skybase-dev-hook@coopArk\"]\n",
+                "enabled = true\n",
+            ),
+            codex_marketplace.display()
+        ),
+    )
+    .unwrap();
+    std::fs::write(codex_home.join("auth.json"), "shared-login").unwrap();
+
+    let previous_home = std::env::var("AD_HOME").ok();
+    let previous_codex_home = std::env::var("CODEX_HOME").ok();
+    std::env::set_var("AD_HOME", temp.path());
+    std::env::remove_var("CODEX_HOME");
+
+    let registry = builtin_registry();
+    let installations = registry.discover();
+    let claude = installations
+        .iter()
+        .find(|installation| installation.agent_id.as_str() == "claude-code")
+        .unwrap();
+    let base = installations
+        .iter()
+        .find(|installation| {
+            installation.agent_id.as_str() == "codex"
+                && installation.root_path
+                    == std::fs::canonicalize(&codex_home)
+                        .unwrap()
+                        .to_string_lossy()
+        })
+        .unwrap();
+    let runtime = ProjectCodexRuntime::derive(base, &project).unwrap();
+    let source_context = AgentContext {
+        installation_id: claude.id.clone(),
+        project_path: Some(runtime.project_path.clone()),
+    };
+    let target_context = AgentContext {
+        installation_id: runtime.runtime_installation_id.clone(),
+        project_path: Some(runtime.project_path.clone()),
+    };
+
+    let preview = ClaudeToCodexRoute
+        .preview_with_options(
+            &source_context,
+            &target_context,
+            &ClaudeToCodexOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!runtime.runtime_home.exists());
+    let artifact = preview
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.id == "plugin:skybase-dev-hook@coopArk")
+        .unwrap();
+    assert_eq!(artifact.disposition, ArtifactDisposition::Unchanged);
+    let manifest = preview
+        .plan
+        .mutations
+        .iter()
+        .find(|mutation| mutation.resource.logical_id == "runtime-manifest")
+        .and_then(|mutation| mutation.content.clone())
+        .map(serde_json::from_value::<ad_lib::agents::ProjectCodexRuntimeManifest>)
+        .unwrap()
+        .unwrap();
+    assert!(manifest.project_overlay.marketplaces.is_empty());
+    assert!(manifest.project_overlay.enabled_plugins.is_empty());
+    let base_config = std::fs::read(codex_home.join("config.toml")).unwrap();
+    let base_package = std::fs::read(codex_package.join("README.md")).unwrap();
+
+    let plan_id = preview.plan.id.clone();
+    let plans = PlanStore::default();
+    plans.insert(preview.plan).unwrap();
+    ExecutionEngine.apply(&plan_id, &plans).unwrap();
+
+    let config = std::fs::read_to_string(runtime.runtime_home.join("config.toml"))
+        .unwrap()
+        .parse::<toml::Value>()
+        .unwrap();
+    assert_eq!(
+        config["marketplaces"]["coopArk"]["source"].as_str(),
+        Some(codex_marketplace.to_string_lossy().as_ref())
+    );
+    assert_eq!(
+        std::fs::read_to_string(
+            runtime
+                .runtime_home
+                .join("plugins/cache/coopArk/skybase-dev-hook/1.1.6/README.md")
+        )
+        .unwrap(),
+        "base package"
+    );
+    assert_eq!(
+        std::fs::read(codex_home.join("config.toml")).unwrap(),
+        base_config
+    );
+    assert_eq!(
+        std::fs::read(codex_package.join("README.md")).unwrap(),
+        base_package
+    );
+    write_json(
+        &project.join(".claude/settings.local.json"),
+        serde_json::json!({
+            "enabledPlugins": {"skybase-dev-hook@coopArk": true}
+        }),
+    );
+    let explicit_project_preview = ClaudeToCodexRoute
+        .preview_with_options(
+            &source_context,
+            &target_context,
+            &ClaudeToCodexOptions::default(),
+        )
+        .unwrap();
+    let explicit_project_artifact = explicit_project_preview
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.id == "plugin:skybase-dev-hook@coopArk")
+        .unwrap();
+    assert_eq!(
+        explicit_project_artifact.disposition,
+        ArtifactDisposition::Conflict
+    );
+    assert!(explicit_project_preview.plan.mutations.is_empty());
+    std::fs::remove_file(project.join(".claude/settings.local.json")).unwrap();
+
+    let inherited_plugin = registry
+        .adapter("codex")
+        .unwrap()
+        .plugins()
+        .unwrap()
+        .list(&target_context)
+        .unwrap()
+        .into_iter()
+        .find(|snapshot| snapshot.resource.logical_id == "skybase-dev-hook@coopArk")
+        .unwrap()
+        .resource;
+    let disable = registry
+        .adapter("codex")
+        .unwrap()
+        .plugins()
+        .unwrap()
+        .plan_set_enabled(&target_context, &inherited_plugin, false)
+        .unwrap();
+    let disable_id = disable.id.clone();
+    plans.insert(disable).unwrap();
+    ExecutionEngine.apply(&disable_id, &plans).unwrap();
+
+    let disabled_override_preview = ClaudeToCodexRoute
+        .preview_with_options(
+            &source_context,
+            &target_context,
+            &ClaudeToCodexOptions::default(),
+        )
+        .unwrap();
+    let disabled_override_artifact = disabled_override_preview
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.id == "plugin:skybase-dev-hook@coopArk")
+        .unwrap();
+    assert_eq!(
+        disabled_override_artifact.disposition,
+        ArtifactDisposition::Conflict
+    );
+    assert!(disabled_override_preview.plan.mutations.is_empty());
+
+    match previous_home {
+        Some(value) => std::env::set_var("AD_HOME", value),
+        None => std::env::remove_var("AD_HOME"),
+    }
+    match previous_codex_home {
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
+    }
+}
