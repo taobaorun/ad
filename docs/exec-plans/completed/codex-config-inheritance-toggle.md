@@ -10,7 +10,7 @@
 
 ## 确认状态
 
-- [x] 评审 HTML 路径：`docs/exec-plans/active/codex-config-inheritance-toggle.html`
+- [x] 评审 HTML 路径：`docs/exec-plans/completed/codex-config-inheritance-toggle.html`
 - [x] 用户通过 `$compound-engineering:lfg 实现` 授权自动执行（2026-07-25 12:31 GMT+8）；HTML 冻结为基线，开始执行
 
 ## 影响范围
@@ -44,10 +44,11 @@
 - [x] U6 文档、全量测试、生产构建与本地安装
 - [x] 代码简化与多维代码审查；9 个有效问题已修复并完成定向回归
 - [x] 2026-07-25 15:02 修复 legacy 禁用 Plugin 被误报为所有权冲突；禁用条目及其无活跃引用 marketplace 在首次迁移时收敛清理，启用且来源不明的条目继续 fail closed
-- [x] 2026-07-25 17:05 完成四轮 GitHub Codex Review 闭环；累计 31 个线程全部补回归、修复、逐条回复并解决
+- [x] 2026-07-25 21:34 完成全部 GitHub Codex Review 闭环；累计 54 个线程全部补回归、修复、逐条回复并解决，最终代码树复审无新增建议
 - [x] 浏览器测试已执行到驱动门禁；内置浏览器无可用会话且 `agent-browser` 未安装，按 pipeline 规范记为 Skip
-- [x] 精确提交、PR 与 CI；PR #10 最新代码提交 `6fd95dc` 的前后端 GitHub CI 全绿
-- [ ] MD + HTML 移到 `docs/exec-plans/completed/`
+- [x] 精确提交、PR 与 CI；PR #10 已通过 Rebase and merge 合入 `main` 为 `05cceae`，压缩后的精确代码树前后端 GitHub CI 全绿
+- [x] 2026-07-25 21:49 最终生产构建安装并验证；替换前应用保留在 `/tmp/AD.app.pre-final-05cceae-20260725-214849`
+- [x] MD + HTML 移到 `docs/exec-plans/completed/`
 
 ## 意外发现
 
@@ -67,6 +68,7 @@
 - 第二轮 GitHub 复审发现 Settings 异步响应、Claude Skill 作用域、目录原子替换提交点和只读目录复制顺序四个边界；均以定向故障/竞态测试固定。
 - 后续 GitHub 复审发现 Project runtime 选择需携带规范项目路径、Claude Profile 新旧表示需双向兼容、Project Skill 所有权需写入 manifest、成功操作需保留回滚入口，以及无 Base read-set 的写入不得更新继承摘要；均已补回归并修复。
 - 首次最终 DMG 打包被从临时 AD 卷启动的进程占用；仅终止该临时卷进程并卸载对应 `/dev/disk4` 后重跑成功，未触碰已挂载的 Magpie/Blender 卷。
+- GitHub 将 Rebase and merge 限制为最多 100 个提交；原分支虽为线性、`main` 已是祖先且最终树可合并，但 130 个提交仍被 API 标记为 `rebaseable: false`。保留本地备份引用后压缩为一个提交，逐树验证无内容变化，并以 `--force-with-lease` 安全更新远端后完成 Rebase and merge。
 
 ## 决策日志
 
@@ -103,8 +105,8 @@
 ## 结果回顾
 
 - 实际迁移：旧项目默认继承；新 manifest 严格记录 applied policy/profile/Project overlay。legacy 条目只有来源可证明时迁移，歧义 fail closed。
-- 自动化验证：`pnpm format:check`、`pnpm lint`、`pnpm typecheck`、24 个前端文件共 123 项测试、Vite build 与 0.94 MB bundle 门禁通过；Rust `fmt`、`clippy -D warnings`、242 项单元测试通过（4 项按设计 ignored），全部集成测试通过；`git diff --check` 通过。
+- 自动化验证：`pnpm format:check`、`pnpm lint`、`pnpm typecheck`、24 个前端文件共 131 项测试、Vite build 与 bundle 门禁通过；Rust `fmt`、`clippy -D warnings`、248 项单元测试通过（4 项按设计 ignored），全部集成测试通过；`git diff --check` 通过。
 - 生产构建：`pnpm tauri build` 成功，产物为 `AD.app` 与 `AD_1.0.1_aarch64.dmg`。
-- 本地安装：最终 `6fd95dc` 构建已安装到 `/Applications/AD.app`，与构建产物内容一致且可执行文件 SHA-256 同为 `ee93f783a26152e616dee26b994c367a6bab4b344ff8e59537f21f32820207a3`，quarantine 已清除；本次覆盖前版本保存在 `/tmp/AD.app.pre-final-6fd95dc-20260725-1708`，原始安装备份保存在 `/Applications/AD.app.backup-20260725-153203`。本地未签名包的严格 codesign 校验仍报告资源签名不完整。
+- 本地安装：合并提交 `05cceae` 的精确代码树已安装到 `/Applications/AD.app`，与构建产物内容一致且可执行文件 SHA-256 同为 `7479fc9aff015dc2e40653256b1d0e71c18a1b275719c3985341fe06eac2d2fc`；DMG SHA-256 为 `367e41d4f1eead14a333e99cd96498dee4f719a1e0a9b25a85a9868ac26a6a73`。quarantine 已清除；本次覆盖前版本保存在 `/tmp/AD.app.pre-final-05cceae-20260725-214849`。本地未签名包的严格 codesign 校验仍报告资源签名不完整。
 - 浏览器验收：Skip；内置浏览器无可用会话，fallback CLI 未安装。组件交互由 RTL 测试覆盖，但不等同于真实浏览器/真实 Tauri UI 验收。
-- PR 与 CI：GitHub PR #10（`https://github.com/taobaorun/ad/pull/10`）可合并；最新代码提交 `6fd95dc` 的 Frontend 与 Backend jobs 全绿，31 个 Codex review 线程均已解决。
+- PR 与 CI：GitHub PR #10（`https://github.com/taobaorun/ad/pull/10`）已于 2026-07-25 21:39 GMT+8 通过 Rebase and merge 合入 `main`；压缩后的 head `aad3722` 与合并提交 `05cceae` tree 完全一致，Frontend 与 Backend jobs 全绿，54 个 Codex review 线程均已解决。
