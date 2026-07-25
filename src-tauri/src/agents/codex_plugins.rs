@@ -1886,6 +1886,7 @@ fn project_settings_from_config(
 pub(super) fn validate_legacy_project_plugin_ownership(
     context: &AgentContext,
     explicit_plugin_ids: &BTreeSet<String>,
+    inherit_base_config: bool,
 ) -> Result<bool, AgentError> {
     let Some(runtime) = project_runtime_for_context(context)? else {
         return Ok(false);
@@ -1977,10 +1978,10 @@ pub(super) fn validate_legacy_project_plugin_ownership(
             continue;
         }
         if explicit_marketplaces.contains(name.as_str())
-            || inherited
-                .marketplaces
-                .get(name)
-                .is_some_and(|inherited| marketplace_ownership_matches(inherited, marketplace))
+            || inherited.marketplaces.get(name).is_some_and(|inherited| {
+                inherited == marketplace
+                    || inherit_base_config && marketplace_ownership_matches(inherited, marketplace)
+            })
         {
             continue;
         }
