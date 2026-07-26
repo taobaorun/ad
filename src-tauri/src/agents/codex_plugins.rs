@@ -11,7 +11,9 @@ use super::codex::discover_codex_candidates;
 use super::codex_ports::{
     agent_error, project_runtime_for_context, read_optional, resolve_codex_home,
 };
-use super::execution_fs::{directory_tree_digest, observe_target, TargetState};
+use super::execution_fs::{
+    directory_tree_digest, directory_tree_digest_filtered, observe_target, TargetState,
+};
 use super::{
     load_project_codex_runtime_manifest, render_project_codex_runtime_manifest,
     synthesize_project_codex_config, synthesize_project_codex_config_with_settings, AgentContext,
@@ -835,15 +837,39 @@ impl PluginsPort for CodexPluginsPort {
         ) {
             return Err(storage_conflict(context, &package_resource));
         }
-        if let TargetState::Directory(existing) = &package_state {
-            if existing != &package_digest {
-                return Err(agent_error(
-                    AgentErrorCode::ResourceChanged,
-                    context,
-                    Some(package_resource),
-                    "The same Project Plugin version already exists with different content",
-                ));
+        let package_matches = match &package_state {
+            TargetState::Missing => false,
+            TargetState::Directory(existing) if existing == &package_digest => true,
+            TargetState::Directory(_) => {
+                let existing =
+                    project_plugin_source_digest(package_target.path()).map_err(|error| {
+                        agent_error(
+                            AgentErrorCode::InvalidPlan,
+                            context,
+                            Some(package_resource.clone()),
+                            format!("Invalid installed Project Plugin package: {error}"),
+                        )
+                    })?;
+                let staged =
+                    project_plugin_source_digest(&source.package.stage_path).map_err(|error| {
+                        agent_error(
+                            AgentErrorCode::InvalidPlan,
+                            context,
+                            Some(package_resource.clone()),
+                            format!("Invalid staged Project Plugin package: {error}"),
+                        )
+                    })?;
+                existing == staged
             }
+            _ => unreachable!("package storage kind was validated above"),
+        };
+        if matches!(package_state, TargetState::Directory(_)) && !package_matches {
+            return Err(agent_error(
+                AgentErrorCode::ResourceChanged,
+                context,
+                Some(package_resource.clone()),
+                "The same Project Plugin version already exists with different content",
+            ));
         }
         let mut read_set = Vec::new();
         if let Some(digest) = base_config.as_deref().map(ContentDigest::sha256) {
@@ -870,7 +896,7 @@ impl PluginsPort for CodexPluginsPort {
             marketplace_digest,
         );
         append_inherited_package_mutations(context, &runtime, &inherited, &mut mutations)?;
-        if package_state.digest().as_ref() != Some(&package_digest) {
+        if !package_matches {
             push_directory_mutation(
                 &mut mutations,
                 package_resource,
@@ -1755,6 +1781,35 @@ fn validate_staged_manifests(
     Ok(())
 }
 
+fn project_plugin_source_digest(root: &Path) -> Result<ContentDigest, std::io::Error> {
+    directory_tree_digest_filtered(root, |relative| {
+        if relative.file_name() == Some(std::ffi::OsStr::new("__pycache__"))
+            && is_python_bytecode_cache(&root.join(relative))?
+        {
+            return Ok(false);
+        }
+        Ok(true)
+    })
+}
+
+fn is_python_bytecode_cache(path: &Path) -> Result<bool, std::io::Error> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Ok(false);
+    }
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        let metadata = std::fs::symlink_metadata(entry.path())?;
+        if metadata.file_type().is_symlink()
+            || !metadata.is_file()
+            || entry.path().extension() != Some(std::ffi::OsStr::new("pyc"))
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 fn parse_json_file(
     context: &AgentContext,
     path: &Path,
@@ -2243,4 +2298,47 @@ fn storage_conflict(context: &AgentContext, resource: &ResourceRef) -> AgentErro
 
 fn default_true() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::project_plugin_source_digest;
+
+    #[test]
+    fn project_plugin_source_digest_ignores_python_bytecode_caches_only() {
+        let temp = tempfile::tempdir().unwrap();
+        let staged = temp.path().join("staged");
+        let installed = temp.path().join("installed");
+        for root in [&staged, &installed] {
+            std::fs::create_dir_all(root.join("scripts")).unwrap();
+            std::fs::write(root.join("scripts/hook.py"), "print('demo')\n").unwrap();
+        }
+        std::fs::create_dir_all(installed.join("scripts/__pycache__")).unwrap();
+        std::fs::write(
+            installed.join("scripts/__pycache__/hook.cpython-313.pyc"),
+            b"runtime bytecode",
+        )
+        .unwrap();
+
+        assert_eq!(
+            project_plugin_source_digest(&staged).unwrap(),
+            project_plugin_source_digest(&installed).unwrap()
+        );
+
+        std::fs::write(
+            installed.join("scripts/__pycache__/unexpected.txt"),
+            "managed content",
+        )
+        .unwrap();
+        assert_ne!(
+            project_plugin_source_digest(&staged).unwrap(),
+            project_plugin_source_digest(&installed).unwrap()
+        );
+        std::fs::remove_file(installed.join("scripts/__pycache__/unexpected.txt")).unwrap();
+        std::fs::write(installed.join("scripts/hook.py"), "print('changed')\n").unwrap();
+        assert_ne!(
+            project_plugin_source_digest(&staged).unwrap(),
+            project_plugin_source_digest(&installed).unwrap()
+        );
+    }
 }
