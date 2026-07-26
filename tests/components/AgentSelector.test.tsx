@@ -60,17 +60,13 @@ describe('AgentSelector', () => {
       'Codex — /Users/test/.codex',
       'Codex — /Users/test/environment-codex',
     ]);
-    expect(
-      screen.queryByRole('option', { name: /project-home/ }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /project-home/ })).not.toBeInTheDocument();
   });
 
   it('selects the exact Base installation after switching Agents', () => {
     render(<AgentSelector />);
 
-    const selector = screen.getByRole('combobox', {
-      name: 'Select Agent or Base configuration instance',
-    });
+    const selector = screen.getByRole('combobox', { name: 'Select Agent' });
     fireEvent.change(selector, {
       target: { value: 'codex:/Users/test/environment-codex' },
     });
@@ -103,10 +99,26 @@ describe('AgentSelector', () => {
 
     render(<AgentSelector />);
 
-    expect(
-      screen.getByRole('combobox', {
-        name: 'Select Agent or Base configuration instance',
+    expect(screen.getByRole('combobox', { name: 'Select Agent' })).toHaveValue(
+      'codex:/Users/test/.codex',
+    );
+  });
+
+  it('does not expose an Agent without a Base installation', () => {
+    useAgents.setState((state) => ({
+      installations: state.installations.filter(
+        (installation) => installation.agentId === 'claude-code',
+      ),
+      activeAgentId: 'claude-code',
+      activeContext: AgentContextSchema.parse({
+        installationId: 'claude-code:/Users/test/.claude',
       }),
-    ).toHaveValue('codex:/Users/test/.codex');
+    }));
+
+    render(<AgentSelector />);
+
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Claude Code',
+    ]);
   });
 });

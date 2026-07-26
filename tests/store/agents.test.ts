@@ -21,6 +21,13 @@ vi.mock('@tauri-apps/api/core', () => ({
           agentId: 'codex',
           rootPath: '/Users/test/.codex',
         },
+        {
+          id: 'codex:/Users/test/.ad/codex-homes/project',
+          agentId: 'codex',
+          rootPath: '/Users/test/.ad/codex-homes/project',
+          projectPath: '/Users/test/project',
+          baseInstallationId: 'codex:/Users/test/.codex',
+        },
       ];
     }
     if (cmd === 'list_agent_capabilities') {
@@ -55,7 +62,7 @@ describe('useAgents', () => {
     await useAgents.getState().loadAll();
 
     expect(useAgents.getState().agents.map((agent) => agent.id)).toEqual(['claude-code', 'codex']);
-    expect(useAgents.getState().installations).toHaveLength(2);
+    expect(useAgents.getState().installations).toHaveLength(3);
     expect(useAgents.getState().activeContext).toEqual({
       installationId: 'claude-code:/Users/test/.claude',
     });
@@ -111,6 +118,27 @@ describe('useAgents', () => {
     expect(useAgents.getState().activeContext).toEqual({
       installationId: 'codex:/Users/test/.codex',
       projectPath: '/Users/test/project',
+    });
+  });
+
+  it('normalizes a persisted Project runtime to its Base installation', async () => {
+    window.localStorage.setItem(
+      'ad.agent-context.v2',
+      JSON.stringify({
+        agentId: 'codex',
+        installationId: 'codex:/Users/test/.ad/codex-homes/project',
+        projectPath: '/Users/test/project',
+      }),
+    );
+
+    await useAgents.getState().loadAll();
+
+    expect(useAgents.getState().activeContext).toEqual({
+      installationId: 'codex:/Users/test/.codex',
+    });
+    expect(JSON.parse(window.localStorage.getItem('ad.agent-context.v2') ?? 'null')).toEqual({
+      agentId: 'codex',
+      installationId: 'codex:/Users/test/.codex',
     });
   });
 });
