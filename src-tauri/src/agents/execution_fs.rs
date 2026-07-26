@@ -96,6 +96,13 @@ pub(super) fn remove_target(path: &Path) -> Result<(), AgentError> {
 }
 
 pub fn directory_tree_digest(root: &Path) -> Result<ContentDigest, std::io::Error> {
+    directory_tree_digest_filtered(root, |_| Ok(true))
+}
+
+pub(super) fn directory_tree_digest_filtered(
+    root: &Path,
+    should_include: impl Fn(&Path) -> Result<bool, std::io::Error>,
+) -> Result<ContentDigest, std::io::Error> {
     let metadata = std::fs::symlink_metadata(root)?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
         return Err(std::io::Error::new(
@@ -107,7 +114,7 @@ pub fn directory_tree_digest(root: &Path) -> Result<ContentDigest, std::io::Erro
         ));
     }
     let mut encoded = Vec::new();
-    digest_directory_entries(root, Path::new(""), &mut encoded)?;
+    digest_directory_entries(root, Path::new(""), &mut encoded, &should_include)?;
     Ok(ContentDigest::sha256(&encoded))
 }
 
@@ -195,9 +202,13 @@ fn digest_directory_entries(
     root: &Path,
     relative: &Path,
     encoded: &mut Vec<u8>,
+    should_include: &impl Fn(&Path) -> Result<bool, std::io::Error>,
 ) -> Result<(), std::io::Error> {
     for name in sorted_entry_names(&root.join(relative))? {
         let child_relative = relative.join(&name);
+        if !should_include(&child_relative)? {
+            continue;
+        }
         let child = root.join(&child_relative);
         let metadata = std::fs::symlink_metadata(&child)?;
         let path = child_relative.to_str().ok_or_else(|| {
@@ -224,7 +235,7 @@ fn digest_directory_entries(
                 metadata.permissions().mode(),
                 &[],
             );
-            digest_directory_entries(root, &child_relative, encoded)?;
+            digest_directory_entries(root, &child_relative, encoded, should_include)?;
         } else if metadata.is_file() {
             let bytes = std::fs::read(&child)?;
             append_digest_record(

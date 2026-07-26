@@ -19,6 +19,7 @@ fn project_plugin_install_applies_official_disk_contract_without_touching_base_h
     std::fs::create_dir_all(&project).unwrap();
     std::fs::create_dir_all(marketplace_stage.join(".agents/plugins")).unwrap();
     std::fs::create_dir_all(package_stage.join(".codex-plugin")).unwrap();
+    std::fs::create_dir_all(package_stage.join("scripts")).unwrap();
     std::fs::create_dir_all(second_package_stage.join(".codex-plugin")).unwrap();
     std::fs::create_dir_all(local_marketplace.join(".agents/plugins")).unwrap();
     std::fs::create_dir_all(base_home.join(".tmp/marketplaces/base-market/.agents/plugins"))
@@ -61,6 +62,7 @@ fn project_plugin_install_applies_official_disk_contract_without_touching_base_h
     )
     .unwrap();
     std::fs::write(package_stage.join("README.md"), "demo").unwrap();
+    std::fs::write(package_stage.join("scripts/hook.py"), "print('demo')\n").unwrap();
     std::fs::write(
         second_package_stage.join(".codex-plugin/plugin.json"),
         r#"{"name":"second","version":"2.0.0"}"#,
@@ -272,6 +274,13 @@ fn project_plugin_install_applies_official_disk_contract_without_touching_base_h
         .join("plugins/cache/base-market/inherited/3.0.0/.codex-plugin/plugin.json")
         .is_file());
 
+    let runtime_package = runtime.runtime_home.join("plugins/cache/team/demo/1.2.3");
+    std::fs::create_dir_all(runtime_package.join("scripts/__pycache__")).unwrap();
+    std::fs::write(
+        runtime_package.join("scripts/__pycache__/hook.cpython-313.pyc"),
+        b"runtime bytecode",
+    )
+    .unwrap();
     let repeated = port
         .plan_install(
             &context,
@@ -296,6 +305,7 @@ fn project_plugin_install_applies_official_disk_contract_without_touching_base_h
         )
         .unwrap();
     assert!(repeated.mutations.is_empty());
+    std::fs::remove_dir_all(runtime_package.join("scripts/__pycache__")).unwrap();
     let demo_resource = port
         .list(&context)
         .unwrap()
