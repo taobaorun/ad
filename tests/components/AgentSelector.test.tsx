@@ -46,21 +46,22 @@ describe('AgentSelector', () => {
     });
   });
 
-  it('shows and selects distinct installations for the same Agent', () => {
+  it('shows Agents without exposing installation homes', () => {
     render(<AgentSelector />);
 
-    expect(screen.getByRole('option', { name: 'Codex — /Users/test/.codex' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('option', { name: 'Codex — /Users/test/project-home' }),
-    ).toBeInTheDocument();
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Claude Code',
+      'Codex',
+    ]);
+    expect(screen.getByRole('option', { name: 'Claude Code' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Codex' })).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Select Agent' }), {
-      target: { value: 'codex:/Users/test/project-home' },
+      target: { value: 'claude-code' },
     });
 
     expect(useAgents.getState().activeContext).toEqual({
-      installationId: 'codex:/Users/test/project-home',
-      projectPath: '/Users/test/project',
+      installationId: 'claude-code:/Users/test/.claude',
     });
   });
 });
