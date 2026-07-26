@@ -4,17 +4,8 @@ import { useAgents } from '@/store/agents';
 export function AgentSelector() {
   const { t } = useTranslation();
   const agents = useAgents((state) => state.agents);
-  const installations = useAgents((state) => state.installations);
-  const activeContext = useAgents((state) => state.activeContext);
-  const selectContext = useAgents((state) => state.selectContext);
-  const displayNames = new Map(agents.map((agent) => [agent.id, agent.displayName]));
-  const installationCounts = installations.reduce<Record<string, number>>(
-    (counts, installation) => {
-      counts[installation.agentId] = (counts[installation.agentId] ?? 0) + 1;
-      return counts;
-    },
-    {},
-  );
+  const activeAgentId = useAgents((state) => state.activeAgentId);
+  const selectAgent = useAgents((state) => state.select);
 
   return (
     <label
@@ -23,16 +14,8 @@ export function AgentSelector() {
     >
       <span className="sr-only">{t('app.titlebar.agentSelectorLabel')}</span>
       <select
-        value={activeContext?.installationId ?? ''}
-        onChange={(event) => {
-          const installation = installations.find((item) => item.id === event.target.value);
-          if (installation) {
-            selectContext({
-              installationId: installation.id,
-              projectPath: installation.projectPath,
-            });
-          }
-        }}
+        value={activeAgentId}
+        onChange={(event) => selectAgent(event.target.value)}
         aria-label={t('app.titlebar.agentSelectorLabel')}
         className="rounded-lg px-2 py-1 text-xs"
         style={{
@@ -42,12 +25,9 @@ export function AgentSelector() {
           maxWidth: 130,
         }}
       >
-        {installations.map((installation) => (
-          <option key={installation.id} value={installation.id}>
-            {displayNames.get(installation.agentId) ?? installation.agentId}
-            {(installationCounts[installation.agentId] ?? 0) > 1
-              ? ` — ${installation.rootPath}`
-              : ''}
+        {agents.map((agent) => (
+          <option key={agent.id} value={agent.id}>
+            {agent.displayName}
           </option>
         ))}
       </select>
