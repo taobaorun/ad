@@ -2,15 +2,23 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
-use crate::fs::atomic::write_atomic;
 use crate::fs::paths::{home, project_codex_runtimes_dir};
 
-use super::project_codex_manifest::load_project_codex_runtime_manifest;
-use super::{
-    AgentInstallation, ContentDigest, DiscoveryEvidence, InstallationCandidate, InstallationId,
+mod migration;
+
+use migration::ensure_runtime_name_available;
+pub(crate) use migration::{
+    discover_project_codex_candidates, project_runtime_descriptor_for_context,
+    runtime_for_installation,
 };
+pub use migration::{
+    persist_project_codex_runtime, project_runtime_descriptor_for_base_project,
+    project_runtime_for_base_project,
+};
+
+use super::project_codex_manifest::load_project_codex_runtime_manifest;
+use super::{AgentInstallation, ContentDigest, InstallationId};
 
 const PROJECT_CODEX_RUNTIME_MANIFEST_RELATIVE_PATH: &str = ".ad/runtime-manifest.json";
 
@@ -76,8 +84,6 @@ pub struct ProjectCodexRuntime {
     pub manifest_digest: Option<ContentDigest>,
 }
 
-/// A derived runtime can be used as a read-only Preview descriptor before its
-/// home or registry cache exists.
 pub type ProjectCodexRuntimeDescriptor = ProjectCodexRuntime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,11 +133,22 @@ impl ProjectCodexRuntime {
         }
 
         let project_path = canonical_project.to_string_lossy().into_owned();
-        let project_id = stable_project_id(&project_path, &base_installation.id);
+        let project_id = project_runtime_id(&canonical_project)?;
         let canonical_home = canonical_user_home()?;
         let runtime_home = canonical_home.join(".ad/codex-homes").join(&project_id);
-        let runtime_installation_id =
-            InstallationId::from(format!("codex:{}", runtime_home.to_string_lossy()));
+        let existing = ensure_runtime_name_available(&canonical_project, &project_id)?;
+        let canonical_installation_id = canonical_runtime_installation_id(&runtime_home);
+        let default_base_home = canonical_home.join(".codex");
+        let base_is_default = fs::canonicalize(default_base_home).ok().as_deref()
+            == Some(Path::new(&base_installation.root_path));
+        let base_changed = existing
+            .as_ref()
+            .is_some_and(|runtime| runtime.base_installation_id != base_installation.id);
+        let runtime_installation_id = if base_is_default && !base_changed {
+            canonical_installation_id
+        } else {
+            scoped_runtime_installation_id(&runtime_home, &base_installation.id)
+        };
 
         Ok(Self {
             project_id,
@@ -157,103 +174,6 @@ impl ProjectCodexRuntime {
         self.runtime_home
             .join(PROJECT_CODEX_RUNTIME_MANIFEST_RELATIVE_PATH)
     }
-}
-
-pub fn persist_project_codex_runtime(
-    runtime: &ProjectCodexRuntime,
-) -> Result<(), ProjectCodexRuntimeError> {
-    if !runtime.runtime_home.is_dir() {
-        return Err(ProjectCodexRuntimeError::MissingRuntimeHome(
-            runtime.runtime_home.clone(),
-        ));
-    }
-    validate_runtime(runtime)?;
-    let mut bytes = serde_json::to_vec_pretty(runtime)
-        .map_err(|error| ProjectCodexRuntimeError::Serialization(error.to_string()))?;
-    bytes.push(b'\n');
-    let path = runtime.state_path()?;
-    write_atomic(&path, &bytes).map_err(|error| ProjectCodexRuntimeError::Path(error.to_string()))
-}
-
-pub(crate) fn discover_project_codex_candidates() -> Vec<InstallationCandidate> {
-    load_project_codex_runtimes()
-        .into_iter()
-        .filter_map(|runtime| {
-            let candidate = InstallationCandidate::from_existing_home(
-                "codex",
-                &runtime.runtime_home,
-                DiscoveryEvidence::UserConfirmed,
-            )?
-            .with_project_path(runtime.project_path.clone())
-            .with_base_installation_id(runtime.base_installation_id.clone());
-            if candidate.installation().id != runtime.runtime_installation_id {
-                tracing::warn!(
-                    project_id = runtime.project_id,
-                    "skipping Project Codex runtime with mismatched installation identity"
-                );
-                return None;
-            }
-            Some(candidate)
-        })
-        .collect()
-}
-
-pub(crate) fn runtime_for_installation(
-    installation_id: &InstallationId,
-) -> Option<ProjectCodexRuntime> {
-    load_project_codex_runtimes()
-        .into_iter()
-        .find(|runtime| &runtime.runtime_installation_id == installation_id)
-}
-
-pub(crate) fn project_runtime_descriptor_for_context(
-    installation_id: &InstallationId,
-    project_path: &Path,
-) -> Result<Option<ProjectCodexRuntimeDescriptor>, ProjectCodexRuntimeError> {
-    if let Some(runtime) = runtime_for_installation(installation_id) {
-        let canonical_project =
-            fs::canonicalize(project_path).map_err(|source| ProjectCodexRuntimeError::Io {
-                path: project_path.to_path_buf(),
-                source,
-            })?;
-        if Path::new(&runtime.project_path) != canonical_project {
-            return Ok(None);
-        }
-        return Ok(Some(runtime));
-    }
-    for candidate in super::codex::discover_codex_candidates() {
-        let base = candidate.installation();
-        let descriptor = ProjectCodexRuntime::derive(base, project_path)?;
-        if &descriptor.runtime_installation_id == installation_id {
-            return Ok(Some(descriptor));
-        }
-    }
-    Ok(None)
-}
-
-pub fn project_runtime_for_base_project(
-    base_installation_id: &InstallationId,
-    project_path: &Path,
-) -> Option<ProjectCodexRuntime> {
-    let canonical_project = fs::canonicalize(project_path).ok()?;
-    load_project_codex_runtimes().into_iter().find(|runtime| {
-        &runtime.base_installation_id == base_installation_id
-            && Path::new(&runtime.project_path) == canonical_project
-    })
-}
-
-pub fn project_runtime_descriptor_for_base_project(
-    base_installation_id: &InstallationId,
-    project_path: &Path,
-) -> Result<Option<ProjectCodexRuntimeDescriptor>, ProjectCodexRuntimeError> {
-    if let Some(runtime) = project_runtime_for_base_project(base_installation_id, project_path) {
-        return Ok(Some(runtime));
-    }
-    let base = super::codex::discover_codex_candidates()
-        .into_iter()
-        .find(|candidate| &candidate.installation().id == base_installation_id);
-    base.map(|candidate| ProjectCodexRuntime::derive(candidate.installation(), project_path))
-        .transpose()
 }
 
 pub fn refresh_project_codex_runtime_digests(
@@ -412,41 +332,6 @@ pub fn inspect_project_codex_runtime_status(
     })
 }
 
-fn load_project_codex_runtimes() -> Vec<ProjectCodexRuntime> {
-    let Ok(directory) = project_codex_runtimes_dir() else {
-        return Vec::new();
-    };
-    let Ok(entries) = fs::read_dir(&directory) else {
-        return Vec::new();
-    };
-    let mut runtimes = entries
-        .flatten()
-        .filter_map(|entry| {
-            let path = entry.path();
-            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
-                return None;
-            }
-            let runtime = fs::read(&path)
-                .ok()
-                .and_then(|bytes| serde_json::from_slice::<ProjectCodexRuntime>(&bytes).ok());
-            let Some(runtime) = runtime else {
-                tracing::warn!(path = %path.display(), "skipping malformed Project Codex runtime");
-                return None;
-            };
-            if validate_runtime(&runtime).is_err()
-                || path.file_stem().and_then(|stem| stem.to_str())
-                    != Some(runtime.project_id.as_str())
-            {
-                tracing::warn!(path = %path.display(), "skipping invalid Project Codex runtime");
-                return None;
-            }
-            Some(runtime)
-        })
-        .collect::<Vec<_>>();
-    runtimes.sort_by(|left, right| left.project_id.cmp(&right.project_id));
-    runtimes
-}
-
 fn optional_file_digest(path: &Path) -> Result<Option<ContentDigest>, ProjectCodexRuntimeError> {
     match fs::read(path) {
         Ok(bytes) => Ok(Some(ContentDigest::sha256(&bytes))),
@@ -458,8 +343,10 @@ fn optional_file_digest(path: &Path) -> Result<Option<ContentDigest>, ProjectCod
     }
 }
 
-fn validate_runtime(runtime: &ProjectCodexRuntime) -> Result<(), ProjectCodexRuntimeError> {
-    let expected_id = stable_project_id(&runtime.project_path, &runtime.base_installation_id);
+pub(super) fn validate_runtime(
+    runtime: &ProjectCodexRuntime,
+) -> Result<(), ProjectCodexRuntimeError> {
+    let expected_id = project_runtime_id(Path::new(&runtime.project_path))?;
     if runtime.project_id != expected_id {
         return Err(ProjectCodexRuntimeError::InvalidProjectId);
     }
@@ -481,24 +368,84 @@ fn validate_runtime(runtime: &ProjectCodexRuntime) -> Result<(), ProjectCodexRun
     if runtime.runtime_home != expected_home {
         return Err(ProjectCodexRuntimeError::InvalidRuntimeHome);
     }
-    let expected_installation_id =
-        InstallationId::from(format!("codex:{}", runtime.runtime_home.to_string_lossy()));
+    let expected_installation_id = canonical_runtime_installation_id(&runtime.runtime_home);
     if runtime.runtime_installation_id != expected_installation_id {
         return Err(ProjectCodexRuntimeError::InvalidRuntimeInstallationId);
     }
     Ok(())
 }
 
-fn stable_project_id(project_path: &str, base_installation_id: &InstallationId) -> String {
-    let mut digest = Sha256::new();
-    digest.update(project_path.as_bytes());
-    digest.update([0]);
-    digest.update(base_installation_id.as_str().as_bytes());
-    let hex = format!("{:x}", digest.finalize());
-    hex[..24].to_string()
+pub(super) fn project_runtime_id(project_path: &Path) -> Result<String, ProjectCodexRuntimeError> {
+    project_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            ProjectCodexRuntimeError::InvalidProject(project_path.to_string_lossy().into_owned())
+        })
 }
 
-fn canonical_user_home() -> Result<PathBuf, ProjectCodexRuntimeError> {
+fn canonical_runtime_installation_id(runtime_home: &Path) -> InstallationId {
+    InstallationId::from(format!("codex:{}", runtime_home.to_string_lossy()))
+}
+
+fn scoped_runtime_installation_id(
+    runtime_home: &Path,
+    base_installation_id: &InstallationId,
+) -> InstallationId {
+    InstallationId::from(format!(
+        "{}::base::{}",
+        canonical_runtime_installation_id(runtime_home),
+        base_installation_id
+    ))
+}
+
+fn scoped_base_installation_id(
+    runtime_home: &Path,
+    installation_id: &InstallationId,
+) -> Option<InstallationId> {
+    installation_id
+        .as_str()
+        .strip_prefix(&format!(
+            "{}::base::",
+            canonical_runtime_installation_id(runtime_home)
+        ))
+        .filter(|value| !value.is_empty())
+        .map(InstallationId::from)
+}
+
+fn runtime_name_collision_key(project_id: &str) -> String {
+    project_id.to_lowercase()
+}
+
+fn legacy_runtime_matches_installation(
+    runtime: &ProjectCodexRuntime,
+    installation_id: &InstallationId,
+) -> bool {
+    let Some(path) = installation_id.as_str().strip_prefix("codex:") else {
+        return false;
+    };
+    let legacy_home = Path::new(path);
+    legacy_home.parent() == runtime.runtime_home.parent()
+        && fs::symlink_metadata(legacy_home)
+            .ok()
+            .is_some_and(|metadata| metadata.file_type().is_symlink())
+        && fs::canonicalize(legacy_home).ok() == fs::canonicalize(&runtime.runtime_home).ok()
+}
+
+fn cleanup_migration_link(path: &Path) {
+    match fs::remove_file(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => tracing::warn!(
+            path = %path.display(),
+            %error,
+            "failed to clean up Project Codex migration link"
+        ),
+        _ => {}
+    }
+}
+
+pub(super) fn canonical_user_home() -> Result<PathBuf, ProjectCodexRuntimeError> {
     let home = home().map_err(|error| ProjectCodexRuntimeError::Path(error.to_string()))?;
     fs::canonicalize(&home).map_err(|source| ProjectCodexRuntimeError::Io { path: home, source })
 }
@@ -509,12 +456,16 @@ pub enum ProjectCodexRuntimeError {
     InvalidBaseInstallation(String),
     #[error("invalid project directory: {0}")]
     InvalidProject(String),
-    #[error("Project Codex runtime id does not match its project and base installation")]
+    #[error("Project Codex runtime id does not match its project")]
     InvalidProjectId,
     #[error("Project Codex runtime home is outside the managed runtime root")]
     InvalidRuntimeHome,
     #[error("Project Codex runtime installation id does not match its home")]
     InvalidRuntimeInstallationId,
+    #[error("Project Codex runtime state path is invalid: {path}", path = .0.display())]
+    InvalidStatePath(PathBuf),
+    #[error("Project Codex runtime name is already used by another project: {0}")]
+    RuntimeNameConflict(String),
     #[error("Project Codex runtime home does not exist: {path}", path = .0.display())]
     MissingRuntimeHome(PathBuf),
     #[error("invalid shared auth source: {0}")]
