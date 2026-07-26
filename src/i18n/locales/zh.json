@@ -77,8 +77,8 @@
     "titlebar": {
       "runAnything": "执行任意命令…",
       "openPaletteTitle": "打开命令面板 (⌘K)",
-      "agentSelectorLabel": "选择 Agent",
-      "agentSelectorTitle": "切换当前 Agent",
+      "agentSelectorLabel": "选择 Agent 或基础配置实例",
+      "agentSelectorTitle": "切换 Agent 或基础配置实例；Project Home 由当前项目自动确定",
       "switchToLight": "切换到浅色主题",
       "switchToDark": "切换到深色主题"
     }
