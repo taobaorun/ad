@@ -86,20 +86,20 @@ export function App() {
   }, []);
 
   return (
-    <div className="flex h-full w-full flex-col">
+    <div className="flex h-full w-full min-w-0 flex-col overflow-hidden">
       <Titlebar
         onOpenPalette={() => openPalette()}
         dark={darkMode}
         onToggleDark={() => setDarkMode(!darkMode)}
       />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-w-0 flex-1 overflow-hidden">
         {!sidebarCollapsed && (
           <aside className="w-[264px] shrink-0" style={{ background: 'var(--ds-bg-sidebar)' }}>
             <ProjectSidebar />
           </aside>
         )}
-        <main className="flex flex-1 overflow-hidden">
+        <main className="flex min-w-0 flex-1 overflow-hidden">
           <ProjectDetail />
         </main>
       </div>
