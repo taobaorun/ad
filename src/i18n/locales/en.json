@@ -77,8 +77,8 @@
     "titlebar": {
       "runAnything": "run anything…",
       "openPaletteTitle": "Open command palette (⌘K)",
-      "agentSelectorLabel": "Select Agent or Base configuration instance",
-      "agentSelectorTitle": "Switch Agent or Base configuration instance; the current project determines its Project Home",
+      "agentSelectorLabel": "Select Agent",
+      "agentSelectorTitle": "Switch current Agent",
       "switchToLight": "Switch to light theme",
       "switchToDark": "Switch to dark theme"
     }

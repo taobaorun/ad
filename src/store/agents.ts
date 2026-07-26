@@ -34,8 +34,23 @@ interface State {
   activeCapabilities: CapabilityDescriptor[];
   loading: boolean;
   loadAll: () => Promise<void>;
-  select: (agentId: string) => void;
   selectContext: (context: ContextInput) => void;
+}
+
+function isBaseInstallation(installation: AgentInstallation): boolean {
+  return !installation.projectPath && !installation.baseInstallationId;
+}
+
+function resolveBaseInstallation(
+  installations: AgentInstallation[],
+  installation: AgentInstallation,
+): AgentInstallation | undefined {
+  if (isBaseInstallation(installation)) return installation;
+  if (!installation.baseInstallationId) return undefined;
+  return installations.find(
+    (candidate) =>
+      candidate.id === installation.baseInstallationId && isBaseInstallation(candidate),
+  );
 }
 
 function loadPersistedSelection(): { agentId: string; context: AgentContext | null } {
@@ -98,24 +113,31 @@ export const useAgents = create<State>((set, get) => ({
         ]);
         const capabilitiesByAgent = Object.fromEntries(descriptorEntries);
         const persisted = loadPersistedSelection();
-        const persistedInstallation = persisted.context
+        const persistedCandidate = persisted.context
           ? installations.find(
               (installation) =>
                 installation.id === persisted.context?.installationId &&
                 installation.agentId === persisted.agentId,
             )
           : undefined;
+        const persistedInstallation = persistedCandidate
+          ? resolveBaseInstallation(installations, persistedCandidate)
+          : undefined;
         const selectedInstallation =
           persistedInstallation ??
-          installations.find((installation) => installation.agentId === persisted.agentId) ??
-          installations[0];
+          installations.find(
+            (installation) =>
+              installation.agentId === persisted.agentId && isBaseInstallation(installation),
+          ) ??
+          installations.find(isBaseInstallation);
         const activeAgentId = selectedInstallation?.agentId ?? agents[0]?.id ?? DEFAULT_AGENT_ID;
         const activeContext = selectedInstallation
           ? AgentContextSchema.parse({
               installationId: selectedInstallation.id,
               projectPath:
-                selectedInstallation.projectPath ??
-                (persistedInstallation ? persisted.context?.projectPath : undefined),
+                persistedCandidate?.id === selectedInstallation.id
+                  ? persisted.context?.projectPath
+                  : undefined,
             })
           : null;
         set({
@@ -136,38 +158,16 @@ export const useAgents = create<State>((set, get) => ({
     return promise;
   },
 
-  select: (agentId) => {
-    if (!get().agents.some((agent) => agent.id === agentId)) return;
-    const installation = get().installations.find((item) => item.agentId === agentId);
-    const activeContext = installation
-      ? AgentContextSchema.parse({
-          installationId: installation.id,
-          projectPath: installation.projectPath,
-        })
-      : null;
-    set({
-      activeAgentId: agentId,
-      activeContext,
-      activeCapabilities: get().capabilitiesByAgent[agentId] ?? [],
-    });
-    if (activeContext) saveSelectedContext(agentId, activeContext);
-  },
-
   selectContext: (input) => {
     const parsed = AgentContextSchema.safeParse(input);
     if (!parsed.success) return;
-    const installation = get().installations.find((item) => item.id === parsed.data.installationId);
+    const candidate = get().installations.find((item) => item.id === parsed.data.installationId);
+    if (!candidate) return;
+    const installation = resolveBaseInstallation(get().installations, candidate);
     if (!installation) return;
-    if (
-      installation.projectPath &&
-      parsed.data.projectPath &&
-      installation.projectPath !== parsed.data.projectPath
-    ) {
-      return;
-    }
     const activeContext = AgentContextSchema.parse({
       installationId: installation.id,
-      projectPath: installation.projectPath ?? parsed.data.projectPath,
+      projectPath: candidate.id === installation.id ? parsed.data.projectPath : undefined,
     });
     set({
       activeAgentId: installation.agentId,
