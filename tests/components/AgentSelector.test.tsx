@@ -30,10 +30,16 @@ describe('AgentSelector', () => {
           rootPath: '/Users/test/.codex',
         }),
         AgentInstallationSchema.parse({
+          id: 'codex:/Users/test/environment-codex',
+          agentId: 'codex',
+          rootPath: '/Users/test/environment-codex',
+        }),
+        AgentInstallationSchema.parse({
           id: 'codex:/Users/test/project-home',
           agentId: 'codex',
           rootPath: '/Users/test/project-home',
           projectPath: '/Users/test/project',
+          baseInstallationId: 'codex:/Users/test/.codex',
         }),
       ],
       activeAgentId: 'codex',
@@ -46,22 +52,61 @@ describe('AgentSelector', () => {
     });
   });
 
-  it('shows Agents without exposing installation homes', () => {
+  it('shows distinct Base installations without exposing Project runtimes', () => {
     render(<AgentSelector />);
 
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
       'Claude Code',
-      'Codex',
+      'Codex — /Users/test/.codex',
+      'Codex — /Users/test/environment-codex',
     ]);
-    expect(screen.getByRole('option', { name: 'Claude Code' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Codex' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', { name: /project-home/ }),
+    ).not.toBeInTheDocument();
+  });
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Select Agent' }), {
-      target: { value: 'claude-code' },
+  it('selects the exact Base installation after switching Agents', () => {
+    render(<AgentSelector />);
+
+    const selector = screen.getByRole('combobox', {
+      name: 'Select Agent or Base configuration instance',
+    });
+    fireEvent.change(selector, {
+      target: { value: 'codex:/Users/test/environment-codex' },
+    });
+    expect(useAgents.getState().activeContext).toEqual({
+      installationId: 'codex:/Users/test/environment-codex',
     });
 
+    fireEvent.change(selector, {
+      target: { value: 'claude-code:/Users/test/.claude' },
+    });
     expect(useAgents.getState().activeContext).toEqual({
       installationId: 'claude-code:/Users/test/.claude',
     });
+
+    fireEvent.change(selector, {
+      target: { value: 'codex:/Users/test/environment-codex' },
+    });
+    expect(useAgents.getState().activeContext).toEqual({
+      installationId: 'codex:/Users/test/environment-codex',
+    });
+  });
+
+  it('represents a hidden Project runtime by its Base installation', () => {
+    useAgents.setState({
+      activeContext: AgentContextSchema.parse({
+        installationId: 'codex:/Users/test/project-home',
+        projectPath: '/Users/test/project',
+      }),
+    });
+
+    render(<AgentSelector />);
+
+    expect(
+      screen.getByRole('combobox', {
+        name: 'Select Agent or Base configuration instance',
+      }),
+    ).toHaveValue('codex:/Users/test/.codex');
   });
 });
