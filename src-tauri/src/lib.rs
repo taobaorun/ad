@@ -33,7 +33,7 @@ fn theme_bg_for(is_dark: bool) -> Color {
 }
 
 fn should_show_main_on_page_load(label: &str, event: PageLoadEvent) -> bool {
-    label == "main" && matches!(event, PageLoadEvent::Finished)
+    label == "main" && matches!(event, PageLoadEvent::Started)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -74,10 +74,9 @@ pub fn run() {
                 Err(err) => tracing::warn!(?err, "v1 -> layered migration failed; continuing"),
             }
 
-            // Create the main window hidden, with theme-aware background.
-            // on_page_load(Finished) fires from WKWebView's didFinishNavigation
-            // delegate — at that point the HTML/CSS splash is fully loaded and
-            // composited, so the user sees the splash instead of a blank frame.
+            // Show the theme-backed main window as navigation starts so the
+            // HTML spotlight represents the actual startup work from its first
+            // available frame instead of appearing after loading has finished.
             let bg = theme_bg();
             WebviewWindowBuilder::from_config(app.handle(), &app.config().app.windows[0])?
                 .background_color(bg)
@@ -240,12 +239,12 @@ mod tests {
     }
 
     #[test]
-    fn only_finished_main_page_load_reveals_a_window() {
-        assert!(!should_show_main_on_page_load(
+    fn main_window_is_shown_as_navigation_starts() {
+        assert!(should_show_main_on_page_load(
             "main",
             PageLoadEvent::Started
         ));
-        assert!(should_show_main_on_page_load(
+        assert!(!should_show_main_on_page_load(
             "main",
             PageLoadEvent::Finished
         ));

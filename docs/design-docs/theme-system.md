@@ -125,7 +125,7 @@ UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 
 ## 启动 Loading 生命周期
 
-主窗口首帧由 `index.html` 在 React bundle 执行前绘制。可见内容固定为现有 AD logo 与 “Be Water, My Friend”，不显示百分比、预计时间或第二行状态。原句使用静态可读底色叠加仅裁剪在字形内的探照灯高光；Mocha/Latte 的非高亮状态都必须保持至少 4.5:1 对比度。正常模式由 store-free `src/lib/startupSurface.ts` 每 10ms 推进一步，30 步完成一轮 300ms 的 background-position 扫描，既避免 WKWebView 只绘制 CSS 动画首帧，也避免完整 10ms 循环与屏幕刷新率混叠成静止画面；`prefers-reduced-motion` 下 logo 呼吸与探照灯循环全部停止，但内容和层级不变。
+主窗口在 WKWebView 开始导航时即显示主题匹配的原生底色，随后由 `index.html` 在 React bundle 执行前绘制启动内容。可见内容固定为现有 AD logo 与 “Be Water, My Friend”，不显示百分比、预计时间或第二行状态。真实 `<p>` 始终保留完整 localized 文案，负责布局与可访问性；其上覆盖一个 `aria-hidden` Canvas 视觉层。同步内联脚本读取 `<p>` 的字体、尺寸和主题色，以设备像素比创建画布，再把画布转交给 Web Worker 的 `OffscreenCanvas`。Worker 先绘制基础文字，再用宽度约为句宽 55% 的透明→高亮→透明渐变重复绘制同一句话，由独立的 16ms 定时器驱动 300ms 循环；因此 Tauri 启动命令即使阻塞 WebView 主线程，光带仍可连续扫过。初始化完成后立即揭幕，不为补足周期人为延迟。文字或尺寸变化时主线程向 Worker 同步配置，Canvas 断连后终止 Worker 和观察器。不支持 OffscreenCanvas 的旧 WKWebView 回退到主线程定时器；实现不得回退到 `background-clip`、多元素 stagger 或 animated `clip-path` 路径。`prefers-reduced-motion` 下只绘制静态基础文字，不启动循环；若 Canvas 不可用，真实 `<p>` 保持可见作为 fallback。
 
 `src/lib/startup.ts` 是启动生命周期的唯一协调入口：Agent discovery 与 Projects 并行开始，Profiles 等 Agent attempt 结束后开始。三项 load 全部 settle 后揭幕；任一任务 rejection 会记录英文诊断信息但不阻断，其余任务永不返回时由 12 秒整体 deadline fail-open。超时不取消晚到的幂等 read，store 仍可在主界面出现后渐进更新。
 
