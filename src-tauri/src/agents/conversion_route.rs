@@ -550,6 +550,7 @@ fn append_collection_artifacts(
                     && install.mutations.is_empty()
                 {
                     artifact.disposition = ArtifactDisposition::Unchanged;
+                    artifact.detail_code = None;
                     artifact.message =
                         "AD-managed target already matches the Project Plugin source".into();
                 }

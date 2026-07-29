@@ -1,0 +1,1160 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="平滑启动页文字探照灯 ExecPlan 的冻结归档快照"
+    />
+    <title>AD · 平滑启动页文字探照灯 · ExecPlan</title>
+    <style>
+      :root {
+        --ivory: #faf9f5;
+        --paper: #ffffff;
+        --slate: #141413;
+        --clay: #d97757;
+        --clay-soft: #f7e7df;
+        --oat: #e3dacc;
+        --olive: #788c5d;
+        --olive-soft: #edf1e8;
+        --rust: #b04a3f;
+        --rust-soft: #f7e6e2;
+        --blue: #51758f;
+        --blue-soft: #e7eff3;
+        --gray-150: #f0eee6;
+        --gray-300: #d1cfc5;
+        --gray-500: #787770;
+        --gray-700: #3d3d3a;
+        --serif: ui-serif, Georgia, "Songti SC", "Times New Roman", serif;
+        --sans:
+          system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --mono: ui-monospace, "SF Mono", Menlo, Monaco, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(
+            circle at 88% 2%,
+            rgba(217, 119, 87, 0.1),
+            transparent 25rem
+          ),
+          var(--ivory);
+        color: var(--gray-700);
+        font-family: var(--sans);
+        font-size: 15.5px;
+        line-height: 1.62;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      code,
+      .mono {
+        font-family: var(--mono);
+      }
+
+      code {
+        padding: 0.12rem 0.35rem;
+        border: 1px solid var(--gray-300);
+        border-radius: 5px;
+        background: var(--gray-150);
+        color: var(--slate);
+        font-size: 0.88em;
+      }
+
+      .page {
+        width: min(1120px, calc(100% - 48px));
+        margin: 0 auto;
+        padding: 58px 0 96px;
+      }
+
+      .eyebrow {
+        color: var(--clay);
+        font: 700 11px/1.4 var(--mono);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        color: var(--slate);
+        font-family: var(--serif);
+        font-weight: 520;
+      }
+
+      h1 {
+        max-width: 840px;
+        margin: 14px 0 18px;
+        font-size: clamp(38px, 6vw, 64px);
+        letter-spacing: -0.035em;
+        line-height: 1.03;
+      }
+
+      h2 {
+        margin: 0 0 10px;
+        font-size: 28px;
+        letter-spacing: -0.015em;
+      }
+
+      h3 {
+        margin: 0 0 7px;
+        font-size: 19px;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .lead {
+        max-width: 800px;
+        color: var(--gray-500);
+        font-size: 18px;
+      }
+
+      .provenance {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 14px;
+        align-items: start;
+        margin: 30px 0 36px;
+        padding: 18px 20px;
+        border: 1.5px solid #dfb8ab;
+        border-radius: 12px;
+        background: var(--clay-soft);
+      }
+
+      .provenance .mark {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--clay);
+        color: var(--paper);
+        font: 700 13px/1 var(--mono);
+      }
+
+      .provenance strong {
+        display: block;
+        margin-bottom: 3px;
+        color: var(--slate);
+      }
+
+      .provenance p {
+        color: #714b3d;
+        font-size: 13.5px;
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 34px;
+      }
+
+      .summary > div {
+        min-height: 98px;
+        padding: 17px;
+        border: 1.5px solid var(--gray-300);
+        border-radius: 12px;
+        background: var(--paper);
+      }
+
+      .kicker {
+        color: var(--gray-500);
+        font: 600 10px/1.3 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .value {
+        margin-top: 9px;
+        color: var(--slate);
+        font-size: 16px;
+        font-weight: 680;
+        line-height: 1.35;
+      }
+
+      .value.good {
+        color: var(--olive);
+      }
+
+      nav {
+        position: sticky;
+        top: 12px;
+        z-index: 5;
+        display: flex;
+        width: max-content;
+        max-width: 100%;
+        gap: 4px;
+        margin-bottom: 54px;
+        padding: 6px;
+        overflow-x: auto;
+        border: 1px solid rgba(209, 207, 197, 0.9);
+        border-radius: 11px;
+        background: rgba(250, 249, 245, 0.9);
+        box-shadow: 0 8px 28px rgba(20, 20, 19, 0.07);
+        backdrop-filter: blur(14px);
+      }
+
+      nav a {
+        padding: 7px 10px;
+        border-radius: 7px;
+        color: var(--gray-500);
+        font: 600 11px/1 var(--mono);
+        text-decoration: none;
+        white-space: nowrap;
+      }
+
+      nav a:hover,
+      nav a:focus-visible {
+        background: var(--gray-150);
+        color: var(--slate);
+        outline: none;
+      }
+
+      section {
+        margin: 0 0 64px;
+        scroll-margin-top: 80px;
+      }
+
+      .section-intro {
+        max-width: 790px;
+        margin-bottom: 24px;
+        color: var(--gray-500);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+      }
+
+      .grid.three {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .card {
+        padding: 20px;
+        border: 1.5px solid var(--gray-300);
+        border-radius: 12px;
+        background: var(--paper);
+      }
+
+      .card p,
+      .card li {
+        color: var(--gray-500);
+        font-size: 14px;
+      }
+
+      .card ul {
+        margin: 10px 0 0;
+        padding-left: 19px;
+      }
+
+      .tag {
+        display: inline-flex;
+        margin-bottom: 11px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        font: 700 10px/1.2 var(--mono);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .tag.goal {
+        background: var(--olive-soft);
+        color: var(--olive);
+      }
+
+      .tag.boundary {
+        background: var(--gray-150);
+        color: var(--gray-700);
+      }
+
+      .tag.final {
+        background: var(--blue-soft);
+        color: var(--blue);
+      }
+
+      .tag.retired {
+        background: var(--rust-soft);
+        color: var(--rust);
+      }
+
+      .quote-stage {
+        position: relative;
+        display: grid;
+        min-height: 250px;
+        place-items: center;
+        overflow: hidden;
+        border: 1.5px solid #37373a;
+        border-radius: 16px;
+        background:
+          radial-gradient(
+            ellipse at center,
+            rgba(116, 199, 236, 0.08),
+            transparent 58%
+          ),
+          #1e1e2e;
+      }
+
+      .quote-stage::before {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          90deg,
+          transparent 16%,
+          rgba(255, 255, 255, 0.035) 42%,
+          rgba(255, 255, 255, 0.08) 50%,
+          rgba(255, 255, 255, 0.035) 58%,
+          transparent 84%
+        );
+        content: "";
+      }
+
+      .quote-lockup {
+        position: relative;
+        z-index: 1;
+        padding: 28px;
+        text-align: center;
+      }
+
+      .quote-lockup .sentence {
+        background: linear-gradient(
+          90deg,
+          #7f849c 18%,
+          #cdd6f4 39%,
+          #ffffff 50%,
+          #cdd6f4 61%,
+          #7f849c 82%
+        );
+        background-clip: text;
+        color: transparent;
+        font-family: var(--serif);
+        font-size: clamp(27px, 5vw, 45px);
+        font-weight: 550;
+        letter-spacing: 0.015em;
+        -webkit-background-clip: text;
+      }
+
+      .quote-lockup small {
+        display: block;
+        margin-top: 16px;
+        color: #6c7086;
+        font: 600 10px/1.4 var(--mono);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .flow-panel {
+        padding: 24px;
+        overflow-x: auto;
+        border: 1.5px solid var(--gray-300);
+        border-radius: 14px;
+        background: var(--paper);
+      }
+
+      .flow-panel svg {
+        display: block;
+        min-width: 900px;
+        width: 100%;
+      }
+
+      .flow-panel text {
+        fill: var(--slate);
+        font-family: var(--sans);
+      }
+
+      .flow-panel .tech {
+        fill: var(--gray-500);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .flow-caption {
+        margin-top: 12px;
+        color: var(--gray-500);
+        font-size: 13px;
+      }
+
+      .contract {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+      }
+
+      .contract .item {
+        position: relative;
+        min-height: 126px;
+        padding: 17px 14px;
+        border: 1.5px solid var(--gray-300);
+        border-radius: 12px;
+        background: var(--paper);
+      }
+
+      .contract .item:not(:last-child)::after {
+        position: absolute;
+        top: 45%;
+        right: -17px;
+        z-index: 2;
+        color: var(--clay);
+        content: "→";
+        font: 700 17px/1 var(--mono);
+      }
+
+      .contract b {
+        display: block;
+        margin: 7px 0 5px;
+        color: var(--slate);
+        font-size: 13.5px;
+      }
+
+      .contract p {
+        color: var(--gray-500);
+        font-size: 12.5px;
+      }
+
+      .timeline {
+        position: relative;
+        display: grid;
+        gap: 0;
+        margin-top: 24px;
+      }
+
+      .timeline::before {
+        position: absolute;
+        top: 14px;
+        bottom: 25px;
+        left: 17px;
+        width: 2px;
+        background: var(--gray-300);
+        content: "";
+      }
+
+      .timeline article {
+        position: relative;
+        display: grid;
+        grid-template-columns: 36px 1fr;
+        gap: 16px;
+        padding-bottom: 20px;
+      }
+
+      .timeline .dot {
+        z-index: 1;
+        display: grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        border: 2px solid var(--gray-300);
+        border-radius: 50%;
+        background: var(--ivory);
+        color: var(--gray-500);
+        font: 700 10px/1 var(--mono);
+      }
+
+      .timeline article:last-child .dot {
+        border-color: var(--olive);
+        background: var(--olive);
+        color: var(--paper);
+      }
+
+      .timeline .body {
+        padding: 7px 0 0;
+      }
+
+      .timeline h3 {
+        font-family: var(--sans);
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .timeline p {
+        max-width: 790px;
+        color: var(--gray-500);
+        font-size: 13.5px;
+      }
+
+      .file-map {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+      }
+
+      .file {
+        padding: 16px;
+        border: 1.5px solid var(--gray-300);
+        border-radius: 11px;
+        background: var(--paper);
+      }
+
+      .file b {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--blue);
+        font: 650 12px/1.45 var(--mono);
+      }
+
+      .file p {
+        color: var(--gray-500);
+        font-size: 13.5px;
+      }
+
+      .checks {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+
+      .check {
+        position: relative;
+        padding: 14px 16px 14px 44px;
+        border: 1.5px solid #c9d6bd;
+        border-radius: 10px;
+        background: var(--olive-soft);
+        color: #4f6240;
+        font-size: 13.5px;
+      }
+
+      .check::before {
+        position: absolute;
+        top: 14px;
+        left: 16px;
+        display: grid;
+        width: 19px;
+        height: 19px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--olive);
+        color: var(--paper);
+        content: "✓";
+        font: 700 11px/1 var(--sans);
+      }
+
+      .command {
+        display: block;
+        margin-top: 12px;
+        padding: 14px 16px;
+        overflow-x: auto;
+        border-radius: 10px;
+        background: var(--slate);
+        color: #f4f2eb;
+        font: 12px/1.65 var(--mono);
+        white-space: pre-wrap;
+      }
+
+      .outcome {
+        padding: 26px;
+        border: 1.5px solid #c5d1ba;
+        border-radius: 14px;
+        background: linear-gradient(135deg, var(--olive-soft), #f7f8f2);
+      }
+
+      .outcome p {
+        max-width: 850px;
+        color: #526146;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin-top: 20px;
+      }
+
+      .metrics div {
+        padding: 14px;
+        border: 1px solid rgba(120, 140, 93, 0.35);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.65);
+      }
+
+      .metrics strong {
+        display: block;
+        color: var(--slate);
+        font-size: 20px;
+      }
+
+      .metrics span {
+        color: var(--gray-500);
+        font-size: 11.5px;
+      }
+
+      footer {
+        margin-top: 76px;
+        padding-top: 22px;
+        border-top: 1px solid var(--gray-300);
+        color: var(--gray-500);
+        font-size: 12px;
+      }
+
+      footer strong {
+        color: var(--slate);
+      }
+
+      @media (max-width: 900px) {
+        .summary,
+        .grid.three,
+        .metrics {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .contract {
+          grid-template-columns: 1fr;
+        }
+
+        .contract .item:not(:last-child)::after {
+          top: auto;
+          right: auto;
+          bottom: -18px;
+          left: 50%;
+          content: "↓";
+        }
+      }
+
+      @media (max-width: 640px) {
+        .page {
+          width: min(100% - 30px, 1120px);
+          padding-top: 34px;
+        }
+
+        nav {
+          position: static;
+        }
+
+        .summary,
+        .grid,
+        .grid.three,
+        .file-map,
+        .checks,
+        .metrics {
+          grid-template-columns: 1fr;
+        }
+
+        .provenance {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+
+      @media print {
+        body {
+          background: var(--paper);
+        }
+
+        nav {
+          display: none;
+        }
+
+        .page {
+          width: 100%;
+          padding: 24px;
+        }
+
+        section {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header>
+        <div class="eyebrow">AD · completed ExecPlan · frozen reconstruction</div>
+        <h1>让启动探照灯真正流动起来。</h1>
+        <p class="lead">
+          “Be Water, My Friend” 在应用初始化期间保持完整可读，一条柔边高光连续扫过字形；初始化完成便揭幕，不用动画人为拖慢启动。
+        </p>
+
+        <aside class="provenance" aria-label="归档来源说明">
+          <span class="mark" aria-hidden="true">i</span>
+          <div>
+            <strong>这是事后重建的冻结归档快照，不是执行前批准证据。</strong>
+            <p>
+              2026-07-23
+              的实际评审对象只有对应 Markdown；当时显式 harness 规则与仓库
+              <code>docs/PLANS.md</code> 的 MD + HTML
+              规则冲突。此页于 2026-07-30 PR #18
+              评审期间依据最终 Markdown 重建，用于恢复归档配对。
+            </p>
+          </div>
+        </aside>
+      </header>
+
+      <div class="summary" aria-label="计划摘要">
+        <div>
+          <div class="kicker">实际批准</div>
+          <div class="value">Markdown · 2026-07-23</div>
+        </div>
+        <div>
+          <div class="kicker">最终绘制路径</div>
+          <div class="value">Worker OffscreenCanvas</div>
+        </div>
+        <div>
+          <div class="kicker">单轮时长</div>
+          <div class="value">300 ms</div>
+        </div>
+        <div>
+          <div class="kicker">最终门禁</div>
+          <div class="value good">100 tests · 全部通过</div>
+        </div>
+      </div>
+
+      <nav aria-label="文档导航">
+        <a href="#goal">目标</a>
+        <a href="#architecture">最终架构</a>
+        <a href="#contract">运行合同</a>
+        <a href="#journey">决策演进</a>
+        <a href="#scope">范围</a>
+        <a href="#verify">验收</a>
+        <a href="#outcome">结果</a>
+      </nav>
+
+      <section id="goal">
+        <h2>目标与不变量</h2>
+        <p class="section-intro">
+          修复肉眼可见的分段跳动、循环复位闪烁和 WKWebView
+          启动阶段不重绘，同时守住主题、启动生命周期与无障碍合同。
+        </p>
+        <div class="grid">
+          <article class="card">
+            <span class="tag goal">Outcome</span>
+            <h3>连续、柔和、只作用于字形</h3>
+            <p>
+              高光由左至右连续移动；底色始终可读，背景不被照亮，循环边界不出现可见跳闪。
+            </p>
+          </article>
+          <article class="card">
+            <span class="tag boundary">Invariant</span>
+            <h3>Loading 完成即揭幕</h3>
+            <p>
+              动画与初始化并行，不等待完整轮次，不引入额外最短展示时间，也不改变双窗口架构。
+            </p>
+          </article>
+          <article class="card">
+            <span class="tag boundary">Theme</span>
+            <h3>Mocha / Latte 都保持可读</h3>
+            <p>
+              继续满足静态文案对比度合同；探照灯只是状态反馈，不承担文字可读性。
+            </p>
+          </article>
+          <article class="card">
+            <span class="tag boundary">Accessibility</span>
+            <h3>Reduced motion 是静态完整句</h3>
+            <p>
+              屏幕阅读器只接触真实文案；Canvas 对辅助技术隐藏，退化时仍展示完整句子。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section aria-labelledby="visual-title">
+        <h2 id="visual-title">视觉意图</h2>
+        <p class="section-intro">
+          下方是设计意图的静态示意，不是生产 Canvas
+          的仿真。生产实现使用主题色、真实字体测量和逐帧绘制。
+        </p>
+        <div
+          class="quote-stage"
+          role="img"
+          aria-label="柔边高光扫过 Be Water, My Friend 文案的静态示意"
+        >
+          <div class="quote-lockup">
+            <div class="sentence">Be Water, My Friend</div>
+            <small>soft band · full sentence · neutral highlight</small>
+          </div>
+        </div>
+      </section>
+
+      <section id="architecture">
+        <h2>最终架构：把绘制从冻结的页面主线程移开</h2>
+        <p class="section-intro">
+          Tauri 在导航开始时显示主题匹配的窗口。同步首屏脚本保留真实
+          <code>&lt;p&gt;</code>，并将覆盖 Canvas
+          转交给独立 Worker；即使初始化阻塞页面主线程，Worker
+          仍按自己的定时器推进像素。
+        </p>
+        <div class="flow-panel">
+          <svg
+            viewBox="0 0 980 240"
+            role="img"
+            aria-labelledby="flow-title flow-desc"
+          >
+            <title id="flow-title">启动探照灯最终数据流</title>
+            <desc id="flow-desc">
+              Tauri 导航开始后显示窗口，HTML 同步脚本创建真实文案和
+              Canvas，将 Canvas 转交给 Worker，Worker 逐帧绘制；React
+              初始化完成后移除启动层并终止绘制。
+            </desc>
+            <defs>
+              <marker
+                id="arrow"
+                markerHeight="8"
+                markerWidth="8"
+                orient="auto"
+                refX="7"
+                refY="4"
+              >
+                <path d="M0,0 L8,4 L0,8 Z" fill="#d97757" />
+              </marker>
+            </defs>
+
+            <path
+              d="M168 86 H225"
+              fill="none"
+              marker-end="url(#arrow)"
+              stroke="#d97757"
+              stroke-width="2"
+            />
+            <path
+              d="M405 86 H462"
+              fill="none"
+              marker-end="url(#arrow)"
+              stroke="#d97757"
+              stroke-width="2"
+            />
+            <path
+              d="M642 86 H699"
+              fill="none"
+              marker-end="url(#arrow)"
+              stroke="#d97757"
+              stroke-width="2"
+            />
+            <path
+              d="M790 128 V181 H632"
+              fill="none"
+              marker-end="url(#arrow)"
+              stroke="#788c5d"
+              stroke-width="2"
+            />
+            <path
+              d="M550 181 H393"
+              fill="none"
+              marker-end="url(#arrow)"
+              stroke="#788c5d"
+              stroke-width="2"
+            />
+
+            <g>
+              <rect
+                x="18"
+                y="45"
+                width="150"
+                height="82"
+                rx="12"
+                fill="#f0eee6"
+                stroke="#d1cfc5"
+                stroke-width="1.5"
+              />
+              <text x="93" y="77" text-anchor="middle" font-size="14">
+                Tauri window
+              </text>
+              <text class="tech" x="93" y="101" text-anchor="middle">
+                PageLoad Started
+              </text>
+            </g>
+            <g>
+              <rect
+                x="225"
+                y="45"
+                width="180"
+                height="82"
+                rx="12"
+                fill="#ffffff"
+                stroke="#d1cfc5"
+                stroke-width="1.5"
+              />
+              <text x="315" y="77" text-anchor="middle" font-size="14">
+                Synchronous HTML
+              </text>
+              <text class="tech" x="315" y="101" text-anchor="middle">
+                real p + Canvas
+              </text>
+            </g>
+            <g>
+              <rect
+                x="462"
+                y="45"
+                width="180"
+                height="82"
+                rx="12"
+                fill="#e7eff3"
+                stroke="#9bb3c1"
+                stroke-width="1.5"
+              />
+              <text x="552" y="77" text-anchor="middle" font-size="14">
+                Web Worker
+              </text>
+              <text class="tech" x="552" y="101" text-anchor="middle">
+                16 ms timer
+              </text>
+            </g>
+            <g>
+              <rect
+                x="699"
+                y="45"
+                width="180"
+                height="82"
+                rx="12"
+                fill="#edf1e8"
+                stroke="#aab99a"
+                stroke-width="1.5"
+              />
+              <text x="789" y="77" text-anchor="middle" font-size="14">
+                OffscreenCanvas
+              </text>
+              <text class="tech" x="789" y="101" text-anchor="middle">
+                300 ms sweep
+              </text>
+            </g>
+            <g>
+              <rect
+                x="550"
+                y="150"
+                width="180"
+                height="62"
+                rx="12"
+                fill="#ffffff"
+                stroke="#d1cfc5"
+                stroke-width="1.5"
+              />
+              <text x="640" y="177" text-anchor="middle" font-size="14">
+                React data ready
+              </text>
+              <text class="tech" x="640" y="196" text-anchor="middle">
+                revealStartup()
+              </text>
+            </g>
+            <g>
+              <rect
+                x="213"
+                y="150"
+                width="180"
+                height="62"
+                rx="12"
+                fill="#f7e7df"
+                stroke="#dfb8ab"
+                stroke-width="1.5"
+              />
+              <text x="303" y="177" text-anchor="middle" font-size="14">
+                Remove splash
+              </text>
+              <text class="tech" x="303" y="196" text-anchor="middle">
+                terminate worker
+              </text>
+            </g>
+          </svg>
+        </div>
+        <p class="flow-caption">
+          旧 WKWebView 无 OffscreenCanvas 时回退主线程定时器；Canvas
+          不可用时回退可见真实文案。
+        </p>
+      </section>
+
+      <section id="contract">
+        <h2>运行合同</h2>
+        <div class="contract">
+          <article class="item">
+            <span class="kicker">01</span>
+            <b>首屏同步创建</b>
+            <p>文案与绘制面不等待 React bundle。</p>
+          </article>
+          <article class="item">
+            <span class="kicker">02</span>
+            <b>主题与尺寸测量</b>
+            <p>读取 computed font、颜色、bounds 与 DPR。</p>
+          </article>
+          <article class="item">
+            <span class="kicker">03</span>
+            <b>Worker 主动重画</b>
+            <p>16ms 定时推进 300ms、55% 句宽光带。</p>
+          </article>
+          <article class="item">
+            <span class="kicker">04</span>
+            <b>变化同步</b>
+            <p>文案或尺寸变化发送给 Worker。</p>
+          </article>
+          <article class="item">
+            <span class="kicker">05</span>
+            <b>初始化完成</b>
+            <p>立即揭幕、移除 Canvas、终止绘制。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="journey">
+        <h2>决策演进：每次替换都有实机证据</h2>
+        <p class="section-intro">
+          最终方案不是最初计划的机械实现。真实安装包连续暴露 WKWebView
+          的启动期绘制差异，计划依次收敛到与页面主线程隔离的 Worker。
+        </p>
+        <div class="timeline">
+          <article>
+            <div class="dot">01</div>
+            <div class="body">
+              <h3>连续 rAF + 文字渐变</h3>
+              <p>
+                替换 50ms / 5
+                段量化位置，但安装包中的 clipped-text background
+                未可靠重绘。
+              </p>
+            </div>
+          </article>
+          <article>
+            <div class="dot">02</div>
+            <div class="body">
+              <h3>逐字符 opacity</h3>
+              <p>
+                Chrome 正常，WKWebView
+                退化为单字符；绝对 delay 也无法修复多元素 stagger。
+              </p>
+            </div>
+          </article>
+          <article>
+            <div class="dot">03</div>
+            <div class="body">
+              <h3>双层句子 + clip-path</h3>
+              <p>
+                最小探针 computed value 会推进，真实 Tauri
+                安装包仍无可见效果。
+              </p>
+            </div>
+          </article>
+          <article>
+            <div class="dot">04</div>
+            <div class="body">
+              <h3>Canvas + rAF / 主线程定时器</h3>
+              <p>
+                普通 WKWebView 能更新像素，但 Tauri
+                隐藏窗口与启动命令会冻结页面主线程。
+              </p>
+            </div>
+          </article>
+          <article>
+            <div class="dot">05</div>
+            <div class="body">
+              <h3>Worker OffscreenCanvas</h3>
+              <p>
+                与页面主线程隔离；人为同步阻塞主线程 600ms
+                时，quote 区域仍持续变化，成为最终实现。
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="scope">
+        <h2>最终影响范围</h2>
+        <p class="section-intro">
+          变更集中在首屏结构、启动绘制控制、原生窗口显示时点、合同测试与
+          as-built 主题文档；未新增 npm / Rust 依赖，也未修改
+          <code>~/.ad/</code> 数据。
+        </p>
+        <div class="file-map">
+          <div class="file">
+            <b>index.html</b>
+            <p>真实文案、覆盖 Canvas、同步 Worker bootstrap 与退化路径。</p>
+          </div>
+          <div class="file">
+            <b>src/lib/startupSurface.ts</b>
+            <p>文案注入、揭幕与启动层生命周期；不再等待一轮动画。</p>
+          </div>
+          <div class="file">
+            <b>src-tauri/src/lib.rs</b>
+            <p>导航 Started 时显示主题匹配的原生窗口。</p>
+          </div>
+          <div class="file">
+            <b>src/main.tsx</b>
+            <p>初始化完成后直接 reveal，不承担探照灯启动或首轮等待。</p>
+          </div>
+          <div class="file">
+            <b>tests/lib/startup.test.ts · tests/main.test.tsx</b>
+            <p>锁定真实文案、Worker/Canvas 生命周期与 loading 并行语义。</p>
+          </div>
+          <div class="file">
+            <b>tests/styles/themeContract.test.ts</b>
+            <p>锁定双主题、静态 fallback、绘制结构与 WebKit-safe 合同。</p>
+          </div>
+          <div class="file">
+            <b>docs/design-docs/theme-system.md · .html</b>
+            <p>同步最终 Worker OffscreenCanvas as-built 设计记忆。</p>
+          </div>
+          <div class="file">
+            <b>docs/exec-plans/completed/smooth-startup-spotlight.*</b>
+            <p>MD 保留真实执行历史；本 HTML 恢复冻结 companion 归档。</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="verify">
+        <h2>验证与验收</h2>
+        <p class="section-intro">
+          自动门禁之外，验证重点是系统 WKWebView
+          的真实像素变化、隐藏→显示生命周期和页面主线程被阻塞时的持续绘制。
+        </p>
+        <div class="checks">
+          <div class="check">正常 motion 下光带连续推进并正常复位</div>
+          <div class="check">Reduced motion 始终展示完整静态文案</div>
+          <div class="check">Mocha / Latte 背景与文字保持可读</div>
+          <div class="check">Loading 完成立即揭幕，无人为 600ms 等待</div>
+          <div class="check">Canvas 移除后 Worker / timer / listener 清理</div>
+          <div class="check">系统 WKWebView 80ms 间隔像素快照发生变化</div>
+          <div class="check">主线程同步阻塞 600ms 时 Worker 仍更新</div>
+          <div class="check">生产 app bundle 构建、安装并从精确路径启动</div>
+        </div>
+        <span class="command"
+          >pnpm test -- tests/lib/startup.test.ts
+          tests/styles/themeContract.test.ts tests/main.test.tsx pnpm test pnpm
+          typecheck pnpm lint pnpm tauri build git diff --check</span
+        >
+      </section>
+
+      <section id="outcome">
+        <div class="outcome">
+          <span class="tag final">Final outcome</span>
+          <h2>主动绘制，独立推进，按真实 loading 退出。</h2>
+          <p>
+            最终实现以 Worker OffscreenCanvas
+            重画基础文字和一条约占句宽 55% 的柔和渐变带。每轮
+            300ms，独立 16ms
+            定时器不受页面主线程启动工作影响；文案与尺寸变化会同步，启动层移除即终止。旧系统与无
+            Canvas 环境均有可读 fallback。
+          </p>
+          <div class="metrics">
+            <div><strong>100 / 100</strong><span>全量前端测试</span></div>
+            <div><strong>27 / 27</strong><span>focused tests</span></div>
+            <div><strong>0</strong><span>新增依赖</span></div>
+            <div><strong>42a296…</strong><span>最终安装二进制 SHA-256</span></div>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <strong>Frozen companion snapshot reconstructed at 2026-07-30 00:26 CST.</strong>
+        It summarizes the final state of
+        <code>docs/exec-plans/completed/smooth-startup-spotlight.md</code>.
+        The actual 2026-07-23 approval reviewed the Markdown only; this HTML was
+        created during PR #18 review and must not be read as a pre-execution
+        approved baseline.
+      </footer>
+    </main>
+  </body>
+</html>

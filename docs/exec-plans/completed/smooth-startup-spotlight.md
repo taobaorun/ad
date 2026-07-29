@@ -10,8 +10,9 @@
 
 ## 确认状态
 
-- [x] **用户已确认** — 评审本文件：`docs/exec-plans/active/smooth-startup-spotlight.md`
+- [x] **用户已确认** — 当时实际评审的是 Markdown：`docs/exec-plans/active/smooth-startup-spotlight.md`
 - [x] 用户已确认，开始执行（2026-07-23 11:28 CST）
+- [x] **归档配套 HTML 已补齐** — `docs/exec-plans/completed/smooth-startup-spotlight.html`（2026-07-30 PR #18 评审期间依据本文件的最终状态重建并冻结；它不是执行前曾展示给用户的批准基线）
 
 ## 设计文档判定
 
@@ -68,6 +69,7 @@ tests/main.test.tsx
 - [x] (2026-07-23 14:53 CST) 按 Tauri 的“隐藏窗口加载→导航 Started 时显示”顺序运行系统 WKWebView，Canvas 间隔 80ms 的像素缓冲从 19,586 变为 19,418 bytes；全量 22 文件 100 测试、lint、typecheck、diff check 与 app-only Tauri build 全部通过。新版已安装并从 `/Applications/AD.app` 启动，安装包二进制与构建产物 SHA-256 同为 `19b9b664cc7b131baa846f0be1d466e5da67af330d650947427d9acce8afa335`。
 - [x] (2026-07-23 15:00 CST) 安装包再次复验显示主线程定时器仍冻结，确认独立 WKWebView 探针不足以覆盖 Tauri 启动命令对页面主线程的影响。系统 WKWebView 支持 OffscreenCanvas、`transferControlToOffscreen` 和 Worker；改为 Worker 独立绘制，旧系统保留主线程 fallback。隐藏→显示并同步阻塞页面主线程 600ms 的集成探针确认 Canvas 已 transfer 且 80ms 间隔的 quote 区域快照发生变化；focused tests 27/27 与 typecheck 通过。
 - [x] (2026-07-23 15:12 CST) Worker 版 app-only Tauri build、全量 22 文件 100 测试、lint、typecheck 与 diff check 全部通过。新版已安装并从 `/Applications/AD.app` 启动，安装包二进制与构建产物 SHA-256 同为 `42a2967f5ddff25320f48aa89c4ec7d6cf0f1232d466dedc221fd8ae5aa0a969`；上一安装版备份为 `~/.Trash/AD-20260723-151103.app`。
+- [x] (2026-07-30 00:26 CST) PR #18 评审补齐归档 companion HTML；快照按本文件最终状态重建并明确记录其事后来源，没有追溯声称它在执行前已展示或批准（验证：HTML 自包含、文档路径有效、结构检查与浏览器打开检查通过）。
 
 ## 意外发现
 
@@ -75,8 +77,8 @@ tests/main.test.tsx
   证据：`git diff -- src/lib/startupSurface.ts` 显示 `SPOTLIGHT_STEP_COUNT` 从 30 改为 5，且 `SPOTLIGHT_CYCLE_MS` 因而变成 50ms。
 - 发现：现有 `theme-system.md/.html` 仍描述 300ms / 30 步，而已完成的 branded startup ExecPlan 结果回顾写的是 750ms，文档与代码历史存在漂移。
   证据：`docs/design-docs/theme-system.md:128`、`docs/exec-plans/completed/branded-startup-loading.md:101`。
-- 发现：仓库 `docs/PLANS.md` 仍要求 ExecPlan MD + HTML，但本次用户显式加载的 harness v1.6 规定 ExecPlan 只保留 MD 真理源。
-  证据：`docs/PLANS.md` 的“Tier 2 双格式”与本轮提供的 `harness-engineering/SKILL.md`“ExecPlan 只生成一份 Markdown 文件”冲突；本计划按本轮显式 skill 的较新规则只创建 MD。
+- 发现：仓库 `docs/PLANS.md` 仍要求 ExecPlan MD + HTML，但原执行轮次显式加载的 harness v1.6 规定 ExecPlan 只保留 MD 真理源。
+  证据：`docs/PLANS.md` 的“Tier 2 双格式”与当时提供的 `harness-engineering/SKILL.md`“ExecPlan 只生成一份 Markdown 文件”冲突；原执行轮次按显式 skill 只创建了 MD。PR #18 评审确认仓库规则仍要求配套 HTML，因此于 2026-07-30 根据最终 MD 重建归档快照；该快照补齐当前文档合同，但不能作为执行前 HTML 评审的历史证据。
 - 发现：为截图临时使用 MutationObserver 固定 splash 时，测试夹具因重复移除同一 class 形成属性回调循环；丢弃该隔离页后，改为在 300ms 克隆静态中间帧，截图正常完成。
   证据：原隔离页 screenshot/navigation 超时；新隔离 context 的克隆中间帧在 58ms 内完成截图。该夹具从未写入项目文件。
 - 发现：真实安装包中，WKWebView 到 `PageLoadEvent::Finished` 才显示原生窗口；探照灯虽然在隐藏期间运行，但用户看到窗口时 loading 已接近或已经结束。
@@ -118,6 +120,9 @@ tests/main.test.tsx
 - 决策：不格式化整个 `theme-system.html`。
   理由：该 artifact 在 HEAD 基线中已采用紧凑排版并无法通过 Prettier；为两处文案同步重排整份文件会制造与任务无关的大 diff。
   日期/作者：2026-07-23 / Codex
+- 决策：在 PR #18 评审中补建 `smooth-startup-spotlight.html`，并将其标记为依据最终 MD 重建的冻结归档快照，而不是追溯改写为执行前批准基线。
+  理由：恢复仓库要求的 ExecPlan MD + HTML 配对，同时保留原执行轮次因 harness 规则冲突只评审 Markdown 的真实历史。
+  日期/作者：2026-07-30 / Codex
 
 ## 结果回顾
 
@@ -128,6 +133,8 @@ tests/main.test.tsx
 自动门禁通过：3 个 focused 文件 27 个测试、全量 22 个文件 100 个测试、`pnpm typecheck`、`pnpm lint`、app-only Tauri build、`git diff --check`。系统 WKWebView 的隐藏→显示集成探针也确认 80ms 间隔内 Canvas 像素发生变化。除历史紧凑格式的 `docs/design-docs/theme-system.html` 外，所有本次文件通过目标 Prettier 检查；HEAD 基线的同一 HTML 也返回格式失败，因此保持精准更新。
 
 设计记忆检查：本任务没有新增未来 Agent 必须理解的结构性设计；已有 `theme-system.md/.html` 已按实际落地同步“Worker OffscreenCanvas、独立 16ms 定时器驱动 300ms 扫光、loading 完成即揭幕”的合同。项目结构、技术栈、命令和关键文档位置均未改变，`AGENTS.md` 无需更新。
+
+归档完整性在 PR #18 评审期间恢复：`smooth-startup-spotlight.html` 是依据本文件最终状态重建并冻结的 companion snapshot，用于恢复当前 `docs/PLANS.md` 所要求的 MD + HTML 配对。它没有在 2026-07-23 执行前展示给用户，因此不作为当时批准过程的证据；批准与执行历史仍以本 Markdown 的时间线为准。
 
 ## 上下文和方向
 
