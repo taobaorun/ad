@@ -94,11 +94,10 @@ impl AdapterRegistry {
             .map(|adapter| adapter.as_ref())
     }
 
-    pub fn resolve_resource(
+    pub fn adapter_for_context(
         &self,
         context: &super::AgentContext,
-        resource: &ResourceRef,
-    ) -> Result<ManagedResourceTarget, super::AgentError> {
+    ) -> Result<&dyn AgentAdapter, super::AgentError> {
         let installation = self
             .discover()
             .into_iter()
@@ -117,19 +116,30 @@ impl AdapterRegistry {
                         )
                     })
                     .transpose()
-                    .map_err(|error| registry_error(context, resource, error.to_string()))?
+                    .map_err(|error| context_registry_error(context, error.to_string()))?
                     .flatten();
                 if derived_runtime.is_some() {
                     "codex".into()
                 } else {
-                    return Err(registry_error(
+                    return Err(context_registry_error(
                         context,
-                        resource,
                         "Unknown Agent installation",
                     ));
                 }
             }
         };
+        self.adapter(agent_id.as_str())
+            .ok_or_else(|| context_registry_error(context, "Unknown Agent adapter"))
+    }
+
+    pub fn resolve_resource(
+        &self,
+        context: &super::AgentContext,
+        resource: &ResourceRef,
+    ) -> Result<ManagedResourceTarget, super::AgentError> {
+        let adapter = self
+            .adapter_for_context(context)
+            .map_err(|error| with_registry_resource(error, resource))?;
         if resource.installation_id != context.installation_id {
             return Err(registry_error(
                 context,
@@ -137,9 +147,6 @@ impl AdapterRegistry {
                 "Resource does not belong to the active Agent installation",
             ));
         }
-        let adapter = self
-            .adapter(agent_id.as_str())
-            .ok_or_else(|| registry_error(context, resource, "Unknown Agent adapter"))?;
         match resource.kind {
             ResourceKind::Settings => adapter
                 .settings()
@@ -160,6 +167,29 @@ impl AdapterRegistry {
             )),
         }
     }
+}
+
+fn context_registry_error(
+    context: &super::AgentContext,
+    message: impl Into<String>,
+) -> super::AgentError {
+    super::AgentError {
+        code: super::AgentErrorCode::Unsupported,
+        message: message.into(),
+        agent_id: None,
+        installation_id: Some(context.installation_id.clone()),
+        resource: None,
+        retryable: false,
+        details: None,
+    }
+}
+
+fn with_registry_resource(
+    mut error: super::AgentError,
+    resource: &ResourceRef,
+) -> super::AgentError {
+    error.resource = Some(resource.clone());
+    error
 }
 
 fn registry_error(
