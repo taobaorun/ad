@@ -888,6 +888,7 @@ fn project_route_batches_compatible_plugins_and_activates_config_last() {
         .unwrap();
     assert_eq!(repeated_alpha.disposition, ArtifactDisposition::Unchanged);
     assert!(repeated_alpha.resolution.is_none());
+    assert!(repeated_alpha.detail_code.is_none());
 
     std::fs::create_dir_all(alpha.join("skills/new")).unwrap();
     std::fs::write(alpha.join("skills/new/SKILL.md"), "---\nname: new\n---\n").unwrap();
