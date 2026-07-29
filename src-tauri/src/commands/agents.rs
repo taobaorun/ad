@@ -621,14 +621,7 @@ fn with_context_adapter<T>(
     operation: impl FnOnce(&dyn crate::agents::AgentAdapter) -> Result<T, AgentError>,
 ) -> Result<T, AgentError> {
     let registry = builtin_registry();
-    let installation = registry
-        .discover()
-        .into_iter()
-        .find(|installation| installation.id == context.installation_id)
-        .ok_or_else(|| context_error(context, "Unknown Agent installation"))?;
-    let adapter = registry
-        .adapter(installation.agent_id.as_str())
-        .ok_or_else(|| context_error(context, "Unknown Agent adapter"))?;
+    let adapter = registry.adapter_for_context(context)?;
     operation(adapter)
 }
 
@@ -1334,6 +1327,65 @@ mod tests {
         assert_eq!(
             user_document.content,
             serde_json::Value::String(String::new())
+        );
+
+        match previous_home {
+            Some(value) => std::env::set_var("AD_HOME", value),
+            None => std::env::remove_var("AD_HOME"),
+        }
+        match previous_codex_home {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn settings_documents_accept_managed_project_runtime_symlink() {
+        let temp = tempfile::tempdir().unwrap();
+        let codex_home = temp.path().join(".codex");
+        let project = temp.path().join("project");
+        let legacy_runtime_home = temp.path().join(".ad/codex-homes/legacy-project");
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&legacy_runtime_home).unwrap();
+        std::fs::write(
+            legacy_runtime_home.join("config.toml"),
+            "model = \"runtime\"\n",
+        )
+        .unwrap();
+        let previous_home = std::env::var("AD_HOME").ok();
+        let previous_codex_home = std::env::var("CODEX_HOME").ok();
+        std::env::set_var("AD_HOME", temp.path());
+        std::env::set_var("CODEX_HOME", &codex_home);
+
+        let base = builtin_registry()
+            .discover()
+            .into_iter()
+            .find(|item| {
+                item.agent_id.as_str() == "codex"
+                    && item.root_path
+                        == std::fs::canonicalize(&codex_home)
+                            .unwrap()
+                            .to_string_lossy()
+            })
+            .unwrap();
+        let runtime = ProjectCodexRuntime::derive(&base, &project).unwrap();
+        std::fs::create_dir_all(runtime.runtime_home.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&legacy_runtime_home, &runtime.runtime_home).unwrap();
+        crate::agents::persist_project_codex_runtime(&runtime).unwrap();
+        let context = AgentContext {
+            installation_id: runtime.runtime_installation_id,
+            project_path: Some(runtime.project_path),
+        };
+
+        let documents = list_agent_settings_documents(context).unwrap();
+
+        assert_eq!(documents.len(), 1);
+        assert_eq!(documents[0].resource.logical_id, "runtime-config");
+        assert_eq!(
+            documents[0].content,
+            serde_json::Value::String("model = \"runtime\"\n".into())
         );
 
         match previous_home {
