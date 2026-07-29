@@ -874,6 +874,58 @@ fn project_route_batches_compatible_plugins_and_activates_config_last() {
         .join("plugins/cache/team/beta/2.0.0/.codex-plugin/plugin.json")
         .is_file());
 
+    let repeated_preview = ClaudeToCodexRoute
+        .preview_with_options(
+            &source_context,
+            &target_context,
+            &ClaudeToCodexOptions::default(),
+        )
+        .unwrap();
+    let repeated_alpha = repeated_preview
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.id == "plugin:alpha@team")
+        .unwrap();
+    assert_eq!(repeated_alpha.disposition, ArtifactDisposition::Unchanged);
+    assert!(repeated_alpha.resolution.is_none());
+
+    std::fs::create_dir_all(alpha.join("skills/new")).unwrap();
+    std::fs::write(alpha.join("skills/new/SKILL.md"), "---\nname: new\n---\n").unwrap();
+    let installed_alpha = runtime.runtime_home.join("plugins/cache/team/alpha/1.0.0");
+    std::fs::create_dir_all(installed_alpha.join("scripts/__pycache__")).unwrap();
+    std::fs::write(
+        installed_alpha.join("scripts/__pycache__/hook.pyc"),
+        b"runtime cache",
+    )
+    .unwrap();
+
+    let refreshed_preview = ClaudeToCodexRoute
+        .preview_with_options(
+            &source_context,
+            &target_context,
+            &ClaudeToCodexOptions::default(),
+        )
+        .unwrap();
+    let refreshed_alpha = refreshed_preview
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.id == "plugin:alpha@team")
+        .unwrap();
+    assert_eq!(refreshed_alpha.disposition, ArtifactDisposition::Mapped);
+    assert!(refreshed_preview
+        .plan
+        .mutations
+        .iter()
+        .any(|mutation| mutation.resource.logical_id == "package:team:alpha:1.0.0"));
+    let refreshed_plan_id = refreshed_preview.plan.id.clone();
+    let refreshed_plans = PlanStore::default();
+    refreshed_plans.insert(refreshed_preview.plan).unwrap();
+    ExecutionEngine
+        .apply(&refreshed_plan_id, &refreshed_plans)
+        .unwrap();
+    assert!(installed_alpha.join("skills/new/SKILL.md").is_file());
+    assert!(!installed_alpha.join("scripts/__pycache__").exists());
+
     let plugins = registry.adapter("codex").unwrap().plugins().unwrap();
     let alpha_resource = plugins
         .list(&target_context)

@@ -402,7 +402,40 @@ fn append_collection_artifacts(
             });
             let mut artifact =
                 map_plugin_artifact(&source, target_context, target, target_location);
-            if legacy_replay
+            let descriptor = if matches!(
+                artifact.disposition,
+                ArtifactDisposition::Mapped
+                    | ArtifactDisposition::Partial
+                    | ArtifactDisposition::Conflict
+            ) {
+                source
+                    .content
+                    .get("descriptor")
+                    .cloned()
+                    .map(|value| {
+                        serde_json::from_value::<ClaudePluginDescriptor>(value).map_err(|error| {
+                            route_error(
+                                source_context,
+                                format!("Invalid Claude Plugin descriptor: {error}"),
+                            )
+                        })
+                    })
+                    .transpose()?
+            } else {
+                None
+            };
+            let managed_replay = if scope == ResourceScope::Project && target.is_some() {
+                match descriptor.as_ref() {
+                    Some(descriptor) => super::codex_plugins::project_runtime_owns_plugin_source(
+                        target_context,
+                        descriptor,
+                    )?,
+                    None => false,
+                }
+            } else {
+                false
+            };
+            if (legacy_replay || managed_replay)
                 && target.is_some()
                 && artifact.disposition == ArtifactDisposition::Conflict
             {
@@ -412,9 +445,13 @@ fn append_collection_artifacts(
                     ArtifactDisposition::Mapped
                 };
                 artifact.resolution = None;
-                artifact.message =
+                artifact.message = if managed_replay {
+                    "AD-managed target will be revalidated from the same Project Plugin source"
+                        .into()
+                } else {
                     "Legacy target will be revalidated from the explicit Project Plugin source"
-                        .into();
+                        .into()
+                };
             }
             let reuses_inherited_user_plugin = options.inherit_base_config
                 && source.location.origin == ResourceOrigin::User
@@ -431,8 +468,8 @@ fn append_collection_artifacts(
                 && (matches!(
                     artifact.disposition,
                     ArtifactDisposition::Mapped | ArtifactDisposition::Partial
-                ) && (target.is_none() || legacy_replay)
-                    || legacy_replay
+                ) && (target.is_none() || legacy_replay || managed_replay)
+                    || (legacy_replay || managed_replay)
                         && target.is_some()
                         && artifact.disposition == ArtifactDisposition::Unchanged);
             if needs_project_install {
@@ -442,28 +479,16 @@ fn append_collection_artifacts(
                     total: Some(total),
                     item: Some(source.resource.logical_id.clone()),
                 });
-                let descriptor = source
-                    .content
-                    .get("descriptor")
-                    .cloned()
-                    .ok_or_else(|| {
-                        route_error(
-                            source_context,
-                            format!(
-                                "Plugin {} has no resolved package descriptor",
-                                source.resource.logical_id
-                            ),
-                        )
-                    })
-                    .and_then(|value| {
-                        serde_json::from_value::<ClaudePluginDescriptor>(value).map_err(|error| {
-                            route_error(
-                                source_context,
-                                format!("Invalid Claude Plugin descriptor: {error}"),
-                            )
-                        })
-                    })?;
-                let prepared = prepare_project_plugin_install(&descriptor).map_err(|error| {
+                let descriptor = descriptor.as_ref().ok_or_else(|| {
+                    route_error(
+                        source_context,
+                        format!(
+                            "Plugin {} has no resolved package descriptor",
+                            source.resource.logical_id
+                        ),
+                    )
+                })?;
+                let prepared = prepare_project_plugin_install(descriptor).map_err(|error| {
                     route_error(
                         source_context,
                         format!("Failed to prepare Project Plugin: {error}"),
@@ -487,6 +512,10 @@ fn append_collection_artifacts(
                 install_source_object.insert(
                     "inheritBaseConfig".into(),
                     Value::Bool(options.inherit_base_config),
+                );
+                install_source_object.insert(
+                    "refreshOwnedPackage".into(),
+                    Value::Bool(legacy_replay || managed_replay),
                 );
                 if let Some(profile_id) = options.profile_id.as_deref() {
                     install_source_object
@@ -516,6 +545,14 @@ fn append_collection_artifacts(
                     expected_digest: source_digest,
                     write_policy: WritePolicy::ReadOnly,
                 });
+                if managed_replay
+                    && artifact.disposition == ArtifactDisposition::Mapped
+                    && install.mutations.is_empty()
+                {
+                    artifact.disposition = ArtifactDisposition::Unchanged;
+                    artifact.message =
+                        "AD-managed target already matches the Project Plugin source".into();
+                }
                 plugin_install_plans.push(install);
             }
             result.artifacts.push(artifact);
