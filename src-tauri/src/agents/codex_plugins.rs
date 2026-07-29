@@ -18,12 +18,12 @@ use super::{
     load_project_codex_runtime_manifest, render_project_codex_runtime_manifest,
     synthesize_project_codex_config, synthesize_project_codex_config_with_settings, AgentContext,
     AgentError, AgentErrorCode, AgentId, CapabilityAvailability, CapabilityLimitation,
-    CapabilityOperation, CollectionInstallRequest, ContentDigest, ManagedResourceTarget,
-    MarketplaceOverlay, MutationKind, MutationPlan, PlanId, PlannedMutation, PluginInstallProgress,
-    PluginInstallProgressReporter, PluginsPort, ProjectCodexRuntimeManifest, ProjectPluginOverlay,
-    ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin, ResourcePort, ResourceRef,
-    ResourceScope, ResourceSnapshot, SettingsEdit, SharedAuthBinding, WritePolicy,
-    PROJECT_CODEX_RUNTIME_MANIFEST_SCHEMA_VERSION,
+    CapabilityOperation, ClaudePluginDescriptor, CollectionInstallRequest, ContentDigest,
+    ManagedResourceTarget, MarketplaceOverlay, MutationKind, MutationPlan, PlanId, PlannedMutation,
+    PluginInstallProgress, PluginInstallProgressReporter, PluginsPort, ProjectCodexRuntimeManifest,
+    ProjectPluginOverlay, ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin,
+    ResourcePort, ResourceRef, ResourceScope, ResourceSnapshot, SettingsEdit, SharedAuthBinding,
+    WritePolicy, PROJECT_CODEX_RUNTIME_MANIFEST_SCHEMA_VERSION,
 };
 
 #[derive(Debug, Deserialize)]
@@ -31,6 +31,8 @@ use super::{
 struct ProjectPluginInstallSource {
     marketplace: ProjectMarketplaceSource,
     package: ProjectPackageSource,
+    #[serde(default)]
+    refresh_owned_package: bool,
     #[serde(default = "default_true")]
     inherit_base_config: bool,
     #[serde(default)]
@@ -74,6 +76,38 @@ pub(crate) struct CodexPluginsPort;
 pub(super) struct ProjectRuntimeBootstrapPlan {
     pub(super) plan: MutationPlan,
     pub(super) inherited_plugin_ids: BTreeSet<String>,
+}
+
+pub(super) fn project_runtime_owns_plugin_source(
+    context: &AgentContext,
+    descriptor: &ClaudePluginDescriptor,
+) -> Result<bool, AgentError> {
+    let Some(runtime) = project_runtime_for_context(context)? else {
+        return Ok(false);
+    };
+    let Some(snapshot) = load_project_codex_runtime_manifest(&runtime).map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            error.to_string(),
+        )
+    })?
+    else {
+        return Ok(false);
+    };
+    let overlay = snapshot.manifest.project_overlay;
+    if overlay.enabled_plugins.get(&descriptor.plugin_id) != Some(&true) {
+        return Ok(false);
+    }
+    let Some(marketplace) = overlay.marketplaces.get(&descriptor.marketplace.name) else {
+        return Ok(false);
+    };
+    Ok(
+        marketplace.source_type == descriptor.marketplace.source_type
+            && marketplace.source == descriptor.marketplace.source
+            && marketplace.ref_name == descriptor.marketplace.ref_name,
+    )
 }
 
 pub(super) fn plan_project_runtime_bootstrap(
@@ -755,10 +789,18 @@ impl PluginsPort for CodexPluginsPort {
         )?;
         let project_settings =
             project_settings_from_config(context, &config_state, &project_settings_keys)?;
+        let refreshes_owned_package = source.refresh_owned_package
+            && overlay.enabled_plugins.get(&request.logical_id) == Some(&true)
+            && overlay
+                .marketplaces
+                .get(&source.marketplace.name)
+                .is_some_and(|existing| {
+                    marketplace_ownership_matches(existing, &marketplace_overlay)
+                });
         if overlay
             .marketplaces
             .get(&source.marketplace.name)
-            .is_some_and(|existing| existing != &marketplace_overlay)
+            .is_some_and(|existing| !marketplace_ownership_matches(existing, &marketplace_overlay))
         {
             return Err(agent_error(
                 AgentErrorCode::ResourceChanged,
@@ -863,7 +905,10 @@ impl PluginsPort for CodexPluginsPort {
             }
             _ => unreachable!("package storage kind was validated above"),
         };
-        if matches!(package_state, TargetState::Directory(_)) && !package_matches {
+        if matches!(package_state, TargetState::Directory(_))
+            && !package_matches
+            && !refreshes_owned_package
+        {
             return Err(agent_error(
                 AgentErrorCode::ResourceChanged,
                 context,
