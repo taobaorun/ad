@@ -84,7 +84,7 @@ describe('theme contract', () => {
     expect(indexHtml).toContain('aria-hidden="true"');
     expect(indexHtml).toContain('id="ad-splash-quote"');
     expect(indexHtml).toContain('data-i18n-key="startup.loadingQuote"');
-    expect(indexHtml).toContain('data-i18n-key="startup.loadingQuote">AD</p>');
+    expect(indexHtml).toContain('data-i18n-key="startup.loadingQuote">Be Water, My Friend</p>');
     expect(indexHtml).not.toContain('>AD is loading');
     expect(indexHtml).not.toContain('Initializing AD');
   });
@@ -98,19 +98,39 @@ describe('theme contract', () => {
     expect(indexHtml).toContain('<div id="root" inert aria-hidden="true"></div>');
   });
 
-  it('provides spotlight, exit, reduced-motion, and readable clipping fallbacks', () => {
-    expect(startupSurface).toContain('const SPOTLIGHT_STEP_MS = 10;');
-    expect(startupSurface).toContain('const SPOTLIGHT_STEP_COUNT = 30;');
+  it('provides a WKWebView-safe Canvas spotlight, exit, and reduced-motion fallbacks', () => {
     expect(indexHtml).toContain('font-family: ui-serif, Georgia,');
     expect(indexHtml).toContain('font-size: 23px');
     expect(indexHtml).toContain('letter-spacing: 0.02em');
-    expect(indexHtml).toMatch(
-      /linear-gradient\(\s*100deg,\s*#a6adc8 34%,\s*#fff 49%,\s*#74c7ec 52%,\s*#a6adc8 67%\s*\)/,
+    expect(indexHtml).toContain('id="ad-splash-quote-canvas"');
+    expect(indexHtml).toContain('aria-hidden="true"');
+    expect(indexHtml).toContain('canvas.transferControlToOffscreen()');
+    expect(indexHtml).toContain('new Worker(workerUrl)');
+    expect(indexHtml).toMatch(/worker\.postMessage\(\s*\{\s*type:\s*'start'/);
+    expect(indexHtml).toContain('worker.terminate()');
+    expect(indexHtml).toContain('URL.revokeObjectURL(workerUrl)');
+    expect(indexHtml).toContain("canvas.getContext('2d')");
+    expect(indexHtml).toContain('context.createLinearGradient');
+    expect(indexHtml).toContain('self.setInterval(drawFrame, frameIntervalMs)');
+    expect(indexHtml).toContain('window.setInterval(drawFrame, frameIntervalMs)');
+    expect(indexHtml).toContain("window.addEventListener('focus', drawFrame)");
+    expect(indexHtml).toContain(
+      "document.addEventListener('visibilitychange', handleVisibilityChange)",
     );
-    expect(indexHtml).toContain('background-size: 260% 100%');
-    expect(indexHtml).toContain('-webkit-background-clip: text');
-    expect(indexHtml).toContain('-webkit-text-fill-color: transparent');
-    expect(indexHtml).not.toContain('@keyframes ad-spotlight');
+    expect(indexHtml).not.toContain('window.requestAnimationFrame(drawFrame)');
+    expect(indexHtml).toContain("matchMedia('(prefers-reduced-motion: reduce)')");
+    expect(indexHtml).toContain('if (!canvas.isConnected)');
+    expect(indexHtml).toContain('window.clearInterval(frameTimer)');
+    expect(indexHtml).toContain('const sweepDurationMs = 300');
+    expect(indexHtml).not.toContain('.ad-splash-quote-base');
+    expect(indexHtml).not.toContain('.ad-splash-quote-spotlight');
+    expect(indexHtml).not.toContain('.ad-splash-quote-character');
+    expect(indexHtml).not.toContain('animationDelay');
+    expect(indexHtml).not.toContain('clip-path:');
+    expect(indexHtml).not.toContain('-webkit-background-clip: text');
+    expect(indexHtml).not.toContain('-webkit-text-fill-color: transparent');
+    expect(startupSurface).not.toContain('export function startStartupSpotlight');
+    expect(indexHtml).toContain('function animateStartupQuote');
     expect(indexHtml).not.toContain('ad-splash-quote-text');
     expect(indexHtml).not.toContain('ad-splash-ambient');
     expect(indexHtml).not.toContain('@keyframes ad-ambient-sweep');

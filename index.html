@@ -79,8 +79,16 @@
         .dark #ad-splash-logo {
           filter: drop-shadow(0 12px 30px rgb(17 17 27 / 0.42));
         }
-        #ad-splash-quote {
+        #ad-splash-quote-wrap {
+          --ad-quote-base: #5c5f77;
+          --ad-quote-highlight: #11111b;
           position: relative;
+        }
+        .dark #ad-splash-quote-wrap {
+          --ad-quote-base: #a6adc8;
+          --ad-quote-highlight: #fff;
+        }
+        #ad-splash-quote {
           margin: 0;
           color: #5c5f77;
           font-family: ui-serif, Georgia, 'Times New Roman', serif;
@@ -92,6 +100,14 @@
         }
         .dark #ad-splash-quote {
           color: #a6adc8;
+        }
+        #ad-splash-quote-canvas {
+          position: absolute;
+          inset: 0;
+          display: block;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
         }
         #ad-splash-status {
           position: absolute;
@@ -113,26 +129,6 @@
             transform: scale(1.025);
           }
         }
-        @supports ((-webkit-background-clip: text) or (background-clip: text)) {
-          #ad-splash-quote {
-            color: #5c5f77;
-            background: linear-gradient(100deg, #5c5f77 34%, #11111b 49%, #209fb5 52%, #5c5f77 67%);
-            background-size: 260% 100%;
-            background-position: 140% 0;
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-          }
-          .dark #ad-splash-quote {
-            background-image: linear-gradient(
-              100deg,
-              #a6adc8 34%,
-              #fff 49%,
-              #74c7ec 52%,
-              #a6adc8 67%
-            );
-          }
-        }
         @media (prefers-reduced-motion: reduce) {
           #ad-splash-logo,
           #ad-splash-quote {
@@ -142,7 +138,318 @@
       </style>
       <div id="ad-splash-content">
         <img id="ad-splash-logo" src="/ad-logo.png" alt="" aria-hidden="true" draggable="false" />
-        <p id="ad-splash-quote" data-i18n-key="startup.loadingQuote">AD</p>
+        <div id="ad-splash-quote-wrap">
+          <p id="ad-splash-quote" data-i18n-key="startup.loadingQuote">Be Water, My Friend</p>
+          <canvas id="ad-splash-quote-canvas" aria-hidden="true"></canvas>
+        </div>
+        <script>
+          (function animateStartupQuote() {
+            var wrap = document.getElementById('ad-splash-quote-wrap');
+            var quote = document.getElementById('ad-splash-quote');
+            var canvas = document.getElementById('ad-splash-quote-canvas');
+            if (!wrap || !quote || !(canvas instanceof HTMLCanvasElement)) return;
+
+            const sweepDurationMs = 300;
+            const frameIntervalMs = 16;
+            var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+            function readFrameConfig() {
+              var bounds = quote.getBoundingClientRect();
+              var style = window.getComputedStyle(quote);
+              var pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+              var width = bounds.width;
+              var height = bounds.height;
+              canvas.style.width = width + 'px';
+              canvas.style.height = height + 'px';
+              var wrapStyle = window.getComputedStyle(wrap);
+              return {
+                text: quote.textContent || '',
+                width: width,
+                height: height,
+                pixelWidth: Math.max(1, Math.round(width * pixelRatio)),
+                pixelHeight: Math.max(1, Math.round(height * pixelRatio)),
+                pixelRatio: pixelRatio,
+                font:
+                  style.font ||
+                  [style.fontWeight, style.fontSize, style.fontFamily].filter(Boolean).join(' '),
+                letterSpacing: style.letterSpacing,
+                baseColor: wrapStyle.getPropertyValue('--ad-quote-base').trim(),
+                highlightColor: wrapStyle.getPropertyValue('--ad-quote-highlight').trim(),
+                reduceMotion: reduceMotion,
+                sweepDurationMs: sweepDurationMs,
+                frameIntervalMs: frameIntervalMs,
+              };
+            }
+
+            function spotlightWorkerMain() {
+              var canvas;
+              var context;
+              var config;
+              var baseline = 0;
+              var textX = 0;
+              var startedAt = performance.now();
+              var frameTimer;
+              var frameIntervalMs = 16;
+              var painted = false;
+
+              function syncMetrics(nextConfig) {
+                config = nextConfig;
+                frameIntervalMs = config.frameIntervalMs;
+                canvas.width = config.pixelWidth;
+                canvas.height = config.pixelHeight;
+                context.setTransform(config.pixelRatio, 0, 0, config.pixelRatio, 0, 0);
+                context.font = config.font;
+                context.textBaseline = 'alphabetic';
+                if ('letterSpacing' in context) context.letterSpacing = config.letterSpacing;
+                var metrics = context.measureText(config.text);
+                textX = Math.max(0, (config.width - metrics.width) / 2);
+                baseline =
+                  (config.height +
+                    metrics.actualBoundingBoxAscent -
+                    metrics.actualBoundingBoxDescent) /
+                  2;
+              }
+
+              function paintText(fillStyle) {
+                context.fillStyle = fillStyle;
+                context.fillText(config.text, textX, baseline);
+              }
+
+              function paintBand(center, bandWidth) {
+                var gradient = context.createLinearGradient(
+                  center - bandWidth / 2,
+                  0,
+                  center + bandWidth / 2,
+                  0,
+                );
+                gradient.addColorStop(0, 'transparent');
+                gradient.addColorStop(0.18, 'transparent');
+                gradient.addColorStop(0.34, config.highlightColor);
+                gradient.addColorStop(0.66, config.highlightColor);
+                gradient.addColorStop(0.82, 'transparent');
+                gradient.addColorStop(1, 'transparent');
+                paintText(gradient);
+              }
+
+              function paint(progress) {
+                context.clearRect(0, 0, config.width, config.height);
+                paintText(config.baseColor);
+                if (!config.reduceMotion) {
+                  var bandWidth = config.width * 0.55;
+                  var center = progress * config.width;
+                  paintBand(center, bandWidth);
+                  paintBand(center - config.width, bandWidth);
+                  paintBand(center + config.width, bandWidth);
+                }
+                if (!painted) {
+                  painted = true;
+                  self.postMessage({ type: 'painted' });
+                }
+              }
+
+              function drawFrame() {
+                var progress =
+                  ((performance.now() - startedAt) % config.sweepDurationMs) /
+                  config.sweepDurationMs;
+                paint(progress);
+              }
+
+              self.onmessage = function (event) {
+                if (event.data.type === 'start') {
+                  canvas = event.data.canvas;
+                  context = canvas.getContext('2d');
+                  if (!context) return;
+                  syncMetrics(event.data.config);
+                  paint(0);
+                  if (!config.reduceMotion) {
+                    frameTimer = self.setInterval(drawFrame, frameIntervalMs);
+                  }
+                } else if (event.data.type === 'update' && context) {
+                  syncMetrics(event.data.config);
+                  drawFrame();
+                } else if (event.data.type === 'stop') {
+                  self.clearInterval(frameTimer);
+                  self.close();
+                }
+              };
+            }
+
+            function startWorkerAnimation() {
+              if (
+                typeof Worker !== 'function' ||
+                typeof OffscreenCanvas !== 'function' ||
+                typeof canvas.transferControlToOffscreen !== 'function'
+              ) {
+                return false;
+              }
+
+              var workerSource = '(' + spotlightWorkerMain.toString() + ')();';
+              var workerUrl = URL.createObjectURL(
+                new Blob([workerSource], { type: 'text/javascript' }),
+              );
+              var worker;
+              try {
+                worker = new Worker(workerUrl);
+              } catch (_) {
+                URL.revokeObjectURL(workerUrl);
+                return false;
+              }
+              URL.revokeObjectURL(workerUrl);
+
+              var offscreenCanvas;
+              try {
+                offscreenCanvas = canvas.transferControlToOffscreen();
+              } catch (_) {
+                worker.terminate();
+                return false;
+              }
+
+              var resizeObserver;
+              var textObserver;
+              var removalObserver;
+              var stopped = false;
+
+              function stopWorker() {
+                if (stopped) return;
+                stopped = true;
+                worker.postMessage({ type: 'stop' });
+                worker.terminate();
+                resizeObserver?.disconnect();
+                textObserver?.disconnect();
+                removalObserver?.disconnect();
+              }
+
+              function updateWorker() {
+                if (!canvas.isConnected) {
+                  stopWorker();
+                  return;
+                }
+                worker.postMessage({ type: 'update', config: readFrameConfig() });
+              }
+
+              worker.onmessage = function (event) {
+                if (event.data.type === 'painted') quote.style.color = 'transparent';
+              };
+              worker.onerror = function () {
+                quote.style.color = '';
+                canvas.style.display = 'none';
+                stopWorker();
+              };
+              worker.postMessage(
+                { type: 'start', canvas: offscreenCanvas, config: readFrameConfig() },
+                [offscreenCanvas],
+              );
+
+              if (typeof ResizeObserver === 'function') {
+                resizeObserver = new ResizeObserver(updateWorker);
+                resizeObserver.observe(quote);
+              }
+              textObserver = new MutationObserver(updateWorker);
+              textObserver.observe(quote, { childList: true, characterData: true, subtree: true });
+              removalObserver = new MutationObserver(function () {
+                if (!canvas.isConnected) stopWorker();
+              });
+              removalObserver.observe(document.body, { childList: true, subtree: true });
+              return true;
+            }
+
+            function startMainThreadFallback() {
+              var context = canvas.getContext('2d');
+              if (!context) return;
+              var config;
+              var baseline = 0;
+              var textX = 0;
+              var startedAt = performance.now();
+              var frameTimer;
+
+              function syncMetrics() {
+                config = readFrameConfig();
+                canvas.width = config.pixelWidth;
+                canvas.height = config.pixelHeight;
+                context.setTransform(config.pixelRatio, 0, 0, config.pixelRatio, 0, 0);
+                context.font = config.font;
+                context.textBaseline = 'alphabetic';
+                if ('letterSpacing' in context) context.letterSpacing = config.letterSpacing;
+                var metrics = context.measureText(config.text);
+                textX = Math.max(0, (config.width - metrics.width) / 2);
+                baseline =
+                  (config.height +
+                    metrics.actualBoundingBoxAscent -
+                    metrics.actualBoundingBoxDescent) /
+                  2;
+              }
+
+              function paintText(fillStyle) {
+                context.fillStyle = fillStyle;
+                context.fillText(config.text, textX, baseline);
+              }
+
+              function paintBand(center, bandWidth) {
+                var gradient = context.createLinearGradient(
+                  center - bandWidth / 2,
+                  0,
+                  center + bandWidth / 2,
+                  0,
+                );
+                gradient.addColorStop(0, 'transparent');
+                gradient.addColorStop(0.18, 'transparent');
+                gradient.addColorStop(0.34, config.highlightColor);
+                gradient.addColorStop(0.66, config.highlightColor);
+                gradient.addColorStop(0.82, 'transparent');
+                gradient.addColorStop(1, 'transparent');
+                paintText(gradient);
+              }
+
+              function paint(progress) {
+                context.clearRect(0, 0, config.width, config.height);
+                paintText(config.baseColor);
+                if (reduceMotion) return;
+                var bandWidth = config.width * 0.55;
+                var center = progress * config.width;
+                paintBand(center, bandWidth);
+                paintBand(center - config.width, bandWidth);
+                paintBand(center + config.width, bandWidth);
+              }
+
+              function stopAnimation() {
+                window.clearInterval(frameTimer);
+                window.removeEventListener('focus', drawFrame);
+                document.removeEventListener('visibilitychange', handleVisibilityChange);
+              }
+
+              function drawFrame() {
+                if (!canvas.isConnected) {
+                  stopAnimation();
+                  return;
+                }
+                var nextConfig = readFrameConfig();
+                if (
+                  config.text !== nextConfig.text ||
+                  config.width !== nextConfig.width ||
+                  config.height !== nextConfig.height
+                ) {
+                  syncMetrics();
+                }
+                paint(((performance.now() - startedAt) % sweepDurationMs) / sweepDurationMs);
+              }
+
+              function handleVisibilityChange() {
+                if (!document.hidden) drawFrame();
+              }
+
+              syncMetrics();
+              paint(0);
+              quote.style.color = 'transparent';
+              if (!reduceMotion) {
+                frameTimer = window.setInterval(drawFrame, frameIntervalMs);
+                window.addEventListener('focus', drawFrame);
+                document.addEventListener('visibilitychange', handleVisibilityChange);
+              }
+            }
+
+            if (!startWorkerAnimation()) startMainThreadFallback();
+          })();
+        </script>
       </div>
       <div
         id="ad-splash-status"

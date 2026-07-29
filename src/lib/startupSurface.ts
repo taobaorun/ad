@@ -16,16 +16,10 @@ interface StartupFailureOptions {
 interface RevealStartupOptions {
   requestFrame?: (callback: (timestamp: number) => void) => number;
   exitDurationMs?: number;
+  minimumVisibleMs?: number;
+  startedAtMs?: number;
+  now?: () => number;
 }
-
-interface StartupSpotlightOptions {
-  requestFrame?: (callback: (timestamp: number) => void) => number;
-  reduceMotion?: boolean;
-}
-
-const SPOTLIGHT_STEP_MS = 10;
-const SPOTLIGHT_STEP_COUNT = 30;
-const SPOTLIGHT_CYCLE_MS = SPOTLIGHT_STEP_MS * SPOTLIGHT_STEP_COUNT;
 
 export function injectStartupCopy(documentRef: Document, copy: StartupCopy): void {
   const quote = documentRef.getElementById('ad-splash-quote');
@@ -71,45 +65,24 @@ export function showStartupFailure(
   root.removeAttribute('inert');
   root.removeAttribute('aria-hidden');
 }
-
-export function startStartupSpotlight(
-  documentRef: Document,
-  options: StartupSpotlightOptions = {},
-): void {
-  const quote = documentRef.getElementById('ad-splash-quote');
-  if (!quote) return;
-
-  const requestFrame = options.requestFrame ?? requestAnimationFrame;
-  let startedAt: number | undefined;
-  quote.style.animation = 'none';
-  quote.style.backgroundPosition = '10% 0';
-  const reduceMotion =
-    options.reduceMotion ?? globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  if (reduceMotion) return;
-
-  const tick = (timestamp: number) => {
-    if (!quote.isConnected) return;
-    startedAt ??= timestamp - SPOTLIGHT_CYCLE_MS / 2;
-    const elapsedMs = (timestamp - startedAt) % SPOTLIGHT_CYCLE_MS;
-    const spotlightStep = Math.floor(elapsedMs / SPOTLIGHT_STEP_MS);
-    const quoteProgress = spotlightStep / SPOTLIGHT_STEP_COUNT;
-    quote.style.backgroundPosition = `${140 - quoteProgress * 260}% 0`;
-    requestFrame(tick);
-  };
-
-  requestFrame(tick);
-}
-
 export async function revealStartup(
   documentRef: Document,
   options: RevealStartupOptions = {},
 ): Promise<void> {
   const requestFrame = options.requestFrame ?? requestAnimationFrame;
   const exitDurationMs = options.exitDurationMs ?? 260;
+  const minimumVisibleMs = options.minimumVisibleMs ?? 0;
+  const now = options.now ?? (() => performance.now());
+  const startedAtMs = options.startedAtMs ?? now();
 
   await new Promise<void>((resolve) => {
     requestFrame(() => requestFrame(() => resolve()));
   });
+
+  const remainingVisibleMs = minimumVisibleMs - (now() - startedAtMs);
+  if (remainingVisibleMs > 0) {
+    await new Promise<void>((resolve) => setTimeout(resolve, remainingVisibleMs));
+  }
 
   const splash = documentRef.getElementById('ad-splash');
   const root = documentRef.getElementById('root');

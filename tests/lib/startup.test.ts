@@ -1,12 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen } from '@testing-library/react';
 import { coordinateStartup, STARTUP_DEADLINE_MS, type StartupLoaders } from '@/lib/startup';
-import {
-  injectStartupCopy,
-  revealStartup,
-  showStartupFailure,
-  startStartupSpotlight,
-} from '@/lib/startupSurface';
+import { injectStartupCopy, revealStartup, showStartupFailure } from '@/lib/startupSurface';
 
 function deferred(): {
   promise: Promise<void>;
@@ -199,7 +194,10 @@ describe('startup surface helpers', () => {
       status: '正在加载 AD',
     });
 
-    expect(document.getElementById('ad-splash-quote')?.textContent).toBe('Be Water, My Friend');
+    const quote = document.getElementById('ad-splash-quote')!;
+    expect(quote.textContent).toBe('Be Water, My Friend');
+    expect(quote.querySelector('.ad-splash-quote-base')).toBeNull();
+    expect(quote.querySelector('.ad-splash-quote-spotlight')).toBeNull();
     expect(document.getElementById('ad-splash-status')?.textContent).toBe('正在加载 AD');
   });
 
@@ -228,55 +226,6 @@ describe('startup surface helpers', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
     expect(reload).toHaveBeenCalledOnce();
   });
-
-  it('drives the quote spotlight without relying on WKWebView media queries', () => {
-    document.body.innerHTML = '<p id="ad-splash-quote"></p>';
-    const frames: Array<(timestamp: number) => void> = [];
-    const requestFrame = vi.fn((callback: (timestamp: number) => void) => {
-      frames.push(callback);
-      return frames.length;
-    });
-
-    startStartupSpotlight(document, { requestFrame });
-    const quote = document.getElementById('ad-splash-quote')!;
-
-    expect(quote.style.animation).toBe('none');
-    expect(quote.style.backgroundPosition).toBe('10% 0px');
-    frames.shift()!(0);
-    const firstPosition = quote.style.backgroundPosition;
-    frames.shift()!(10);
-    expect(quote.style.backgroundPosition).not.toBe(firstPosition);
-    frames.shift()!(300);
-    expect(quote.style.backgroundPosition).toBe(firstPosition);
-    expect(requestFrame).toHaveBeenCalledTimes(4);
-  });
-
-  it('keeps the quote static when reduced motion is requested', () => {
-    document.body.innerHTML = '<p id="ad-splash-quote"></p>';
-    const requestFrame = vi.fn();
-
-    startStartupSpotlight(document, { requestFrame, reduceMotion: true });
-
-    const quote = document.getElementById('ad-splash-quote')!;
-    expect(quote.style.animation).toBe('none');
-    expect(quote.style.backgroundPosition).toBe('10% 0px');
-    expect(requestFrame).not.toHaveBeenCalled();
-  });
-
-  it('uses the production media query to detect reduced motion', () => {
-    document.body.innerHTML = '<p id="ad-splash-quote"></p>';
-    const requestFrame = vi.fn();
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn(() => ({ matches: true })),
-    );
-
-    startStartupSpotlight(document, { requestFrame });
-
-    expect(matchMedia).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
-    expect(requestFrame).not.toHaveBeenCalled();
-  });
-
   it('reveals the React root after two frames and removes the splash after its exit', async () => {
     vi.useFakeTimers();
     document.body.innerHTML = `
@@ -354,5 +303,73 @@ describe('startup surface helpers', () => {
     expect(root.classList.contains('ad-app-enter')).toBe(true);
     expect(root.hasAttribute('inert')).toBe(false);
     expect(root.hasAttribute('aria-hidden')).toBe(false);
+  });
+
+  it('keeps the splash visible until the configured minimum duration elapses', async () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = `
+      <div id="ad-splash"></div>
+      <div id="root" inert aria-hidden="true"></div>
+    `;
+    const frames: Array<(timestamp: number) => void> = [];
+    const requestFrame = vi.fn((callback: (timestamp: number) => void) => {
+      frames.push(callback);
+      return frames.length;
+    });
+
+    let nowMs = 100;
+    const revealing = revealStartup(document, {
+      requestFrame,
+      exitDurationMs: 180,
+      minimumVisibleMs: 600,
+      startedAtMs: 0,
+      now: () => nowMs,
+    });
+    const splash = document.getElementById('ad-splash')!;
+
+    frames.shift()!(0);
+    nowMs = 150;
+    frames.shift()!(16);
+    await Promise.resolve();
+    expect(splash.classList.contains('ad-splash-exit')).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(449);
+    expect(splash.classList.contains('ad-splash-exit')).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(splash.classList.contains('ad-splash-exit')).toBe(true);
+
+    splash.dispatchEvent(new Event('transitionend'));
+    await revealing;
+  });
+
+  it('does not add a minimum-duration delay after a slow startup', async () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = `
+      <div id="ad-splash"></div>
+      <div id="root" inert aria-hidden="true"></div>
+    `;
+    const frames: Array<(timestamp: number) => void> = [];
+    const requestFrame = vi.fn((callback: (timestamp: number) => void) => {
+      frames.push(callback);
+      return frames.length;
+    });
+
+    const revealing = revealStartup(document, {
+      requestFrame,
+      exitDurationMs: 180,
+      minimumVisibleMs: 600,
+      startedAtMs: 0,
+      now: () => 750,
+    });
+    const splash = document.getElementById('ad-splash')!;
+
+    frames.shift()!(0);
+    frames.shift()!(16);
+    await Promise.resolve();
+    expect(splash.classList.contains('ad-splash-exit')).toBe(true);
+
+    splash.dispatchEvent(new Event('transitionend'));
+    await revealing;
   });
 });

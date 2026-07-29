@@ -1,12 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import i18n from './i18n';
-import {
-  injectStartupCopy,
-  revealStartup,
-  showStartupFailure,
-  startStartupSpotlight,
-} from './lib/startupSurface';
+import { injectStartupCopy, revealStartup, showStartupFailure } from './lib/startupSurface';
 import { tauri } from './lib/tauri';
 import { applyDocumentTheme } from './lib/theme';
 import { useUiSettings } from './store/uiSettings';
@@ -35,7 +30,6 @@ async function bootstrap() {
     quote: i18n.t('startup.loadingQuote'),
     status: i18n.t('startup.loadingStatus'),
   });
-  startStartupSpotlight(document);
   if (isSettings) {
     const { SettingsApp } = await import('./SettingsApp');
     const root = ReactDOM.createRoot(document.getElementById('root')!);

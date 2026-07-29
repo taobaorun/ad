@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
   render: vi.fn(),
   revealStartup: vi.fn().mockResolvedValue(undefined),
   showStartupFailure: vi.fn(),
-  startStartupSpotlight: vi.fn(),
   syncGlobalShortcutToBackend: vi.fn().mockResolvedValue(undefined),
   writeThemeHint: vi.fn().mockResolvedValue(undefined),
 }));
@@ -21,7 +20,6 @@ vi.mock('@/lib/startupSurface', () => ({
   injectStartupCopy: mocks.injectStartupCopy,
   revealStartup: mocks.revealStartup,
   showStartupFailure: mocks.showStartupFailure,
-  startStartupSpotlight: mocks.startStartupSpotlight,
 }));
 vi.mock('@/lib/tauri', () => ({ tauri: { writeThemeHint: mocks.writeThemeHint } }));
 vi.mock('@/lib/theme', () => ({ applyDocumentTheme: mocks.applyDocumentTheme }));
@@ -45,10 +43,11 @@ describe('application bootstrap', () => {
     mocks.revealStartup.mockResolvedValue(undefined);
     window.location.hash = '';
     localStorage.setItem('ad.lang.v1', 'en');
+    delete document.documentElement.dataset.adNativeWindowShown;
     document.body.innerHTML = '<div id="root"></div>';
   });
 
-  it('waits for main-window startup before rendering and revealing', async () => {
+  it('reveals immediately after main-window startup finishes', async () => {
     let resolveStartup!: () => void;
     mocks.coordinateStartup.mockReturnValue(
       new Promise((resolve) => {
@@ -59,10 +58,12 @@ describe('application bootstrap', () => {
     await import('@/main');
     await vi.waitFor(() => expect(mocks.coordinateStartup).toHaveBeenCalledTimes(1));
     expect(mocks.render).not.toHaveBeenCalled();
+    expect(mocks.revealStartup).not.toHaveBeenCalled();
 
     resolveStartup();
 
     await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(mocks.revealStartup).toHaveBeenCalledTimes(1));
     expect(mocks.revealStartup).toHaveBeenCalledWith(document);
     expect(mocks.syncGlobalShortcutToBackend).toHaveBeenCalledTimes(1);
   });
