@@ -96,7 +96,11 @@
   - [x] Skill生命周期完成：catalog资源按项目显示Install；AD-owned project link显示Enable/Disable、Update与Remove；source刷新后A/B继续pin旧artifact，只有显式Update的项目retarget。Claude旧`skill-library`路径启发式不再作为新artifact所有权，replace/remove必须通过legacy受控路径或精确ownership evidence。
   - [x] Plugin项目override矩阵完成：Claude/Codex支持安全Enable/Disable和Reset override；仅继承user/shared声明、未准备Codex Runtime、外部更新或marketplace acquisition均明确Unavailable/External，不回退修改user/base配置。shared项目声明不会伪装成可移除的local override。
   - [x] 第一方Project资源UI已提前接入backend actions与独立Preview→确认→Apply入口；不可用动作保持禁用并展示原因，Plugin Remove明确显示为“重置项目覆盖”。A/B Skill install/update/remove、Plugin local override/user/shared/peer isolation、stale request、external ownership、显式确认、receipt rollback测试5/5；Rust全量324 passed/1 ignored及全部integration suites、严格Clippy，前端147/147、format/lint/typecheck/build通过。
-- [ ] M4：完成统一 Project Agent Workspace UI（验证标准：所有真实动作可从ProjectDetail完成，draft/close行为、partial/stale/empty与可访问状态准确）
+- [x] (2026-08-01 16:58+08:00 开始，17:18+08:00 完成) M4：完成统一 Project Agent Workspace UI（验证标准：所有真实动作可从ProjectDetail完成，draft/close行为、partial/stale/empty与可访问状态准确）
+  - [x] ProjectDetail收敛为Settings、Skills & Plugins、History三个ARIA tab；三个surface保持挂载，tab切换不再销毁Settings草稿或进行中的Apply。方向键/Home/End导航、tabpanel关系、不可用状态与项目History入口均有明确语义；ProjectDetail拆分后相关文件保持500行内。
+  - [x] Project collection Apply接入按workspace key跟踪的detached operation：UI离开/卸载不取消后端命令，重开原workspace恢复Applying/complete/partial/failed状态，单workspace重复Apply复用同一pending promise；完成事件刷新inventory与History，持久事实仍以后端receipt为准。report workspace不匹配时fail closed，external/unsupported/conflict/no-change不再伪装为“已应用”。
+  - [x] 通用plan确认按风险、activation impact、批准/权限、target、技术细节排序；危险计划使用文本与图标而非仅颜色表达。Dialog补齐label/description关系、初始安全焦点、Tab trap、Escape与focus return，busy时关闭入口真实禁用。资源页明确区分loading、inspection error、workspace empty、category empty、filter no-match及partial/failed coverage。
+  - [x] History对Claude与Codex统一使用project filter；受保护回滚使用backend返回且已判定eligible的receipt context，不再用缺少project的base active context。dirty Settings在workspace refresh时保留草稿，只更新其inventory baseline。React定向30/30、前端全量154/154、format/lint/typecheck/build、Rust全量324 passed/1 ignored与全部integration suites、严格Clippy通过；`pnpm tauri build`生成17:18的AD.app与DMG，`git diff --check`通过。
 - [ ] M5：让 Conversion 复用 workspace inventory/planners/result（验证标准：有效继承输入、resolver重新preview、safe subset、residual、补偿和rollback通过）
 - [ ] M6：迁移并删除 legacy project写路径（验证标准：旧用户状态可恢复，全仓库无legacy consumer）
 - [ ] M7：完成自动化、真机release验证和文档状态收敛（验证标准：所有门禁通过且evidence matrix有真实证据）
@@ -164,6 +168,12 @@
   证据：A/B真实catalog lifecycle首次Update在adapter preview阶段失败；改为legacy library containment或project ownership record二选一，并在ExecutionEngine再次校验target/artifact evidence后，A-only Update、unmanaged user link拒绝与guarded rollback同时通过。
 - 发现：Plugin的`Project`层并不等于“可重置的项目覆盖”；Claude shared settings与local settings都属于项目输入，但Reset override只应移除local/runtime声明。
   证据：inventory observation新增backend-only resettable语义；project B只有shared声明时Remove为Unavailable，项目A local override仍可Enable与Reset，user/shared/peer bytes保持不变。
+- 发现：原ProjectDetail通过改变React `key`响应任何workspace change，collection Apply或conversion完成会同时卸载Settings editor；即使dirty guard阻止项目切换，仍可能因同workspace刷新丢失未保存草稿。
+  证据：Settings与collection改为各自监听workspace刷新；Settings loader在同workspace保留相对旧baseline已变更的draft，React测试在磁盘baseline变化后仍保持用户输入。
+- 发现：原History仅为Codex传project filter，并用store中的base `activeContext`生成rollback preview；Claude项目回执会混入全局History，而prepared runtime或项目回执可能因缺少project context无法回滚。
+  证据：History现在对所有Agent提交active project filter，并只对backend标记eligible的receipt使用其持久化context；Claude project fixture验证filter和rollback context均精确包含project path。
+- 发现：renderer组件卸载不会取消已进入Rust的Apply，但原资源UI把busy/result只保存在组件local state，重开后无法区分“仍在执行”“已完成”或“已取消”，容易诱发重复操作。
+  证据：workspace operation tracker在组件外持有pending promise和暂态结果；卸载/重开测试证明Apply只调用一次，结果通过History持久化并回到原workspace。
 
 ## 决策日志
 
@@ -247,6 +257,12 @@
   日期/作者：2026-08-01 / Codex
 - 决策：Project collection action IPC只接受backend签发的workspace/inventory/resource身份和枚举动作；物理`ResourceRef`、path、catalog artifact与ownership record全部在重新盘点后由后端解析。
   理由：renderer只能请求已展示的用户意图，不能把路径或伪造资源身份升级为写权限；stale inventory、ownership/source drift和未确认risk在plan claim前后分别fail closed。
+  日期/作者：2026-08-01 / Codex
+- 决策：detached operation tracker只保存renderer会话内的展示状态，durable完成事实、恢复与rollback入口始终以后端History receipt为准。
+  理由：UI暂态可以改善关闭/重开体验，但不能成为提交证据；进程退出或renderer崩溃后仍必须从fd-confined receipt恢复真实状态。
+  日期/作者：2026-08-01 / Codex
+- 决策：Project Workspace的三个tab保持surface挂载，并由各surface在同workspace内执行保留草稿的refresh；切换project/Agent仍走统一dirty guard。
+  理由：tab是同一workspace的不同观察面，不应被当作销毁编辑会话的context切换；外部Apply完成也不应静默覆盖用户草稿。
   日期/作者：2026-08-01 / Codex
 
 ## 结果回顾
