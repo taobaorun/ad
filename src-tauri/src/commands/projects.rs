@@ -82,6 +82,7 @@ pub fn list_projects() -> CmdResult<Vec<Project>> {
 #[tauri::command]
 pub fn add_project(path: String) -> CmdResult<Project> {
     let canonical = canonicalize_existing(&path)?;
+    crate::agents::validate_project_workspace_root(&canonical).map_err(CommandError::Generic)?;
     let canonical_str = canonical.to_string_lossy().into_owned();
 
     let mut projects = load()?;

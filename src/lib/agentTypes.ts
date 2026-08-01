@@ -226,6 +226,7 @@ export const MutationPlanChangeViewSchema = z
 export const PlanAcknowledgementCodeSchema = z.enum([
   'conversion_apply',
   'dangerous_permission_expansion',
+  'rollback_apply',
 ]);
 export const PlanRiskLevelSchema = z.enum(['confirmation', 'dangerous']);
 export const AcknowledgementRequirementSchema = z
@@ -261,6 +262,8 @@ export const RollbackUnavailableReasonSchema = z.enum([
   'legacy_receipt',
   'compensated',
   'rollback_receipt',
+  'already_rolled_back',
+  'workspace_mismatch',
   'missing_evidence',
   'repair_required',
 ]);
@@ -282,6 +285,32 @@ export const AppliedResourceStateSchema = z
   })
   .strict();
 
+export const ResourceOwnershipRecordSchema = z
+  .object({
+    schemaVersion: z.number().int().positive(),
+    id: OwnershipRecordIdSchema,
+    workspaceKey: WorkspaceKeySchema,
+    resource: ResourceRefSchema,
+    targetId: PhysicalTargetIdSchema,
+    targetPath: z.string().min(1),
+    targetKind: ResourceStateKindSchema,
+    targetDigest: ContentDigestSchema,
+    artifactId: z.string().min(1),
+    artifactDigest: ContentDigestSchema,
+    creatingReceiptId: ReceiptIdSchema,
+    updatedByReceiptId: ReceiptIdSchema,
+  })
+  .strict();
+
+export const ResourceOwnershipChangeSchema = z
+  .object({
+    kind: z.enum(['upsert', 'remove']),
+    recordId: OwnershipRecordIdSchema,
+    previousRecord: ResourceOwnershipRecordSchema.optional(),
+    record: ResourceOwnershipRecordSchema.optional(),
+  })
+  .strict();
+
 export const OperationReceiptSchema = z
   .object({
     schemaVersion: z.number().int().positive(),
@@ -297,6 +326,8 @@ export const OperationReceiptSchema = z
     backupPaths: z.array(z.string().min(1)).default([]),
     postApplyStates: z.array(AppliedResourceStateSchema).default([]),
     manifestDigest: ContentDigestSchema.optional(),
+    ownershipChanges: z.array(ResourceOwnershipChangeSchema).default([]),
+    ownershipEvidenceVersion: z.number().int().nonnegative().default(0),
     rollback: RollbackEligibilitySchema,
     createdAt: z.string().datetime({ offset: true }).optional(),
     message: z.string().optional(),

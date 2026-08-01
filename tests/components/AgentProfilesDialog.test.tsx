@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AgentProfilesButton } from '@/components/AgentProfilesDialog';
+import { AgentProfilesButton, AgentProfilesDialog } from '@/components/AgentProfilesDialog';
 import i18n from '@/i18n';
 import { AgentContextSchema } from '@/lib/agentTypes';
 import { AgentProfileSchema } from '@/lib/profileSchema';
@@ -13,14 +13,16 @@ const {
   deleteProfileEnvelope,
   previewAgentProfileApply,
   applyAgentPlan,
-  rollbackAgentReceipt,
+  previewAgentRollback,
+  applyAgentRollbackPlan,
 } = vi.hoisted(() => ({
   listProfileEnvelopes: vi.fn(),
   saveProfileEnvelope: vi.fn(),
   deleteProfileEnvelope: vi.fn(),
   previewAgentProfileApply: vi.fn(),
   applyAgentPlan: vi.fn(),
-  rollbackAgentReceipt: vi.fn(),
+  previewAgentRollback: vi.fn(),
+  applyAgentRollbackPlan: vi.fn(),
 }));
 
 vi.mock('@/lib/tauri', () => ({
@@ -30,7 +32,8 @@ vi.mock('@/lib/tauri', () => ({
     deleteProfileEnvelope,
     previewAgentProfileApply,
     applyAgentPlan,
-    rollbackAgentReceipt,
+    previewAgentRollback,
+    applyAgentRollbackPlan,
   },
 }));
 
@@ -66,6 +69,14 @@ const claudeProfile = AgentProfileSchema.parse({
   payload: { layers: { env: {} }, settings: { model: 'opus', env: {} } },
 });
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 describe('AgentProfilesButton', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
@@ -92,6 +103,7 @@ describe('AgentProfilesButton', () => {
           kind: 'replace',
         },
       ],
+      riskFingerprint: 'risk:profile-plan',
       expiresAt: '2026-07-15T01:05:00Z',
     });
     applyAgentPlan.mockReset().mockResolvedValue({
@@ -102,7 +114,11 @@ describe('AgentProfilesButton', () => {
       backupPaths: ['/tmp/profile-backup'],
       postApplyStates: [],
     });
-    rollbackAgentReceipt.mockReset().mockResolvedValue({
+    previewAgentRollback.mockReset().mockResolvedValue({
+      id: 'profile-rollback-plan',
+      riskFingerprint: 'risk:profile-rollback',
+    });
+    applyAgentRollbackPlan.mockReset().mockResolvedValue({
       id: 'profile-rollback-receipt',
       planId: 'profile-plan',
       status: 'compensated',
@@ -136,10 +152,26 @@ describe('AgentProfilesButton', () => {
       ),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
-    await waitFor(() => expect(applyAgentPlan).toHaveBeenCalledWith('profile-plan'));
+    await waitFor(() =>
+      expect(applyAgentPlan).toHaveBeenCalledWith(
+        'profile-plan',
+        { installationId: 'codex:default' },
+        'risk:profile-plan',
+      ),
+    );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Rollback profile apply' }));
-    await waitFor(() => expect(rollbackAgentReceipt).toHaveBeenCalledWith('profile-receipt', true));
+    await waitFor(() =>
+      expect(previewAgentRollback).toHaveBeenCalledWith('profile-receipt', {
+        installationId: 'codex:default',
+      }),
+    );
+    expect(applyAgentRollbackPlan).toHaveBeenCalledWith(
+      'profile-rollback-plan',
+      { installationId: 'codex:default' },
+      'risk:profile-rollback',
+      true,
+    );
   });
 
   it("deletes the displayed draft through the draft's owning Agent", async () => {
@@ -153,5 +185,33 @@ describe('AgentProfilesButton', () => {
     await waitFor(() =>
       expect(deleteProfileEnvelope).toHaveBeenCalledWith('claude-code', 'default'),
     );
+  });
+
+  it('invalidates a pending rollback preview when the dialog closes', async () => {
+    const pendingRollback = deferred<{ id: string; riskFingerprint: string }>();
+    const onOpenChange = vi.fn();
+    const confirmation = vi.spyOn(window, 'confirm');
+    const view = render(<AgentProfilesDialog open onOpenChange={onOpenChange} />);
+
+    await screen.findByRole('button', { name: 'Codex Default' });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview profile apply' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
+    await screen.findByRole('button', { name: 'Rollback profile apply' });
+    previewAgentRollback.mockReturnValueOnce(pendingRollback.promise);
+    confirmation.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Rollback profile apply' }));
+    await waitFor(() => expect(previewAgentRollback).toHaveBeenCalledTimes(1));
+
+    view.rerender(<AgentProfilesDialog open={false} onOpenChange={onOpenChange} />);
+    await act(async () => {
+      pendingRollback.resolve({
+        id: 'stale-profile-rollback',
+        riskFingerprint: 'risk:stale-profile-rollback',
+      });
+      await pendingRollback.promise;
+    });
+
+    expect(confirmation).not.toHaveBeenCalled();
+    expect(applyAgentRollbackPlan).not.toHaveBeenCalled();
   });
 });

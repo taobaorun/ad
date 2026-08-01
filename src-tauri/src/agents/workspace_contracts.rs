@@ -139,6 +139,7 @@ pub struct ActivationImpactView {
 pub enum PlanAcknowledgementCode {
     ConversionApply,
     DangerousPermissionExpansion,
+    RollbackApply,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

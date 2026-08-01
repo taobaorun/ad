@@ -37,7 +37,7 @@ export function AgentProfilesButton() {
   );
 }
 
-function AgentProfilesDialog({
+export function AgentProfilesDialog({
   open,
   onOpenChange,
 }: {
@@ -61,6 +61,9 @@ function AgentProfilesDialog({
   const [planError, setPlanError] = useState<string | null>(null);
   const [lastReceipt, setLastReceipt] = useState<OperationReceipt | null>(null);
   const loadRequestRef = useRef(0);
+  const rollbackRequestRef = useRef(0);
+  const openRef = useRef(open);
+  openRef.current = open;
   const activeAgentIdRef = useRef(activeAgentId);
   activeAgentIdRef.current = activeAgentId;
 
@@ -94,6 +97,7 @@ function AgentProfilesDialog({
 
   useEffect(() => {
     loadRequestRef.current += 1;
+    rollbackRequestRef.current += 1;
     setProfiles([]);
     setSelectedId(null);
     setDraft(null);
@@ -109,6 +113,7 @@ function AgentProfilesDialog({
     if (open) void load();
     return () => {
       loadRequestRef.current += 1;
+      rollbackRequestRef.current += 1;
     };
   }, [load, open]);
 
@@ -208,11 +213,11 @@ function AgentProfilesDialog({
   }
 
   async function applyPlan() {
-    if (!plan) return;
+    if (!plan || !activeContext) return;
     setPlanBusy(true);
     setPlanError(null);
     try {
-      const receipt = await tauri.applyAgentPlan(plan.id);
+      const receipt = await tauri.applyAgentPlan(plan.id, activeContext, plan.riskFingerprint);
       setLastReceipt(receipt);
       setPlan(null);
     } catch (caught) {
@@ -223,14 +228,27 @@ function AgentProfilesDialog({
   }
 
   async function rollbackApply() {
-    if (!lastReceipt || !window.confirm(t('agentProfiles.rollbackConfirm'))) return;
+    if (!lastReceipt || !activeContext) return;
+    const requestId = ++rollbackRequestRef.current;
     setBusy(true);
     setError(null);
     try {
-      await tauri.rollbackAgentReceipt(lastReceipt.id, true);
+      const rollbackPlan = await tauri.previewAgentRollback(lastReceipt.id, activeContext);
+      if (requestId !== rollbackRequestRef.current || !openRef.current) return;
+      if (!window.confirm(t('agentProfiles.rollbackConfirm'))) return;
+      if (requestId !== rollbackRequestRef.current || !openRef.current) return;
+      await tauri.applyAgentRollbackPlan(
+        rollbackPlan.id,
+        activeContext,
+        rollbackPlan.riskFingerprint,
+        true,
+      );
+      if (requestId !== rollbackRequestRef.current || !openRef.current) return;
       setLastReceipt(null);
     } catch (caught) {
-      setError(formatAgentError(caught));
+      if (requestId === rollbackRequestRef.current && openRef.current) {
+        setError(formatAgentError(caught));
+      }
     } finally {
       setBusy(false);
     }
@@ -241,9 +259,11 @@ function AgentProfilesDialog({
       <Dialog
         open={open}
         onOpenChange={(nextOpen) => {
+          if (busy && !nextOpen) return;
           if (dirty && !nextOpen && !window.confirm(t('agentProfiles.discardConfirm'))) return;
           onOpenChange(nextOpen);
         }}
+        closeDisabled={busy}
         title={t('agentProfiles.title')}
         description={t('agentProfiles.description', { agent: activeAgentId })}
         size="lg"

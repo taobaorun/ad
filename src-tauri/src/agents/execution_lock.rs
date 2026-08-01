@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use crate::fs::paths::execution_locks_dir;
 
 use super::execution_state::{ExecutionState, StateDirectory};
-use super::{AdapterRegistry, AgentContext, AgentError, AgentErrorCode, MutationPlan, ResourceRef};
+use super::{AdapterRegistry, AgentContext, AgentError, AgentErrorCode, ResourceRef};
 
 const LOCK_SCHEMA_VERSION: u32 = 1;
 static INSTANCE_ID: OnceLock<String> = OnceLock::new();
@@ -32,24 +32,6 @@ pub struct TargetLockSet {
 }
 
 impl TargetLockSet {
-    pub(super) fn acquire_for_plan(
-        plan: &MutationPlan,
-        registry: &AdapterRegistry,
-        state: &ExecutionState,
-    ) -> Result<Self, AgentError> {
-        let resources = plan
-            .read_set
-            .iter()
-            .map(|precondition| precondition.resource.clone())
-            .chain(
-                plan.mutations
-                    .iter()
-                    .map(|mutation| mutation.resource.clone()),
-            )
-            .collect::<Vec<_>>();
-        Self::acquire_for_resources(&resources, plan.id.as_str(), registry, state)
-    }
-
     pub(super) fn acquire_for_resources(
         resources: &[ResourceRef],
         operation_id: &str,

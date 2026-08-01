@@ -273,7 +273,7 @@ function AgentConversionDialog({
   }
 
   async function submitConversion() {
-    if (!preview?.plan) return;
+    if (!preview?.plan || !target) return;
     const requestedScope = scope;
     const requestedProjectPath = activeProjectPath;
     const isCurrentApply = () =>
@@ -284,13 +284,22 @@ function AgentConversionDialog({
     setProgress({ phase: 'applying', current: 0 });
     setError(null);
     try {
+      const expectedContext =
+        scope === 'project' && activeProjectPath
+          ? await tauri.resolveAgentContext(target.id, activeProjectPath)
+          : AgentContextSchema.parse({ installationId: target.id });
       const acknowledgements: PlanAcknowledgement[] = preview.plan.requiredAcknowledgements.map(
         (requirement) => ({
           code: requirement.code,
           accepted: true,
         }),
       );
-      const result = await tauri.applyConversionPlan(preview.plan.id, acknowledgements);
+      const result = await tauri.applyConversionPlan(
+        preview.plan.id,
+        expectedContext,
+        preview.plan.riskFingerprint,
+        acknowledgements,
+      );
       if (isCurrentApply()) setReceipt(result);
       if (result.status !== 'compensated') {
         notifyAgentWorkspaceChanged();
@@ -304,11 +313,22 @@ function AgentConversionDialog({
   }
 
   async function rollback() {
-    if (!receipt || !window.confirm(t('agentConversion.rollbackConfirm'))) return;
+    if (!receipt || !target) return;
     setBusyOperation('rollback');
     setError(null);
     try {
-      await tauri.rollbackAgentReceipt(receipt.id, true);
+      const expectedContext =
+        scope === 'project' && activeProjectPath
+          ? await tauri.resolveAgentContext(target.id, activeProjectPath)
+          : AgentContextSchema.parse({ installationId: target.id });
+      const rollbackPlan = await tauri.previewAgentRollback(receipt.id, expectedContext);
+      if (!window.confirm(t('agentConversion.rollbackConfirm'))) return;
+      await tauri.applyAgentRollbackPlan(
+        rollbackPlan.id,
+        expectedContext,
+        rollbackPlan.riskFingerprint,
+        true,
+      );
       setReceipt(null);
       setPreview(null);
       notifyAgentWorkspaceChanged();

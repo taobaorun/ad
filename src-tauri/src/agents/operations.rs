@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use super::{AgentContext, AgentId, InstallationId, PlanId, ReceiptId, WorkspaceKey};
+use super::{
+    AgentContext, AgentId, InstallationId, PlanId, ReceiptId, ResourceOwnershipChange, WorkspaceKey,
+};
 
 /// Stable digest of observed resource content.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -212,6 +214,8 @@ pub enum RollbackUnavailableReason {
     LegacyReceipt,
     Compensated,
     RollbackReceipt,
+    AlreadyRolledBack,
+    WorkspaceMismatch,
     MissingEvidence,
     RepairRequired,
 }
@@ -291,6 +295,10 @@ pub struct OperationReceipt {
     pub post_apply_states: Vec<AppliedResourceState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manifest_digest: Option<ContentDigest>,
+    #[serde(default)]
+    pub ownership_changes: Vec<ResourceOwnershipChange>,
+    #[serde(default)]
+    pub ownership_evidence_version: u32,
     #[serde(default)]
     pub rollback: RollbackEligibility,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -477,6 +485,8 @@ mod tests {
                 digest: Some(ContentDigest::from("sha256:after")),
             }],
             manifest_digest: Some(ContentDigest::from("sha256:manifest")),
+            ownership_changes: Vec::new(),
+            ownership_evidence_version: 0,
             rollback: RollbackEligibility::available(),
             created_at: Some(Utc::now()),
             message: Some("A compensation write failed".into()),

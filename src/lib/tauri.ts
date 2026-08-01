@@ -179,21 +179,52 @@ export const tauri = {
         enabled,
       }),
     ),
-  applyAgentPlan: async (planId: PlanId): Promise<OperationReceipt> =>
-    OperationReceiptSchema.parse(await invoke<unknown>('apply_agent_plan', { planId })),
+  applyAgentPlan: async (
+    planId: PlanId,
+    expectedContext: AgentContext,
+    expectedRiskFingerprint: MutationPlanView['riskFingerprint'],
+  ): Promise<OperationReceipt> =>
+    OperationReceiptSchema.parse(
+      await invoke<unknown>('apply_agent_plan', {
+        planId,
+        expectedContext,
+        expectedRiskFingerprint,
+      }),
+    ),
   applyConversionPlan: async (
     planId: PlanId,
+    expectedContext: AgentContext,
+    expectedRiskFingerprint: MutationPlanView['riskFingerprint'],
     acknowledgements: PlanAcknowledgement[],
   ): Promise<OperationReceipt> =>
     OperationReceiptSchema.parse(
-      await invoke<unknown>('apply_conversion_plan', { planId, acknowledgements }),
+      await invoke<unknown>('apply_conversion_plan', {
+        planId,
+        expectedContext,
+        expectedRiskFingerprint,
+        acknowledgements,
+      }),
     ),
-  rollbackAgentReceipt: async (
+  previewAgentRollback: async (
     receiptId: ReceiptId,
+    expectedContext: AgentContext,
+  ): Promise<MutationPlanView> =>
+    MutationPlanViewSchema.parse(
+      await invoke<unknown>('preview_agent_rollback', { receiptId, expectedContext }),
+    ),
+  applyAgentRollbackPlan: async (
+    planId: PlanId,
+    expectedContext: AgentContext,
+    expectedRiskFingerprint: MutationPlanView['riskFingerprint'],
     confirmed: boolean,
   ): Promise<OperationReceipt> =>
     OperationReceiptSchema.parse(
-      await invoke<unknown>('rollback_agent_receipt', { receiptId, confirmed }),
+      await invoke<unknown>('apply_agent_rollback_plan', {
+        planId,
+        expectedContext,
+        expectedRiskFingerprint,
+        confirmed,
+      }),
     ),
   listAgentOperationHistory: async (
     installationId?: InstallationId,

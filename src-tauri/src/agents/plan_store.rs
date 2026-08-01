@@ -1,12 +1,14 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Mutex;
 
 use chrono::{DateTime, Utc};
 
+use super::execution_confinement::{capture_project_root_identity, ProjectRootIdentity};
+
 use super::{
     AcknowledgementRequirement, AgentError, AgentErrorCode, ContentDigest, MutationPlan,
-    MutationPlanView, PlanAcknowledgement, PlanAcknowledgementCode, PlanId, PlanRiskLevel,
-    ResourceRef,
+    MutationPlanView, OperationKind, OwnershipRestore, PhysicalTargetId, PlanAcknowledgement,
+    PlanAcknowledgementCode, PlanId, PlanRiskLevel, ReceiptId, ResourceRef, RiskFingerprint,
 };
 
 #[derive(Default)]
@@ -18,6 +20,50 @@ struct PlanState {
 struct StoredPlan {
     plan: MutationPlan,
     required_acknowledgements: Vec<AcknowledgementRequirement>,
+    intent: PlanExecutionIntent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct PlanExecutionIntent {
+    pub(super) operation_kind: OperationKind,
+    pub(super) parent_receipt_id: Option<ReceiptId>,
+    pub(super) ownership_restores: BTreeMap<PhysicalTargetId, OwnershipRestore>,
+    pub(super) project_root_identity: Option<ProjectRootIdentity>,
+}
+
+impl PlanExecutionIntent {
+    fn apply(plan: &MutationPlan) -> Result<Self, AgentError> {
+        Ok(Self {
+            operation_kind: OperationKind::Apply,
+            parent_receipt_id: None,
+            ownership_restores: BTreeMap::new(),
+            project_root_identity: capture_project_root_identity(&plan.context)?,
+        })
+    }
+
+    fn rollback(
+        plan: &MutationPlan,
+        parent_receipt_id: ReceiptId,
+        ownership_restores: BTreeMap<PhysicalTargetId, OwnershipRestore>,
+    ) -> Result<Self, AgentError> {
+        Ok(Self {
+            operation_kind: OperationKind::Rollback,
+            parent_receipt_id: Some(parent_receipt_id),
+            ownership_restores,
+            project_root_identity: capture_project_root_identity(&plan.context)?,
+        })
+    }
+}
+
+pub(super) struct ClaimedPlan {
+    pub(super) plan: MutationPlan,
+    pub(super) intent: PlanExecutionIntent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlanClaimBinding {
+    pub context: super::AgentContext,
+    pub risk_fingerprint: RiskFingerprint,
 }
 
 impl PlanState {
@@ -34,6 +80,24 @@ pub struct PlanStore {
 }
 
 impl PlanStore {
+    pub fn claim_binding(&self, plan_id: &PlanId) -> Result<PlanClaimBinding, AgentError> {
+        let state = self.state.lock().map_err(|_| lock_error())?;
+        let stored = state.active.get(plan_id).ok_or_else(|| {
+            plan_error(
+                AgentErrorCode::InvalidPlan,
+                None,
+                None,
+                "Unknown mutation plan",
+                false,
+            )
+        })?;
+        let view = MutationPlanView::from(&stored.plan);
+        Ok(PlanClaimBinding {
+            context: stored.plan.context.clone(),
+            risk_fingerprint: view.risk_fingerprint,
+        })
+    }
+
     pub fn insert(&self, plan: MutationPlan) -> Result<MutationPlanView, AgentError> {
         self.insert_at(plan, Utc::now())
     }
@@ -51,6 +115,44 @@ impl PlanStore {
         requirements: Vec<AcknowledgementRequirement>,
     ) -> Result<MutationPlanView, AgentError> {
         self.insert_with_acknowledgements_at(plan, Utc::now(), requirements)
+    }
+
+    pub(super) fn insert_rollback(
+        &self,
+        plan: MutationPlan,
+        parent_receipt_id: ReceiptId,
+        ownership_restores: BTreeMap<PhysicalTargetId, OwnershipRestore>,
+    ) -> Result<MutationPlanView, AgentError> {
+        let intent = PlanExecutionIntent::rollback(&plan, parent_receipt_id, ownership_restores)?;
+        self.insert_with_intent_at(
+            plan,
+            Utc::now(),
+            vec![AcknowledgementRequirement {
+                code: PlanAcknowledgementCode::RollbackApply,
+                risk: PlanRiskLevel::Confirmation,
+            }],
+            intent,
+        )
+    }
+
+    pub(super) fn execution_intent(
+        &self,
+        plan_id: &PlanId,
+    ) -> Result<PlanExecutionIntent, AgentError> {
+        let state = self.state.lock().map_err(|_| lock_error())?;
+        state
+            .active
+            .get(plan_id)
+            .map(|stored| stored.intent.clone())
+            .ok_or_else(|| {
+                plan_error(
+                    AgentErrorCode::InvalidPlan,
+                    None,
+                    None,
+                    "Unknown mutation plan",
+                    false,
+                )
+            })
     }
 
     pub(crate) fn resources_for_locking(
@@ -118,6 +220,25 @@ impl PlanStore {
         self.claim_acknowledged_at(plan_id, Utc::now(), acknowledgements, observe_digest)
     }
 
+    pub(super) fn claim_acknowledged_for_execution<F>(
+        &self,
+        plan_id: &PlanId,
+        expected: &PlanClaimBinding,
+        acknowledgements: &[PlanAcknowledgement],
+        observe_digest: F,
+    ) -> Result<ClaimedPlan, AgentError>
+    where
+        F: FnMut(&ResourceRef) -> Result<Option<ContentDigest>, AgentError>,
+    {
+        self.claim_with_intent_at(
+            plan_id,
+            Utc::now(),
+            Some(expected),
+            acknowledgements,
+            observe_digest,
+        )
+    }
+
     fn insert_at(
         &self,
         plan: MutationPlan,
@@ -147,6 +268,17 @@ impl PlanStore {
         now: DateTime<Utc>,
         requirements: Vec<AcknowledgementRequirement>,
     ) -> Result<MutationPlanView, AgentError> {
+        let intent = PlanExecutionIntent::apply(&plan)?;
+        self.insert_with_intent_at(plan, now, requirements, intent)
+    }
+
+    fn insert_with_intent_at(
+        &self,
+        plan: MutationPlan,
+        now: DateTime<Utc>,
+        requirements: Vec<AcknowledgementRequirement>,
+        intent: PlanExecutionIntent,
+    ) -> Result<MutationPlanView, AgentError> {
         plan.validate()?;
         if plan.expires_at <= now {
             return Err(plan_error(
@@ -175,6 +307,7 @@ impl PlanStore {
             StoredPlan {
                 plan,
                 required_acknowledgements: requirements,
+                intent,
             },
         );
         Ok(view)
@@ -217,12 +350,27 @@ impl PlanStore {
         plan_id: &PlanId,
         now: DateTime<Utc>,
         acknowledgements: &[PlanAcknowledgement],
-        mut observe_digest: F,
+        observe_digest: F,
     ) -> Result<MutationPlan, AgentError>
     where
         F: FnMut(&ResourceRef) -> Result<Option<ContentDigest>, AgentError>,
     {
-        let plan = {
+        self.claim_with_intent_at(plan_id, now, None, acknowledgements, observe_digest)
+            .map(|claimed| claimed.plan)
+    }
+
+    fn claim_with_intent_at<F>(
+        &self,
+        plan_id: &PlanId,
+        now: DateTime<Utc>,
+        expected: Option<&PlanClaimBinding>,
+        acknowledgements: &[PlanAcknowledgement],
+        mut observe_digest: F,
+    ) -> Result<ClaimedPlan, AgentError>
+    where
+        F: FnMut(&ResourceRef) -> Result<Option<ContentDigest>, AgentError>,
+    {
+        let claimed = {
             let mut state = self.state.lock().map_err(|_| lock_error())?;
             if matches!(
                 state.active.get(plan_id),
@@ -261,6 +409,20 @@ impl PlanStore {
                     false,
                 )
             })?;
+            if let Some(expected) = expected {
+                let actual_risk = MutationPlanView::from(&stored.plan).risk_fingerprint;
+                if stored.plan.context != expected.context
+                    || actual_risk != expected.risk_fingerprint
+                {
+                    return Err(plan_error(
+                        AgentErrorCode::ResourceChanged,
+                        Some(&stored.plan),
+                        None,
+                        "Mutation plan no longer matches the expected workspace context",
+                        true,
+                    ));
+                }
+            }
             let required = stored
                 .required_acknowledgements
                 .iter()
@@ -288,39 +450,42 @@ impl PlanStore {
             state
                 .consumed
                 .insert(plan_id.clone(), stored.plan.expires_at);
-            stored.plan
+            ClaimedPlan {
+                plan: stored.plan,
+                intent: stored.intent,
+            }
         };
 
-        if plan.expires_at <= now {
+        if claimed.plan.expires_at <= now {
             return Err(plan_error(
                 AgentErrorCode::PlanExpired,
-                Some(&plan),
+                Some(&claimed.plan),
                 None,
                 "Mutation plan has expired",
                 true,
             ));
         }
 
-        for precondition in &plan.read_set {
+        for precondition in &claimed.plan.read_set {
             let actual = observe_digest(&precondition.resource)?;
             ensure_digest(
-                &plan,
+                &claimed.plan,
                 &precondition.resource,
                 Some(&precondition.expected_digest),
                 actual.as_ref(),
             )?;
         }
-        for mutation in &plan.mutations {
+        for mutation in &claimed.plan.mutations {
             let actual = observe_digest(&mutation.resource)?;
             ensure_digest(
-                &plan,
+                &claimed.plan,
                 &mutation.resource,
                 mutation.expected_digest.as_ref(),
                 actual.as_ref(),
             )?;
         }
 
-        Ok(plan)
+        Ok(claimed)
     }
 }
 
@@ -391,7 +556,7 @@ mod tests {
         PlanId, PlanRiskLevel, PlannedMutation, ReadPrecondition, ResourceKind, ResourceRef,
         ResourceScope, WritePolicy,
     };
-    use super::PlanStore;
+    use super::{PlanClaimBinding, PlanStore};
 
     fn resource() -> ResourceRef {
         ResourceRef {
@@ -666,5 +831,36 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(error.code, AgentErrorCode::ConfirmationRequired);
+    }
+
+    #[test]
+    fn execution_claim_requires_the_previewed_context_and_risk() {
+        let now = Utc::now();
+        let store = PlanStore::default();
+        store.insert_at(plan(now), now).unwrap();
+        let expected = store.claim_binding(&PlanId::from("plan-1")).unwrap();
+        let stale = PlanClaimBinding {
+            context: AgentContext {
+                installation_id: InstallationId::from("claude:other"),
+                project_path: None,
+            },
+            risk_fingerprint: expected.risk_fingerprint.clone(),
+        };
+
+        let error = store
+            .claim_acknowledged_for_execution(&PlanId::from("plan-1"), &stale, &[], |_| {
+                Ok(Some(ContentDigest::from("sha256:before")))
+            })
+            .err()
+            .unwrap();
+        let claimed = store
+            .claim_acknowledged_for_execution(&PlanId::from("plan-1"), &expected, &[], |_| {
+                Ok(Some(ContentDigest::from("sha256:before")))
+            })
+            .unwrap();
+
+        assert_eq!(error.code, AgentErrorCode::ResourceChanged);
+        assert!(error.retryable);
+        assert_eq!(claimed.plan.id.as_str(), "plan-1");
     }
 }

@@ -84,7 +84,7 @@ describe('theme contract', () => {
     expect(indexHtml).toContain('aria-hidden="true"');
     expect(indexHtml).toContain('id="ad-splash-quote"');
     expect(indexHtml).toContain('data-i18n-key="startup.loadingQuote"');
-    expect(indexHtml).toContain('data-i18n-key="startup.loadingQuote">Be Water, My Friend</p>');
+    expect(indexHtml).toContain('data-i18n-key="startup.loadingQuote">AD</p>');
     expect(indexHtml).not.toContain('>AD is loading');
     expect(indexHtml).not.toContain('Initializing AD');
   });

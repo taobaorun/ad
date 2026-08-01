@@ -8,7 +8,10 @@ use super::execution_journal::{
     MIN_JOURNAL_SCHEMA_VERSION,
 };
 use super::execution_state::ExecutionState;
-use super::{decode_operation_receipt, AgentError, AgentErrorCode, OperationStatus, ReceiptId};
+use super::{
+    apply_ownership_changes, decode_operation_receipt, AgentError, AgentErrorCode, OperationStatus,
+    ReceiptId,
+};
 
 const RECOVERY_LOCK_NAME: &str = "recovery.lock";
 
@@ -174,6 +177,14 @@ fn recover_applying(
         return Ok(RecoveryOutcome::RepairRequired(
             "receipt identity does not match the journal".into(),
         ));
+    }
+    if receipt.status == OperationStatus::Complete {
+        if let Err(error) = apply_ownership_changes(state, &receipt.ownership_changes) {
+            handle.transition(OperationJournalState::RepairRequired, Some(&receipt.id))?;
+            return Ok(RecoveryOutcome::RepairRequired(format!(
+                "ownership reconciliation failed: {error}"
+            )));
+        }
     }
     let recovered_state = match receipt.status {
         OperationStatus::Complete => OperationJournalState::Committed,

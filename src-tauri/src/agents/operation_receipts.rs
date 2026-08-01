@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt;
 use std::os::unix::ffi::OsStrExt;
 
@@ -151,6 +152,34 @@ pub fn list_operation_history(
             created_at,
         });
     }
+    let rolled_back = history
+        .iter()
+        .filter_map(|entry| entry.receipt.as_ref())
+        .filter(|receipt| {
+            receipt.operation_kind == super::OperationKind::Rollback
+                && receipt.status == super::OperationStatus::Complete
+        })
+        .filter_map(|receipt| receipt.parent_receipt_id.clone())
+        .collect::<BTreeSet<_>>();
+    for receipt in history
+        .iter_mut()
+        .filter_map(|entry| entry.receipt.as_mut())
+    {
+        if rolled_back.contains(&receipt.id) {
+            receipt.rollback =
+                RollbackEligibility::unavailable(RollbackUnavailableReason::AlreadyRolledBack);
+        }
+        if project_path.is_some()
+            && receipt
+                .context
+                .as_ref()
+                .and_then(|context| context.project_path.as_deref())
+                != project_path
+        {
+            receipt.rollback =
+                RollbackEligibility::unavailable(RollbackUnavailableReason::WorkspaceMismatch);
+        }
+    }
     history.sort_by_key(|entry| std::cmp::Reverse(entry.created_at));
     history.truncate(limit.unwrap_or(50).min(200));
     Ok(history)
@@ -221,7 +250,10 @@ fn operation_history_io_error(error: std::io::Error) -> AgentError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::{AgentContext, OperationKind, OperationStatus, PlanId, ReceiptId};
+    use crate::agents::{
+        AgentContext, ContentDigest, OperationKind, OperationStatus, PlanId, ReceiptId,
+        ResourceKind, ResourceRef, ResourceScope, OWNERSHIP_EVIDENCE_VERSION,
+    };
 
     #[test]
     fn legacy_receipts_remain_visible_but_cannot_rollback() {
@@ -264,6 +296,8 @@ mod tests {
             backup_paths: Vec::new(),
             post_apply_states: Vec::new(),
             manifest_digest: None,
+            ownership_changes: Vec::new(),
+            ownership_evidence_version: 0,
             rollback: RollbackEligibility::available(),
             created_at: Some(Utc::now()),
             message: None,
@@ -315,15 +349,35 @@ mod tests {
             .history()
             .write_atomic_new("future.json", br#"{"schemaVersion":999}"#)
             .unwrap();
+        state
+            .history()
+            .write_atomic_new(
+                "wrong-name.json",
+                br#"{
+                    "id":"different-id",
+                    "planId":"legacy-plan",
+                    "status":"complete",
+                    "appliedResources":[],
+                    "backupPaths":[],
+                    "postApplyStates":[]
+                }"#,
+            )
+            .unwrap();
 
         let history = list_operation_history(None, None, Some(20)).unwrap();
 
-        assert_eq!(history.len(), 3);
+        assert_eq!(history.len(), 4);
         assert!(history.iter().any(|entry| {
             entry
                 .receipt
                 .as_ref()
                 .is_some_and(|receipt| receipt.id.as_str() == "legacy-receipt")
+        }));
+        assert!(!history.iter().any(|entry| {
+            entry
+                .receipt
+                .as_ref()
+                .is_some_and(|receipt| receipt.id.as_str() == "different-id")
         }));
         assert!(history.iter().any(|entry| {
             entry.diagnostic.as_ref().is_some_and(|diagnostic| {
@@ -335,6 +389,67 @@ mod tests {
                 diagnostic.code == OperationHistoryDiagnosticCode::UnsupportedVersion
             })
         }));
+
+        match previous_home {
+            Some(value) => std::env::set_var("AD_HOME", value),
+            None => std::env::remove_var("AD_HOME"),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn project_history_keeps_user_receipts_inspect_only() {
+        let temp = tempfile::tempdir().unwrap();
+        let previous_home = std::env::var("AD_HOME").ok();
+        std::env::set_var("AD_HOME", temp.path());
+        let installation_id = InstallationId::from("codex:default");
+        let receipt = OperationReceipt {
+            schema_version: OPERATION_RECEIPT_SCHEMA_VERSION,
+            id: ReceiptId::from("user-receipt"),
+            plan_id: PlanId::from("user-plan"),
+            operation_kind: OperationKind::Apply,
+            parent_receipt_id: None,
+            context: Some(AgentContext {
+                installation_id: installation_id.clone(),
+                project_path: None,
+            }),
+            workspace_key: None,
+            action_id: None,
+            status: OperationStatus::Complete,
+            applied_resources: vec![ResourceRef {
+                installation_id: installation_id.clone(),
+                project_path: None,
+                kind: ResourceKind::Settings,
+                scope: ResourceScope::User,
+                logical_id: "user-settings".into(),
+            }],
+            backup_paths: Vec::new(),
+            post_apply_states: Vec::new(),
+            manifest_digest: Some(ContentDigest::from("sha256:manifest")),
+            ownership_changes: Vec::new(),
+            ownership_evidence_version: OWNERSHIP_EVIDENCE_VERSION,
+            rollback: RollbackEligibility::available(),
+            created_at: Some(Utc::now()),
+            message: None,
+        };
+        let state = ExecutionState::open().unwrap();
+        state
+            .history()
+            .write_atomic_new("user-receipt.json", &serde_json::to_vec(&receipt).unwrap())
+            .unwrap();
+
+        let history = list_operation_history(
+            Some(&installation_id),
+            Some("/Users/test/project"),
+            Some(20),
+        )
+        .unwrap();
+
+        assert_eq!(history.len(), 1);
+        assert_eq!(
+            history[0].receipt.as_ref().unwrap().rollback.reason,
+            Some(RollbackUnavailableReason::WorkspaceMismatch)
+        );
 
         match previous_home {
             Some(value) => std::env::set_var("AD_HOME", value),

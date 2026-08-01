@@ -7,7 +7,8 @@ use crate::agents::{
     MutationPlanView, OperationHistoryEntry, OperationReceipt, PlanAcknowledgement,
     PlanAcknowledgementCode, PlanId, PlanRiskLevel, PlanStore, ProcessObservation, ProfileId,
     ProjectCodexRuntime, ProjectCodexRuntimeStatus, ReadPrecondition, ReceiptId, ResourceKind,
-    ResourceRef, ResourceScope, ResourceSnapshot, SettingsDocument, SettingsEdit, WritePolicy,
+    ResourceRef, ResourceScope, ResourceSnapshot, RiskFingerprint, SettingsDocument, SettingsEdit,
+    WritePolicy,
 };
 use crate::models::ProfileFile;
 use tauri::{ipc::Channel, Manager, State};
@@ -410,31 +411,67 @@ pub fn preview_agent_collection_toggle(
 #[tauri::command]
 pub fn apply_agent_plan(
     plan_id: PlanId,
+    expected_context: AgentContext,
+    expected_risk_fingerprint: RiskFingerprint,
     plans: State<'_, PlanStore>,
 ) -> Result<OperationReceipt, AgentError> {
-    ExecutionEngine.apply(&plan_id, plans.inner())
+    ExecutionEngine.apply_bound(
+        &plan_id,
+        &expected_context,
+        &expected_risk_fingerprint,
+        plans.inner(),
+    )
 }
 
 #[tauri::command]
 pub async fn apply_conversion_plan(
     app: tauri::AppHandle,
     plan_id: PlanId,
+    expected_context: AgentContext,
+    expected_risk_fingerprint: RiskFingerprint,
     acknowledgements: Vec<PlanAcknowledgement>,
 ) -> Result<OperationReceipt, AgentError> {
     run_agent_operation_off_thread(move || {
         let plans = app.state::<PlanStore>();
-        ExecutionEngine.apply_acknowledged(&plan_id, plans.inner(), &acknowledgements)
+        ExecutionEngine.apply_acknowledged_bound(
+            &plan_id,
+            &expected_context,
+            &expected_risk_fingerprint,
+            plans.inner(),
+            &acknowledgements,
+        )
     })
     .await
 }
 
 #[tauri::command]
-pub fn rollback_agent_receipt(
+pub fn preview_agent_rollback(
     receipt_id: ReceiptId,
+    expected_context: AgentContext,
+    plans: State<'_, PlanStore>,
+) -> Result<MutationPlanView, AgentError> {
+    ExecutionEngine.preview_rollback_bound(&receipt_id, &expected_context, plans.inner())
+}
+
+#[tauri::command]
+pub fn apply_agent_rollback_plan(
+    plan_id: PlanId,
+    expected_context: AgentContext,
+    expected_risk_fingerprint: RiskFingerprint,
     confirmed: bool,
+    plans: State<'_, PlanStore>,
 ) -> Result<OperationReceipt, AgentError> {
     require_confirmation(confirmed, "Rollback requires explicit confirmation")?;
-    ExecutionEngine.rollback(&receipt_id)
+    ExecutionEngine.apply_acknowledged_bound(
+        &plan_id,
+        &expected_context,
+        &expected_risk_fingerprint,
+        plans.inner(),
+        &[PlanAcknowledgement {
+            code: PlanAcknowledgementCode::RollbackApply,
+            accepted: true,
+        }],
+    )
 }
 
 async fn run_agent_operation_off_thread<T, F>(operation: F) -> Result<T, AgentError>
