@@ -12,7 +12,7 @@
 
 ## 确认状态
 
-- [x] **用户已确认** — 评审 HTML：`docs/exec-plans/active/project-agent-workspace.html`
+- [x] **用户已确认** — 冻结评审 HTML 原位于 active，完成后归档到 `docs/exec-plans/completed/project-agent-workspace.html`
 - [x] HTML 基线已冻结并开始执行（2026-08-01 10:43+08:00）
 
 批准后 HTML 不再修改；执行进展、发现、决策和结果只更新本 MD。
@@ -113,8 +113,12 @@
   - [x] 删除`commands/skills.rs`的direct-write Skill IPC、`ProjectSkills.tsx`与`skillTypes.ts`，并从`store/skills.ts`移除legacy project/Plugin写方法，只保留typed source catalog；ProjectDetail只保留统一typed workspace与显式legacy reconciliation card。Tauri/Zod合同、busy时Cancel竞态和receipt-bound restore均有前端测试，全仓库搜索无旧consumer。
   - [x] `ce-code-review`复核完成：source qualification、真实crash boundary、restore→rearchive、receipt proof、project target lock/confinement、marker generation与Cancel race均修复并复验；“用预览旧备份覆盖竞态新字节”的建议因会丢失并发用户更新而拒绝，保留最新字节并返回compensated。Agent-native改造建议与已批准KTD9/KTD11冲突，按本轮first-party UI/AD-state边界不采纳；外部Claude peer因执行上下文认证失败未产生可用结果。
   - [x] 最终门禁：前端163/163、format/lint/typecheck/build通过；Rust library 321 passed/1 ignored、全部integration suites（legacy migration 10/10）与严格Clippy通过；`pnpm tauri build`于19:41生成最终AD.app与DMG，`git diff --check`及frozen HTML零差异通过。
-- [ ] M7：完成自动化、真机release验证和文档状态收敛（验证标准：所有门禁通过且evidence matrix有真实证据）
-- [ ] 完成结果回顾并将 MD + frozen HTML 一起移到 `docs/exec-plans/completed/`
+- [x] (2026-08-01 19:43+08:00 开始，20:25+08:00 完成) M7：完成自动化、真机release验证和文档状态收敛（验证标准：所有门禁通过且evidence matrix有真实证据）
+  - [x] 产品定位收敛为本地 Coding Agent 项目配置管理器；README、package/bundle metadata、PRODUCT_SENSE、architecture、multi-agent、conversion workbench及新增Project Agent Workspace MD/HTML证据规格同步完成。规格明确managed configuration parity与automation-access parity的边界，不把未知coverage、external动作或未做真机注入的crash场景上推为完整Workflow证据。
+  - [x] 使用最终production bundle与隔离`AD_HOME`完成真实macOS工作流：Project A Settings Apply/rollback receipts `3cce82e3…`/`8afcdcad…`；Claude Project Plugin Enable/History/rollback receipts `e6c501ae…`/`b5609d4f…`；Project B文件摘要不变且scoped History为空；external Codex Skill显示只读且动作禁用。
+  - [x] Project conversion先验证缺少文件型登录时诚实阻塞且零runtime/receipt；加入无secret的file-auth fixture后发现renderer错误重解析Base context，修复为Apply沿用backend `plan.context`、rollback沿用`receipt.context`，增加React与Rust command-wrapper回归。最终`.app` safe subset Apply receipt `4cf25b54…`写入派生runtime的`model_context_window = 120000`，rollback receipt `db06804c…`完整移除三个runtime资源，全部Claude/Codex user/source/native Project A与Project B摘要不变。
+  - [x] 最终门禁：前端30 files/164 tests、format/lint/typecheck/build通过；Rust library 322 passed/1 ignored及全部integration suites、严格Clippy与fmt通过；`pnpm tauri build`生成AD.app和DMG。AD.app二进制SHA-256为`76977c7061bb9126538386f62498afd5e7377763c6c487d38d44e8db4b6f271c`，DMG为`a6250fea0cba46939e84a819994612a2fbe2b7e9c868bf935c20b47ec7fb8a10`；冻结HTML保持`50d42de4266fb6a75e95a5943e1c8acdc24568b92b681f2e12051bedf968b1b8`。
+- [x] (2026-08-01 20:25+08:00) 完成结果回顾；MD + frozen HTML 在最终清洁门禁后一起移到 `docs/exec-plans/completed/`
 
 ## 意外发现
 
@@ -194,6 +198,10 @@
   证据：ownership、artifact和operation receipt验证全部通过，但legacy source digest与read-only artifact digest不同；改用acquisition manifest同款的规范化tree digest后，source-qualified fixture恢复Ready，同时相同内容的多个来源保持ambiguous并拒绝迁移。
 - 发现：legacy allowlist只验证“列出的Skill都已管理”仍不足以证明意图收敛；额外的AD-managed Skill会让当前有效集合大于legacy允许集合。
   证据：双Skill fixture中只列`legacy/review`但项目同时启用`review`与`extra`；改为source-qualified集合精确相等后状态稳定降为`needs_reconciliation`且无法生成archive preview。
+- 发现：Project conversion preview会把用户选择的Base Codex installation重新绑定为后端派生的Project Runtime context；renderer若在Apply前再次解析Base context，会让刚生成的计划因context不匹配自我失效。
+  证据：正式`.app`在file-auth fixture下连续两次Preview→Apply都返回`resource_changed`且零runtime/receipt；Apply改用`preview.plan.context`、rollback改用`receipt.context`后，同一bundle工作流生成complete apply/rollback receipts，Rust command-wrapper和React组件回归同时通过。
+- 发现：Tauri窗口设置`kCGWindowSharingState:0`后，macOS屏幕捕获不包含WebView内容，但Accessibility tree仍完整暴露第一方按钮、状态、路径和结果。
+  证据：M7没有把缺失截图误报为UI失败，改用System Events无障碍树完成正式`.app`操作，并用结构化receipt与文件摘要交叉验证结果。
 
 ## 决策日志
 
@@ -296,16 +304,23 @@
 - 决策：archive竞态检测到state digest变化时，把实际最新字节移回legacy位置并返回compensated，不用preview时的旧副本覆盖。
   理由：迁移目标是清理旧状态而不是回滚用户并发编辑；覆盖最新字节会造成真实数据丢失。旧plan失效后必须重新preview，测试明确证明changed bytes保留且archive不提交。
   日期/作者：2026-08-01 / Codex（对ce-code-review finding的证据化pushback）
+- 决策：Conversion preview完成派生后，backend-owned `plan.context`是Apply唯一上下文权威；rollback优先使用持久化`receipt.context`，前端所选Base installation只作为preview输入。
+  理由：派生runtime identity是计划与receipt安全证据的一部分；重新解析Base既无法表达实际写入目标，也会把正确计划误判为stale。后端继续严格拒绝context漂移，不做猜测性修正。
+  日期/作者：2026-08-01 / Codex（M7 production bundle workflow）
 
 ## 结果回顾
 
-待执行完成后填写：
+Project Agent Workspace 已达到本轮定义的Release verified：用户可在ProjectDetail理解effective Settings与来源，执行backend允许的Skill/Plugin生命周期动作，从统一History检查receipt并受保护rollback；Claude有效项目环境可按Settings/Skills/Plugins多载体预览并转化到项目隔离的Codex Runtime。每项能力的Declared、Reachable、Automated、Workflow和Release证据已写入`docs/product-specs/project-agent-workspace.md`，没有用单一“已实现”掩盖证据层级差异。
 
-- 实际交付的用户工作流与evidence level。
-- 与统一实施计划的偏差及原因。
-- 迁移用户数量/fixture结果、遗留兼容窗口和可删除时间点。
-- 未达到Release verified的能力及后续计划。
-- 是否产生可沉淀到`docs/solutions/`的迁移、安全执行或项目隔离经验。
+正式macOS `.app`在隔离`AD_HOME`下实际完成Settings与Plugin的Preview→Apply→History→rollback，以及修复后的Project conversion safe-subset Apply→rollback。所有操作只绑定Project A，Project B、真实用户Home、fixture user config、Claude conversion source和Codex native project config均未被跨scope修改。fixture仅含合成配置和空`auth.json`，未使用secret；证据写入后已删除，不进入发布包。
+
+与原计划的主要偏差是M7真机工作流额外发现并修复derived runtime context回归。这不是扩大产品范围，而是释放已批准转换工作流所必需的正确上下文传递；修复保留后端fail-closed语义，并增加前后端回归证据。其余里程碑按M0→M7完成，frozen HTML从批准到归档保持字节不变。
+
+Legacy Project Skill直写、旧ProjectState直写与旁路迁移API已删除；legacy Profile template/import/shortcut仅作为兼容读取/入口保留。真实用户迁移数量为0，本轮使用合成fixture验证幂等archive/restore、crash recovery、source identity和竞态；因此不宣称已迁移任何用户数据，也不在本轮物理GC legacy checkout/published artifact。
+
+仍未上推为完整Workflow证据的能力包括：真实release进程crash注入、真机managed Skill全生命周期和真实legacy用户数据迁移；它们已有自动化或边界证据，并在产品规格中明确标注。Codex User Plugin acquisition、Claude Plugin install、Keychain-only custom Home、connector authorization及公共CLI/MCP/deep-link仍为degraded/external/非目标。AD保证managed configuration隔离，不保证第三方扩展执行沙箱。
+
+本轮最具复用价值的经验是：项目隔离必须把canonical context、物理root identity、immutable artifact、ownership、plan fingerprint、durable receipt和fresh rollback串成同一证据链；派生目标必须沿用backend-owned plan/receipt context。该模式已直接沉淀在architecture、conversion workbench和Project Agent Workspace规格中，暂不另建重复的`docs/solutions/`文档。
 
 ## 上下文和方向
 

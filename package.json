@@ -2,7 +2,7 @@
   "name": "ad",
   "private": true,
   "version": "1.0.1",
-  "description": "SwitchHosts-style desktop app for managing Claude Code settings.json profiles",
+  "description": "macOS project configuration manager for local coding agents",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -6,12 +6,13 @@
 
 ## 产品愿景
 
-面向多种 coding Agent 的 macOS 配置管理器：在统一、安全、可恢复的工作流中管理配置、Profiles 和扩展能力。
+面向本地 coding Agent 的 macOS 项目配置管理器：在 Project Agent Workspace 中统一理解和管理 Settings、Skills、Plugins、Profiles 与配置转化，并让隔离、覆盖关系、操作结果和恢复证据可见。
 
 ## 功能规格列表
 
 | 文档 | 功能名称 | 优先级 | 状态 | 摘要 |
 |---|---|---|---|---|
+| [project-agent-workspace.md](project-agent-workspace.md) / [HTML](project-agent-workspace.html) | Project Agent Workspace | P0 | 已实现并通过发布验证 | 项目级 Settings、Skill、Plugin、配置转化、ownership、coverage、receipt 与 rollback 的统一产品合同和证据矩阵 |
 | [multi-agent-support.md](multi-agent-support.md) / [HTML](multi-agent-support.html) | 多 Agent 支持基础 | P0 | 已实现 | 支持 Claude Code、Codex 及未来内置 Agent；新抽象见 [设计文档](../design-docs/multi-agent-architecture.md) |
 
 ## 优先级定义

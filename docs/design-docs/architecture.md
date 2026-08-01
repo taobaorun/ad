@@ -1,6 +1,6 @@
-# AD 系统架构（v2.1）
+# AD 系统架构（v2.2）
 
-> 状态：已实现（2026-07-20）
+> 状态：已实现并通过 Project Agent Workspace 发布验证（2026-08-01）
 >
 > 详细多 Agent 决策见 [multi-agent-architecture.md](multi-agent-architecture.md)。
 
@@ -34,6 +34,14 @@ React UI / Zustand
 - `AgentProfile`：以 `(agentId, profileId)` 为复合身份，common envelope 只保存 metadata、`payloadSchema` 和 adapter-owned payload。
 
 Capability 由 `SettingsPort`、`SkillsPort`、`PluginsPort`、`ProcessPort` 和 `LaunchPort` 等真实可调用端口推导。descriptor 同时报告 scope、operations、availability 和结构化 limitations；端口不存在就不能宣称支持。
+
+## Project Agent Workspace
+
+`ProjectDetail` 是唯一项目工作区。它按当前 `AgentContext` 聚合 effective Settings、Skill/Plugin inventory、ownership、coverage、Project Codex Runtime、conversion 与 scoped operation History；旧项目入口不能直接写 Skill、Plugin 或 ProjectState。
+
+Skill source acquisition 先进入受限 staging，再发布由 source identity、revision 和 normalized tree digest 标识的不可变 artifact。项目只 pin artifact revision，source refresh 不会隐式升级其他项目；AD-owned resource 才能执行生命周期动作，external/unowned resource 可见但只读。Plugin capability 同样由真实 operation 推导，User acquisition 或未验证 component 保持 degraded/external。
+
+Project workspace 保证配置身份、落点、ownership、plan、receipt 和 rollback 的隔离，不保证第三方扩展代码的执行沙箱。当前产品实现 managed-Agent configuration parity；没有公共 CLI、MCP、deep-link 或远程 approval API，所有风险确认只能由第一方桌面 UI 完成。
 
 ## 安全变更模型
 
@@ -125,4 +133,4 @@ src-tauri/src/
 └─ terminal/                 # Ghostty、cmux、Terminal.app、Custom backend
 ```
 
-旧 Claude façade 暂时保留给 legacy template/import/shortcut 流程；新多 Agent UI 和写操作使用 v1 contract。兼容层不得被 Codex 复用或扩展。
+旧 Claude façade 只保留 legacy Profile template/import/shortcut 的兼容读取和入口。legacy Project Skill 直写、旧 ProjectState 直写以及旁路迁移命令已退役；所有 Project Skill/Plugin 写操作都必须经过 Agent v1 project operation contract。兼容层不得被 Codex 复用或扩展。
