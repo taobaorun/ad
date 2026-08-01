@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::{
-    AgentId, CapabilityLimitation, DeclarationKey, OwnershipRecordId, PhysicalTargetId,
-    ResourceKey, ResourceKind, ResourceLayer, ResourceScope, WorkspaceKey,
+    AgentId, CapabilityLimitation, DeclarationKey, InventoryRevision, OwnershipRecordId,
+    PhysicalTargetId, ResourceKey, ResourceKind, ResourceLayer, ResourceRef, ResourceScope,
+    WorkspaceDescriptor, WorkspaceKey,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -174,4 +176,109 @@ pub struct CollectionResourceInventory {
     pub coverage: CategoryCoverage,
     #[serde(default)]
     pub resources: Vec<CollectionResourceView>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiscoveryCompatibility {
+    Verified,
+    Unverified,
+}
+
+/// Versioned compatibility boundary used to decide whether inventory may claim completeness.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterDiscoveryContract {
+    pub adapter_version: u32,
+    pub location_set: String,
+    #[serde(default)]
+    pub schema_versions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_agent_version: Option<String>,
+    #[serde(default)]
+    pub verified_agent_versions: Vec<String>,
+    pub compatibility: DiscoveryCompatibility,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SettingsValueSensitivity {
+    Public,
+    Sensitive,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsFieldDeclarationView {
+    pub declaration_key: DeclarationKey,
+    pub layer: ResourceLayer,
+    pub value: Value,
+    pub sensitivity: SettingsValueSensitivity,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsFieldView {
+    pub path: String,
+    pub value: Value,
+    pub sensitivity: SettingsValueSensitivity,
+    #[serde(default)]
+    pub declarations: Vec<SettingsFieldDeclarationView>,
+    pub winner: DeclarationKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsLayerView {
+    pub declaration: ResourceDeclarationView,
+    pub logical_id: String,
+    pub media_type: String,
+    pub content: Value,
+    pub exists: bool,
+    pub editable: bool,
+    pub preserves_unknown_fields: bool,
+    #[serde(default)]
+    pub redacted_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsEditableTargetView {
+    pub declaration_key: DeclarationKey,
+    pub resource: ResourceRef,
+    pub media_type: String,
+    pub exists: bool,
+    pub preserves_unknown_fields: bool,
+    #[serde(default)]
+    pub redacted_paths: Vec<String>,
+}
+
+/// Backend-resolved effective Settings view. All sensitive values are masked before IPC.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsEffectiveView {
+    pub workspace_key: WorkspaceKey,
+    pub coverage: CategoryCoverage,
+    pub effective_content: Value,
+    #[serde(default)]
+    pub fields: Vec<SettingsFieldView>,
+    #[serde(default)]
+    pub layers: Vec<SettingsLayerView>,
+    #[serde(default)]
+    pub editable_targets: Vec<SettingsEditableTargetView>,
+}
+
+/// One coherent, revision-bound read of a project's effective Agent configuration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectWorkspaceInventory {
+    pub schema_version: u32,
+    pub workspace: WorkspaceDescriptor,
+    pub revision: InventoryRevision,
+    pub discovery: AdapterDiscoveryContract,
+    pub settings: SettingsEffectiveView,
+    pub skills: CollectionResourceInventory,
+    pub plugins: CollectionResourceInventory,
+    #[serde(default)]
+    pub diagnostics: Vec<ItemDiagnostic>,
 }

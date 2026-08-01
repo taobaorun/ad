@@ -83,6 +83,7 @@
       - [x] (2026-08-01 14:33+08:00) Project Skill/Plugin ownership record、receipt ownership evidence、fresh preview-confirm-apply inverse rollback与startup replay完成；apply/rollback claim绑定preview时的canonical context与risk fingerprint，project root绑定device/inode并拒绝与AD/Claude/Codex root重叠。项目History中的user receipt保持可见但inspect-only；post-publish receipt错误、partial create、并发startup与Profiles关闭竞态均有回归测试。`cargo test --all-targets --all-features`、严格Clippy、前端143/143、format/lint/typecheck/build及`pnpm tauri build`通过，生成AD.app与DMG；本地多角色review完成，外部Claude peer因CLI未登录未产出结果。
 - [ ] (2026-08-01 14:35+08:00 开始) M1：实现 effective inventory 与分层 Settings（验证标准：Claude/Codex provenance、coverage、canonical context测试通过）
   - [x] (2026-08-01 14:50+08:00) Canonical WorkspaceDescriptor 后端签发入口完成：项目真实路径、base/effective installation 与 prepared Codex runtime revision 统一生成 workspace identity，ownership workspace key 改为复用同一签名。路径别名、同名不同项目、base/runtime 收敛、unknown/mismatched installation 及 Rust/TypeScript IPC 边界测试通过。
+  - [x] (2026-08-01 14:56+08:00) ProjectWorkspaceInventory、InventoryRevision、AdapterDiscoveryContract、Settings effective/layer/field/editable-target/sensitivity 契约完成 Rust/Zod 同构；严格 schema 测试证明 unknown 字段被拒绝、未验证 Agent 版本保持 partial、敏感值边界只允许遮罩形态。
 - [ ] M2：引入 immutable Skill artifact 和安全 source acquisition（验证标准：更新项目A不改变B，migration fixtures幂等）
 - [ ] M3：补齐 Skills/Plugins item lifecycle planners（验证标准：install/toggle/update/remove的支持与退化矩阵通过）
 - [ ] M4：完成统一 Project Agent Workspace UI（验证标准：所有真实动作可从ProjectDetail完成，draft/close行为、partial/stale/empty与可访问状态准确）
