@@ -61,6 +61,15 @@ import {
   type ProjectWorkspaceInventory,
 } from './agentResourceInventoryTypes';
 import { WorkspaceDescriptorSchema, type WorkspaceDescriptor } from './agentWorkspaceTypes';
+import {
+  SkillCatalogOperationReportSchema,
+  SkillCatalogPlanViewSchema,
+  SkillCatalogSnapshotSchema,
+  type SkillCatalogOperationReport,
+  type SkillCatalogPlanView,
+  type SkillCatalogSnapshot,
+  type SkillSourceRequest,
+} from './skillCatalogTypes';
 
 export interface AgentSettingsEdit {
   resource: ResourceRef;
@@ -339,6 +348,35 @@ export const tauri = {
   writeThemeHint: (dark: boolean) => invoke<void>('write_theme_hint', { dark }),
 
   openSettingsWindow: () => invoke<void>('open_settings_window'),
+
+  listSkillCatalog: async (): Promise<SkillCatalogSnapshot> =>
+    SkillCatalogSnapshotSchema.parse(await invoke('list_skill_catalog')),
+  previewAddSkillCatalogSource: async (
+    request: SkillSourceRequest,
+  ): Promise<SkillCatalogPlanView> =>
+    SkillCatalogPlanViewSchema.parse(await invoke('preview_add_skill_catalog_source', { request })),
+  previewUpdateSkillCatalogSource: async (sourceId: string): Promise<SkillCatalogPlanView> =>
+    SkillCatalogPlanViewSchema.parse(
+      await invoke('preview_update_skill_catalog_source', { sourceId }),
+    ),
+  previewRemoveSkillCatalogSource: async (sourceId: string): Promise<SkillCatalogPlanView> =>
+    SkillCatalogPlanViewSchema.parse(
+      await invoke('preview_remove_skill_catalog_source', { sourceId }),
+    ),
+  applySkillCatalogSourcePlan: async (
+    plan: SkillCatalogPlanView,
+  ): Promise<SkillCatalogOperationReport> =>
+    SkillCatalogOperationReportSchema.parse(
+      await invoke('apply_skill_catalog_source_plan', {
+        claim: {
+          planId: plan.id,
+          riskFingerprint: plan.riskFingerprint,
+          confirmed: true,
+        },
+      }),
+    ),
+  cancelSkillCatalogSourcePlan: (planId: string) =>
+    invoke<boolean>('cancel_skill_catalog_source_plan', { planId }),
 
   // Skill management
   listSkillSources: () => invoke<SkillSource[]>('list_skill_sources'),

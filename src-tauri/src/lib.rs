@@ -263,6 +263,7 @@ pub fn run() {
             commands::skill_catalog::preview_update_skill_catalog_source,
             commands::skill_catalog::preview_remove_skill_catalog_source,
             commands::skill_catalog::apply_skill_catalog_source_plan,
+            commands::skill_catalog::cancel_skill_catalog_source_plan,
             commands::skill_catalog::inspect_legacy_skill_state,
         ])
         .build(tauri::generate_context!())

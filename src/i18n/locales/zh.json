@@ -1,6 +1,7 @@
 {
   "common": {
-    "close": "关闭"
+    "close": "关闭",
+    "cancel": "取消"
   },
   "startup": {
     "loadingQuote": "Be Water, My Friend",
@@ -309,8 +310,10 @@
       "nav": "Skills",
       "desc": "管理 skill 仓库，控制哪些 skill 全局可用。",
       "sourcesHeading": "Sources",
+      "catalogIsolation": "Source 只负责获取不可变版本；更新 Source 不会自动改变任何项目。",
       "addSource": "添加 Source",
       "noSources": "暂无 skill source。可添加 git 仓库或本地目录。",
+      "loading": "正在读取 Skill Source…",
       "branch": "branch: {{branch}}",
       "branchDefault": "branch: default",
       "localDir": "本地目录",
@@ -318,12 +321,18 @@
       "autoUpdateOn": "自动更新: 开",
       "updating": "更新中...",
       "update": "更新",
+      "previewing": "检查中…",
+      "removeSource": "移除 Source：{{name}}",
+      "artifactSummary": "{{count}} 个 Skill · 版本 {{revision}}",
+      "activationImpact": "包含 {{count}} 个可执行或运行时入口",
+      "operationFailed": "操作未完成，已保留原目录状态。",
       "removeConfirm": "移除 source \"{{id}}\" 及其所有已安装的 skill？",
       "globalSkills": "全局 Skills",
       "globalSkillsDesc": "启用的 skill 会软链接到 ~/.claude/skills/，对所有项目可见。",
       "skillCount": "{{count}} 个 skill",
       "addDialog": {
         "title": "添加 Skill Source",
+        "description": "AD 会先检查完整目录和执行影响，确认前不会写入 Source Catalog。",
         "name": "名称",
         "namePlaceholder": "例如 my-team-skills",
         "type": "类型",
@@ -342,7 +351,32 @@
         "submit": "添加并扫描",
         "submitting": "添加中…",
         "cloningGit": "正在克隆仓库…",
-        "addingSource": "正在添加 source…"
+        "addingSource": "正在添加 source…",
+        "inspecting": "正在检查…",
+        "preview": "检查并预览",
+        "backendIdHint": "Source ID 由 AD 签发，显示名称不会作为文件路径。"
+      },
+      "plan": {
+        "add": {
+          "title": "确认添加 Skill Source",
+          "description": "发布已检查的不可变 artifact，并将它登记为当前 Source 版本。"
+        },
+        "update": {
+          "title": "确认更新 Skill Source",
+          "description": "发布新 artifact 并移动 Catalog 指针；项目仍固定在原版本。"
+        },
+        "remove": {
+          "title": "确认移除 Skill Source",
+          "description": "只移除 Catalog 入口，不删除已发布 artifact 或项目引用。"
+        },
+        "artifact": "不可变 Artifact",
+        "skills": "包含 {{count}} 个 Skill",
+        "executionTitle": "包含执行能力",
+        "executionDescription": "检测到 {{count}} 个 hook、MCP、command、script 或 binary 入口。启用前请确认来源可信。",
+        "revisionIsolation": "Source 更新不会自动升级项目；项目版本必须单独预览并确认。",
+        "removeIsolation": "本次不会删除旧 artifact、legacy checkout 或项目已固定版本。",
+        "applying": "正在应用…",
+        "confirm": "确认应用"
       }
     }
   },

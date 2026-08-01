@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::agents::{
     apply_skill_catalog_plan, inspect_legacy_skill_inventory, load_skill_catalog_snapshot,
-    LegacySkillInventory, SkillCatalogOperationReport, SkillCatalogPlanClaim,
+    LegacySkillInventory, PlanId, SkillCatalogOperationReport, SkillCatalogPlanClaim,
     SkillCatalogPlanStore, SkillCatalogPlanView, SkillCatalogSnapshot, SkillSourceRequest,
 };
 
@@ -43,6 +43,14 @@ pub fn apply_skill_catalog_source_plan(
     plans: State<'_, SkillCatalogPlanStore>,
 ) -> CmdResult<SkillCatalogOperationReport> {
     apply_skill_catalog_plan(&plans, &claim).map_err(command_error)
+}
+
+#[tauri::command]
+pub fn cancel_skill_catalog_source_plan(
+    plan_id: PlanId,
+    plans: State<'_, SkillCatalogPlanStore>,
+) -> CmdResult<bool> {
+    plans.cancel(&plan_id).map_err(command_error)
 }
 
 #[tauri::command]

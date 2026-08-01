@@ -94,6 +94,14 @@ pub struct SkillCatalogPlanStore {
 }
 
 impl SkillCatalogPlanStore {
+    pub fn cancel(&self, plan_id: &PlanId) -> Result<bool, SkillCatalogPlanError> {
+        let mut plans = self
+            .plans
+            .lock()
+            .map_err(|_| SkillCatalogPlanError::StoreUnavailable)?;
+        Ok(plans.remove(plan_id).is_some())
+    }
+
     pub fn preview_add(
         &self,
         request: SkillSourceRequest,
