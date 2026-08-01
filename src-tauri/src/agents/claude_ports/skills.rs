@@ -7,12 +7,14 @@ use chrono::{Duration, Utc};
 use crate::commands::skills::{is_ad_managed_symlink, scan_skill_library_read_only};
 use crate::models::{SkillEntry, SkillScope};
 
+use super::super::execution_state::ExecutionState;
 use super::super::{
-    directory_tree_digest, AgentContext, AgentError, AgentErrorCode, AgentId,
+    directory_tree_digest, load_ownership_record, validate_ownership_artifact,
+    validate_ownership_record, AgentContext, AgentError, AgentErrorCode, AgentId,
     CapabilityAvailability, CapabilityLimitation, CapabilityOperation, CollectionInstallRequest,
     ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan, PlanId, PlannedMutation,
     ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin, ResourcePort, ResourceRef,
-    ResourceScope, ResourceSnapshot, SkillsPort, WritePolicy,
+    ResourceScope, ResourceSnapshot, ResourceStateKind, SkillsPort, WritePolicy,
 };
 use super::common::{agent_error, resolve_claude_home, validate_project_path};
 
@@ -114,34 +116,7 @@ impl SkillsPort for ClaudeSkillsPort {
         context: &AgentContext,
         request: CollectionInstallRequest,
     ) -> Result<MutationPlan, AgentError> {
-        let source_path = request
-            .source
-            .get("path")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    "Claude local skill install requires source.path",
-                )
-            })?;
-        let source = std::fs::canonicalize(source_path).map_err(|error| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                format!("Invalid skill source path {source_path}: {error}"),
-            )
-        })?;
-        if !source.is_dir() || !source.join("SKILL.md").is_file() {
-            return Err(agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                "Claude skill source must be a directory containing SKILL.md",
-            ));
-        }
+        let source = install_source(context, &request)?;
         let scope = if context.project_path.is_some() {
             ResourceScope::Project
         } else {
@@ -205,6 +180,75 @@ impl SkillsPort for ClaudeSkillsPort {
             enabled,
         )
     }
+
+    fn plan_update(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
+        request: CollectionInstallRequest,
+    ) -> Result<MutationPlan, AgentError> {
+        self.resolve(context, resource)?;
+        if request.logical_id != resource.logical_id {
+            return Err(agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                Some(resource.clone()),
+                "Skill update identity differs from the installed resource",
+            ));
+        }
+        let source = install_source(context, &request)?;
+        plan_skill_toggle(
+            context,
+            &resource.logical_id,
+            resource.scope,
+            Some(source),
+            true,
+        )
+    }
+
+    fn plan_remove(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
+    ) -> Result<MutationPlan, AgentError> {
+        self.resolve(context, resource)?;
+        plan_skill_toggle(context, &resource.logical_id, resource.scope, None, false)
+    }
+}
+
+fn install_source(
+    context: &AgentContext,
+    request: &CollectionInstallRequest,
+) -> Result<PathBuf, AgentError> {
+    let source_path = request
+        .source
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                None,
+                "Claude local skill install requires source.path",
+            )
+        })?;
+    let source = std::fs::canonicalize(source_path).map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            format!("Invalid skill source path {source_path}: {error}"),
+        )
+    })?;
+    if !source.is_dir() || !source.join("SKILL.md").is_file() {
+        return Err(agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            "Claude skill source must be a directory containing SKILL.md",
+        ));
+    }
+    Ok(source)
 }
 
 fn skill_snapshot(
@@ -300,17 +344,6 @@ fn plan_skill_toggle(
     };
     let existing_digest = match std::fs::symlink_metadata(&target) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
-            if !is_ad_managed_symlink(&target) {
-                return Err(agent_error(
-                    AgentErrorCode::PermissionDenied,
-                    context,
-                    Some(resource),
-                    format!(
-                        "Skill target is not an AD-managed symlink: {}",
-                        target.display()
-                    ),
-                ));
-            }
             let current_target = std::fs::read_link(&target).map_err(|error| {
                 agent_error(
                     AgentErrorCode::Io,
@@ -319,9 +352,19 @@ fn plan_skill_toggle(
                     format!("Failed to read skill link {}: {error}", target.display()),
                 )
             })?;
-            Some(ContentDigest::sha256(
-                current_target.to_string_lossy().as_bytes(),
-            ))
+            let digest = ContentDigest::sha256(current_target.to_string_lossy().as_bytes());
+            if !replacement_is_authorized(&target, &resource, &digest) {
+                return Err(agent_error(
+                    AgentErrorCode::PermissionDenied,
+                    context,
+                    Some(resource),
+                    format!(
+                        "Skill target is not proven as AD-managed: {}",
+                        target.display()
+                    ),
+                ));
+            }
+            Some(digest)
         }
         Ok(_) => {
             return Err(agent_error(
@@ -406,6 +449,34 @@ fn plan_skill_toggle(
         mutations: mutation.into_iter().collect(),
         expires_at: Utc::now() + Duration::minutes(5),
     })
+}
+
+fn replacement_is_authorized(
+    target: &std::path::Path,
+    resource: &ResourceRef,
+    digest: &ContentDigest,
+) -> bool {
+    if is_ad_managed_symlink(target) {
+        return true;
+    }
+    if resource.scope != ResourceScope::Project {
+        return false;
+    }
+    let Ok(state) = ExecutionState::open() else {
+        return false;
+    };
+    let Ok(Some(record)) = load_ownership_record(&state, resource) else {
+        return false;
+    };
+    validate_ownership_record(
+        &record,
+        resource,
+        target,
+        ResourceStateKind::Symlink,
+        Some(digest),
+    )
+    .and_then(|_| validate_ownership_artifact(&record))
+    .is_ok()
 }
 
 fn skill_name<'a>(context: &AgentContext, logical_id: &'a str) -> Result<&'a str, AgentError> {

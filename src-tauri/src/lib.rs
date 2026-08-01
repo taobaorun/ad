@@ -217,6 +217,8 @@ pub fn run() {
             commands::agents::preview_agent_profile_apply,
             commands::agents::preview_agent_collection_install,
             commands::agents::preview_agent_collection_toggle,
+            commands::agents::preview_project_collection_action,
+            commands::agents::apply_project_collection_action,
             commands::agents::apply_agent_plan,
             commands::agents::apply_conversion_plan,
             commands::agents::preview_agent_rollback,

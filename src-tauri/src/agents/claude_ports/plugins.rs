@@ -205,96 +205,124 @@ impl PluginsPort for ClaudePluginsPort {
         resource: &ResourceRef,
         enabled: bool,
     ) -> Result<MutationPlan, AgentError> {
-        if resource.installation_id != context.installation_id
-            || resource.kind != ResourceKind::Plugins
-        {
-            return Err(agent_error(
+        plan_project_override(context, resource, Some(enabled))
+    }
+
+    fn plan_remove(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
+    ) -> Result<MutationPlan, AgentError> {
+        plan_project_override(context, resource, None)
+    }
+}
+
+fn plan_project_override(
+    context: &AgentContext,
+    resource: &ResourceRef,
+    enabled: Option<bool>,
+) -> Result<MutationPlan, AgentError> {
+    if resource.installation_id != context.installation_id || resource.kind != ResourceKind::Plugins
+    {
+        return Err(agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            Some(resource.clone()),
+            "Plugin resource does not belong to the active Agent context",
+        ));
+    }
+    let project_path = context.project_path.as_deref().ok_or_else(|| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            Some(resource.clone()),
+            "Claude plugin override requires a project context",
+        )
+    })?;
+    let project = validate_project_path(context, project_path)?;
+    let target = project.join(".claude/settings.local.json");
+    let existing = read_optional(&target, context, Some(resource.clone()))?;
+    let expected_digest = existing.as_deref().map(ContentDigest::sha256);
+    let mut content = match existing.as_deref() {
+        Some(bytes) => serde_json::from_slice(bytes).map_err(|error| {
+            agent_error(
                 AgentErrorCode::InvalidPlan,
                 context,
                 Some(resource.clone()),
-                "Plugin resource does not belong to the active Agent context",
+                format!(
+                    "Invalid project settings JSON at {}: {error}",
+                    target.display()
+                ),
+            )
+        })?,
+        None => serde_json::json!({}),
+    };
+    let object = content.as_object_mut().ok_or_else(|| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            Some(resource.clone()),
+            "Project settings JSON must be an object",
+        )
+    })?;
+    let plugins = object
+        .entry("enabledPlugins")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                Some(resource.clone()),
+                "enabledPlugins must be a JSON object",
+            )
+        })?;
+    match enabled {
+        Some(enabled) => {
+            plugins.insert(
+                resource.logical_id.clone(),
+                serde_json::Value::Bool(enabled),
+            );
+        }
+        None if plugins.remove(&resource.logical_id).is_none() => {
+            return Err(agent_error(
+                AgentErrorCode::ResourceChanged,
+                context,
+                Some(resource.clone()),
+                "Project Plugin override is no longer present",
             ));
         }
-        let project_path = context.project_path.as_deref().ok_or_else(|| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                Some(resource.clone()),
-                "Claude plugin override requires a project context",
-            )
-        })?;
-        let project = validate_project_path(context, project_path)?;
-        let target = project.join(".claude/settings.local.json");
-        let existing = read_optional(&target, context, Some(resource.clone()))?;
-        let expected_digest = existing.as_deref().map(ContentDigest::sha256);
-        let mut content = match existing.as_deref() {
-            Some(bytes) => serde_json::from_slice(bytes).map_err(|error| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    Some(resource.clone()),
-                    format!(
-                        "Invalid project settings JSON at {}: {error}",
-                        target.display()
-                    ),
-                )
-            })?,
-            None => serde_json::json!({}),
-        };
-        let object = content.as_object_mut().ok_or_else(|| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                Some(resource.clone()),
-                "Project settings JSON must be an object",
-            )
-        })?;
-        let plugins = object
-            .entry("enabledPlugins")
-            .or_insert_with(|| serde_json::json!({}))
-            .as_object_mut()
-            .ok_or_else(|| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    Some(resource.clone()),
-                    "enabledPlugins must be a JSON object",
-                )
-            })?;
-        plugins.insert(
-            resource.logical_id.clone(),
-            serde_json::Value::Bool(enabled),
-        );
-        let read_set = expected_digest
-            .clone()
-            .map(|digest| {
-                vec![ReadPrecondition {
-                    resource: resource.clone(),
-                    expected_digest: digest,
-                    write_policy: WritePolicy::Mutable,
-                }]
-            })
-            .unwrap_or_default();
-
-        Ok(MutationPlan {
-            id: PlanId::from(uuid::Uuid::new_v4().to_string()),
-            agent_id: AgentId::from("claude-code"),
-            context: context.clone(),
-            read_set,
-            mutations: vec![PlannedMutation {
-                resource: resource.clone(),
-                kind: if expected_digest.is_some() {
-                    MutationKind::Replace
-                } else {
-                    MutationKind::Create
-                },
-                expected_digest,
-                media_type: "application/json".into(),
-                content: Some(content),
-            }],
-            expires_at: Utc::now() + Duration::minutes(5),
-        })
+        None => {}
     }
+    let read_set = expected_digest
+        .clone()
+        .map(|digest| {
+            vec![ReadPrecondition {
+                resource: resource.clone(),
+                expected_digest: digest,
+                write_policy: WritePolicy::Mutable,
+            }]
+        })
+        .unwrap_or_default();
+
+    Ok(MutationPlan {
+        id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+        agent_id: AgentId::from("claude-code"),
+        context: context.clone(),
+        read_set,
+        mutations: vec![PlannedMutation {
+            resource: resource.clone(),
+            kind: if expected_digest.is_some() {
+                MutationKind::Replace
+            } else {
+                MutationKind::Create
+            },
+            expected_digest,
+            media_type: "application/json".into(),
+            content: Some(content),
+        }],
+        expires_at: Utc::now() + Duration::minutes(5),
+    })
 }
 
 fn read_declared_plugins(

@@ -115,6 +115,22 @@ pub enum ResourceAction {
     OpenExternal,
 }
 
+impl ResourceAction {
+    pub(crate) fn contract_name(self) -> &'static str {
+        match self {
+            Self::Inspect => "inspect",
+            Self::Edit => "edit",
+            Self::Install => "install",
+            Self::Update => "update",
+            Self::Remove => "remove",
+            Self::Enable => "enable",
+            Self::Disable => "disable",
+            Self::Convert => "convert",
+            Self::OpenExternal => "open_external",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResourceActionAvailability {

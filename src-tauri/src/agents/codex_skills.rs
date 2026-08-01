@@ -1,18 +1,16 @@
 use std::collections::BTreeSet;
+use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
 
 use chrono::{Duration, Utc};
 
 use crate::fs::paths::home;
 
-use super::codex_ports::{
-    agent_error, project_runtime_for_context, read_optional, resolve_codex_home,
-    validate_project_path,
-};
+use super::codex_ports::{agent_error, resolve_codex_home, validate_project_path};
+use super::codex_skill_config::{disabled_skill_paths, plan_skill_config};
 use super::execution_fs::directory_tree_digest;
 use super::{
-    load_project_codex_runtime_manifest, render_project_codex_runtime_manifest, AgentContext,
-    AgentError, AgentErrorCode, AgentId, CapabilityAvailability, CapabilityOperation,
+    AgentContext, AgentError, AgentErrorCode, AgentId, CapabilityAvailability, CapabilityOperation,
     CollectionInstallRequest, ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan,
     PlanId, PlannedMutation, ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin,
     ResourcePort, ResourceRef, ResourceScope, ResourceSnapshot, SkillsPort, WritePolicy,
@@ -29,7 +27,7 @@ impl ResourcePort for CodexSkillsPort {
     ) -> Result<ManagedResourceTarget, AgentError> {
         validate_resource(context, resource)?;
         Ok(ManagedResourceTarget::symlink(
-            skill_root(context, resource.scope)?.join(&resource.logical_id),
+            skill_root(context, resource.scope)?.join(skill_name(context, &resource.logical_id)?),
         ))
     }
 }
@@ -70,35 +68,8 @@ impl SkillsPort for CodexSkillsPort {
         context: &AgentContext,
         request: CollectionInstallRequest,
     ) -> Result<MutationPlan, AgentError> {
-        validate_name(context, &request.logical_id)?;
-        let source_path = request
-            .source
-            .get("path")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    "Codex local skill install requires source.path",
-                )
-            })?;
-        let source = std::fs::canonicalize(source_path).map_err(|error| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                format!("Invalid skill source path {source_path}: {error}"),
-            )
-        })?;
-        if !source.is_dir() || !source.join("SKILL.md").is_file() {
-            return Err(agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                "Codex skill source must be a directory containing SKILL.md",
-            ));
-        }
+        skill_name(context, &request.logical_id)?;
+        let source = install_source(context, &request)?;
         let scope = if context.project_path.is_some() {
             ResourceScope::Project
         } else {
@@ -113,40 +84,7 @@ impl SkillsPort for CodexSkillsPort {
             scope,
             logical_id: request.logical_id,
         };
-        let target = skill_root(context, scope)?.join(&resource.logical_id);
-        if std::fs::symlink_metadata(&target).is_ok() {
-            return Err(agent_error(
-                AgentErrorCode::PermissionDenied,
-                context,
-                Some(resource),
-                "Codex skill target already exists",
-            ));
-        }
-        let source_digest = directory_tree_digest(&source).map_err(|error| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                format!("Failed to digest Codex skill source: {error}"),
-            )
-        })?;
-        Ok(MutationPlan {
-            id: PlanId::from(uuid::Uuid::new_v4().to_string()),
-            agent_id: AgentId::from("codex"),
-            context: context.clone(),
-            read_set: Vec::new(),
-            mutations: vec![PlannedMutation {
-                resource,
-                kind: MutationKind::Create,
-                expected_digest: None,
-                media_type: "application/vnd.ad.symlink".into(),
-                content: Some(serde_json::json!({
-                    "path": source,
-                    "digest": source_digest,
-                })),
-            }],
-            expires_at: Utc::now() + Duration::minutes(5),
-        })
+        plan_skill_link(context, resource, source, false)
     }
 
     fn plan_set_enabled(
@@ -156,9 +94,7 @@ impl SkillsPort for CodexSkillsPort {
         enabled: bool,
     ) -> Result<MutationPlan, AgentError> {
         validate_resource(context, resource)?;
-        let skill_md = skill_root(context, resource.scope)?
-            .join(&resource.logical_id)
-            .join("SKILL.md");
+        let skill_md = self.resolve(context, resource)?.path().join("SKILL.md");
         let skill_md = std::fs::canonicalize(&skill_md).map_err(|error| {
             agent_error(
                 AgentErrorCode::InvalidPlan,
@@ -169,6 +105,213 @@ impl SkillsPort for CodexSkillsPort {
         })?;
         plan_skill_config(context, &skill_md, enabled)
     }
+
+    fn plan_update(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
+        request: CollectionInstallRequest,
+    ) -> Result<MutationPlan, AgentError> {
+        validate_resource(context, resource)?;
+        if request.logical_id != resource.logical_id {
+            return Err(agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                Some(resource.clone()),
+                "Skill update identity differs from the installed resource",
+            ));
+        }
+        plan_skill_link(
+            context,
+            resource.clone(),
+            install_source(context, &request)?,
+            true,
+        )
+    }
+
+    fn plan_remove(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
+    ) -> Result<MutationPlan, AgentError> {
+        validate_resource(context, resource)?;
+        let target = self.resolve(context, resource)?.path().to_path_buf();
+        let metadata = std::fs::symlink_metadata(&target).map_err(|error| {
+            agent_error(
+                AgentErrorCode::ResourceChanged,
+                context,
+                Some(resource.clone()),
+                format!("Installed Skill is unavailable: {error}"),
+            )
+        })?;
+        if !metadata.file_type().is_symlink() {
+            return Err(agent_error(
+                AgentErrorCode::PermissionDenied,
+                context,
+                Some(resource.clone()),
+                "Installed Skill target is not a symlink",
+            ));
+        }
+        let link = std::fs::read_link(&target).map_err(|error| {
+            agent_error(
+                AgentErrorCode::Io,
+                context,
+                Some(resource.clone()),
+                error.to_string(),
+            )
+        })?;
+        let expected_digest = ContentDigest::sha256(link.to_string_lossy().as_bytes());
+        let skill_md = std::fs::canonicalize(target.join("SKILL.md")).map_err(|error| {
+            agent_error(
+                AgentErrorCode::ResourceChanged,
+                context,
+                Some(resource.clone()),
+                error.to_string(),
+            )
+        })?;
+        let mut plan = plan_skill_config(context, &skill_md, true)?;
+        plan.read_set.push(ReadPrecondition {
+            resource: resource.clone(),
+            expected_digest: expected_digest.clone(),
+            write_policy: WritePolicy::Mutable,
+        });
+        plan.mutations.insert(
+            0,
+            PlannedMutation {
+                resource: resource.clone(),
+                kind: MutationKind::Delete,
+                expected_digest: Some(expected_digest),
+                media_type: "application/vnd.ad.symlink".into(),
+                content: None,
+            },
+        );
+        Ok(plan)
+    }
+}
+
+fn install_source(
+    context: &AgentContext,
+    request: &CollectionInstallRequest,
+) -> Result<PathBuf, AgentError> {
+    let source_path = request
+        .source
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                None,
+                "Codex local skill install requires source.path",
+            )
+        })?;
+    let source = std::fs::canonicalize(source_path).map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            format!("Invalid skill source path {source_path}: {error}"),
+        )
+    })?;
+    if !source.is_dir() || !source.join("SKILL.md").is_file() {
+        return Err(agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            "Codex skill source must be a directory containing SKILL.md",
+        ));
+    }
+    Ok(source)
+}
+
+fn plan_skill_link(
+    context: &AgentContext,
+    resource: ResourceRef,
+    source: PathBuf,
+    allow_replace: bool,
+) -> Result<MutationPlan, AgentError> {
+    let target = CodexSkillsPort
+        .resolve(context, &resource)?
+        .path()
+        .to_path_buf();
+    let existing_digest = match std::fs::symlink_metadata(&target) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Some(ContentDigest::sha256(
+            std::fs::read_link(&target)
+                .map_err(|error| {
+                    agent_error(
+                        AgentErrorCode::Io,
+                        context,
+                        Some(resource.clone()),
+                        error.to_string(),
+                    )
+                })?
+                .to_string_lossy()
+                .as_bytes(),
+        )),
+        Ok(_) => {
+            return Err(agent_error(
+                AgentErrorCode::PermissionDenied,
+                context,
+                Some(resource),
+                "Codex skill target is not a symlink",
+            ))
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(agent_error(
+                AgentErrorCode::Io,
+                context,
+                Some(resource),
+                error.to_string(),
+            ))
+        }
+    };
+    if existing_digest.is_some() && !allow_replace {
+        return Err(agent_error(
+            AgentErrorCode::PermissionDenied,
+            context,
+            Some(resource),
+            "Codex skill target already exists",
+        ));
+    }
+    let source_digest = directory_tree_digest(&source).map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            format!("Failed to digest Codex skill source: {error}"),
+        )
+    })?;
+    Ok(MutationPlan {
+        id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+        agent_id: AgentId::from("codex"),
+        context: context.clone(),
+        read_set: existing_digest
+            .clone()
+            .map(|digest| {
+                vec![ReadPrecondition {
+                    resource: resource.clone(),
+                    expected_digest: digest,
+                    write_policy: WritePolicy::Mutable,
+                }]
+            })
+            .unwrap_or_default(),
+        mutations: vec![PlannedMutation {
+            resource,
+            kind: if existing_digest.is_some() {
+                MutationKind::Replace
+            } else {
+                MutationKind::Create
+            },
+            expected_digest: existing_digest,
+            media_type: "application/vnd.ad.symlink".into(),
+            content: Some(serde_json::json!({
+                "path": source,
+                "digest": source_digest,
+            })),
+        }],
+        expires_at: Utc::now() + Duration::minutes(5),
+    })
 }
 
 fn scan_scope(
@@ -237,247 +380,6 @@ fn scan_scope(
     Ok(snapshots)
 }
 
-fn disabled_skill_paths(context: &AgentContext) -> Result<BTreeSet<String>, AgentError> {
-    let config = resolve_codex_home(context)?.join("config.toml");
-    let Some(bytes) = read_optional(&config, context, None)? else {
-        return Ok(BTreeSet::new());
-    };
-    let value = std::str::from_utf8(&bytes)
-        .map_err(|error| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                error.to_string(),
-            )
-        })?
-        .parse::<toml::Value>()
-        .map_err(|error| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                error.to_string(),
-            )
-        })?;
-    Ok(value
-        .get("skills")
-        .and_then(|skills| skills.get("config"))
-        .and_then(toml::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|entry| entry.get("enabled").and_then(toml::Value::as_bool) == Some(false))
-        .filter_map(|entry| entry.get("path").and_then(toml::Value::as_str))
-        .map(|path| normalize_skill_config_path(&config, path))
-        .collect())
-}
-
-fn normalize_skill_config_path(config: &Path, path: &str) -> String {
-    let path = PathBuf::from(path);
-    let resolved = if path.is_absolute() {
-        path
-    } else {
-        config.parent().unwrap_or_else(|| Path::new(".")).join(path)
-    };
-    std::fs::canonicalize(&resolved)
-        .unwrap_or(resolved)
-        .to_string_lossy()
-        .into_owned()
-}
-
-fn plan_skill_config(
-    context: &AgentContext,
-    skill_md: &Path,
-    enabled: bool,
-) -> Result<MutationPlan, AgentError> {
-    let config = resolve_codex_home(context)?.join("config.toml");
-    let existing = read_optional(&config, context, None)?;
-    let mut value = match existing.as_deref() {
-        Some(bytes) => std::str::from_utf8(bytes)
-            .map_err(|error| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    error.to_string(),
-                )
-            })?
-            .parse::<toml::Value>()
-            .map_err(|error| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    error.to_string(),
-                )
-            })?,
-        None => toml::Value::Table(toml::map::Map::new()),
-    };
-    let root = value.as_table_mut().ok_or_else(|| {
-        agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            "Codex config must be a TOML table",
-        )
-    })?;
-    let skills = root
-        .entry("skills")
-        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
-        .as_table_mut()
-        .ok_or_else(|| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                "skills must be a TOML table",
-            )
-        })?;
-    let configs = skills
-        .entry("config")
-        .or_insert_with(|| toml::Value::Array(Vec::new()))
-        .as_array_mut()
-        .ok_or_else(|| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                "skills.config must be an array",
-            )
-        })?;
-    let path = skill_md.to_string_lossy().into_owned();
-    configs.retain(
-        |entry| match entry.get("path").and_then(toml::Value::as_str) {
-            Some(entry_path) => normalize_skill_config_path(&config, entry_path) != path,
-            None => true,
-        },
-    );
-    if !enabled {
-        configs.push(toml::Value::Table(toml::map::Map::from_iter([
-            ("path".into(), toml::Value::String(path)),
-            ("enabled".into(), toml::Value::Boolean(false)),
-        ])));
-    }
-    let rendered = toml::to_string_pretty(&value).map_err(|error| {
-        agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            error.to_string(),
-        )
-    })?;
-    let expected_digest = existing.as_deref().map(ContentDigest::sha256);
-    let runtime = project_runtime_for_context(context)?;
-    let resource = if runtime.is_some() {
-        ResourceRef {
-            installation_id: context.installation_id.clone(),
-            project_path: context.project_path.clone(),
-            kind: ResourceKind::Settings,
-            scope: ResourceScope::Project,
-            logical_id: "runtime-config".into(),
-        }
-    } else {
-        ResourceRef {
-            installation_id: context.installation_id.clone(),
-            project_path: None,
-            kind: ResourceKind::Settings,
-            scope: ResourceScope::User,
-            logical_id: "user-config".into(),
-        }
-    };
-    let mut plan = config_plan(context, resource, rendered, expected_digest);
-    if let Some(runtime) = runtime {
-        let snapshot = load_project_codex_runtime_manifest(&runtime)
-            .map_err(|error| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    error.to_string(),
-                )
-            })?
-            .ok_or_else(|| {
-                agent_error(
-                    AgentErrorCode::ResourceChanged,
-                    context,
-                    None,
-                    "Project Skill toggles require an applied runtime manifest",
-                )
-            })?;
-        let mut manifest = snapshot.manifest;
-        if manifest.project_settings_keys.insert("skills".into()) {
-            let rendered = render_project_codex_runtime_manifest(&manifest).map_err(|error| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    error.to_string(),
-                )
-            })?;
-            let content = serde_json::from_slice(&rendered).map_err(|error| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    error.to_string(),
-                )
-            })?;
-            plan.mutations.insert(
-                0,
-                PlannedMutation {
-                    resource: ResourceRef {
-                        installation_id: context.installation_id.clone(),
-                        project_path: context.project_path.clone(),
-                        kind: ResourceKind::Plugins,
-                        scope: ResourceScope::Project,
-                        logical_id: "runtime-manifest".into(),
-                    },
-                    kind: MutationKind::Replace,
-                    expected_digest: Some(snapshot.digest),
-                    media_type: "application/json".into(),
-                    content: Some(content),
-                },
-            );
-        }
-    }
-    Ok(plan)
-}
-
-fn config_plan(
-    context: &AgentContext,
-    resource: ResourceRef,
-    content: String,
-    expected_digest: Option<ContentDigest>,
-) -> MutationPlan {
-    MutationPlan {
-        id: PlanId::from(uuid::Uuid::new_v4().to_string()),
-        agent_id: AgentId::from("codex"),
-        context: context.clone(),
-        read_set: expected_digest
-            .clone()
-            .map(|digest| {
-                vec![ReadPrecondition {
-                    resource: resource.clone(),
-                    expected_digest: digest,
-                    write_policy: WritePolicy::Mutable,
-                }]
-            })
-            .unwrap_or_default(),
-        mutations: vec![PlannedMutation {
-            resource,
-            kind: if expected_digest.is_some() {
-                MutationKind::Replace
-            } else {
-                MutationKind::Create
-            },
-            expected_digest,
-            media_type: "application/toml".into(),
-            content: Some(serde_json::Value::String(content)),
-        }],
-        expires_at: Utc::now() + Duration::minutes(5),
-    }
-}
-
 fn skill_root(context: &AgentContext, scope: ResourceScope) -> Result<PathBuf, AgentError> {
     match scope {
         ResourceScope::User => home()
@@ -491,7 +393,7 @@ fn skill_root(context: &AgentContext, scope: ResourceScope) -> Result<PathBuf, A
 }
 
 fn validate_resource(context: &AgentContext, resource: &ResourceRef) -> Result<(), AgentError> {
-    validate_name(context, &resource.logical_id)?;
+    skill_name(context, &resource.logical_id)?;
     let scope_matches = match resource.scope {
         ResourceScope::User => resource.project_path.is_none(),
         ResourceScope::Project => {
@@ -512,7 +414,8 @@ fn validate_resource(context: &AgentContext, resource: &ResourceRef) -> Result<(
     Ok(())
 }
 
-fn validate_name(context: &AgentContext, name: &str) -> Result<(), AgentError> {
+fn skill_name<'a>(context: &AgentContext, logical_id: &'a str) -> Result<&'a str, AgentError> {
+    let name = logical_id.rsplit('/').next().unwrap_or_default();
     let mut components = Path::new(name).components();
     if name.is_empty()
         || !matches!(components.next(), Some(Component::Normal(_)))
@@ -525,5 +428,5 @@ fn validate_name(context: &AgentContext, name: &str) -> Result<(), AgentError> {
             "Invalid Codex skill logical id",
         ));
     }
-    Ok(())
+    Ok(name)
 }

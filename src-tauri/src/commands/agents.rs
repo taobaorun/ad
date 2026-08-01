@@ -6,9 +6,10 @@ use crate::agents::{
     ConversionProgressEvent, ConversionRoutePreview, ExecutionEngine, InstallationId,
     MutationPlanView, OperationHistoryEntry, OperationReceipt, PlanAcknowledgement,
     PlanAcknowledgementCode, PlanId, PlanRiskLevel, PlanStore, ProcessObservation, ProfileId,
-    ProjectCodexRuntime, ProjectCodexRuntimeStatus, ProjectWorkspaceInventory, ReadPrecondition,
-    ReceiptId, ResourceKind, ResourceLocation, ResourceOrigin, ResourceRef, ResourceScope,
-    ResourceSnapshot, RiskFingerprint, SettingsDocument, SettingsEdit, WorkspaceDescriptor,
+    ProjectCodexRuntime, ProjectCodexRuntimeStatus, ProjectCollectionActionPreview,
+    ProjectCollectionActionRequest, ProjectWorkspaceInventory, ReadPrecondition, ReceiptId,
+    ResourceKind, ResourceLocation, ResourceOrigin, ResourceRef, ResourceScope, ResourceSnapshot,
+    RiskFingerprint, SettingsDocument, SettingsEdit, WorkspaceDescriptor, WorkspaceOperationReport,
     WritePolicy,
 };
 use crate::models::ProfileFile;
@@ -461,6 +462,38 @@ pub fn preview_agent_collection_toggle(
     plans: State<'_, PlanStore>,
 ) -> Result<MutationPlanView, AgentError> {
     preview_agent_collection_toggle_inner(context, resource, enabled, plans.inner())
+}
+
+#[tauri::command]
+pub fn preview_project_collection_action(
+    installation_id: InstallationId,
+    project_path: String,
+    request: ProjectCollectionActionRequest,
+    plans: State<'_, PlanStore>,
+) -> Result<ProjectCollectionActionPreview, AgentError> {
+    crate::agents::preview_project_collection_action(
+        &installation_id,
+        std::path::Path::new(&project_path),
+        request,
+        plans.inner(),
+    )
+}
+
+#[tauri::command]
+pub fn apply_project_collection_action(
+    plan_id: PlanId,
+    expected_context: AgentContext,
+    expected_risk_fingerprint: RiskFingerprint,
+    confirmed: bool,
+    plans: State<'_, PlanStore>,
+) -> Result<WorkspaceOperationReport, AgentError> {
+    crate::agents::apply_project_collection_action_plan(
+        &plan_id,
+        &expected_context,
+        &expected_risk_fingerprint,
+        confirmed,
+        plans.inner(),
+    )
 }
 
 #[tauri::command]

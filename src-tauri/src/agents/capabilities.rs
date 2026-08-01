@@ -255,6 +255,17 @@ pub trait SkillsPort: ResourcePort + Send + Sync {
         resource: &ResourceRef,
         enabled: bool,
     ) -> Result<MutationPlan, AgentError>;
+    fn plan_update(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
+        request: CollectionInstallRequest,
+    ) -> Result<MutationPlan, AgentError>;
+    fn plan_remove(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
+    ) -> Result<MutationPlan, AgentError>;
 }
 
 pub trait PluginsPort: ResourcePort + Send + Sync {
@@ -279,6 +290,11 @@ pub trait PluginsPort: ResourcePort + Send + Sync {
         context: &AgentContext,
         resource: &ResourceRef,
         enabled: bool,
+    ) -> Result<MutationPlan, AgentError>;
+    fn plan_remove(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
     ) -> Result<MutationPlan, AgentError>;
 }
 

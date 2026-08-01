@@ -29,6 +29,7 @@ pub(super) struct PlanExecutionIntent {
     pub(super) parent_receipt_id: Option<ReceiptId>,
     pub(super) ownership_restores: BTreeMap<PhysicalTargetId, OwnershipRestore>,
     pub(super) project_root_identity: Option<ProjectRootIdentity>,
+    pub(super) action_id: Option<String>,
 }
 
 impl PlanExecutionIntent {
@@ -38,6 +39,7 @@ impl PlanExecutionIntent {
             parent_receipt_id: None,
             ownership_restores: BTreeMap::new(),
             project_root_identity: capture_project_root_identity(&plan.context)?,
+            action_id: None,
         })
     }
 
@@ -51,6 +53,7 @@ impl PlanExecutionIntent {
             parent_receipt_id: Some(parent_receipt_id),
             ownership_restores,
             project_root_identity: capture_project_root_identity(&plan.context)?,
+            action_id: Some("rollback".into()),
         })
     }
 }
@@ -115,6 +118,45 @@ impl PlanStore {
         requirements: Vec<AcknowledgementRequirement>,
     ) -> Result<MutationPlanView, AgentError> {
         self.insert_with_acknowledgements_at(plan, Utc::now(), requirements)
+    }
+
+    pub fn insert_workspace_action(
+        &self,
+        plan: MutationPlan,
+        workspace_key: &super::WorkspaceKey,
+        resource_key: &super::ResourceKey,
+        action: super::ResourceAction,
+    ) -> Result<MutationPlanView, AgentError> {
+        let actual_workspace =
+            super::workspace_key_for_context(&plan.context).ok_or_else(|| {
+                plan_error(
+                    AgentErrorCode::InvalidPlan,
+                    Some(&plan),
+                    None,
+                    "Workspace action plan has no canonical project identity",
+                    false,
+                )
+            })?;
+        if &actual_workspace != workspace_key {
+            return Err(plan_error(
+                AgentErrorCode::InvalidPlan,
+                Some(&plan),
+                None,
+                "Workspace action plan identity changed during preview",
+                false,
+            ));
+        }
+        let mut intent = PlanExecutionIntent::apply(&plan)?;
+        intent.action_id = Some(format!("{}:{}", action.contract_name(), resource_key));
+        self.insert_with_intent_at(
+            plan,
+            Utc::now(),
+            vec![AcknowledgementRequirement {
+                code: PlanAcknowledgementCode::ProjectCollectionApply,
+                risk: PlanRiskLevel::Confirmation,
+            }],
+            intent,
+        )
     }
 
     pub(super) fn insert_rollback(
