@@ -9,8 +9,11 @@ import {
   ResourceKeySchema,
   ResourceKindSchema,
   ResourceScopeSchema,
+  InventoryRevisionSchema,
   WorkspaceKeySchema,
+  ResourceRefSchema,
 } from '@/lib/agentTypes';
+import { WorkspaceDescriptorSchema } from '@/lib/agentWorkspaceTypes';
 
 export const CoverageStatusSchema = z.enum(['complete', 'partial', 'failed']);
 export const EffectiveResourceStateSchema = z.enum([
@@ -133,6 +136,80 @@ export const CollectionResourceInventorySchema = z
   })
   .strict();
 
+export const DiscoveryCompatibilitySchema = z.enum(['verified', 'unverified']);
+export const AdapterDiscoveryContractSchema = z
+  .object({
+    adapterVersion: z.number().int().positive(),
+    locationSet: z.string().min(1),
+    schemaVersions: z.array(z.string().min(1)).default([]),
+    observedAgentVersion: z.string().min(1).optional(),
+    verifiedAgentVersions: z.array(z.string().min(1)).default([]),
+    compatibility: DiscoveryCompatibilitySchema,
+  })
+  .strict();
+export const SettingsValueSensitivitySchema = z.enum(['public', 'sensitive']);
+export const SettingsFieldDeclarationViewSchema = z
+  .object({
+    declarationKey: DeclarationKeySchema,
+    layer: ResourceLayerSchema,
+    value: z.unknown(),
+    sensitivity: SettingsValueSensitivitySchema,
+  })
+  .strict();
+export const SettingsFieldViewSchema = z
+  .object({
+    path: z.string().min(1),
+    value: z.unknown(),
+    sensitivity: SettingsValueSensitivitySchema,
+    declarations: z.array(SettingsFieldDeclarationViewSchema).default([]),
+    winner: DeclarationKeySchema,
+  })
+  .strict();
+export const SettingsLayerViewSchema = z
+  .object({
+    declaration: ResourceDeclarationViewSchema,
+    logicalId: z.string().min(1),
+    mediaType: z.string().min(1),
+    content: z.unknown(),
+    exists: z.boolean(),
+    editable: z.boolean(),
+    preservesUnknownFields: z.boolean(),
+    redactedPaths: z.array(z.string().min(1)).default([]),
+  })
+  .strict();
+export const SettingsEditableTargetViewSchema = z
+  .object({
+    declarationKey: DeclarationKeySchema,
+    resource: ResourceRefSchema,
+    mediaType: z.string().min(1),
+    exists: z.boolean(),
+    preservesUnknownFields: z.boolean(),
+    redactedPaths: z.array(z.string().min(1)).default([]),
+  })
+  .strict();
+export const SettingsEffectiveViewSchema = z
+  .object({
+    workspaceKey: WorkspaceKeySchema,
+    coverage: CategoryCoverageSchema,
+    effectiveContent: z.unknown(),
+    fields: z.array(SettingsFieldViewSchema).default([]),
+    layers: z.array(SettingsLayerViewSchema).default([]),
+    editableTargets: z.array(SettingsEditableTargetViewSchema).default([]),
+  })
+  .strict();
+export const ProjectWorkspaceInventorySchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    workspace: WorkspaceDescriptorSchema,
+    revision: InventoryRevisionSchema,
+    discovery: AdapterDiscoveryContractSchema,
+    settings: SettingsEffectiveViewSchema,
+    skills: CollectionResourceInventorySchema,
+    plugins: CollectionResourceInventorySchema,
+    diagnostics: z.array(ItemDiagnosticSchema).default([]),
+  })
+  .strict();
+
 export type CoverageStatus = z.infer<typeof CoverageStatusSchema>;
 export type ItemDiagnostic = z.infer<typeof ItemDiagnosticSchema>;
 export type CategoryCoverage = z.infer<typeof CategoryCoverageSchema>;
@@ -151,3 +228,12 @@ export type ResourceManagementStatus = z.infer<typeof ResourceManagementStatusSc
 export type ResourceManagementView = z.infer<typeof ResourceManagementViewSchema>;
 export type CollectionResourceView = z.infer<typeof CollectionResourceViewSchema>;
 export type CollectionResourceInventory = z.infer<typeof CollectionResourceInventorySchema>;
+export type DiscoveryCompatibility = z.infer<typeof DiscoveryCompatibilitySchema>;
+export type AdapterDiscoveryContract = z.infer<typeof AdapterDiscoveryContractSchema>;
+export type SettingsValueSensitivity = z.infer<typeof SettingsValueSensitivitySchema>;
+export type SettingsFieldDeclarationView = z.infer<typeof SettingsFieldDeclarationViewSchema>;
+export type SettingsFieldView = z.infer<typeof SettingsFieldViewSchema>;
+export type SettingsLayerView = z.infer<typeof SettingsLayerViewSchema>;
+export type SettingsEditableTargetView = z.infer<typeof SettingsEditableTargetViewSchema>;
+export type SettingsEffectiveView = z.infer<typeof SettingsEffectiveViewSchema>;
+export type ProjectWorkspaceInventory = z.infer<typeof ProjectWorkspaceInventorySchema>;

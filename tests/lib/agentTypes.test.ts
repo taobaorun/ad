@@ -20,6 +20,7 @@ import {
 import {
   CollectionResourceInventorySchema,
   CollectionResourceViewSchema,
+  ProjectWorkspaceInventorySchema,
 } from '@/lib/agentResourceInventoryTypes';
 import { WorkspaceOperationReportSchema } from '@/lib/agentOperationReports';
 import { WorkspaceDescriptorSchema } from '@/lib/agentWorkspaceTypes';
@@ -90,6 +91,106 @@ describe('Agent schemas', () => {
     ).toBe(false);
     const { key: _key, ...withoutKey } = workspace;
     expect(WorkspaceDescriptorSchema.safeParse(withoutKey).success).toBe(false);
+  });
+
+  it('keeps project inventory version-bound and masks sensitive settings at the IPC boundary', () => {
+    const workspace = {
+      schemaVersion: 1,
+      key: 'workspace:sha256:test',
+      revision: 'workspace-revision:sha256:test',
+      agentId: 'codex',
+      canonicalProjectPath: '/Users/test/project',
+      baseInstallationId: 'codex:default',
+      effectiveInstallationId: 'codex:runtime',
+      projectRuntime: {
+        installationId: 'codex:runtime',
+        baseInstallationId: 'codex:default',
+        revision: 'runtime-revision:sha256:test',
+      },
+    };
+    const coverage = {
+      status: 'partial',
+      observed: 1,
+      visible: 1,
+      diagnostics: [
+        {
+          code: 'agent_version_unverified',
+          messageKey: 'agents.inventory.agentVersionUnverified',
+        },
+      ],
+    };
+    const emptyCollection = (kind: 'skills' | 'plugins') => ({
+      workspaceKey: workspace.key,
+      agentId: 'codex',
+      kind,
+      coverage: { ...coverage, observed: 0, visible: 0 },
+      resources: [],
+    });
+    const inventory = ProjectWorkspaceInventorySchema.parse({
+      schemaVersion: 1,
+      workspace,
+      revision: 'inventory-revision:sha256:test',
+      discovery: {
+        adapterVersion: 1,
+        locationSet: 'codex-project-v1',
+        schemaVersions: ['codex-config-v1', 'ad-runtime-manifest-v1'],
+        verifiedAgentVersions: [],
+        compatibility: 'unverified',
+      },
+      settings: {
+        workspaceKey: workspace.key,
+        coverage,
+        effectiveContent: { api_key: '••••••••', model: 'gpt-5.4' },
+        fields: [
+          {
+            path: '/api_key',
+            value: '••••••••',
+            sensitivity: 'sensitive',
+            declarations: [
+              {
+                declarationKey: 'declaration:sha256:user-api-key',
+                layer: 'user',
+                value: '••••••••',
+                sensitivity: 'sensitive',
+              },
+            ],
+            winner: 'declaration:sha256:user-api-key',
+          },
+        ],
+        layers: [
+          {
+            declaration: {
+              key: 'declaration:sha256:user-config',
+              layer: 'user',
+              sourceId: 'user-config',
+              targetId: 'target:sha256:user-config',
+              scope: 'user',
+            },
+            logicalId: 'user-config',
+            mediaType: 'application/toml',
+            content: 'api_key = "••••••••"\n',
+            exists: true,
+            editable: false,
+            preservesUnknownFields: true,
+            redactedPaths: ['/api_key'],
+          },
+        ],
+        editableTargets: [],
+      },
+      skills: emptyCollection('skills'),
+      plugins: emptyCollection('plugins'),
+      diagnostics: [],
+    });
+
+    expect(inventory.discovery.compatibility).toBe('unverified');
+    expect(inventory.settings.fields[0]?.value).toBe('••••••••');
+    expect(JSON.stringify(inventory)).not.toContain('secret-value');
+    expect(
+      ProjectWorkspaceInventorySchema.safeParse({
+        ...inventory,
+        physicalProjectRoot: '/Users/test/project',
+      }).success,
+    ).toBe(false);
   });
 
   it('keeps effective identity separate from declarations and physical targets', () => {

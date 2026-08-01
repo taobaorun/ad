@@ -59,6 +59,10 @@ string_id!(
     "Opaque revision binding a workspace descriptor to its backend inputs."
 );
 string_id!(
+    InventoryRevision,
+    "Opaque revision binding a project inventory to all observed declarations."
+);
+string_id!(
     ResourceKey,
     "Stable effective identity for a workspace resource."
 );
