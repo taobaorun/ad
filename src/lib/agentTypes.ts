@@ -255,6 +255,23 @@ export const MutationPlanViewSchema = z
 
 export const OperationStatusSchema = z.enum(['complete', 'compensated', 'partial_failure']);
 
+export const OperationKindSchema = z.enum(['apply', 'rollback']);
+
+export const RollbackUnavailableReasonSchema = z.enum([
+  'legacy_receipt',
+  'compensated',
+  'rollback_receipt',
+  'missing_evidence',
+  'repair_required',
+]);
+
+export const RollbackEligibilitySchema = z
+  .object({
+    available: z.boolean(),
+    reason: RollbackUnavailableReasonSchema.optional(),
+  })
+  .strict();
+
 export const ResourceStateKindSchema = z.enum(['missing', 'file', 'symlink', 'directory']);
 
 export const AppliedResourceStateSchema = z
@@ -267,23 +284,49 @@ export const AppliedResourceStateSchema = z
 
 export const OperationReceiptSchema = z
   .object({
+    schemaVersion: z.number().int().positive(),
     id: ReceiptIdSchema,
     planId: PlanIdSchema,
+    operationKind: OperationKindSchema,
+    parentReceiptId: ReceiptIdSchema.optional(),
+    context: AgentContextSchema.optional(),
+    workspaceKey: WorkspaceKeySchema.optional(),
+    actionId: z.string().min(1).optional(),
     status: OperationStatusSchema,
     appliedResources: z.array(ResourceRefSchema).default([]),
     backupPaths: z.array(z.string().min(1)).default([]),
     postApplyStates: z.array(AppliedResourceStateSchema).default([]),
     manifestDigest: ContentDigestSchema.optional(),
+    rollback: RollbackEligibilitySchema,
+    createdAt: z.string().datetime({ offset: true }).optional(),
     message: z.string().optional(),
+  })
+  .strict();
+
+export const OperationHistoryDiagnosticCodeSchema = z.enum([
+  'malformed',
+  'unsupported_version',
+  'unreadable',
+]);
+
+export const OperationHistoryDiagnosticSchema = z
+  .object({
+    code: OperationHistoryDiagnosticCodeSchema,
+    source: z.string().min(1),
+    message: z.string().min(1),
   })
   .strict();
 
 export const OperationHistoryEntrySchema = z
   .object({
-    receipt: OperationReceiptSchema,
+    receipt: OperationReceiptSchema.optional(),
+    diagnostic: OperationHistoryDiagnosticSchema.optional(),
     createdAt: z.string().datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine(
+    (entry) => Number(entry.receipt !== undefined) + Number(entry.diagnostic !== undefined) === 1,
+  );
 
 export const AgentErrorCodeSchema = z.enum([
   'invalid_plan',

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use super::{AgentContext, AgentId, InstallationId, PlanId, ReceiptId};
+use super::{AgentContext, AgentId, InstallationId, PlanId, ReceiptId, WorkspaceKey};
 
 /// Stable digest of observed resource content.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -192,6 +192,60 @@ pub enum OperationStatus {
     PartialFailure,
 }
 
+pub const OPERATION_RECEIPT_SCHEMA_VERSION: u32 = 2;
+
+fn legacy_operation_receipt_schema_version() -> u32 {
+    1
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OperationKind {
+    #[default]
+    Apply,
+    Rollback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RollbackUnavailableReason {
+    LegacyReceipt,
+    Compensated,
+    RollbackReceipt,
+    MissingEvidence,
+    RepairRequired,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RollbackEligibility {
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<RollbackUnavailableReason>,
+}
+
+impl RollbackEligibility {
+    pub fn available() -> Self {
+        Self {
+            available: true,
+            reason: None,
+        }
+    }
+
+    pub fn unavailable(reason: RollbackUnavailableReason) -> Self {
+        Self {
+            available: false,
+            reason: Some(reason),
+        }
+    }
+}
+
+impl Default for RollbackEligibility {
+    fn default() -> Self {
+        Self::unavailable(RollbackUnavailableReason::LegacyReceipt)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResourceStateKind {
@@ -214,8 +268,20 @@ pub struct AppliedResourceState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OperationReceipt {
+    #[serde(default = "legacy_operation_receipt_schema_version")]
+    pub schema_version: u32,
     pub id: ReceiptId,
     pub plan_id: PlanId,
+    #[serde(default)]
+    pub operation_kind: OperationKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_receipt_id: Option<ReceiptId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<AgentContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_key: Option<WorkspaceKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_id: Option<String>,
     pub status: OperationStatus,
     #[serde(default)]
     pub applied_resources: Vec<ResourceRef>,
@@ -225,14 +291,37 @@ pub struct OperationReceipt {
     pub post_apply_states: Vec<AppliedResourceState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manifest_digest: Option<ContentDigest>,
+    #[serde(default)]
+    pub rollback: RollbackEligibility,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OperationHistoryDiagnosticCode {
+    Malformed,
+    UnsupportedVersion,
+    Unreadable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationHistoryDiagnostic {
+    pub code: OperationHistoryDiagnosticCode,
+    pub source: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OperationHistoryEntry {
-    pub receipt: OperationReceipt,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipt: Option<OperationReceipt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic: Option<OperationHistoryDiagnostic>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -371,8 +460,14 @@ mod tests {
     #[test]
     fn partial_failure_receipt_has_a_stable_ipc_shape() {
         let receipt = OperationReceipt {
+            schema_version: OPERATION_RECEIPT_SCHEMA_VERSION,
             id: ReceiptId::from("receipt-1"),
             plan_id: PlanId::from("plan-1"),
+            operation_kind: OperationKind::Apply,
+            parent_receipt_id: None,
+            context: None,
+            workspace_key: None,
+            action_id: None,
             status: OperationStatus::PartialFailure,
             applied_resources: vec![settings_resource()],
             backup_paths: vec!["/Users/test/.ad/backups/config.toml".into()],
@@ -382,10 +477,13 @@ mod tests {
                 digest: Some(ContentDigest::from("sha256:after")),
             }],
             manifest_digest: Some(ContentDigest::from("sha256:manifest")),
+            rollback: RollbackEligibility::available(),
+            created_at: Some(Utc::now()),
             message: Some("A compensation write failed".into()),
         };
 
         let json = serde_json::to_value(&receipt).unwrap();
+        assert_eq!(json["schemaVersion"], OPERATION_RECEIPT_SCHEMA_VERSION);
         assert_eq!(json["status"], "partial_failure");
         assert_eq!(json["planId"], "plan-1");
         assert_eq!(

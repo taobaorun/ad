@@ -79,6 +79,8 @@
       - [x] (2026-08-01 12:20+08:00) AD lock/journal/backup/manifest/history/cleanup已共享一次操作持有的state directory descriptors；整个`.ad`或journal child被swap成outside symlink时，事务artifact仍写入原目录且outside为空。初始journal和receipt使用no-replace发布，lock拒绝hard link；Rust全量272/272与严格Clippy通过。
     - [x] (2026-08-01 12:34+08:00) startup recovery/global recovery lock、ExecutionEngine mutation gate与process-kill边界矩阵完成：启动恢复持有跨进程exclusive lock，apply/rollback持有shared lease；prepared、prepared+backup、applying无receipt、applying+complete receipt及另一进程持锁边界由真实abort子进程覆盖。journal v2兼容读取v1，恢复测试6/6、真实进程测试2/2、Rust全量279 passed/4 ignored与严格Clippy通过；legacy direct-write命令仍按U6迁移退役。
     - [ ] versioned receipt/history decoder、ownership record与fresh inverse rollback plan。
+      - [x] (2026-08-01 12:46+08:00) OperationReceipt v2与fd-confined per-file History decoder完成：新回执记录operation/context/rollback eligibility/createdAt，legacy无版本回执继续显示但rollback unavailable；损坏、identity不符和future schema成为单项diagnostic，不影响同目录正常记录。Rust全量283 passed/4 ignored、前端142/142、typecheck/lint与严格Clippy通过。
+      - [ ] ownership record与fresh inverse rollback plan。
 - [ ] M1：实现 effective inventory 与分层 Settings（验证标准：Claude/Codex provenance、coverage、canonical context测试通过）
 - [ ] M2：引入 immutable Skill artifact 和安全 source acquisition（验证标准：更新项目A不改变B，migration fixtures幂等）
 - [ ] M3：补齐 Skills/Plugins item lifecycle planners（验证标准：install/toggle/update/remove的支持与退化矩阵通过）
@@ -132,6 +134,8 @@
   证据：真实abort子进程在target已变化但receipt缺失时，恢复保留target并转为`repair_required`，普通ExecutionEngine mutation被gate阻止。
 - 发现：引入`repaired`终态后继续写schema v1会破坏旧合同语义；但仓库已经可能存在v1 terminal/in-flight journal，不能简单拒绝旧版本。
   证据：新写journal提升为v2，reader接受v1-v2；v1 journal发生恢复迁移时原子升级为v2，future/corrupt journal保持fail-closed。
+- 发现：旧History loader把单个损坏或future receipt静默跳过，既无法向用户说明历史不完整，也会让旧receipt继续借当前rollback decoder尝试执行。
+  证据：History读取已迁入held state descriptor下的逐文件version gate；legacy receipt被规范化为schema v1并标记`legacy_receipt`不可回滚，corrupt/future fixture与正常legacy fixture同时返回。
 
 ## 决策日志
 
@@ -182,6 +186,12 @@
   日期/作者：2026-08-01 / Codex
 - 决策：精确匹配repair-required receipt的guarded rollback可穿过mutation gate，成功后把原journal标记为v2 `repaired`；其他mutation继续阻断。
   理由：修复动作本身必须可执行，但不能借修复入口放开无关写入。
+  日期/作者：2026-08-01 / Codex
+- 决策：新OperationReceipt使用schema v2，显式携带operation kind、parent/context、可选workspace/action identity、rollback eligibility与createdAt；无版本输入只按v1读取且永远不授予rollback。
+  理由：History兼容展示与安全恢复需要分离；缺少新证据的旧文件不能因为仍能反序列化就自动获得写权限。
+  日期/作者：2026-08-01 / Codex
+- 决策：History目录级错误仍使请求失败，但单个文件的unreadable/malformed/future-version作为可排序诊断项返回并与正常receipt共存。
+  理由：目录边界不可信时无法证明扫描范围，单文件问题则不应隐藏其他有效历史。
   日期/作者：2026-08-01 / Codex
 
 ## 结果回顾

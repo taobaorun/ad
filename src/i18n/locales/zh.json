@@ -145,6 +145,11 @@
     "restoreConfirm": "确定恢复此备份吗？当前 settings.json 会先生成备份。",
     "noBackup": "无备份",
     "noResources": "无变更资源",
+    "diagnostic": {
+      "malformed": "一条操作记录已损坏",
+      "unsupported_version": "一条操作记录来自不支持的新版本",
+      "unreadable": "一条操作记录无法读取"
+    },
     "status": {
       "complete": "已完成",
       "compensated": "已补偿",

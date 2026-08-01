@@ -143,75 +143,7 @@ pub fn list_agent_operation_history(
     project_path: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<OperationHistoryEntry>, AgentError> {
-    let directory = crate::fs::paths::history_dir()
-        .map_err(|error| operation_history_error(error.to_string()))?
-        .join("operations");
-    if !directory.is_dir() {
-        return Ok(Vec::new());
-    }
-    let entries = std::fs::read_dir(&directory).map_err(|error| {
-        operation_history_error(format!("Failed to read {}: {error}", directory.display()))
-    })?;
-    let mut history = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
-            continue;
-        }
-        let receipt = match std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<OperationReceipt>(&bytes).ok())
-        {
-            Some(receipt) => receipt,
-            None => {
-                tracing::warn!(path = %path.display(), "skipping malformed operation receipt");
-                continue;
-            }
-        };
-        if installation_id.is_some() || project_path.is_some() {
-            let matches = receipt
-                .applied_resources
-                .iter()
-                .chain(
-                    receipt
-                        .post_apply_states
-                        .iter()
-                        .map(|state| &state.resource),
-                )
-                .any(|resource| {
-                    let installation_matches = installation_id
-                        .as_ref()
-                        .is_some_and(|expected| &resource.installation_id == expected);
-                    let project_matches = project_path
-                        .as_ref()
-                        .is_some_and(|expected| resource.project_path.as_ref() == Some(expected));
-                    match (&installation_id, &project_path) {
-                        (Some(_), Some(_)) => {
-                            project_matches
-                                || (installation_matches && resource.project_path.is_none())
-                        }
-                        (Some(_), None) => installation_matches,
-                        (None, Some(_)) => project_matches,
-                        (None, None) => true,
-                    }
-                });
-            if !matches {
-                continue;
-            }
-        }
-        let created_at = entry
-            .metadata()
-            .and_then(|metadata| metadata.modified())
-            .map(chrono::DateTime::<chrono::Utc>::from)
-            .unwrap_or_else(|_| chrono::Utc::now());
-        history.push(OperationHistoryEntry {
-            receipt,
-            created_at,
-        });
-    }
-    history.sort_by_key(|entry| std::cmp::Reverse(entry.created_at));
-    history.truncate(limit.unwrap_or(50).min(200));
-    Ok(history)
+    crate::agents::list_operation_history(installation_id.as_ref(), project_path.as_deref(), limit)
 }
 
 #[tauri::command]
@@ -649,6 +581,7 @@ fn agent_error_for_id(agent_id: AgentId, message: impl Into<String>) -> AgentErr
     }
 }
 
+#[cfg(test)]
 fn operation_history_error(message: impl Into<String>) -> AgentError {
     AgentError {
         code: AgentErrorCode::Io,
@@ -1485,14 +1418,14 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert!(entries
             .iter()
-            .any(|entry| entry.receipt.id.as_str() == "receipt-1"));
+            .any(|entry| entry.receipt.as_ref().unwrap().id.as_str() == "receipt-1"));
         assert!(entries
             .iter()
-            .any(|entry| entry.receipt.id.as_str() == "receipt-3"));
+            .any(|entry| entry.receipt.as_ref().unwrap().id.as_str() == "receipt-3"));
         assert_eq!(project_entries.len(), 2);
         assert!(project_entries
             .iter()
-            .all(|entry| entry.receipt.id.as_str() != "receipt-3"));
+            .all(|entry| entry.receipt.as_ref().unwrap().id.as_str() != "receipt-3"));
         assert!(other.is_empty());
 
         match previous_home {

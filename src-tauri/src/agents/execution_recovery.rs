@@ -8,7 +8,7 @@ use super::execution_journal::{
     MIN_JOURNAL_SCHEMA_VERSION,
 };
 use super::execution_state::ExecutionState;
-use super::{AgentError, AgentErrorCode, OperationReceipt, OperationStatus, ReceiptId};
+use super::{decode_operation_receipt, AgentError, AgentErrorCode, OperationStatus, ReceiptId};
 
 const RECOVERY_LOCK_NAME: &str = "recovery.lock";
 
@@ -158,7 +158,7 @@ fn recover_applying(
 ) -> Result<RecoveryOutcome, std::io::Error> {
     let receipt_name = format!("{}.json", journal.planned_receipt_id);
     let receipt = match state.history().read(&receipt_name) {
-        Ok(bytes) => serde_json::from_slice::<OperationReceipt>(&bytes).ok(),
+        Ok(bytes) => decode_operation_receipt(&bytes).ok(),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(error),
     };

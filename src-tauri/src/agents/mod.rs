@@ -26,6 +26,7 @@ mod execution_targets;
 #[cfg(test)]
 mod execution_tests;
 mod execution_tree;
+mod operation_receipts;
 mod operations;
 mod plan_store;
 mod plugin_conversion;
@@ -54,6 +55,7 @@ pub use execution_fs::directory_tree_digest;
 pub use execution_journal::*;
 pub use execution_lock::*;
 pub use execution_recovery::*;
+pub use operation_receipts::*;
 pub use operations::*;
 pub use plan_store::*;
 pub use plugin_conversion::*;

@@ -10,11 +10,13 @@ use super::execution_fs::{directory_tree_digest, render_content, TargetState};
 use super::execution_recovery::{mark_repaired, MutationRecoveryLease};
 use super::execution_state::{ExecutionState, StateDirectory};
 use super::{
-    builtin_registry, execution_instance_id, AgentContext, AgentError, AgentErrorCode,
-    AppliedResourceState, ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan,
-    OperationJournalHandle, OperationJournalState, OperationReceipt, OperationStatus,
-    PlanAcknowledgement, PlanId, PlanStore, PlannedMutation, ReceiptId, ResourceKind, ResourceRef,
-    ResourceScope, ResourceStateKind, ResourceStorage, TargetLockSet, WritePolicy,
+    builtin_registry, decode_operation_receipt, execution_instance_id, AgentContext, AgentError,
+    AgentErrorCode, AppliedResourceState, ContentDigest, ManagedResourceTarget, MutationKind,
+    MutationPlan, OperationJournalHandle, OperationJournalState, OperationKind, OperationReceipt,
+    OperationStatus, PlanAcknowledgement, PlanId, PlanStore, PlannedMutation, ReceiptId,
+    ResourceKind, ResourceRef, ResourceScope, ResourceStateKind, ResourceStorage,
+    RollbackEligibility, RollbackUnavailableReason, TargetLockSet, WritePolicy,
+    OPERATION_RECEIPT_SCHEMA_VERSION,
 };
 
 static EXECUTION_LOCK: Mutex<()> = Mutex::new(());
@@ -336,7 +338,7 @@ fn rollback_plan(
                 format!("Failed to read operation receipt: {error}"),
             )
         })?;
-    let receipt: OperationReceipt = serde_json::from_slice(&receipt_bytes).map_err(|error| {
+    let receipt = decode_operation_receipt(&receipt_bytes).map_err(|error| {
         receipt_error(
             AgentErrorCode::InvalidPlan,
             receipt_id,
@@ -344,6 +346,17 @@ fn rollback_plan(
             format!("Invalid operation receipt: {error}"),
         )
     })?;
+    if !receipt.rollback.available {
+        return Err(receipt_error(
+            AgentErrorCode::Unsupported,
+            receipt_id,
+            None,
+            format!(
+                "Operation receipt is not eligible for rollback: {:?}",
+                receipt.rollback.reason
+            ),
+        ));
+    }
     if !matches!(
         receipt.status,
         OperationStatus::Complete | OperationStatus::PartialFailure
@@ -1537,8 +1550,14 @@ fn receipt(
         })
         .collect::<Result<Vec<_>, AgentError>>()?;
     Ok(OperationReceipt {
+        schema_version: OPERATION_RECEIPT_SCHEMA_VERSION,
         id,
         plan_id: plan.id.clone(),
+        operation_kind: OperationKind::Apply,
+        parent_receipt_id: None,
+        context: Some(plan.context.clone()),
+        workspace_key: None,
+        action_id: None,
         status,
         applied_resources: applied
             .iter()
@@ -1551,6 +1570,12 @@ fn receipt(
             .collect(),
         post_apply_states,
         manifest_digest,
+        rollback: if status == OperationStatus::Compensated || applied.is_empty() {
+            RollbackEligibility::unavailable(RollbackUnavailableReason::Compensated)
+        } else {
+            RollbackEligibility::available()
+        },
+        created_at: Some(Utc::now()),
         message,
     })
 }

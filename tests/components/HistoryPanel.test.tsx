@@ -41,8 +41,11 @@ describe('HistoryPanel', () => {
       {
         createdAt: '2026-07-15T01:00:00Z',
         receipt: {
+          schemaVersion: 2,
           id: 'receipt-1',
           planId: 'plan-1',
+          operationKind: 'apply',
+          context: { installationId: 'codex:default' },
           status: 'complete',
           appliedResources: [
             {
@@ -54,16 +57,24 @@ describe('HistoryPanel', () => {
           ],
           backupPaths: ['/tmp/backup'],
           postApplyStates: [],
+          rollback: { available: true },
+          createdAt: '2026-07-15T01:00:00Z',
         },
       },
     ]);
     rollbackAgentReceipt.mockReset().mockResolvedValue({
+      schemaVersion: 2,
       id: 'rollback-1',
       planId: 'rollback-plan',
+      operationKind: 'rollback',
+      parentReceiptId: 'receipt-1',
+      context: { installationId: 'codex:default' },
       status: 'complete',
       appliedResources: [],
       backupPaths: [],
       postApplyStates: [],
+      rollback: { available: false, reason: 'rollback_receipt' },
+      createdAt: '2026-07-15T01:01:00Z',
     });
     readHistory.mockReset().mockResolvedValue([]);
     vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -92,8 +103,11 @@ describe('HistoryPanel', () => {
       {
         createdAt: '2026-07-15T01:00:00Z',
         receipt: {
+          schemaVersion: 2,
           id: 'receipt-compensated',
           planId: 'plan-compensated',
+          operationKind: 'apply',
+          context: { installationId: 'codex:default' },
           status: 'compensated',
           appliedResources: [
             {
@@ -105,6 +119,8 @@ describe('HistoryPanel', () => {
           ],
           backupPaths: ['/tmp/backup'],
           postApplyStates: [],
+          rollback: { available: false, reason: 'compensated' },
+          createdAt: '2026-07-15T01:00:00Z',
         },
       },
     ]);
@@ -138,8 +154,14 @@ describe('HistoryPanel', () => {
       {
         createdAt: '2026-07-15T02:00:00Z',
         receipt: {
+          schemaVersion: 2,
           id: 'runtime-receipt',
           planId: 'runtime-plan',
+          operationKind: 'apply',
+          context: {
+            installationId: 'codex:runtime',
+            projectPath: '/Users/test/project',
+          },
           status: 'complete',
           appliedResources: [
             {
@@ -152,6 +174,8 @@ describe('HistoryPanel', () => {
           ],
           backupPaths: [],
           postApplyStates: [],
+          rollback: { available: true },
+          createdAt: '2026-07-15T02:00:00Z',
         },
       },
     ]);
