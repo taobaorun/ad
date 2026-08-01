@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { WORKSPACE_DRAFT_GUARD_EVENT } from '@/lib/workspaceDraftGuard';
 import { useAgents } from '@/store/agents';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -101,6 +102,19 @@ describe('useAgents', () => {
 
     useAgents.getState().selectContext({ installationId: 'unknown' });
     expect(useAgents.getState().activeAgentId).toBe('codex');
+  });
+
+  it('keeps the active Agent context when a dirty draft blocks the switch', async () => {
+    await useAgents.getState().loadAll();
+    const block = (event: Event) => event.preventDefault();
+    window.addEventListener(WORKSPACE_DRAFT_GUARD_EVENT, block);
+
+    useAgents.getState().selectContext({ installationId: 'codex:/Users/test/.codex' });
+
+    expect(useAgents.getState().activeContext).toEqual({
+      installationId: 'claude-code:/Users/test/.claude',
+    });
+    window.removeEventListener(WORKSPACE_DRAFT_GUARD_EVENT, block);
   });
 
   it('restores a persisted v2 context on the next load', async () => {

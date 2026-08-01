@@ -11,6 +11,7 @@
  */
 
 import { create } from 'zustand';
+import { requestAgentWorkspaceChange } from '@/lib/workspaceDraftGuard';
 
 const STORAGE_KEY = 'ad.ui-state.v1';
 
@@ -72,6 +73,7 @@ export const useUiState = create<State>((set, get) => ({
   switchTemplateOpen: false,
 
   setActiveProject: (path) => {
+    if (path !== get().activeProjectPath && !requestAgentWorkspaceChange()) return;
     set({ activeProjectPath: path });
     save({ activeProjectPath: path, sidebarCollapsed: get().sidebarCollapsed });
   },
