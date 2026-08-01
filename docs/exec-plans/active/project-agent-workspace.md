@@ -70,6 +70,8 @@
 ## 进展
 
 - [ ] (2026-08-01 10:43+08:00 开始) M0：冻结 workspace contract 并加固ExecutionEngine（验证标准：Rust/TS contract、AD-state targets、fd-relative confinement、跨进程锁、synced crash recovery、legacy receipt与rollback-plan tests通过）
+  - [x] (2026-08-01 11:06+08:00) U1：Rust/TypeScript workspace、resource/declaration/target identity、coverage/provenance/ownership/item action、sanitized plan与domain report契约完成；25个前端契约测试、Rust parity/operations/capability测试及typecheck通过。
+  - [ ] U10：sealed target接入执行、fd-relative confinement、跨进程锁、journal/startup recovery、versioned receipt、ownership与inverse rollback plan。
 - [ ] M1：实现 effective inventory 与分层 Settings（验证标准：Claude/Codex provenance、coverage、canonical context测试通过）
 - [ ] M2：引入 immutable Skill artifact 和安全 source acquisition（验证标准：更新项目A不改变B，migration fixtures幂等）
 - [ ] M3：补齐 Skills/Plugins item lifecycle planners（验证标准：install/toggle/update/remove的支持与退化矩阵通过）
@@ -103,6 +105,8 @@
   证据：现有`execution_fs.rs`使用普通path调用，计划审查要求fd-relative operation和cross-process lock。
 - 发现：旧OperationReceipt、GUI启动的Git认证环境、Settings敏感值和unknown future Agent schema均缺少显式兼容/降级合同。
   证据：当前History decoder、`fs/git.rs` login-shell说明、Settings/conversion数据流与adapter discovery逻辑。
+- 发现：U1契约直接追加到既有`operations.rs`、`capabilities.rs`和`agentTypes.ts`会使三个核心文件越过项目约定的单文件规模，继续扩展会再次形成难以控制的边界。
+  证据：首次实现后文件分别达到713、534和707行；集成审查后拆为`workspace_contracts.rs`、`resource_inventory.rs`、`agentWorkspaceTypes.ts`、`agentResourceInventoryTypes.ts`与`agentOperationReports.ts`，原文件回落到396、362和490行。
 
 ## 决策日志
 
@@ -124,6 +128,9 @@
 - 决策：Settings完整管理包含项目层edit lifecycle，并对dirty draft、敏感值和context切换定义明确行为。
   理由：仅有effective view不足以完成用户任务，静默丢draft或跨scope复制secret都会破坏可信闭环。
   日期/作者：2026-08-01 / Codex（ce-doc-review）
+- 决策：U1按workspace identity、inventory view、public plan/report三个边界拆分模块，同时保持Rust `agents`公共导出语义不变。
+  理由：契约会被U3/U4/U5持续扩展，提前建立模块边界可避免再次把所有Agent语义堆入单文件。
+  日期/作者：2026-08-01 / Codex
 
 ## 结果回顾
 

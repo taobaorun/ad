@@ -11,6 +11,7 @@ mod conversion_route;
 mod discovery;
 mod execution;
 mod execution_fs;
+mod execution_targets;
 #[cfg(test)]
 mod execution_tests;
 mod operations;
@@ -21,8 +22,10 @@ mod project_codex_config;
 mod project_codex_manifest;
 mod project_codex_runtime;
 mod registry;
+mod resource_inventory;
 mod runtime;
 mod types;
+mod workspace_contracts;
 
 pub use capabilities::*;
 pub use claude::ClaudeAdapter;
@@ -44,8 +47,10 @@ pub use project_codex_config::*;
 pub use project_codex_manifest::*;
 pub use project_codex_runtime::*;
 pub use registry::*;
+pub use resource_inventory::*;
 pub use runtime::*;
 pub use types::*;
+pub use workspace_contracts::*;
 
 pub fn builtin_registry() -> AdapterRegistry {
     let mut registry = AdapterRegistry::new();

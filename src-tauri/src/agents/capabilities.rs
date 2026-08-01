@@ -29,6 +29,8 @@ pub enum CapabilityOperation {
     Rollback,
     List,
     Install,
+    Update,
+    Remove,
     Enable,
     Disable,
     Detect,

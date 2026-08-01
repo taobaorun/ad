@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { collectionItemView, editableResourceText } from '@/lib/agentResourceViews';
 import { ResourceSnapshotSchema, SettingsDocumentSchema } from '@/lib/agentTypes';
+import { CollectionResourceViewSchema } from '@/lib/agentResourceInventoryTypes';
 
 function snapshot(content: unknown, mediaType: string, logicalId = 'review') {
   return SettingsDocumentSchema.parse({
@@ -51,5 +52,26 @@ describe('Agent resource views', () => {
         collectionSnapshot({ name: 'Review', description: 'Reviews code', enabled: false }),
       ),
     ).toEqual({ name: 'Review', description: 'Reviews code', enabled: false });
+  });
+
+  it('uses backend-owned effective state for authoritative collection views', () => {
+    const resource = CollectionResourceViewSchema.parse({
+      key: 'resource:sha256:review',
+      kind: 'skills',
+      logicalId: 'review',
+      displayName: 'Review',
+      description: 'Reviews code',
+      effectiveState: 'disabled',
+      provenance: { declarations: [] },
+      ownership: { kind: 'ad_managed' },
+      health: { status: 'healthy' },
+      management: { status: 'managed', actions: [] },
+    });
+
+    expect(collectionItemView(resource)).toEqual({
+      name: 'Review',
+      description: 'Reviews code',
+      enabled: false,
+    });
   });
 });
