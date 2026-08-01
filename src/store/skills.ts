@@ -1,24 +1,26 @@
 import { create } from 'zustand';
 import { tauri } from '@/lib/tauri';
+import type { PluginInfo, ProjectSkillConfig, SkillEntry } from '@/lib/skillTypes';
 import type {
-  PluginInfo,
-  ProjectSkillConfig,
-  SkillEntry,
-  SkillSource,
-  SkillUpdateResult,
-} from '@/lib/skillTypes';
+  SkillCatalogEntry,
+  SkillCatalogOperationReport,
+  SkillCatalogPlanView,
+  SkillSourceRequest,
+} from '@/lib/skillCatalogTypes';
 
 interface SkillsState {
-  sources: SkillSource[];
+  sources: SkillCatalogEntry[];
   entries: SkillEntry[];
   plugins: PluginInfo[];
   projectConfig: ProjectSkillConfig | null;
   loading: boolean;
 
   loadSources: () => Promise<void>;
-  addSource: (source: SkillSource) => Promise<SkillSource>;
-  removeSource: (id: string) => Promise<void>;
-  updateSource: (id: string) => Promise<SkillUpdateResult>;
+  previewAddSource: (source: SkillSourceRequest) => Promise<SkillCatalogPlanView>;
+  previewRemoveSource: (sourceId: string) => Promise<SkillCatalogPlanView>;
+  previewUpdateSource: (sourceId: string) => Promise<SkillCatalogPlanView>;
+  applySourcePlan: (plan: SkillCatalogPlanView) => Promise<SkillCatalogOperationReport>;
+  cancelSourcePlan: (planId: string) => Promise<void>;
 
   scanLibrary: (projectPath?: string) => Promise<void>;
 
@@ -39,26 +41,24 @@ export const useSkills = create<SkillsState>((set, get) => ({
   loading: false,
 
   loadSources: async () => {
-    const sources = await tauri.listSkillSources();
-    set({ sources });
+    const catalog = await tauri.listSkillCatalog();
+    set({ sources: catalog.entries });
   },
 
-  addSource: async (source) => {
-    const saved = await tauri.addSkillSource(source);
+  previewAddSource: (source) => tauri.previewAddSkillCatalogSource(source),
+
+  previewRemoveSource: (sourceId) => tauri.previewRemoveSkillCatalogSource(sourceId),
+
+  previewUpdateSource: (sourceId) => tauri.previewUpdateSkillCatalogSource(sourceId),
+
+  applySourcePlan: async (plan) => {
+    const report = await tauri.applySkillCatalogSourcePlan(plan);
     await get().loadSources();
-    return saved;
+    return report;
   },
 
-  removeSource: async (id) => {
-    await tauri.removeSkillSource(id);
-    await get().loadSources();
-    await get().scanLibrary();
-  },
-
-  updateSource: async (id) => {
-    const result = await tauri.updateSkillSource(id);
-    await get().scanLibrary();
-    return result;
+  cancelSourcePlan: async (planId) => {
+    await tauri.cancelSkillCatalogSourcePlan(planId);
   },
 
   scanLibrary: async (projectPath) => {

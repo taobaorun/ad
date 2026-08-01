@@ -1,6 +1,7 @@
 {
   "common": {
-    "close": "Close"
+    "close": "Close",
+    "cancel": "Cancel"
   },
   "startup": {
     "loadingQuote": "Be Water, My Friend",
@@ -309,8 +310,10 @@
       "nav": "Skills",
       "desc": "Manage skill repositories and control which skills are globally available.",
       "sourcesHeading": "Sources",
+      "catalogIsolation": "Sources acquire immutable revisions; refreshing one never changes a project automatically.",
       "addSource": "Add Source",
       "noSources": "No skill sources configured. Add a git repository or local directory.",
+      "loading": "Loading Skill sources…",
       "branch": "branch: {{branch}}",
       "branchDefault": "branch: default",
       "localDir": "Local directory",
@@ -318,12 +321,18 @@
       "autoUpdateOn": "Auto-update: on",
       "updating": "Updating...",
       "update": "Update",
+      "previewing": "Inspecting…",
+      "removeSource": "Remove source: {{name}}",
+      "artifactSummary": "{{count}} Skills · revision {{revision}}",
+      "activationImpact": "Contains {{count}} executable or runtime entry points",
+      "operationFailed": "The operation did not complete; the prior catalog state was preserved.",
       "removeConfirm": "Remove source \"{{id}}\" and all its installed skills?",
       "globalSkills": "Global Skills",
       "globalSkillsDesc": "Enabled skills are symlinked to ~/.claude/skills/ and visible to all projects.",
       "skillCount": "{{count}} skills",
       "addDialog": {
         "title": "Add Skill Source",
+        "description": "AD inspects the full tree and execution impact before writing the source catalog.",
         "name": "Name",
         "namePlaceholder": "e.g. my-team-skills",
         "type": "Type",
@@ -342,7 +351,32 @@
         "submit": "Add & Scan",
         "submitting": "Adding…",
         "cloningGit": "Cloning repository…",
-        "addingSource": "Adding source…"
+        "addingSource": "Adding source…",
+        "inspecting": "Inspecting…",
+        "preview": "Inspect & Preview",
+        "backendIdHint": "AD issues the source ID; the display name is never used as a filesystem path."
+      },
+      "plan": {
+        "add": {
+          "title": "Confirm Skill source addition",
+          "description": "Publish the inspected immutable artifact and register it as the current source revision."
+        },
+        "update": {
+          "title": "Confirm Skill source update",
+          "description": "Publish a new artifact and move the catalog pointer; projects stay pinned to their prior revision."
+        },
+        "remove": {
+          "title": "Confirm Skill source removal",
+          "description": "Remove only the catalog entry, without deleting published artifacts or project references."
+        },
+        "artifact": "Immutable artifact",
+        "skills": "Contains {{count}} Skills",
+        "executionTitle": "Includes execution capabilities",
+        "executionDescription": "Detected {{count}} hook, MCP, command, script, or binary entry points. Verify that you trust the source before activation.",
+        "revisionIsolation": "Refreshing a source never upgrades a project automatically; project revisions require a separate preview and confirmation.",
+        "removeIsolation": "This does not delete old artifacts, legacy checkouts, or revisions pinned by projects.",
+        "applying": "Applying…",
+        "confirm": "Confirm & Apply"
       }
     }
   },
