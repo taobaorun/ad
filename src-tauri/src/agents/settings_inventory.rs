@@ -24,6 +24,7 @@ pub(super) struct SettingsInspection {
 #[derive(Clone)]
 pub(super) struct SettingsLayerSemantic {
     pub declaration_key: DeclarationKey,
+    pub logical_id: String,
     pub layer: ResourceLayer,
     pub content: Value,
 }
@@ -142,6 +143,7 @@ pub(super) fn inspect_effective_settings(
         }
         semantics.push(SettingsLayerSemantic {
             declaration_key,
+            logical_id: input.logical_id,
             layer: input.layer,
             content: input.content,
         });

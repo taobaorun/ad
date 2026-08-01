@@ -2,9 +2,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    opaque_contract_id, AgentContext, AgentId, DeclarationKey, MutationKind, MutationPlan,
-    OperationReceipt, PhysicalTargetId, PlanId, ResourceKey, ResourceKind, ResourceRef,
-    ResourceScope, RiskFingerprint, WorkspaceKey,
+    opaque_contract_id, AgentContext, AgentId, DeclarationKey, InventoryRevision, MutationKind,
+    MutationPlan, OperationReceipt, PhysicalTargetId, PlanId, ResourceAction, ResourceKey,
+    ResourceKind, ResourceRef, ResourceScope, RiskFingerprint, WorkspaceKey,
 };
 
 impl ResourceKey {
@@ -139,6 +139,7 @@ pub struct ActivationImpactView {
 pub enum PlanAcknowledgementCode {
     ConversionApply,
     DangerousPermissionExpansion,
+    ProjectCollectionApply,
     RollbackApply,
 }
 
@@ -286,6 +287,24 @@ pub struct WorkspaceOperationReport {
     pub issues: Vec<WorkspaceOperationIssue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receipt: Option<OperationReceipt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectCollectionActionRequest {
+    pub workspace_key: WorkspaceKey,
+    pub inventory_revision: InventoryRevision,
+    pub resource_key: ResourceKey,
+    pub action: ResourceAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectCollectionActionPreview {
+    pub workspace_key: WorkspaceKey,
+    pub resource_key: ResourceKey,
+    pub action: ResourceAction,
+    pub plan: MutationPlanView,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

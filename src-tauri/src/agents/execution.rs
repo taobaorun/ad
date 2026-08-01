@@ -2021,8 +2021,7 @@ fn receipt(
         parent_receipt_id: draft.intent.parent_receipt_id.clone(),
         context: Some(plan.context.clone()),
         workspace_key: workspace_key_for_context(&plan.context),
-        action_id: (draft.intent.operation_kind == OperationKind::Rollback)
-            .then(|| "rollback".to_owned()),
+        action_id: draft.intent.action_id.clone(),
         status: draft.status,
         applied_resources: draft
             .applied

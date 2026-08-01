@@ -1087,7 +1087,7 @@ impl PluginsPort for CodexPluginsPort {
     ) -> Result<MutationPlan, AgentError> {
         if let Some(runtime) = project_runtime_for_context(context)? {
             validate_project_plugin_resource(context, resource)?;
-            return plan_project_set_enabled(context, resource, enabled, &runtime);
+            return plan_project_override(context, resource, Some(enabled), &runtime);
         }
         validate_user_resource(context, resource)?;
         let config = resolve_codex_home(context)?.join("config.toml");
@@ -1183,12 +1183,29 @@ impl PluginsPort for CodexPluginsPort {
             expires_at: Utc::now() + Duration::minutes(5),
         })
     }
+
+    fn plan_remove(
+        &self,
+        context: &AgentContext,
+        resource: &ResourceRef,
+    ) -> Result<MutationPlan, AgentError> {
+        let runtime = project_runtime_for_context(context)?.ok_or_else(|| {
+            agent_error(
+                AgentErrorCode::Unsupported,
+                context,
+                Some(resource.clone()),
+                "Codex user Plugin removal requires the Agent marketplace flow",
+            )
+        })?;
+        validate_project_plugin_resource(context, resource)?;
+        plan_project_override(context, resource, None, &runtime)
+    }
 }
 
-fn plan_project_set_enabled(
+fn plan_project_override(
     context: &AgentContext,
     resource: &ResourceRef,
-    enabled: bool,
+    enabled: Option<bool>,
     runtime: &super::ProjectCodexRuntime,
 ) -> Result<MutationPlan, AgentError> {
     let config_target = ManagedResourceTarget::file(runtime.runtime_home.join("config.toml"));
@@ -1216,9 +1233,26 @@ fn plan_project_set_enabled(
     let project_settings =
         project_settings_from_config(context, &config_state, &project_settings_keys)?;
     let mut overlay = snapshot.manifest.project_overlay;
-    overlay
-        .enabled_plugins
-        .insert(resource.logical_id.clone(), enabled);
+    match enabled {
+        Some(enabled) => {
+            overlay
+                .enabled_plugins
+                .insert(resource.logical_id.clone(), enabled);
+        }
+        None if overlay
+            .enabled_plugins
+            .remove(&resource.logical_id)
+            .is_none() =>
+        {
+            return Err(agent_error(
+                AgentErrorCode::ResourceChanged,
+                context,
+                Some(resource.clone()),
+                "Project Plugin override is no longer present",
+            ));
+        }
+        None => {}
+    }
     let base_home = base_home(context, &runtime.base_installation_id)?;
     let base_config = read_optional(&base_home.join("config.toml"), context, None)?;
     let inherited_config = inherit_base_config

@@ -5,8 +5,14 @@ mod codex;
 mod codex_plugins;
 mod codex_ports;
 mod codex_runtime;
+mod codex_skill_config;
 mod codex_skills;
+mod collection_actions;
+#[cfg(test)]
+mod collection_actions_tests;
 mod collection_inventory;
+mod collection_management;
+mod collection_skills;
 mod conversion;
 mod conversion_route;
 mod discovery;
@@ -63,6 +69,7 @@ pub use capabilities::*;
 pub use claude::ClaudeAdapter;
 pub use codex::CodexAdapter;
 pub(crate) use codex_plugins::plan_project_runtime_profile_apply;
+pub use collection_actions::*;
 pub use conversion::{
     convert_claude_profile_to_codex, ArtifactDisposition, ConversionArtifact, ConversionEndpoint,
     ConversionResolutionKind, ConversionRiskLevel, ConversionSummary, ResolutionRequirement,
