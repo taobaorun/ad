@@ -1,0 +1,256 @@
+# 收敛 Project Agent Workspace，完成项目级 Skills、Plugins 与配置转化管理
+
+本 ExecPlan 是一个活文档。`进展`、`意外发现`、`决策日志`、`结果回顾` 必须随工作推进保持更新。
+
+本计划的产品与实施细节真理源是 `docs/plans/2026-08-01-001-feat-project-agent-workspace-plan.md`。本 ExecPlan 负责审批基线、执行顺序、验证和恢复；若两者出现冲突，执行前必须先同步修订两份评审文档。
+
+## 目的 / 全局视角
+
+完成后，AD 的主产品不再是散落的 Claude settings/profile 页面，而是“一个项目的 Coding Agent 配置工作区”。用户选择项目和 Claude Code/Codex installation 后，可以在同一处看到最终生效的 Settings、Skills、Plugins，理解来源与覆盖关系，完成真实支持的安装、启停、更新、移除，并将 Claude Code 的有效项目环境安全转化为隔离的 Codex Project Runtime。
+
+用户可以通过三类可观察结果判断功能真的完成：项目 A 的操作不会改变项目 B 或未确认的用户资源；所有写入都有预览、回执和受保护回滚；不支持或必须外部完成的动作会明确显示，绝不伪装成功。
+
+## 确认状态
+
+- [x] **用户已确认** — 评审 HTML：`docs/exec-plans/active/project-agent-workspace.html`
+- [x] HTML 基线已冻结并开始执行（2026-08-01 10:43+08:00）
+
+批准后 HTML 不再修改；执行进展、发现、决策和结果只更新本 MD。
+
+## 假设
+
+- Claude Code 与 Codex 是本轮唯一验收 Agent；未来 Agent adapter 不在本 ExecPlan 中实现。
+- “项目级隔离”要求项目动作默认不修改用户层；继承用户资源在项目页是可观察输入，只有存在真实项目 override 时才可操作。
+- Skill source catalog 仍是全局 acquisition 入口，但项目安装固定到不可变 artifact revision；刷新 source 不自动升级任何项目。
+- 只移除 AD 拥有的项目 link、manifest declaration 或 runtime package；用户继承和外部资源永不被项目 remove 删除。
+- Claude Plugin install 与 Codex User Plugin marketplace acquisition 继续以 external/degraded 呈现，不作为假实现补齐。
+- 本轮只允许第一方 UI 完成显式风险确认，不新增 CLI、MCP、deep-link或Agent自动批准入口；这不声称抵抗已被攻陷的renderer或同一macOS用户自动化。
+- legacy 数据必须兼容读取、显式 preview、幂等迁移；新状态和回执未持久化前不清理旧状态。
+- Settings 中的credential、token、MCP env与未知疑似敏感值默认遮罩且不自动从user scope复制到project scope；AD不因此扩展为密钥管理器。
+- 项目级隔离只约束AD的配置读取、写入、归属和转换落点，不等同于第三方Skill/Plugin/hook/MCP的运行时沙箱或发布者认证。
+- 只有已验证Agent版本/schema/location set可以得到complete coverage；未知future版本或新层级必须降为partial/failed。
+- 真机 macOS release workflow 仍需人工执行并记录证据；此前文档最多声明达到实际完成的 evidence level。
+
+## 影响范围
+
+实施会跨越以下边界；精确文件和测试映射见统一实施计划的 U1–U10。
+
+- **Rust domain / IPC contract：** `src-tauri/src/agents/capabilities.rs`、`operations.rs`、`types.rs`、`commands/agents.rs`、`plan_store.rs`、`execution.rs`、`execution_fs.rs`与Tauri startup `src-tauri/src/lib.rs`。
+- **Agent adapters：** `src-tauri/src/agents/claude_ports/`、`codex_ports/`、`codex_skills.rs`、`codex_plugins.rs`。
+- **Project Codex ownership：** `project_codex_manifest.rs`、`project_codex_runtime.rs`、`project_codex_config.rs`。
+- **Skill acquisition / migration：** `commands/skills.rs`、`fs/paths.rs`、`fs/git.rs`、`models.rs`，以及新的 migration integration tests。
+- **Conversion：** `conversion.rs`、`conversion_route.rs`、`plugin_conversion.rs` 与现有 conversion integration suites。
+- **Frontend workspace：** `ProjectDetail.tsx`、`AgentSettingsEditor.tsx`、`AgentCollectionPanel.tsx`、`AgentPlanDialog.tsx`、Conversion components、`HistoryPanel.tsx`，以及必要的新子组件。
+- **Shared TypeScript boundary：** `src/lib/agentTypes.ts`、`agentCapabilities.ts`、`agentResourceViews.ts`、`tauri.ts`、`projectCodexRuntime.ts`。
+- **Legacy cleanup：** `ProjectSkills.tsx`、`store/skills.ts`、`skillTypes.ts`、旧 Tauri IPC registration 和 project state models。
+- **i18n / docs：** zh/en locales、README、package metadata、PRODUCT_SENSE、product/design specs 及索引。
+- **主要新增测试：** `src-tauri/tests/project_agent_workspace.rs`、`src-tauri/tests/skill_catalog_migration.rs`、`tests/components/ProjectAgentWorkspace.test.tsx`。
+
+已有 active ExecPlan `docs/exec-plans/active/bundle-slim-codemirror.md` 主要修改 editor bundle/lazy loading。执行前要检查两者工作区状态；若它同时触达 `AgentSettingsEditor.tsx` 或 build配置，先完成/重基线该计划，再开始本计划对应文件。
+
+## 关键决策
+
+1. **后端拥有 effective/provenance 语义。** Raw snapshot 留在 adapter 内部；项目 UI 只消费严格 typed inventory envelope 与 resource view。
+2. **“全部”必须有 coverage。** Inventory category 输出 complete/partial/failed 和 item diagnostics；partial 不能显示完整清单声明。
+3. **项目页 fail closed。** Inherited user resource 默认 inspect-only；Codex runtime 未准备时禁止 project Plugin mutation回退到base config。
+4. **Skill source 与项目 revision 解耦。** Source checkout可刷新，项目 link只能指向immutable content-addressed artifact。
+5. **生命周期是 item-level policy。** Add/install、toggle、sync/update、remove/reset override、external steps 由每项 ownership/context决定。
+6. **Apply 绑定 workspace。** Backend claim校验expected canonical `AgentContext`、source/target digest、expiry、replay和plan-bound acknowledgement。
+7. **执行回执与domain report分层。** Receipt只记录attempted mutation；Workspace/Conversion report记录external、unsupported、conflict、no-change与residual。
+8. **Conversion 转的是有效项目环境。** Claude user/shared/local/project层都作为只读输入，结果只写Codex project runtime/overlay。
+9. **显式 reconciliation 代替自动迁移。** Legacy source/project state先盘点、预览、应用并留回执，之后才退役旧写路径。
+10. **外部 Agent 自动化延后。** 未来 inspect/preview可复用同一workspace；human-only风险批准不可由被管理Agent自批。
+11. **AD-owned state不是伪Agent资源。** MutationPlan使用sealed target enum区分Agent resource与allowlisted AD state；frontend永远不能提交catalog/artifact/archive物理路径。
+12. **Target confinement是fd-relative。** Project、Runtime和`~/.ad`管理根都持有受信directory descriptor，后续遍历与rename使用macOS no-follow relative操作，抵抗验证后的ancestor race。
+13. **Crash与并发是正常失败模型。** 写盘前sync operation journal及父目录；physical target与startup recovery使用跨进程锁，rollback必须生成fresh inverse plan。
+14. **Source输入默认不可信。** Git用固定、无用户输入的login-shell bootstrap恢复可信可执行文件和最小认证环境，实际调用使用结构化argv；network/time/disk/tree预算与artifact digest都受控。
+15. **敏感配置默认不跨scope复制。** Settings inventory/diff/error/history遮罩敏感值，journal/receipt不存正文，backup仅当前用户可读。
+16. **完整性绑定Agent兼容合同。** Unknown future version/schema/layer/location会降级coverage；只扫描完已知目录不能宣称“全部”。
+
+## 进展
+
+- [ ] (2026-08-01 10:43+08:00 开始) M0：冻结 workspace contract 并加固ExecutionEngine（验证标准：Rust/TS contract、AD-state targets、fd-relative confinement、跨进程锁、synced crash recovery、legacy receipt与rollback-plan tests通过）
+- [ ] M1：实现 effective inventory 与分层 Settings（验证标准：Claude/Codex provenance、coverage、canonical context测试通过）
+- [ ] M2：引入 immutable Skill artifact 和安全 source acquisition（验证标准：更新项目A不改变B，migration fixtures幂等）
+- [ ] M3：补齐 Skills/Plugins item lifecycle planners（验证标准：install/toggle/update/remove的支持与退化矩阵通过）
+- [ ] M4：完成统一 Project Agent Workspace UI（验证标准：所有真实动作可从ProjectDetail完成，draft/close行为、partial/stale/empty与可访问状态准确）
+- [ ] M5：让 Conversion 复用 workspace inventory/planners/result（验证标准：有效继承输入、resolver重新preview、safe subset、residual、补偿和rollback通过）
+- [ ] M6：迁移并删除 legacy project写路径（验证标准：旧用户状态可恢复，全仓库无legacy consumer）
+- [ ] M7：完成自动化、真机release验证和文档状态收敛（验证标准：所有门禁通过且evidence matrix有真实证据）
+- [ ] 完成结果回顾并将 MD + frozen HTML 一起移到 `docs/exec-plans/completed/`
+
+## 意外发现
+
+- 发现：当前 `AgentCollectionPanel` 已有 toggle 的 Preview → Apply → receipt → rollback，但没有 install/update/remove UI，尽管 install IPC 已存在。
+  证据：`src/components/AgentCollectionPanel.tsx` 与 `src/lib/tauri.ts::previewAgentCollectionInstall`。
+- 发现：Claude 项目资源页可能把 global Skill toggle写到用户目录；Codex Project Runtime未准备时也可能回退到base context管理user Plugin。
+  证据：`claude_ports/skills.rs`、`codex_plugins.rs` 与 `ProjectDetail.tsx` 的context选择路径。
+- 发现：legacy `update_skill_source` 对共享checkout原地Git pull，所有指向它的project symlink会在无preview/receipt时改变。
+  证据：`commands/skills.rs::update_skill_source` 与AD-managed symlink安装路径。
+- 发现：Plugin provenance在列表阶段被压平；Claude只保留winner，Codex generated config丢失base/overlay/ownership来源。
+  证据：`claude_ports/plugins.rs`、`codex_plugins.rs`、Project Codex manifest/runtime实现。
+- 发现：项目 conversion 已覆盖 Settings/Skills/Plugins并有source read-only保护，但部分 resolution没有真实UI动作，receipt也没有保留全部residual。
+  证据：`conversion_route.rs`、`AgentConversionArtifacts.tsx` 与 `OperationReceipt` contract。
+- 发现：仓库没有 `docs/solutions/` 或 critical-patterns 经验库，本次迁移模式必须由实际执行结果新建证据。
+  证据：只读仓库搜索结果。
+- 发现：现有Git helper把URL/ref插入shell string，legacy source id只检查非空后参与path join/remove。
+  证据：`src-tauri/src/fs/git.rs`与`commands/skills.rs` source CRUD。
+- 发现：`is_ad_managed_symlink`的containment heuristic不能证明link由AD创建，且project root canonicalization不能阻止`.claude`/`.agents`等ancestor symlink导向项目外。
+  证据：symlink ownership helper与adapter target construction路径。
+- 发现：内存补偿无法覆盖进程在receipt持久化前终止，两个不同plan也可能同时通过旧digest检查产生lost update。
+  证据：现有ExecutionEngine/PlanStore只有单次执行内补偿与plan replay保护。
+- 发现：当前ExecutionEngine的path-based写入即使在锁内重验，也不能抵抗另一个同用户进程在验证后替换ancestor；进程内锁也不能协调多个AD实例。
+  证据：现有`execution_fs.rs`使用普通path调用，计划审查要求fd-relative operation和cross-process lock。
+- 发现：旧OperationReceipt、GUI启动的Git认证环境、Settings敏感值和unknown future Agent schema均缺少显式兼容/降级合同。
+  证据：当前History decoder、`fs/git.rs` login-shell说明、Settings/conversion数据流与adapter discovery逻辑。
+
+## 决策日志
+
+- 决策：以项目工作区为产品中心，以用户任务闭环和风险分级证据判断完成。
+  理由：模块或代码存在不能证明用户完成了安全、隔离、可恢复的工作流。
+  日期/作者：2026-08-01 / Codex（承接用户确认的 brainstorm Product Contract）
+- 决策：保留source catalog，使用immutable artifact隔离项目revision。
+  理由：兼容现有Git/local来源能力，同时消除mutable shared symlink造成的跨项目隐式更新。
+  日期/作者：2026-08-01 / Codex
+- 决策：扩展现有`AgentCollectionPanel`路径，不恢复`ProjectSkills`或另建第三条项目资源路径。
+  理由：新路径已经接入AgentContext、ExecutionEngine与stale request保护；继续双轨会让状态再次失控。
+  日期/作者：2026-08-01 / Codex
+- 决策：本轮不开放外部Agent自动化。
+  理由：现有planId/apply IPC不足以表达caller identity和independent human approval，直接开放会产生self-escalation风险。
+  日期/作者：2026-08-01 / Codex
+- 决策：接受文档审查提出的执行边界加固，不缩窄“项目隔离”承诺。
+  理由：path检查和进程内锁无法证明多实例与active ancestor race下的隔离；改用fd-relative写入、cross-process lock和startup recovery gate。
+  日期/作者：2026-08-01 / Codex（ce-doc-review）
+- 决策：Settings完整管理包含项目层edit lifecycle，并对dirty draft、敏感值和context切换定义明确行为。
+  理由：仅有effective view不足以完成用户任务，静默丢draft或跨scope复制secret都会破坏可信闭环。
+  日期/作者：2026-08-01 / Codex（ce-doc-review）
+
+## 结果回顾
+
+待执行完成后填写：
+
+- 实际交付的用户工作流与evidence level。
+- 与统一实施计划的偏差及原因。
+- 迁移用户数量/fixture结果、遗留兼容窗口和可删除时间点。
+- 未达到Release verified的能力及后续计划。
+- 是否产生可沉淀到`docs/solutions/`的迁移、安全执行或项目隔离经验。
+
+## 上下文和方向
+
+AD 是 Tauri 2 macOS 应用。React通过`src/lib/tauri.ts`调用Rust commands；Agent adapter通过`SettingsPort`、`SkillsPort`、`PluginsPort`观察和规划资源；`ExecutionEngine`是唯一安全写盘层，提供plan store、digest preconditions、备份、补偿、receipt与guarded rollback。Codex Project Runtime位于`~/.ad/codex-homes/<project-id>`，manifest记录AD拥有的project overlay和Plugin状态。
+
+当前ProjectDetail已经挂载`AgentSettingsEditor`与`AgentCollectionPanel`。后者能列出Skills/Plugins并预览toggle，但前端从`ResourceSnapshot.content`猜name/enabled，无法可靠表达继承、winner、ownership、单项限制或扫描完整性。legacy `ProjectSkills.tsx`虽未挂载，`commands/skills.rs`、`store/skills.ts`和Settings中的`SkillSourcesSection`仍保留另一套source/project写路径。
+
+实施方向是把“真实项目环境”固化为共享domain contract：canonical context → effective inventory → item action policy → backend plan → human approval → execution receipt/history。所有frontend surface和Conversion都使用这条链；legacy只作为source catalog/migration输入。
+
+## 工作计划
+
+先完成U1 contract：定义backend workspace descriptor、resource/declaration/physical target身份、sealed Agent/AD-state target、versioned discovery coverage、inventory envelope、item action、public plan dependency、versioned receipt与domain report，并同步Rust、Zod、Tauri wrapper与contract tests。随后完成U10：统一fd-relative target confinement、cross-process target/recovery locks、synced durable operation journal、startup command gate、legacy receipt decoder、ownership record和rollback inverse plan。任何新source或lifecycle write必须等待U10门禁通过。
+
+紧接着完成U8 Settings effective view和U3 collection inventory的只读部分，让项目环境先可被正确解释，再允许写操作。Settings明确敏感字段遮罩/不跨scope复制、semantic unknown-field preservation和dirty draft切换保护；Codex generated runtime config只作为derived projection，runtime identity与manifest先完成versioned迁移保护。
+
+随后完成U2 acquisition：把现有source registry/scanner/Git helper提取成服务，通过`AdStateRef`管理catalog/staging/artifact，建立GUI-compatible trusted Git launch和network/time/disk budgets，写migration fixtures证明source update不跨项目。然后完成U3的action planners和backend workspace policy，覆盖所有权、runtime prepared、canonical context、source drift和risk acknowledgement。
+
+后端动作稳定后，执行U4：扩展AgentCollectionPanel并拆分resource item/action dialog，统一Settings、Skills、Plugins、History和Codex runtime状态。UI所有按钮只渲染backend item actions；dirty draft先阻断context切换，其他stale preview立即失效。确认界面按影响/权限/target/技术细节排序，keyboard、focus、live status和非颜色表达全部可测。Apply开始后关闭UI只detatch，结果仍归档原workspace。
+
+再执行U5后端：保留现有conversion route，把有效继承环境纳入source inventory，复用同一project planners与report/receipt。U9迁移Conversion UI，定义“提交resolution → 后端重新preview → 重新确认risk → Apply”的循环；未解决required item阻止full Apply，只允许明确的safe subset并产出partial residual。
+
+最后执行U6迁移/清理：只读盘点legacy state，preview/apply reconciliation，成功后删除direct-write IPC与未挂载UI。U7运行全量自动化、production build和真实macOS workflow，依据证据更新产品文档并归档ExecPlan。
+
+## 验证和验收
+
+执行期每个milestone先运行受影响的focused tests，再运行下列全量门禁：
+
+```bash
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+cargo fmt --check --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml --all-features
+pnpm tauri build
+git diff --check
+```
+
+行为验收必须在隔离temp home与真实安装app中覆盖：
+
+- 项目A/B的同名Skills/Plugins、user inherited与project override；A的所有动作不改变B或user source。
+- Claude user/shared/local与Codex base/project overlay的Settings effective winner及project-only edit；unknown字段保留，sensitive值遮罩且不自动跨scope复制，dirty draft不会静默丢失。
+- Git/local source生成immutable revision；GUI-style最小环境仍支持授权Git/SSH source；source refresh后A/B保持旧revision，只有显式sync的项目变化。
+- supported/degraded/external/unsupported逐项准确；unknown Agent version/schema/location和partial scan不隐藏其他资源且不宣称完整。
+- Preview不修改Agent/project/catalog/published artifact，允许受控、operation-scoped staging；stale context、expired/replayed plan、source/target drift、hostile URL/ref/source id、network/time/disk budget、active ancestor race、unsafe AD root、special file、artifact collision和unowned target全部拒绝。
+- 两个AD进程争用同一target时只有一个commit；startup recovery在mutation command可用前完成，journal file/parent sync fault不会产生无History写入。
+- complete/compensated/partial和guarded rollback；外部修改后的rollback拒绝覆盖。
+- Conversion包含inherited环境，source字节不变，resolution变化必须重新preview，required residual阻止full Apply，重复运行no-change/revalidate，partial不会显示完整成功。
+- Workspace与Conversion UI支持keyboard-only、focus return、live progress和非颜色状态；applying中关闭再打开不会重复执行或显示假取消。
+- Legacy migration重复运行幂等，冲突/缺失source不删除旧状态或external target。
+
+## 幂等性和恢复
+
+- 所有preview是只读且可重复；plan有短期过期时间，context/source/target变化后必须重新preview。
+- Immutable artifact由规范tree manifest计算content digest并原子发布；重复acquisition先完整复验已有artifact，绝不覆盖。重复project install/update产生no-change或同一retarget结果。
+- Migration先写新状态和receipt，再记录marker/归档旧状态；任何失败保留legacy registry/config/link并输出可重试状态。
+- Unpublished staging在取消、失败或startup recovery后仅在确认未被plan/journal引用时清理；published artifact、legacy checkout和receipt pin不进入本轮GC。
+- ExecutionEngine继续在所有写入前完成备份；apply失败尝试补偿，partial failure保留逐项residual和人工恢复入口。
+- Legacy/current receipt逐文件兼容读取；证据不足的旧receipt仍可见但rollback unavailable，损坏或future receipt不会阻断整个History。
+- Rollback只有在receipt、backup manifest、post-apply digest和current target一致时执行；漂移后拒绝覆盖外部修改。
+- Source catalog删除与artifact删除分离；本轮不实现任何published artifact或legacy checkout物理GC，rollback-eligible receipt与migration archive持续pin旧revision。
+- 若新workspace在发布前不可用，回退应用代码但不删除新artifact/receipt；legacy数据仍兼容读取。禁止通过`git reset --hard`或手工批量删除恢复用户数据。
+
+## 接口和依赖
+
+本计划优先复用serde/serde_json、Zod、Zustand、Tauri IPC和ExecutionEngine。fd-relative filesystem与advisory lock先做macOS API spike；若Rust标准库不足，允许引入一个最小、审计过的直接syscall依赖（优先复用lockfile中已有的`rustix`能力），并在MD决策日志记录版本、API面和替代方案。现有shell-string Git helper不能直接复用。
+
+里程碑结束时必须存在并保持Rust/TypeScript语义一致的接口概念：
+
+- `WorkspaceDescriptor` / `WorkspaceKey`：canonical project、base/effective installation、runtime identity与opaque revision，由后端签发。
+- `ProjectWorkspaceInventory`：workspace key、inventory revision、category coverage、Settings/Skills/Plugins views和diagnostics。
+- `ResourceKey` / `DeclarationKey` / physical `ResourceRef`：分别标识effective resource、layer declaration和ExecutionEngine target。
+- Sealed `MutationTarget`：backend-only区分`AgentResourceRef`和allowlisted `AdStateRef`；public IPC不暴露或接受物理path。
+- `CollectionResourceView`：resource identity、layers/provenance、effective state、ownership、health、management state和item actions。
+- `CollectionAction` / `CollectionActionState`：add/install、toggle、sync/update、remove/reset override、external steps及支持状态。
+- `SettingsEffectiveView`：layer/field provenance、winner、editable target、sensitive classification和semantic unknown-field preservation信息。
+- `MutationPlanView`：sanitized target、scope、read-only/user dependency、risk disclosure、required acknowledgement和expiry。
+- Versioned `OperationReceipt`：attempted mutation、backup/artifact pins、原workspace/action identity与rollback eligibility。
+- `WorkspaceOperationReport` / `ConversionReport`：包装零或一个receipt，并保存no-change/external/unsupported/conflict/residual。
+- `SkillArtifactRef`：source identity、revision、directory digest、immutable location和ownership。
+- `OperationJournal` / `OwnershipRecord`：synced crash recovery状态、writer instance与精确link/package/receipt所有权。
+- `AdapterDiscoveryContract`：已验证Agent version/schema/location set与unknown-future coverage降级规则。
+
+Adapter只实现inventory与plan接口；Tauri command负责context/request validation和plan store编排；ExecutionEngine负责写盘与receipt；React不持有mutation content或自行决定ownership。
+
+## 里程碑规划
+
+### M0 — 合同与证据基线
+
+完成U1的Rust/TS shape、backend workspace identity、Agent/AD-state target与versioned discovery trace，并完成U10 fd-relative confinement、cross-process locks、synced journal、startup recovery gate、legacy receipt、ownership与rollback plan。只改contract/engine/tests，不开放新UI动作。验收：严格schema、stale/risk claim、active ancestor race、unsafe AD root、two-process contention、crash/sync fault和rollback activation tests通过。
+
+### M1 — 正确解释有效项目环境
+
+完成U3 inventory只读部分与U8 Settings effective view。验收：Claude/Codex layers、winner、version-bound coverage、health、sensitive masking、dirty draft guard、prepared/unprepared runtime和canonical path identity准确。
+
+### M2 — 隔离Skill acquisition
+
+完成U2 immutable artifact与source plan。验收：A/B revision隔离、GUI Git auth、resource budgets、source drift、referenced deletion、staging recovery和legacy input migration tests通过。
+
+### M3 — 完整资源生命周期
+
+完成U3 action planners和安全preview/apply。验收：item action matrix、ownership、external/degraded、risk acknowledgement、compensation与rollback测试通过。
+
+### M4 — 统一项目工作区
+
+完成U4 ProjectDetail/collection/settings/history交互。验收：用户可走通所有真实支持动作，五类empty/error状态、risk hierarchy、keyboard/focus/live status、detached apply、stale context和receipt入口准确。
+
+### M5 — 转化收敛
+
+完成U5 effective-source conversion backend与U9 UI integration。验收：真实resolver循环、re-preview、safe subset、inherited source、project-only target、replay、risk fingerprint、partial residual和failure recovery通过。
+
+### M6 — Legacy退役
+
+完成U6 reconciliation和direct-write删除。验收：迁移幂等可恢复，全仓库无legacy project API consumer，Settings source入口继续可用。
+
+### M7 — 发布证据与文档
+
+完成U7全量门禁、production Tauri build、真实app workflow和文档同步。验收：evidence matrix支持每项状态，HTML保持批准基线，MD记录实际结果后一起归档。
