@@ -240,7 +240,11 @@ export function AgentConversionDialog({
     setProgress({ phase: 'applying', current: 0 });
     setError(null);
     try {
-      const expectedContext = await resolveConversionContext(target.id, scope, activeProjectPath);
+      // Project conversion previews are rebound by the backend from the selected
+      // Base Codex installation to an isolated derived runtime. Applying with a
+      // newly resolved Base context would make the backend-owned plan reject
+      // itself as stale, so the plan view remains the context authority here.
+      const expectedContext = preview.plan.context;
       const acknowledgements: PlanAcknowledgement[] = preview.plan.requiredAcknowledgements.map(
         (requirement) => ({
           code: requirement.code,
@@ -277,7 +281,10 @@ export function AgentConversionDialog({
     setBusyOperation('rollback');
     setError(null);
     try {
-      const expectedContext = await resolveConversionContext(target.id, scope, activeProjectPath);
+      const expectedContext =
+        receipt.context ??
+        preview?.plan?.context ??
+        (await resolveConversionContext(target.id, scope, activeProjectPath));
       const rollbackPlan = await tauri.previewAgentRollback(receipt.id, expectedContext);
       if (!window.confirm(t('agentConversion.rollbackConfirm'))) return;
       await tauri.applyAgentRollbackPlan(
