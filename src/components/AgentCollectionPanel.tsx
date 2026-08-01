@@ -12,6 +12,7 @@ import type {
 } from '@/lib/agentResourceInventoryTypes';
 import type { AgentContext, CapabilityDescriptor } from '@/lib/agentTypes';
 import { tauri } from '@/lib/tauri';
+import { runDetachedWorkspaceOperation, useWorkspaceOperations } from '@/store/workspaceOperations';
 
 import { AgentPlanDialog } from './AgentPlanDialog';
 import { Button } from './ui/button';
@@ -19,9 +20,14 @@ import { Button } from './ui/button';
 interface AgentCollectionPanelProps {
   context: AgentContext;
   capabilities: CapabilityDescriptor[];
+  onOpenHistory?: () => void;
 }
 
-export function AgentCollectionPanel({ context, capabilities }: AgentCollectionPanelProps) {
+export function AgentCollectionPanel({
+  context,
+  capabilities,
+  onOpenHistory,
+}: AgentCollectionPanelProps) {
   const { t } = useTranslation();
   const [inventory, setInventory] = useState<ProjectWorkspaceInventory | null>(null);
   const [filter, setFilter] = useState('');
@@ -33,6 +39,7 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
   const [actionResult, setActionResult] = useState<string | null>(null);
   const loadRequestRef = useRef(0);
   const actionRequestRef = useRef(0);
+  const handledOperationRef = useRef<string | null>(null);
   const contextKey = useMemo(() => JSON.stringify(context), [context]);
   const activeContextKeyRef = useRef(contextKey);
   activeContextKeyRef.current = contextKey;
@@ -75,6 +82,12 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  useEffect(() => {
+    const reloadWorkspace = () => void load();
+    window.addEventListener('ad:agent-workspace-changed', reloadWorkspace);
+    return () => window.removeEventListener('ad:agent-workspace-changed', reloadWorkspace);
   }, [load]);
 
   useEffect(() => {
@@ -128,47 +141,20 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
     [context.installationId, context.projectPath, contextKey, inventory],
   );
 
-  const applyAction = useCallback(async () => {
+  const applyAction = useCallback(() => {
     if (!actionPreview) return;
-    const requestId = actionRequestRef.current;
-    const requestContextKey = contextKey;
-    setActionBusy(true);
+    const preview = actionPreview;
+    setActionPreview(null);
     setActionError(null);
-    try {
-      const report = await tauri.applyProjectCollectionAction(
-        actionPreview.plan.id,
-        actionPreview.plan.context,
-        actionPreview.plan.riskFingerprint,
-      );
-      if (
-        requestId !== actionRequestRef.current ||
-        requestContextKey !== activeContextKeyRef.current
-      ) {
-        return;
-      }
-      if (report.outcome === 'partial_failure') {
-        setActionError(t('agentCollections.partialFailure'));
-        return;
-      }
-      setActionPreview(null);
-      setActionResult(t('agentCollections.applySuccess'));
-      await load();
-    } catch (caught) {
-      if (
-        requestId === actionRequestRef.current &&
-        requestContextKey === activeContextKeyRef.current
-      ) {
-        setActionError(formatAgentError(caught));
-      }
-    } finally {
-      if (
-        requestId === actionRequestRef.current &&
-        requestContextKey === activeContextKeyRef.current
-      ) {
-        setActionBusy(false);
-      }
-    }
-  }, [actionPreview, contextKey, load, t]);
+    setActionResult(null);
+    void runDetachedWorkspaceOperation(preview.workspaceKey, preview.plan.id, () =>
+      tauri.applyProjectCollectionAction(
+        preview.plan.id,
+        preview.plan.context,
+        preview.plan.riskFingerprint,
+      ),
+    ).catch(() => undefined);
+  }, [actionPreview]);
 
   const cancelAction = useCallback(() => {
     if (actionBusy) return;
@@ -186,7 +172,38 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
     () => inventory?.plugins.resources.filter((resource) => matches(resource, query)) ?? [],
     [inventory, query],
   );
+  const workspaceKey = inventory?.workspace.key;
+  const trackedOperation = useWorkspaceOperations((state) =>
+    workspaceKey ? state.operations[workspaceKey] : undefined,
+  );
+  const operationBusy = trackedOperation?.status === 'applying';
+  const hasResources = Boolean(
+    inventory && inventory.skills.resources.length + inventory.plugins.resources.length > 0,
+  );
   const limitations = capabilities.flatMap((capability) => capability.limitations);
+
+  useEffect(() => {
+    if (!trackedOperation) return;
+    if (trackedOperation.status === 'applying') {
+      setActionError(null);
+      setActionResult(null);
+      return;
+    }
+    const completionKey = `${trackedOperation.operationId}:${trackedOperation.finishedAt ?? ''}`;
+    if (handledOperationRef.current === completionKey) return;
+    handledOperationRef.current = completionKey;
+    if (trackedOperation.status === 'failed') {
+      setActionError(trackedOperation.error ?? t('agentCollections.applyFailed'));
+    } else if (trackedOperation.status === 'partial_failure') {
+      setActionError(t('agentCollections.partialFailure'));
+    } else {
+      const outcome = trackedOperation.report?.outcome;
+      if (outcome === 'changed') setActionResult(t('agentCollections.applySuccess'));
+      else if (outcome === 'no_change') setActionResult(t('agentCollections.noChange'));
+      else if (outcome) setActionError(t(`agentCollections.outcome.${outcome}`));
+      else setActionError(t('agentCollections.applyFailed'));
+    }
+  }, [t, trackedOperation]);
 
   if (loading) {
     return (
@@ -235,17 +252,42 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
       {actionError && !actionPreview && (
         <div
           role="alert"
-          className="shrink-0 border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          className="flex shrink-0 items-center justify-between gap-3 border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
         >
-          {actionError}
+          <span>{actionError}</span>
+          {trackedOperation?.report?.receipt && onOpenHistory && (
+            <Button type="button" size="sm" variant="ghost" onClick={onOpenHistory}>
+              {t('agentCollections.viewReceipt')}
+            </Button>
+          )}
+        </div>
+      )}
+      {operationBusy && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex shrink-0 items-center justify-between gap-3 border-b border-primary/30 bg-primary/5 px-3 py-2 text-xs text-foreground"
+        >
+          <span>{t('agentCollections.applyDetached')}</span>
+          {onOpenHistory && (
+            <Button type="button" size="sm" variant="ghost" onClick={onOpenHistory}>
+              {t('agentCollections.viewHistory')}
+            </Button>
+          )}
         </div>
       )}
       {actionResult && (
         <div
           role="status"
-          className="shrink-0 border-b border-success/40 bg-success/10 px-3 py-2 text-xs text-foreground"
+          aria-live="polite"
+          className="flex shrink-0 items-center justify-between gap-3 border-b border-success/40 bg-success/10 px-3 py-2 text-xs text-foreground"
         >
-          {actionResult}
+          <span>{actionResult}</span>
+          {onOpenHistory && (
+            <Button type="button" size="sm" variant="ghost" onClick={onOpenHistory}>
+              {t('agentCollections.viewReceipt')}
+            </Button>
+          )}
         </div>
       )}
       {limitations.length > 0 && (
@@ -264,7 +306,9 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
               inventory={inventory.skills}
               resources={filteredSkills}
               t={t}
-              busy={actionBusy}
+              busy={actionBusy || operationBusy}
+              queryActive={query.length > 0}
+              showEmptyState={hasResources}
               onAction={previewAction}
             />
             <CollectionSection
@@ -272,14 +316,21 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
               inventory={inventory.plugins}
               resources={filteredPlugins}
               t={t}
-              busy={actionBusy}
+              busy={actionBusy || operationBusy}
+              queryActive={query.length > 0}
+              showEmptyState={hasResources}
               onAction={previewAction}
             />
           </>
         )}
-        {filteredSkills.length === 0 && filteredPlugins.length === 0 && (
+        {inventory && !hasResources && (
           <div role="status" className="py-12 text-center text-sm text-muted-foreground">
-            {t('agentCollections.empty')}
+            {t('agentCollections.workspaceEmpty')}
+          </div>
+        )}
+        {hasResources && filteredSkills.length === 0 && filteredPlugins.length === 0 && (
+          <div role="status" className="py-12 text-center text-sm text-muted-foreground">
+            {t('agentCollections.noMatches')}
           </div>
         )}
       </div>
@@ -300,6 +351,8 @@ interface CollectionSectionProps {
   resources: CollectionResourceView[];
   t: ReturnType<typeof useTranslation>['t'];
   busy: boolean;
+  queryActive: boolean;
+  showEmptyState: boolean;
   onAction: (resource: CollectionResourceView, action: ResourceAction) => void;
 }
 
@@ -309,6 +362,8 @@ function CollectionSection({
   resources,
   t,
   busy,
+  queryActive,
+  showEmptyState,
   onAction,
 }: CollectionSectionProps) {
   return (
@@ -373,6 +428,14 @@ function CollectionSection({
           ))}
         </ul>
       )}
+      {showEmptyState &&
+        resources.length === 0 &&
+        !queryActive &&
+        inventory.resources.length === 0 && (
+          <div className="rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
+            {t('agentCollections.categoryEmpty', { category: title })}
+          </div>
+        )}
     </section>
   );
 }

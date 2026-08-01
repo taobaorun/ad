@@ -293,6 +293,25 @@ describe('AgentSettingsEditor', () => {
     );
   });
 
+  it('refreshes workspace inventory without discarding a dirty project draft', async () => {
+    inspectProjectAgentWorkspace
+      .mockResolvedValueOnce(inventory())
+      .mockResolvedValueOnce(inventory('changed-on-disk'));
+    render(<AgentSettingsEditor context={context} />);
+
+    await screen.findByRole('textbox', { name: 'Settings content' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Project · project-shared' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Settings content' }), {
+      target: { value: '{\n  "model": "dirty"\n}' },
+    });
+    act(() => window.dispatchEvent(new Event('ad:agent-workspace-changed')));
+
+    await waitFor(() => expect(inspectProjectAgentWorkspace).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('textbox', { name: 'Settings content' })).toHaveValue(
+      '{\n  "model": "dirty"\n}',
+    );
+  });
+
   it('ignores inventory responses from a superseded Agent context', async () => {
     const first = deferred<ReturnType<typeof inventory>>();
     const second = deferred<ReturnType<typeof inventory>>();

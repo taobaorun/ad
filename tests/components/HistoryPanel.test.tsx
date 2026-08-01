@@ -207,4 +207,63 @@ describe('HistoryPanel', () => {
       '/Users/test/project',
     );
   });
+
+  it('filters Claude history by project and rolls back with the receipt context', async () => {
+    useAgents.setState({
+      activeAgentId: 'claude-code',
+      activeContext: AgentContextSchema.parse({ installationId: 'claude:default' }),
+      installations: AgentInstallationSchema.array().parse([
+        {
+          id: 'claude:default',
+          agentId: 'claude-code',
+          rootPath: '/Users/test/.claude',
+        },
+      ]),
+    });
+    useUiState.setState({ activeProjectPath: '/Users/test/project' });
+    listAgentOperationHistory.mockResolvedValueOnce([
+      {
+        createdAt: '2026-07-15T03:00:00Z',
+        receipt: {
+          schemaVersion: 2,
+          id: 'claude-project-receipt',
+          planId: 'claude-project-plan',
+          operationKind: 'apply',
+          context: {
+            installationId: 'claude:default',
+            projectPath: '/Users/test/project',
+          },
+          status: 'complete',
+          appliedResources: [
+            {
+              installationId: 'claude:default',
+              projectPath: '/Users/test/project',
+              kind: 'skills',
+              scope: 'project',
+              logicalId: 'project-review',
+            },
+          ],
+          backupPaths: [],
+          postApplyStates: [],
+          rollback: { available: true },
+          createdAt: '2026-07-15T03:00:00Z',
+        },
+      },
+    ]);
+    render(<HistoryPanel />);
+
+    expect(await screen.findByText('project-review')).toBeInTheDocument();
+    expect(listAgentOperationHistory).toHaveBeenCalledWith(
+      'claude:default',
+      50,
+      '/Users/test/project',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Rollback' }));
+    await waitFor(() =>
+      expect(previewAgentRollback).toHaveBeenCalledWith('claude-project-receipt', {
+        installationId: 'claude:default',
+        projectPath: '/Users/test/project',
+      }),
+    );
+  });
 });

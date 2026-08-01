@@ -9,6 +9,7 @@ import { AlertTriangle, RotateCcw, RefreshCw } from 'lucide-react';
 import { useAgents } from '@/store/agents';
 import { useProfiles } from '@/store/profiles';
 import { useUiState } from '@/store/ui';
+import { WORKSPACE_OPERATION_FINISHED_EVENT } from '@/store/workspaceOperations';
 
 export function HistoryPanel() {
   const { t } = useTranslation();
@@ -29,8 +30,7 @@ export function HistoryPanel() {
     );
     return activeInstallation?.baseInstallationId ?? activeContext.installationId;
   }, [activeContext, installations]);
-  const historyProjectPath =
-    activeAgentId === 'codex' ? (activeProjectPath ?? undefined) : undefined;
+  const historyProjectPath = activeProjectPath ?? undefined;
 
   const refresh = useCallback(async () => {
     setBusy(true);
@@ -53,16 +53,25 @@ export function HistoryPanel() {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    const onOperationFinished = () => void refresh();
+    window.addEventListener(WORKSPACE_OPERATION_FINISHED_EVENT, onOperationFinished);
+    return () =>
+      window.removeEventListener(WORKSPACE_OPERATION_FINISHED_EVENT, onOperationFinished);
+  }, [refresh]);
+
   async function onRollback(entry: OperationHistoryEntry) {
-    if (!entry.receipt || !entry.receipt.rollback?.available || !activeContext) return;
+    if (!entry.receipt || !entry.receipt.rollback?.available) return;
+    const rollbackContext = entry.receipt.context ?? activeContext;
+    if (!rollbackContext) return;
     setBusy(true);
     setError(null);
     try {
-      const rollbackPlan = await tauri.previewAgentRollback(entry.receipt.id, activeContext);
+      const rollbackPlan = await tauri.previewAgentRollback(entry.receipt.id, rollbackContext);
       if (!window.confirm(t('history.operationRollbackConfirm'))) return;
       await tauri.applyAgentRollbackPlan(
         rollbackPlan.id,
-        activeContext,
+        rollbackContext,
         rollbackPlan.riskFingerprint,
         true,
       );
@@ -101,8 +110,13 @@ export function HistoryPanel() {
         </Button>
       </div>
       {error && (
-        <div className="bg-destructive/10 px-3 py-1.5 text-xs text-destructive">{error}</div>
+        <div role="alert" className="bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
+          {error}
+        </div>
       )}
+      <div role="status" aria-live="polite" className="sr-only">
+        {busy ? t('history.loading') : t('history.loaded')}
+      </div>
       <div className="flex-1 space-y-5 overflow-y-auto p-3">
         <section>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

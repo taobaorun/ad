@@ -5,6 +5,7 @@ import { AgentCollectionPanel } from '@/components/AgentCollectionPanel';
 import i18n from '@/i18n';
 import { ProjectWorkspaceInventorySchema } from '@/lib/agentResourceInventoryTypes';
 import { AgentContextSchema, CapabilityDescriptorSchema } from '@/lib/agentTypes';
+import { resetWorkspaceOperationTracker } from '@/store/workspaceOperations';
 
 const {
   inspectProjectAgentWorkspace,
@@ -231,10 +232,17 @@ function actionPreview() {
           },
           scope: 'project' as const,
           dependencies: [],
-          activationImpact: [],
+          activationImpact: [
+            {
+              kind: 'code_execution' as const,
+              summaryKey: 'agents.plan.impact.codeExecution',
+            },
+          ],
         },
       ],
-      requiredAcknowledgements: [],
+      requiredAcknowledgements: [
+        { code: 'project_collection_apply' as const, risk: 'confirmation' as const },
+      ],
       riskFingerprint: 'risk:sha256:install-review',
       expiresAt: '2026-08-01T09:00:00Z',
     },
@@ -247,6 +255,7 @@ describe('AgentCollectionPanel', () => {
     inspectProjectAgentWorkspace.mockReset().mockResolvedValue(inventory());
     previewProjectCollectionAction.mockReset();
     applyProjectCollectionAction.mockReset();
+    resetWorkspaceOperationTracker();
   });
 
   it('renders backend-owned effective state, provenance, health, and partial coverage', async () => {
@@ -322,6 +331,9 @@ describe('AgentCollectionPanel', () => {
       },
     );
     expect(await screen.findByText('Review changes')).toBeInTheDocument();
+    expect(
+      screen.getByText('Changes code or runtime entry points available to the coding Agent'),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove: Review available' })).toBeDisabled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
@@ -331,5 +343,98 @@ describe('AgentCollectionPanel', () => {
       'risk:sha256:install-review',
     );
     expect(await screen.findByText('Applied')).toBeInTheDocument();
+  });
+
+  it('returns focus on cancel and supports keyboard dismissal', async () => {
+    const available = actionableInventory();
+    inspectProjectAgentWorkspace.mockResolvedValue(available);
+    previewProjectCollectionAction.mockResolvedValue(actionPreview());
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+
+    const install = await screen.findByRole('button', { name: 'Install: Review available' });
+    install.focus();
+    fireEvent.click(install);
+    const cancel = await screen.findByRole('button', { name: 'Cancel' });
+    expect(cancel).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(install).toHaveFocus();
+  });
+
+  it('keeps Apply running after the panel detaches and restores its result on reopen', async () => {
+    const available = actionableInventory();
+    const apply = deferred<{
+      workspaceKey: string;
+      outcome: 'changed';
+      issues: never[];
+    }>();
+    inspectProjectAgentWorkspace.mockResolvedValue(available);
+    previewProjectCollectionAction.mockResolvedValue(actionPreview());
+    applyProjectCollectionAction.mockReturnValue(apply.promise);
+
+    const first = render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Install: Review available' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
+    expect(await screen.findByText(/Apply is running for this project/)).toBeInTheDocument();
+    first.unmount();
+
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+    expect(await screen.findByText(/Apply is running for this project/)).toBeInTheDocument();
+    await act(async () =>
+      apply.resolve({
+        workspaceKey: available.workspace.key,
+        outcome: 'changed',
+        issues: [],
+      }),
+    );
+
+    expect(await screen.findByText('Applied')).toBeInTheDocument();
+    expect(applyProjectCollectionAction).toHaveBeenCalledOnce();
+  });
+
+  it('does not report external or conflicting outcomes as applied', async () => {
+    const available = actionableInventory();
+    inspectProjectAgentWorkspace.mockResolvedValue(available);
+    previewProjectCollectionAction.mockResolvedValue(actionPreview());
+    applyProjectCollectionAction.mockResolvedValue({
+      workspaceKey: available.workspace.key,
+      outcome: 'conflict',
+      issues: [],
+    });
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Install: Review available' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
+
+    expect(
+      await screen.findByText('The action stopped because the project resource is in conflict.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Applied')).not.toBeInTheDocument();
+  });
+
+  it('distinguishes an empty workspace from an empty filter result', async () => {
+    const empty = inventory('empty');
+    empty.skills.resources = [];
+    empty.plugins.resources = [];
+    inspectProjectAgentWorkspace.mockResolvedValueOnce(empty);
+    const first = render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+    expect(
+      await screen.findByText('No Skills or Plugins were observed in this project workspace.'),
+    ).toBeInTheDocument();
+    first.unmount();
+
+    const categoryEmpty = inventory('category-empty');
+    categoryEmpty.plugins.resources = [];
+    inspectProjectAgentWorkspace.mockResolvedValueOnce(categoryEmpty);
+    const second = render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+    expect(await screen.findByText('No Plugins were observed.')).toBeInTheDocument();
+    second.unmount();
+
+    inspectProjectAgentWorkspace.mockResolvedValueOnce(inventory());
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+    await screen.findByText('Review current');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'missing' } });
+    expect(screen.getByText('No Skills or Plugins match this filter.')).toBeInTheDocument();
   });
 });

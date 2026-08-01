@@ -137,6 +137,8 @@
     "title": "History",
     "operationTitle": "Operation history",
     "operationEmpty": "No Agent operations yet.",
+    "loading": "Refreshing operation history…",
+    "loaded": "Operation history is up to date.",
     "activationTitle": "Legacy activation history",
     "activationEmpty": "No profile activations yet.",
     "refresh": "Refresh",
@@ -561,12 +563,22 @@
       "actionCompensated": "The action failed and all changes were restored.",
       "actionPartialFailure": "The action completed only partially; inspect the receipt before continuing.",
       "actionFailed": "The project resource action failed."
+    },
+    "plan": {
+      "impact": {
+        "configuration": "Changes the effective project configuration",
+        "instructions": "Changes instructions loaded by the coding Agent",
+        "codeExecution": "Changes code or runtime entry points available to the coding Agent",
+        "permissions": "Changes the coding Agent's permissions"
+      }
     }
   },
   "agentWorkspace": {
     "tabs": {
+      "label": "Project Agent Workspace",
       "settings": "Settings",
-      "resources": "Skills & Plugins"
+      "resources": "Skills & Plugins",
+      "history": "History"
     },
     "settingsUnavailable": "Settings are unavailable for this Agent and project context.",
     "resourcesUnavailable": "Skills and Plugins are unavailable until an Agent installation is selected.",
@@ -611,6 +623,9 @@
     "skills": "Skills",
     "plugins": "Plugins",
     "empty": "No matching Skills or Plugins were found.",
+    "workspaceEmpty": "No Skills or Plugins were observed in this project workspace.",
+    "noMatches": "No Skills or Plugins match this filter.",
+    "categoryEmpty": "No {{category}} were observed.",
     "coverageCount": "{{visible}} visible / {{observed}} declarations",
     "coverage": {
       "partial": "This is a partial inventory. Verified resources remain visible; unverified locations are not claimed as complete.",
@@ -648,6 +663,16 @@
     "enable": "Enable {{name}}",
     "disable": "Disable {{name}}",
     "applySuccess": "Applied",
+    "applyFailed": "The operation failed. Review the error before retrying.",
+    "applyDetached": "Apply is running for this project. You can leave this view; the result will remain in History.",
+    "viewHistory": "View History",
+    "viewReceipt": "View receipt",
+    "noChange": "No changes were needed.",
+    "outcome": {
+      "external": "This action must be completed outside AD; no project resource was changed.",
+      "unsupported": "This action is not supported for the current project workspace.",
+      "conflict": "The action stopped because the project resource is in conflict."
+    },
     "compensated": "Apply failed; all collection changes were restored.",
     "partialFailure": "Apply only completed partially; rollback is available.",
     "rollback": "Rollback",
@@ -658,6 +683,20 @@
     "title": "Review changes",
     "description": "AD will verify the resources again, create backups, and then apply this plan.",
     "changes": "Planned resource changes",
+    "risk": {
+      "confirmation": "Confirmation required",
+      "confirmationDescription": "This operation is bound to the current project and will be revalidated before writing.",
+      "dangerous": "Dangerous permission change",
+      "dangerousDescription": "This plan expands execution or permission boundaries. Review every impact before applying."
+    },
+    "impact": "Impact",
+    "noActivationImpact": "No runtime activation impact was declared.",
+    "approval": "Approval and permissions",
+    "approvalRequired_one": "{{count}} explicit approval is required and bound to this plan.",
+    "approvalRequired_other": "{{count}} explicit approvals are required and bound to this plan.",
+    "approvalBound": "Apply is bound to this project, plan revision, and risk fingerprint.",
+    "targets": "Targets",
+    "technicalDetails": "Technical details",
     "operation": {
       "create": "Create",
       "replace": "Replace",
