@@ -1,46 +1,55 @@
 # 产品理念
 
-AD 是给 Claude Code 重度用户的"配置管理器"，不是给所有人的工具。
+AD 是本地 Coding Agent 的项目配置管理器。它不替代 Claude Code 或 Codex，也不做 chat UI；它负责让用户知道一个项目最终会使用什么配置，并能安全地改变它。
 
 ## 目标用户
 
-**核心画像**：每天用 Claude Code 工作，并且需要在多个 Anthropic 账号 / 不同 base URL / 不同 model 偏好之间切换的开发者。
+核心用户是同时维护多个项目、多个 Agent 或多个配置实例的开发者。他们知道项目需要什么，却不想再靠手工追踪 user/project/runtime 层级、Skill source revision、Plugin 安装位置和转换残留。
 
-不是目标用户：
-- 偶尔用一下 Claude Code 的人——他们手改 settings.json 就够了
-- 非开发者——AD 是 menubar 工具，UI 充满了 JSON 字眼，不友好
+AD 不面向只需偶尔修改一个 settings 文件的用户，也不把复杂文件语义隐藏成无法核验的“智能完成”。
 
 ## 核心价值
 
-| 用户痛 | AD 的回答 |
+| 用户痛点 | AD 的回答 |
 |---|---|
-| 手改 `~/.claude/settings.json` 容易写错 | profile 编辑器 + 校验，结构化输入 |
-| 切换账号要复制粘贴一长串 env vars | profile 一键应用 |
-| 改完忘了改回来 | 历史记录 + 一键 restore 之前的备份 |
-| 多个项目想用不同配置 | 分层 profile（计划中），写到项目本地不污染全局 |
+| 不知道某功能是否真的完成 | 每项资源显示 provenance、effective state、ownership、management status、coverage 与真实 action |
+| 项目配置散落在多个层级和目录 | Project Agent Workspace 统一展示 Settings、Skills、Plugins 和 History |
+| Skill source 更新可能影响多个项目 | source acquisition 与项目 pin 分离；项目只引用不可变 artifact revision |
+| Plugin 缺少原生项目隔离 | Claude 使用项目覆盖；Codex 使用 AD Managed Project Codex Runtime，并明确这不是 Codex 原生 Project Plugin |
+| Claude → Codex 转换看似成功但漏配置 | 先盘点有效项目环境，再按真实 carrier 路由；unsupported、partial、conflict 和 residual 不会消失 |
+| 自动写盘让人不放心 | Preview → explicit confirmation → Apply → receipt；rollback 也是新的受保护计划 |
+
+## 产品目标
+
+AD 当前追求的是 **managed-Agent configuration parity**：Claude Code 与 Codex 在配置管理用户任务上具有一致的可理解性、安全保证和项目隔离。
+
+它不追求 **automation-access parity**。本轮没有公共 CLI、MCP、deep-link 或远程 API，也不允许被管理的 Agent 自动批准危险操作。所有风险确认仍由第一方桌面 UI 中的人完成。
 
 ## 不做的事
 
-- **不做云同步**：profile 是高度敏感的（API key），跨设备同步是另一个项目
-- **不做 GUI 调用 Claude Code 本身**：AD 不嵌入 PTY、不做 chat UI，只管配置
-- **不做团队协作**：AD 是单机工具
-- **不做 Anthropic 之外的 AI 平台**：作用域明确就是 Claude Code
+- 不做云同步或团队协作；配置可能包含敏感信息，AD 是单机工具。
+- 不嵌入 PTY，不调用 Agent 完成聊天或代码任务。
+- 不允许用户动态加载 adapter 或自定义任意转换规则。
+- 不把项目级配置隔离宣传成第三方扩展的运行时沙箱或发布者认证。
+- 不读取或管理 auth/token/session/history/log/database 内容；受控 auth symlink 只共享路径关系。
+- 不伪造平台不存在的能力：Codex User Plugin acquisition、Claude Plugin install 等保持 degraded/external。
 
 ## 设计取舍的优先级
 
-当多个目标冲突时，按以下顺序权衡：
+1. 数据安全与不丢修改；
+2. 能力陈述与实际证据一致；
+3. 项目、Agent 与 installation 的隔离；
+4. 可发现、可解释、可恢复；
+5. macOS 原生体验与低配置上手。
 
-1. **数据安全** > 一切。宁可多一次确认 dialog，不能丢用户的 settings
-2. **可发现性** > 优雅。tray + 主窗口都要呈现关键状态（哪个 profile active）
-3. **零配置上手** > 高度定制。第一次启动应该能直接用，不需要看文档
-4. **macOS 原生感** > 跨平台一致性。颜色、字体、动效跟 macOS 走
+## 证据等级
 
-## 当前的产品张力
+功能状态必须区分：规格已声明、第一方 UI 可达、自动化通过、真实 macOS `.app` 工作流通过、release bundle 通过。未达到的等级不向上推断。
 
-**全局 settings 覆盖 vs. 实例级隔离**：当前架构是覆盖 `~/.claude/settings.json`，影响所有已运行的 CC 实例。重构方向是用 CC 自身的分层配置（`.claude/settings.json` + `.claude/settings.local.json` + env vars），把"profile"变成"可应用到指定项目的分层 recipe"。详细方案见 `docs/exec-plans/active/`（待）。
+项目工作区的逐项证据矩阵见 `docs/product-specs/project-agent-workspace.md`。未知 Agent 版本、schema 或位置会主动降低 inventory coverage；“全部”永远需要可验证的 discovery contract。
 
 ## 命名
 
-- 产品名 `AD`（大写显示）
-- 包名 / crate 名 `ad`（小写，遵循生态约定）
-- bundle id `com.jiaxy.ad`
+- 产品名 `AD`；
+- package / crate 名 `ad`；
+- bundle identifier `com.jiaxy.ad`。

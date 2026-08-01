@@ -1,8 +1,10 @@
 # 多 Agent 支持产品规格
 
-> 状态：已实现，发布门禁验证中（2026-07-20）
+> 状态：已实现并通过 Project Agent Workspace 发布验证（2026-08-01）
 >
 > 设计依据：`docs/design-docs/multi-agent-architecture.md`
+>
+> 项目级产品合同与证据矩阵：`docs/product-specs/project-agent-workspace.md`
 
 ## Objective
 
@@ -20,13 +22,13 @@
 
 ## Implementation Status
 
-- Claude Code 与 Codex 的 Settings、Profiles、Skills、Plugins、进程探测和终端入口已统一到 AgentContext/capability-driven UI。
+- Claude Code 与 Codex 的 Settings、Profiles、Skills、Plugins、进程探测和终端入口已统一到 AgentContext/capability-driven UI；`ProjectDetail` 是 Settings、Skills、Plugins、conversion 和 scoped History 的唯一项目工作区。
 - Profile 创建、编辑、应用、history 和 rollback 使用 adapter-owned payload 与共享安全执行路径。
 - Claude Code → Codex 转换按 Settings、Permissions/Rules、Skills、Plugins/Marketplaces 分组展示真实 source/target 路径、无法转换、需确认和冲突项；source 保持只读，Settings/Skills target 支持 backup 和 rollback。
 - 单一配置实例不再显示误导性的 `~/.claude` / `~/.codex` 下拉框；危险的 `never + danger-full-access` 必须经过独立确认和后端 plan-bound acknowledgement。
 - Plugin install 不做能力伪装：Claude 当前无 install operation；Codex Project install 已把 marketplace/cache/config 纳入安全 MutationPlan，并在 AD Managed Project Codex Home 中自动完成。Codex User install 仍依赖官方 marketplace flow，因此 capability 保持 degraded。列表和 enable/disable 已实现。
 - Project Codex runtime 只读继承 Base config，隔离 Plugin 状态，并通过 AD scoped launch 注入 `CODEX_HOME`。文件型用户登录跨项目复用；Keychain-only 明确阻塞；API Key 等项目差异由可选 Profile 负责。
-- legacy Claude template/import/shortcut façade 仍保留给兼容入口，不属于未来 Agent 扩展面。
+- legacy Claude template/import/shortcut façade 仅保留 Profile 兼容入口；legacy Project Skill 直写与旧 ProjectState 直写命令已退役，不能绕过统一 project operation contract。
 
 ## User Stories
 
@@ -122,6 +124,8 @@ adapter allowlist 中的配置对象，例如 settings、instructions、skills�
 | Conversion target | 不适用      | P0     | user/project 单作用域隔离、preview、conflict、backup、apply、rollback                         |
 
 “对等”表示用户任务和安全保证对等，不表示字段或底层文件结构相同。真实平台缺少某项 operation 时必须报告 degraded/unavailable，不能伪造成功。
+
+这里的对等是 **managed-Agent configuration parity**，不是 **automation-access parity**。当前所有风险确认都由第一方桌面 UI 完成；AD 不提供公共 CLI、MCP、deep-link 或远程 approval API，也不把第三方 Skill、Plugin、hook 或 MCP 的执行环境宣称为隔离沙箱。
 
 ## UI Requirements
 

@@ -43,10 +43,10 @@
   <nav><div class="inner"><strong>AD · Conversion Workbench</strong><a href="#feedback">反馈</a><a href="#route">载体路由</a><a href="#ui">工作台</a><a href="#risk">风险确认</a><a href="#baseline">sofampy</a><a href="#acceptance">验收</a></div></nav>
   <main>
     <header>
-      <div class="eyebrow">Product + architecture design · 2026-07-20</div>
+      <div class="eyebrow">Product + architecture design · 2026-08-01</div>
       <h1>Agent 配置转换工作台</h1>
       <p class="lede">转换不再等于“生成一份很短的 config.toml”。新模型先完整盘点 Claude 配置，再把每项路由到 Codex 的真实载体；无法迁移可以明确失败，危险权限不能静默放行。</p>
-      <span class="status">已实现 · 2026-07-20</span>
+      <span class="status">已实现 · Project derived-context 发布验证通过</span>
     </header>
 
     <section id="feedback">
@@ -98,7 +98,7 @@
       <h2>危险权限：提示不等于确认</h2>
       <div class="grid two">
         <div class="confirm"><span class="tag danger">独立二次确认</span><h3>允许 Codex 无审批、无沙箱运行？</h3><p>此变更会扩大项目中的命令执行权限。Claude Code 配置不会被修改，但 Codex 可在本机拥有完全访问。</p><div class="code">approval_policy = "never"<br>sandbox_mode = "danger-full-access"</div><label style="display:block;font-size:13px;margin:13px 0"><input type="checkbox" disabled> 我理解此配置允许命令无需审批并绕过沙箱</label><div class="buttons"><span class="button">取消</span><span class="button red">确认危险变更并应用</span></div></div>
-        <div class="card"><span class="tag info">后端硬门禁</span><h3>Plan-bound acknowledgement</h3><p>风险来自 backend-owned mutation plan。PlanStore 保存 <code>dangerous_permission_expansion</code> requirement；Apply 必须提交精确 acknowledgement。空值、未知 code、旧 plan、通用 boolean 都拒绝且不消费计划。</p><div class="rule" style="margin-top:18px"><strong>不可绕过的不变量</strong><span style="font-size:13px">只有当前 plan 的所有 required acknowledgements 满足后，才进入 digest 复查、备份和写入。</span></div></div>
+        <div class="card"><span class="tag info">后端硬门禁</span><h3>Plan-bound acknowledgement</h3><p>风险来自 backend-owned mutation plan。PlanStore 保存 <code>dangerous_permission_expansion</code> requirement；Apply 必须提交精确 acknowledgement。空值、未知 code、旧 plan、通用 boolean 都拒绝且不消费计划。</p><div class="rule" style="margin-top:18px"><strong>Project derived context</strong><span style="font-size:13px">Preview 返回的 <code>plan.context</code> 是 Apply 的唯一上下文权威；rollback 沿用 <code>receipt.context</code>。前端不得重新解析所选 Base installation。</span></div><div class="rule" style="margin-top:12px"><strong>不可绕过的不变量</strong><span style="font-size:13px">只有当前 plan 的 context 与 required acknowledgements 都精确匹配，才进入 digest 复查、备份和写入。</span></div></div>
       </div>
     </section>
 
@@ -123,7 +123,7 @@
         <div class="card"><span class="tag danger">强制确认</span><h3>危险风险绑定计划</h3><p>普通 Apply 不能带过危险权限；前后端测试共同证明确认路径存在且不可由 generic boolean 绕过。</p></div>
       </div>
     </section>
-    <footer>设计真理源：docs/design-docs/agent-conversion-workbench.md · 此 HTML 在用户批准后冻结为评审基线。</footer>
+    <footer>设计真理源：docs/design-docs/agent-conversion-workbench.md · 产品证据：docs/product-specs/project-agent-workspace.md</footer>
   </main>
 </body>
 </html>

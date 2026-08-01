@@ -10,9 +10,9 @@
 
 | 文档 | 描述 | 状态 |
 |---|---|---|
-| [architecture.md](architecture.md) / [HTML](architecture.html) | 系统架构 v2.0：多 Agent 边界、安全执行、双窗口、运行时数据与代码结构 | 已实现 |
+| [architecture.md](architecture.md) / [HTML](architecture.html) | 系统架构 v2.2：Project Agent Workspace、多 Agent 边界、不可变 Skill artifact、安全执行与运行时数据 | 已实现并通过发布验证 |
 | [multi-agent-architecture.md](multi-agent-architecture.md) / [HTML](multi-agent-architecture.html) | 多 Agent v1 抽象：Definition/Installation/Context、capability ports、resource snapshot、MutationPlan 与安全执行引擎 | 已实现 |
-| [agent-conversion-workbench.md](agent-conversion-workbench.md) / [HTML](agent-conversion-workbench.html) | Agent 配置转换工作台：完整 artifact inventory、多载体路由、可执行 resolution 与危险权限确认 | 已实现 |
+| [agent-conversion-workbench.md](agent-conversion-workbench.md) / [HTML](agent-conversion-workbench.html) | Agent 配置转换工作台：完整 artifact inventory、多载体路由、backend-owned derived context 与危险权限确认 | 已实现并通过发布验证 |
 | [codex-plugin-conversion.md](codex-plugin-conversion.md) / [HTML](codex-plugin-conversion.html) | Codex Plugin 自动转换：Project Codex Home、共享登录、默认配置继承、隔离安装与 LSP 边界 | 已实现 |
 | [conversion-preview-progress.md](conversion-preview-progress.md) / [HTML](conversion-preview-progress.html) | 转换预览真实进度：每次调用独享 Channel、语义阶段事件、耗时与无障碍状态反馈 | 已实现 |
 | [theme-system.md](theme-system.md) / [HTML](theme-system.html) | AD 主题系统：Catppuccin Mocha/Latte palette、语义 token、组件状态、编辑器与无障碍约束 | 已实现 |

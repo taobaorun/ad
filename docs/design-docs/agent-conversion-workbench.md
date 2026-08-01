@@ -1,10 +1,12 @@
 # Agent 配置转换工作台设计
 
-> 状态：已实现（2026-07-20）
+> 状态：已实现并通过 Project derived-context 发布验证（2026-08-01）
 >
 > 范围：Claude Code → Codex；同时约束未来内置 Agent 转换路线
 >
 > 关联计划：`docs/exec-plans/completed/agent-conversion-workbench.md`
+>
+> 项目级产品合同与证据：`docs/product-specs/project-agent-workspace.md`
 
 ## 结论
 
@@ -149,6 +151,12 @@ preview 保存 backend-owned `required_acknowledgements`。Apply 时 PlanStore �
 - 未满足要求时返回结构化 `confirmation_required`，不 claim plan、不写文件。
 
 UI 在危险 Apply 前显示独立对话框，明确列出项目路径、`approval_policy = "never"`、`sandbox_mode = "danger-full-access"`、影响和 source 不变声明。确认按钮使用危险样式，不能由普通 Apply 点击直接代替。
+
+### 6. Project derived context 由后端拥有
+
+Project preview 的输入是用户选择的 Base Codex installation，但计划目标可能是后端派生的 Project Codex Runtime。因此 preview 返回的 `plan.context` 是 Apply 的唯一上下文权威；前端不能在 Apply 前根据所选 installation 再次解析 base context。rollback 优先沿用 `receipt.context`，仅在旧 receipt 缺少 context 时才退回当前 preview 或重新解析。
+
+这条不变量把 derived runtime identity、project path、base relation 与 plan fingerprint 绑定在一起。若前端提交 base installation context，后端必须以 `resource_changed` 拒绝旧计划而不是猜测修正；同一 command-wrapper 语义由 Rust 回归测试覆盖。
 
 ## `sofampy` 基准行为
 

@@ -35,8 +35,8 @@
     "active": true,
     "targets": ["app", "dmg"],
     "category": "DeveloperTool",
-    "shortDescription": "Manage Claude Code settings profiles",
-    "longDescription": "AD lets you maintain multiple named profiles of ~/.claude/settings.json and switch between them with one click. Inspired by SwitchHosts.",
+    "shortDescription": "Manage local coding agent project configuration",
+    "longDescription": "AD manages Claude Code and Codex settings, Skills, Plugins, conversion, receipts, and protected rollback in project-isolated workspaces.",
     "icon": [
       "icons/32x32.png",
       "icons/64x64.png",
