@@ -1,13 +1,9 @@
-use std::fs::{File, OpenOptions};
-use std::io::Write;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::path::{Path, PathBuf};
-
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::fs::paths::operation_journals_dir;
-
+#[cfg(test)]
+use super::execution_state::StateWriteBoundary;
+use super::execution_state::{ExecutionState, StateDirectory};
 use super::{MutationPlan, PhysicalTargetId, PlanId, ReceiptId, ResourceKind, ResourceRef};
 
 const JOURNAL_SCHEMA_VERSION: u32 = 1;
@@ -57,29 +53,21 @@ pub struct OperationJournal {
 
 #[derive(Debug)]
 pub(crate) struct OperationJournalHandle {
-    path: PathBuf,
+    directory: StateDirectory,
+    name: String,
     journal: OperationJournal,
 }
 
 impl OperationJournalHandle {
-    pub(crate) fn prepare(
+    pub(super) fn prepare(
         plan: &MutationPlan,
         planned_receipt_id: &ReceiptId,
         instance_id: &str,
         operation_id: &str,
+        state: &ExecutionState,
     ) -> Result<Self, std::io::Error> {
-        let directory =
-            operation_journals_dir().map_err(|error| std::io::Error::other(error.to_string()))?;
-        std::fs::create_dir_all(&directory)?;
-        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
-        let file_name = format!("{}.json", operation_fingerprint(operation_id));
-        let path = directory.join(file_name);
-        if path.exists() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                format!("Operation journal already exists: {operation_id}"),
-            ));
-        }
+        let directory = state.journals().duplicate()?;
+        let name = format!("{}.json", operation_fingerprint(operation_id));
         let journal = OperationJournal {
             schema_version: JOURNAL_SCHEMA_VERSION,
             instance_id: instance_id.to_owned(),
@@ -94,8 +82,12 @@ impl OperationJournalHandle {
                 .collect(),
             receipt_id: None,
         };
-        persist_durable(&path, &journal)?;
-        Ok(Self { path, journal })
+        persist_durable(&directory, &name, &journal, false)?;
+        Ok(Self {
+            directory,
+            name,
+            journal,
+        })
     }
 
     pub(crate) fn transition(
@@ -116,7 +108,7 @@ impl OperationJournalHandle {
         let previous_receipt = self.journal.receipt_id.clone();
         self.journal.state = state;
         self.journal.receipt_id = receipt_id.cloned();
-        if let Err(error) = persist_durable(&self.path, &self.journal) {
+        if let Err(error) = persist_durable(&self.directory, &self.name, &self.journal, true) {
             self.journal.state = previous_state;
             self.journal.receipt_id = previous_receipt;
             return Err(error);
@@ -146,56 +138,32 @@ fn operation_fingerprint(operation_id: &str) -> String {
     format!("{:x}", Sha256::digest(operation_id.as_bytes()))
 }
 
-fn persist_durable(path: &Path, journal: &OperationJournal) -> Result<(), std::io::Error> {
-    persist_durable_with(path, journal, |_| Ok(()))
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum JournalWriteBoundary {
-    FileSync,
-    Rename,
-    ParentSync,
-}
-
-fn persist_durable_with(
-    path: &Path,
+fn persist_durable(
+    directory: &StateDirectory,
+    name: &str,
     journal: &OperationJournal,
-    mut boundary: impl FnMut(JournalWriteBoundary) -> Result<(), std::io::Error>,
+    replace: bool,
 ) -> Result<(), std::io::Error> {
-    let parent = path.parent().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Operation journal path has no parent",
-        )
-    })?;
-    std::fs::create_dir_all(parent)?;
     let bytes = serde_json::to_vec_pretty(journal)
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-    let temporary = parent.join(format!(
-        ".{}.tmp.{}",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("journal"),
-        uuid::Uuid::new_v4().simple()
-    ));
-    let result = (|| {
-        let mut file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .mode(0o600)
-            .open(&temporary)?;
-        file.write_all(&bytes)?;
-        boundary(JournalWriteBoundary::FileSync)?;
-        file.sync_all()?;
-        boundary(JournalWriteBoundary::Rename)?;
-        std::fs::rename(&temporary, path)?;
-        boundary(JournalWriteBoundary::ParentSync)?;
-        File::open(parent)?.sync_all()
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temporary);
+    if replace {
+        directory.write_atomic(name, &bytes)
+    } else {
+        directory.write_atomic_new(name, &bytes)
     }
-    result
+}
+
+#[cfg(test)]
+fn persist_durable_with(
+    directory: &StateDirectory,
+    name: &str,
+    journal: &OperationJournal,
+    replace: bool,
+    boundary: impl FnMut(StateWriteBoundary) -> Result<(), std::io::Error>,
+) -> Result<(), std::io::Error> {
+    let bytes = serde_json::to_vec_pretty(journal)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+    directory.write_atomic_with(name, &bytes, replace, boundary)
 }
 
 #[cfg(test)]
@@ -267,36 +235,78 @@ mod tests {
     #[test]
     fn file_sync_failure_does_not_publish_a_journal() {
         let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("journal.json");
+        let state = ExecutionState::open_at(&temp.path().join(".ad")).unwrap();
 
-        let error = persist_durable_with(&path, &journal(), |boundary| {
-            if boundary == JournalWriteBoundary::FileSync {
-                return Err(std::io::Error::other("injected file sync failure"));
-            }
-            Ok(())
-        })
+        let error = persist_durable_with(
+            state.journals(),
+            "journal.json",
+            &journal(),
+            true,
+            |boundary| {
+                if boundary == StateWriteBoundary::FileSync {
+                    return Err(std::io::Error::other("injected file sync failure"));
+                }
+                Ok(())
+            },
+        )
         .unwrap_err();
 
         assert!(error.to_string().contains("file sync"));
-        assert!(!path.exists());
+        assert!(state.journals().read("journal.json").is_err());
     }
 
     #[test]
     fn parent_sync_failure_leaves_a_parseable_recovery_record() {
         let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("journal.json");
+        let state = ExecutionState::open_at(&temp.path().join(".ad")).unwrap();
 
-        let error = persist_durable_with(&path, &journal(), |boundary| {
-            if boundary == JournalWriteBoundary::ParentSync {
-                return Err(std::io::Error::other("injected parent sync failure"));
-            }
-            Ok(())
-        })
+        let error = persist_durable_with(
+            state.journals(),
+            "journal.json",
+            &journal(),
+            true,
+            |boundary| {
+                if boundary == StateWriteBoundary::ParentSync {
+                    return Err(std::io::Error::other("injected parent sync failure"));
+                }
+                Ok(())
+            },
+        )
         .unwrap_err();
 
         assert!(error.to_string().contains("parent sync"));
         let persisted: OperationJournal =
-            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+            serde_json::from_slice(&state.journals().read("journal.json").unwrap()).unwrap();
         assert_eq!(persisted.state, OperationJournalState::Prepared);
+    }
+
+    #[test]
+    fn initial_journal_publish_never_overwrites_an_existing_operation() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = ExecutionState::open_at(&temp.path().join(".ad")).unwrap();
+        let planned_receipt = ReceiptId::from("receipt");
+        OperationJournalHandle::prepare(
+            &plan(),
+            &planned_receipt,
+            "first-instance",
+            "same-operation",
+            &state,
+        )
+        .unwrap();
+
+        let error = OperationJournalHandle::prepare(
+            &plan(),
+            &planned_receipt,
+            "second-instance",
+            "same-operation",
+            &state,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        let name = format!("{}.json", operation_fingerprint("same-operation"));
+        let persisted: OperationJournal =
+            serde_json::from_slice(&state.journals().read(&name).unwrap()).unwrap();
+        assert_eq!(persisted.instance_id, "first-instance");
     }
 }

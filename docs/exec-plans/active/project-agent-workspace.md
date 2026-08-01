@@ -73,10 +73,10 @@
   - [x] (2026-08-01 11:06+08:00) U1：Rust/TypeScript workspace、resource/declaration/target identity、coverage/provenance/ownership/item action、sanitized plan与domain report契约完成；25个前端契约测试、Rust parity/operations/capability测试及typecheck通过。
   - [ ] U10：sealed target接入执行、fd-relative confinement、跨进程锁、journal/startup recovery、versioned receipt、ownership与inverse rollback plan。
     - [x] (2026-08-01 11:22+08:00) 跨进程target lock与durable journal基础：真实子进程争用3/3、lock 2/2、journal 3/3、execution 14/14、PlanStore 11/11及严格Clippy通过；receipt file/parent sync后才提交journal，补偿和repair-required路径有持久状态。
-    - [ ] fd-relative/no-follow confinement、unsafe root拒绝与ancestor-swap测试。
+    - [x] (2026-08-01 12:20+08:00) fd-relative/no-follow confinement、unsafe root拒绝与ancestor-swap测试完成；Agent target与AD transaction artifacts都在held descriptors下执行。
       - [x] (2026-08-01 11:37+08:00) Project/user/runtime regular-file target已使用held parent fd执行observe、temp create、rename、unlink和directory sync；project/user ancestor symlink、active swap、0777 AD root及symlinked backup root sentinel测试通过。
       - [x] (2026-08-01 12:01+08:00) Skill/Plugin symlink与directory storage已统一使用held parent fd执行observe、digest、backup、temp publish、remove、compensation、rollback与receipt observe；directory digest保持旧合同，symlink/directory active-swap sentinel、ExecutionEngine补偿/rollback与Rust全量267/267测试通过。
-      - [ ] AD journal/backup/history的active-swap fd-relative持久化仍待接入；本项不标完成。
+      - [x] (2026-08-01 12:20+08:00) AD lock/journal/backup/manifest/history/cleanup已共享一次操作持有的state directory descriptors；整个`.ad`或journal child被swap成outside symlink时，事务artifact仍写入原目录且outside为空。初始journal和receipt使用no-replace发布，lock拒绝hard link；Rust全量272/272与严格Clippy通过。
     - [ ] startup recovery/global recovery lock、mutation command gate与process-kill边界矩阵。
     - [ ] versioned receipt/history decoder、ownership record与fresh inverse rollback plan。
 - [ ] M1：实现 effective inventory 与分层 Settings（验证标准：Claude/Codex provenance、coverage、canonical context测试通过）
@@ -122,6 +122,10 @@
   证据：恢复严格installation identity检查后，`project_plugin_config_failure_restores_replaced_directories_before_activation`在base-config read-set处正确暴露边界冲突；拆分只读dependency root后通过，而mutation仍保持identity绑定。
 - 发现：首次统一`ConfinedTarget`会在执行准备阶段创建缺失的target parent；如果后续precondition或backup失败，项目会留下没有receipt的空目录。
   证据：新增`resolving_a_missing_target_does_not_create_parent_directories`；实现改为持有最近存在ancestor fd与pending components，只在Apply写入时逐级创建并sync后测试通过。
+- 发现：分别加固journal、backup和history文件仍不能关闭AD state race；如果每一步重新从path打开，整个`.ad`或任一child在步骤之间被替换后，lock、journal、backup与receipt会落入不同物理根。
+  证据：`execution_state_root_swap_cannot_redirect_transaction_artifacts`在`Backup(0)`前替换整个`.ad`；只有让ExecutionEngine从lock获取到receipt提交共享同一组directory descriptors后，journal/manifest/receipt才全部留在原根且outside为空。
+- 发现：existing lockfile若是指向外部current-user文件的hard link，`O_NOFOLLOW`不能阻止metadata写入破坏外部文件；initial journal/receipt若使用replace rename也会在极小identity碰撞时覆盖既有证据。
+  证据：新增hard-link sentinel与same-operation双writer测试；lock要求`st_nlink == 1`，journal/receipt通过synced temp + no-replace link发布。
 
 ## 决策日志
 
@@ -157,6 +161,12 @@
   日期/作者：2026-08-01 / Codex
 - 决策：缺失的target parent以“最近存在ancestor fd + pending components”表示，precondition/backup阶段只观察，只有Apply写入才通过no-follow `openat/mkdirat`创建并同步目录项。
   理由：既保持ancestor-swap安全，也避免失败计划在receipt之前留下项目目录副作用。
+  日期/作者：2026-08-01 / Codex
+- 决策：每次ExecutionEngine操作只打开一次`ExecutionState`，并把held lock/journal/backups/history descriptors传过target lock、journal lifecycle、backup/compensation、receipt与rollback read。
+  理由：逐文件校验不能保证跨阶段事务仍位于同一物理AD root；operation-scoped capability才能让路径替换后继续fail confined。
+  日期/作者：2026-08-01 / Codex
+- 决策：新operation journal和receipt使用no-replace hard-link publish，lockfile必须是current-user、single-link regular file。
+  理由：操作证据与锁身份不能被并发writer或预置hard link静默覆盖；transition仍使用同directory fd内的atomic replace。
   日期/作者：2026-08-01 / Codex
 
 ## 结果回顾

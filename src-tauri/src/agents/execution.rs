@@ -5,11 +5,9 @@ use std::sync::Mutex;
 use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::fs::atomic::write_atomic;
-use crate::fs::paths::{backups_dir, ensure_dir, history_dir};
-
-use super::execution_confinement::{validate_ad_managed_root, ConfinedTarget};
+use super::execution_confinement::ConfinedTarget;
 use super::execution_fs::{directory_tree_digest, render_content, TargetState};
+use super::execution_state::{ExecutionState, StateDirectory};
 use super::{
     builtin_registry, execution_instance_id, AgentContext, AgentError, AgentErrorCode,
     AppliedResourceState, ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan,
@@ -72,7 +70,9 @@ struct ResolvedMutation {
     mutation: PlannedMutation,
     target: ManagedResourceTarget,
     confined_target: ConfinedTarget,
+    directory_source: Option<StateDirectory>,
     original: TargetState,
+    backup_name: Option<String>,
     backup_path: Option<PathBuf>,
     backup_digest: Option<ContentDigest>,
 }
@@ -80,7 +80,9 @@ struct ResolvedMutation {
 struct FailureContext<'a> {
     resolved: &'a [ResolvedMutation],
     applied: &'a [usize],
-    operation_dir: &'a Path,
+    state: &'a ExecutionState,
+    operation_dir: &'a StateDirectory,
+    operation_name: &'a str,
     faults: &'a dyn FaultInjector,
     journal: &'a mut OperationJournalHandle,
 }
@@ -163,11 +165,11 @@ impl ExecutionEngine {
         let _guard = EXECUTION_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        validate_ad_managed_root()?;
+        let state = ExecutionState::open().map_err(execution_state_error)?;
         let registry = builtin_registry();
-        let plan = rollback_plan(receipt_id, &registry)?;
-        let _target_locks = TargetLockSet::acquire_for_plan(&plan, &registry)?;
-        let receipt = execute_plan(plan, &registry, &NoFaults)?;
+        let plan = rollback_plan(receipt_id, &registry, &state)?;
+        let _target_locks = TargetLockSet::acquire_for_plan(&plan, &registry, &state)?;
+        let receipt = execute_plan(plan, &registry, &NoFaults, &state)?;
         refresh_runtime_state(&receipt, false);
         Ok(receipt)
     }
@@ -220,11 +222,11 @@ impl ExecutionEngine {
         let _guard = EXECUTION_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        validate_ad_managed_root()?;
+        let state = ExecutionState::open().map_err(execution_state_error)?;
         let registry = builtin_registry();
         let resources = plans.resources_for_locking(plan_id)?;
         let _target_locks =
-            TargetLockSet::acquire_for_resources(&resources, plan_id.as_str(), &registry)?;
+            TargetLockSet::acquire_for_resources(&resources, plan_id.as_str(), &registry, &state)?;
         let observe = |resource: &ResourceRef| {
             let context = AgentContext {
                 installation_id: resource.installation_id.clone(),
@@ -235,7 +237,7 @@ impl ExecutionEngine {
         };
         let plan = plans.claim_acknowledged(plan_id, acknowledgements, observe)?;
         let refresh_base_config = plan_refreshes_base_config(&plan);
-        let receipt = execute_plan(plan, &registry, faults)?;
+        let receipt = execute_plan(plan, &registry, faults, &state)?;
         refresh_runtime_state(&receipt, refresh_base_config);
         Ok(receipt)
     }
@@ -308,6 +310,7 @@ fn refresh_runtime_state(receipt: &OperationReceipt, refresh_base_config: bool) 
 fn rollback_plan(
     receipt_id: &ReceiptId,
     registry: &super::AdapterRegistry,
+    execution_state: &ExecutionState,
 ) -> Result<MutationPlan, AgentError> {
     uuid::Uuid::parse_str(receipt_id.as_str()).map_err(|_| {
         receipt_error(
@@ -317,18 +320,18 @@ fn rollback_plan(
             "Invalid operation receipt id",
         )
     })?;
-    let receipt_path = history_dir()
-        .map_err(|error| receipt_error(AgentErrorCode::Io, receipt_id, None, error.to_string()))?
-        .join("operations")
-        .join(format!("{receipt_id}.json"));
-    let receipt_bytes = std::fs::read(&receipt_path).map_err(|error| {
-        receipt_error(
-            AgentErrorCode::Io,
-            receipt_id,
-            None,
-            format!("Failed to read {}: {error}", receipt_path.display()),
-        )
-    })?;
+    let receipt_name = format!("{receipt_id}.json");
+    let receipt_bytes = execution_state
+        .history()
+        .read(&receipt_name)
+        .map_err(|error| {
+            receipt_error(
+                AgentErrorCode::Io,
+                receipt_id,
+                None,
+                format!("Failed to read operation receipt: {error}"),
+            )
+        })?;
     let receipt: OperationReceipt = serde_json::from_slice(&receipt_bytes).map_err(|error| {
         receipt_error(
             AgentErrorCode::InvalidPlan,
@@ -365,17 +368,23 @@ fn rollback_plan(
         ));
     }
 
-    let operation_dir = backups_dir()
-        .map_err(|error| receipt_error(AgentErrorCode::Io, receipt_id, None, error.to_string()))?
-        .join("operations")
-        .join(receipt_id.as_str());
-    let manifest_path = operation_dir.join("manifest.json");
-    let manifest_bytes = std::fs::read(&manifest_path).map_err(|error| {
+    let operation_dir = execution_state
+        .backups()
+        .open_directory(receipt_id.as_str())
+        .map_err(|error| {
+            receipt_error(
+                AgentErrorCode::Io,
+                receipt_id,
+                None,
+                format!("Failed to open operation backups: {error}"),
+            )
+        })?;
+    let manifest_bytes = operation_dir.read("manifest.json").map_err(|error| {
         receipt_error(
             AgentErrorCode::Io,
             receipt_id,
             None,
-            format!("Failed to read {}: {error}", manifest_path.display()),
+            format!("Failed to read backup manifest: {error}"),
         )
     })?;
     if ContentDigest::sha256(&manifest_bytes) != expected_manifest_digest {
@@ -587,7 +596,7 @@ fn rollback_plan(
 
 fn rollback_mutation(
     receipt_id: &ReceiptId,
-    operation_dir: &Path,
+    operation_dir: &StateDirectory,
     entry: BackupManifestEntry,
     current_kind: ResourceStateKind,
     expected_digest: Option<ContentDigest>,
@@ -611,7 +620,11 @@ fn rollback_mutation(
                     "File rollback entry has no backup",
                 )
             })?;
-            let bytes = read_contained_backup(receipt_id, operation_dir, Path::new(&backup_path))?;
+            let backup_name =
+                contained_backup_name(receipt_id, operation_dir, Path::new(&backup_path))?;
+            let bytes = operation_dir.read(&backup_name).map_err(|error| {
+                receipt_error(AgentErrorCode::Io, receipt_id, None, error.to_string())
+            })?;
             let expected_backup_digest = recorded_backup_digest.ok_or_else(|| {
                 receipt_error(
                     AgentErrorCode::Unsupported,
@@ -678,24 +691,19 @@ fn rollback_mutation(
                     "Directory rollback entry has no backup",
                 )
             })?;
-            let backup = contained_backup_path(receipt_id, operation_dir, Path::new(&backup_path))?;
-            if !backup.is_dir() {
-                return Err(receipt_error(
-                    AgentErrorCode::InvalidPlan,
-                    receipt_id,
-                    Some(resource.clone()),
-                    "Directory rollback backup is not a directory",
-                ));
-            }
-            let actual_backup_digest = super::execution_fs::directory_tree_digest(&backup)
-                .map_err(|error| {
-                    receipt_error(
-                        AgentErrorCode::Io,
-                        receipt_id,
-                        Some(resource.clone()),
-                        error.to_string(),
-                    )
-                })?;
+            let backup_name =
+                contained_backup_name(receipt_id, operation_dir, Path::new(&backup_path))?;
+            let actual_backup_digest =
+                operation_dir
+                    .directory_digest(&backup_name)
+                    .map_err(|error| {
+                        receipt_error(
+                            AgentErrorCode::Io,
+                            receipt_id,
+                            Some(resource.clone()),
+                            error.to_string(),
+                        )
+                    })?;
             let expected_backup_digest = recorded_backup_digest.ok_or_else(|| {
                 receipt_error(
                     AgentErrorCode::Unsupported,
@@ -722,7 +730,7 @@ fn rollback_mutation(
                 expected_digest,
                 media_type: "application/vnd.ad.directory".into(),
                 content: Some(serde_json::json!({
-                    "path": backup.to_string_lossy(),
+                    "path": backup_path,
                     "digest": actual_backup_digest,
                 })),
             })
@@ -736,34 +744,46 @@ fn rollback_mutation(
     }
 }
 
-fn read_contained_backup(
+fn contained_backup_name(
     receipt_id: &ReceiptId,
-    operation_dir: &Path,
+    operation_dir: &StateDirectory,
     backup_path: &Path,
-) -> Result<Vec<u8>, AgentError> {
-    let canonical_backup = contained_backup_path(receipt_id, operation_dir, backup_path)?;
-    std::fs::read(&canonical_backup)
-        .map_err(|error| receipt_error(AgentErrorCode::Io, receipt_id, None, error.to_string()))
-}
-
-fn contained_backup_path(
-    receipt_id: &ReceiptId,
-    operation_dir: &Path,
-    backup_path: &Path,
-) -> Result<PathBuf, AgentError> {
-    let canonical_dir = std::fs::canonicalize(operation_dir)
-        .map_err(|error| receipt_error(AgentErrorCode::Io, receipt_id, None, error.to_string()))?;
-    let canonical_backup = std::fs::canonicalize(backup_path)
-        .map_err(|error| receipt_error(AgentErrorCode::Io, receipt_id, None, error.to_string()))?;
-    if !canonical_backup.starts_with(&canonical_dir) {
+) -> Result<String, AgentError> {
+    let relative = backup_path
+        .strip_prefix(operation_dir.display_path())
+        .map_err(|_| {
+            receipt_error(
+                AgentErrorCode::PermissionDenied,
+                receipt_id,
+                None,
+                "Backup path escapes its operation directory",
+            )
+        })?;
+    let mut components = relative.components();
+    let Some(std::path::Component::Normal(name)) = components.next() else {
+        return Err(receipt_error(
+            AgentErrorCode::InvalidPlan,
+            receipt_id,
+            None,
+            "Backup path has no file name",
+        ));
+    };
+    if components.next().is_some() {
         return Err(receipt_error(
             AgentErrorCode::PermissionDenied,
             receipt_id,
             None,
-            "Backup path escapes its operation directory",
+            "Backup path contains nested components",
         ));
     }
-    Ok(canonical_backup)
+    name.to_str().map(str::to_owned).ok_or_else(|| {
+        receipt_error(
+            AgentErrorCode::InvalidPlan,
+            receipt_id,
+            None,
+            "Backup file name is not UTF-8",
+        )
+    })
 }
 
 fn receipt_error(
@@ -789,6 +809,7 @@ fn execute_plan(
     plan: MutationPlan,
     registry: &super::AdapterRegistry,
     faults: &dyn FaultInjector,
+    state: &ExecutionState,
 ) -> Result<OperationReceipt, AgentError> {
     let receipt_id = ReceiptId::from(uuid::Uuid::new_v4().to_string());
     let mut journal = OperationJournalHandle::prepare(
@@ -796,13 +817,14 @@ fn execute_plan(
         &receipt_id,
         execution_instance_id(),
         plan.id.as_str(),
+        state,
     )
     .map_err(|error| io_error(&plan, None, error.to_string()))?;
-    let operation_dir = backups_dir()
-        .map_err(|error| io_error(&plan, None, error.to_string()))?
-        .join("operations")
-        .join(receipt_id.as_str());
-    ensure_dir(&operation_dir).map_err(|error| io_error(&plan, None, error.to_string()))?;
+    let operation_name = receipt_id.as_str().to_owned();
+    let operation_dir = state
+        .backups()
+        .create_directory(&operation_name)
+        .map_err(|error| io_error(&plan, None, error.to_string()))?;
 
     let preparation = (|| -> Result<(Vec<ResolvedMutation>, ContentDigest), AgentError> {
         let mut seen_targets = HashSet::new();
@@ -820,22 +842,31 @@ fn execute_plan(
             let original = confined_target.observe()?;
             ensure_storage_compatible(&plan, &mutation.resource, target.storage(), &original)?;
             ensure_expected(&plan, &mutation, original.digest().as_ref())?;
-            validate_mutation_source(&plan, &mutation, target.storage())?;
+            let directory_source =
+                resolve_state_directory_source(&plan, &mutation, target.storage(), state)?;
+            validate_mutation_source(
+                &plan,
+                &mutation,
+                target.storage(),
+                directory_source.as_ref(),
+            )?;
             fail_if_requested(&plan, faults, ExecutionStep::Backup(index))?;
             let (backup_path, backup_digest) = match &original {
                 TargetState::File(bytes) => {
-                    let path = operation_dir.join(format!("{index}.backup"));
-                    write_atomic(&path, bytes).map_err(|error| {
+                    let name = format!("{index}.backup");
+                    operation_dir.write_atomic(&name, bytes).map_err(|error| {
                         io_error(&plan, Some(mutation.resource.clone()), error.to_string())
                     })?;
+                    let path = operation_dir.display_path().join(&name);
                     (Some(path), Some(ContentDigest::sha256(bytes)))
                 }
                 TargetState::Directory(_) => {
-                    let path = operation_dir.join(format!("{index}.backup"));
-                    confined_target.copy_directory_to(&path)?;
-                    let digest = directory_tree_digest(&path).map_err(|error| {
+                    let name = format!("{index}.backup");
+                    confined_target.copy_directory_to(&operation_dir, &name)?;
+                    let digest = operation_dir.directory_digest(&name).map_err(|error| {
                         io_error(&plan, Some(mutation.resource.clone()), error.to_string())
                     })?;
+                    let path = operation_dir.display_path().join(&name);
                     (Some(path), Some(digest))
                 }
                 TargetState::Missing | TargetState::Symlink(_) => (None, None),
@@ -844,7 +875,13 @@ fn execute_plan(
                 mutation,
                 target,
                 confined_target,
+                directory_source,
                 original,
+                backup_name: backup_path
+                    .as_ref()
+                    .and_then(|path| path.file_name())
+                    .and_then(|name| name.to_str())
+                    .map(str::to_owned),
                 backup_path,
                 backup_digest,
             });
@@ -856,7 +893,8 @@ fn execute_plan(
         };
         let manifest_bytes = serde_json::to_vec_pretty(&manifest)
             .map_err(|error| io_error(&plan, None, error.to_string()))?;
-        write_atomic(&operation_dir.join("manifest.json"), &manifest_bytes)
+        operation_dir
+            .write_atomic("manifest.json", &manifest_bytes)
             .map_err(|error| io_error(&plan, None, error.to_string()))?;
         let manifest_digest = ContentDigest::sha256(&manifest_bytes);
         Ok((resolved, manifest_digest))
@@ -867,18 +905,24 @@ fn execute_plan(
             journal
                 .transition(OperationJournalState::Compensated, None)
                 .map_err(|journal_error| io_error(&plan, None, journal_error.to_string()))?;
-            return Err(cleanup_pre_apply_failure(&plan, &operation_dir, error));
+            return Err(cleanup_pre_apply_failure(
+                &plan,
+                state,
+                &operation_name,
+                error,
+            ));
         }
     };
 
     fail_if_requested(&plan, faults, ExecutionStep::PersistJournalApplying)
-        .map_err(|error| cleanup_pre_apply_failure(&plan, &operation_dir, error))?;
+        .map_err(|error| cleanup_pre_apply_failure(&plan, state, &operation_name, error))?;
     journal
         .transition(OperationJournalState::Applying, None)
         .map_err(|error| {
             cleanup_pre_apply_failure(
                 &plan,
-                &operation_dir,
+                state,
+                &operation_name,
                 io_error(&plan, None, error.to_string()),
             )
         })?;
@@ -896,14 +940,23 @@ fn execute_plan(
                 FailureContext {
                     resolved: &resolved,
                     applied: &applied,
+                    state,
                     operation_dir: &operation_dir,
+                    operation_name: &operation_name,
                     faults,
                     journal: &mut journal,
                 },
             );
         }
         let apply_result = fail_if_requested(&plan, faults, ExecutionStep::Apply(index))
-            .and_then(|()| validate_mutation_source(&plan, &item.mutation, item.target.storage()))
+            .and_then(|()| {
+                validate_mutation_source(
+                    &plan,
+                    &item.mutation,
+                    item.target.storage(),
+                    item.directory_source.as_ref(),
+                )
+            })
             .and_then(|()| apply_mutation(&plan, item));
         if let Err(error) = apply_result {
             return finish_failed(
@@ -914,7 +967,9 @@ fn execute_plan(
                 FailureContext {
                     resolved: &resolved,
                     applied: &applied,
+                    state,
                     operation_dir: &operation_dir,
+                    operation_name: &operation_name,
                     faults,
                     journal: &mut journal,
                 },
@@ -945,14 +1000,16 @@ fn execute_plan(
                 FailureContext {
                     resolved: &resolved,
                     applied: &applied,
+                    state,
                     operation_dir: &operation_dir,
+                    operation_name: &operation_name,
                     faults,
                     journal: &mut journal,
                 },
             )
         }
     };
-    if let Err(error) = persist_receipt_with_faults(&plan, &receipt, faults) {
+    if let Err(error) = persist_receipt_with_faults(&plan, &receipt, faults, state) {
         return compensate_after_receipt_failure(
             &plan,
             error,
@@ -960,7 +1017,9 @@ fn execute_plan(
             FailureContext {
                 resolved: &resolved,
                 applied: &applied,
+                state,
                 operation_dir: &operation_dir,
+                operation_name: &operation_name,
                 faults,
                 journal: &mut journal,
             },
@@ -972,12 +1031,25 @@ fn execute_plan(
     Ok(receipt)
 }
 
+fn execution_state_error(error: std::io::Error) -> AgentError {
+    AgentError {
+        code: AgentErrorCode::PermissionDenied,
+        message: format!("Failed to open the confined AD execution state: {error}"),
+        agent_id: None,
+        installation_id: None,
+        resource: None,
+        retryable: false,
+        details: None,
+    }
+}
+
 fn cleanup_pre_apply_failure(
     plan: &MutationPlan,
-    operation_dir: &Path,
+    state: &ExecutionState,
+    operation_name: &str,
     mut cause: AgentError,
 ) -> AgentError {
-    if let Err(error) = std::fs::remove_dir_all(operation_dir) {
+    if let Err(error) = state.backups().remove(operation_name) {
         if error.kind() != std::io::ErrorKind::NotFound {
             cause.code = AgentErrorCode::Io;
             cause.retryable = true;
@@ -1009,8 +1081,9 @@ fn finish_failed(
     let mut compensation_errors = Vec::new();
     for index in context.applied.iter().rev() {
         let restore_result =
-            fail_if_requested(plan, context.faults, ExecutionStep::Compensate(*index))
-                .and_then(|()| restore_target(plan, &context.resolved[*index]));
+            fail_if_requested(plan, context.faults, ExecutionStep::Compensate(*index)).and_then(
+                |()| restore_target(plan, &context.resolved[*index], context.operation_dir),
+            );
         if let Err(error) = restore_result {
             compensation_errors.push(error.message);
         }
@@ -1052,7 +1125,7 @@ fn finish_failed(
             ))
         }
     };
-    if let Err(error) = persist_receipt_with_faults(plan, &receipt, context.faults) {
+    if let Err(error) = persist_receipt_with_faults(plan, &receipt, context.faults, context.state) {
         return Err(unrecorded_result_error(
             plan,
             status,
@@ -1105,8 +1178,9 @@ fn compensate_after_receipt_failure(
     let mut compensation_errors = Vec::new();
     for index in context.applied.iter().rev() {
         let restore_result =
-            fail_if_requested(plan, context.faults, ExecutionStep::Compensate(*index))
-                .and_then(|()| restore_target(plan, &context.resolved[*index]));
+            fail_if_requested(plan, context.faults, ExecutionStep::Compensate(*index)).and_then(
+                |()| restore_target(plan, &context.resolved[*index], context.operation_dir),
+            );
         if let Err(error) = restore_result {
             compensation_errors.push(error.message);
         }
@@ -1125,7 +1199,8 @@ fn compensate_after_receipt_failure(
             "Operation receipt could not be {failure_action}; applied changes were compensated: {}",
             receipt_error.message
         );
-        receipt_error = cleanup_pre_apply_failure(plan, context.operation_dir, receipt_error);
+        receipt_error =
+            cleanup_pre_apply_failure(plan, context.state, context.operation_name, receipt_error);
     } else {
         if let Err(error) = context
             .journal
@@ -1213,6 +1288,7 @@ fn validate_mutation_source(
     plan: &MutationPlan,
     mutation: &PlannedMutation,
     storage: ResourceStorage,
+    directory_source: Option<&StateDirectory>,
 ) -> Result<(), AgentError> {
     if mutation.kind == MutationKind::Delete {
         return Ok(());
@@ -1220,8 +1296,13 @@ fn validate_mutation_source(
     match storage {
         ResourceStorage::Directory => {
             let source = parse_directory_source(plan, mutation)?;
-            let actual = directory_tree_digest(Path::new(&source.path))
-                .map_err(|_| changed_error(plan, &mutation.resource))?;
+            let actual = match directory_source {
+                Some(source) => source
+                    .digest()
+                    .map_err(|_| changed_error(plan, &mutation.resource))?,
+                None => directory_tree_digest(Path::new(&source.path))
+                    .map_err(|_| changed_error(plan, &mutation.resource))?,
+            };
             if actual != source.digest {
                 return Err(changed_error(plan, &mutation.resource));
             }
@@ -1252,6 +1333,44 @@ fn validate_mutation_source(
         ResourceStorage::File => {}
     }
     Ok(())
+}
+
+fn resolve_state_directory_source(
+    plan: &MutationPlan,
+    mutation: &PlannedMutation,
+    storage: ResourceStorage,
+    state: &ExecutionState,
+) -> Result<Option<StateDirectory>, AgentError> {
+    if storage != ResourceStorage::Directory || mutation.kind == MutationKind::Delete {
+        return Ok(None);
+    }
+    let source = parse_directory_source(plan, mutation)?;
+    let path = Path::new(&source.path);
+    let Ok(relative) = path.strip_prefix(state.backups().display_path()) else {
+        return Ok(None);
+    };
+    let mut components = relative.components();
+    let Some(std::path::Component::Normal(operation)) = components.next() else {
+        return Err(changed_error(plan, &mutation.resource));
+    };
+    let Some(std::path::Component::Normal(backup)) = components.next() else {
+        return Err(changed_error(plan, &mutation.resource));
+    };
+    if components.next().is_some() {
+        return Err(changed_error(plan, &mutation.resource));
+    }
+    let operation = operation
+        .to_str()
+        .ok_or_else(|| changed_error(plan, &mutation.resource))?;
+    let backup = backup
+        .to_str()
+        .ok_or_else(|| changed_error(plan, &mutation.resource))?;
+    state
+        .backups()
+        .open_directory(operation)
+        .and_then(|directory| directory.open_directory(backup))
+        .map(Some)
+        .map_err(|_| changed_error(plan, &mutation.resource))
 }
 
 fn parse_symlink_source(
@@ -1308,26 +1427,34 @@ fn apply_mutation(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), Ag
                     .write_symlink_atomic(Path::new(source.path()))
             }
             ResourceStorage::Directory => {
-                let source = parse_directory_source(plan, &item.mutation)?;
-                item.confined_target
-                    .write_directory_atomic(Path::new(&source.path))
+                if let Some(source) = &item.directory_source {
+                    item.confined_target.write_directory_from(source)
+                } else {
+                    let source = parse_directory_source(plan, &item.mutation)?;
+                    item.confined_target
+                        .write_directory_atomic(Path::new(&source.path))
+                }
             }
         },
     }
 }
 
-fn restore_target(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), AgentError> {
+fn restore_target(
+    plan: &MutationPlan,
+    item: &ResolvedMutation,
+    operation_dir: &StateDirectory,
+) -> Result<(), AgentError> {
     match &item.original {
         TargetState::Missing => item.confined_target.remove(),
         TargetState::File(_) => {
-            let backup = item.backup_path.as_ref().ok_or_else(|| {
+            let backup_name = item.backup_name.as_deref().ok_or_else(|| {
                 io_error(
                     plan,
                     Some(item.mutation.resource.clone()),
-                    "Missing backup file",
+                    "Missing file backup name",
                 )
             })?;
-            let bytes = std::fs::read(backup).map_err(|error| {
+            let bytes = operation_dir.read(backup_name).map_err(|error| {
                 io_error(
                     plan,
                     Some(item.mutation.resource.clone()),
@@ -1338,14 +1465,21 @@ fn restore_target(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), Ag
         }
         TargetState::Symlink(source) => item.confined_target.write_symlink_atomic(source),
         TargetState::Directory(_) => {
-            let backup = item.backup_path.as_ref().ok_or_else(|| {
+            let backup_name = item.backup_name.as_deref().ok_or_else(|| {
                 io_error(
                     plan,
                     Some(item.mutation.resource.clone()),
-                    "Missing directory backup",
+                    "Missing directory backup name",
                 )
             })?;
-            item.confined_target.write_directory_atomic(backup)
+            let backup = operation_dir.open_directory(backup_name).map_err(|error| {
+                io_error(
+                    plan,
+                    Some(item.mutation.resource.clone()),
+                    error.to_string(),
+                )
+            })?;
+            item.confined_target.write_directory_from(&backup)
         }
     }
 }
@@ -1417,17 +1551,16 @@ fn receipt(
     })
 }
 
-fn persist_receipt(plan: &MutationPlan, receipt: &OperationReceipt) -> Result<(), AgentError> {
-    let directory = history_dir()
-        .map_err(|error| io_error(plan, None, error.to_string()))?
-        .join("operations");
-    ensure_dir(&directory).map_err(|error| io_error(plan, None, error.to_string()))?;
+fn persist_receipt(
+    plan: &MutationPlan,
+    receipt: &OperationReceipt,
+    state: &ExecutionState,
+) -> Result<(), AgentError> {
     let bytes = serde_json::to_vec_pretty(receipt)
         .map_err(|error| io_error(plan, None, error.to_string()))?;
-    write_atomic(&directory.join(format!("{}.json", receipt.id)), &bytes)
-        .map_err(|error| io_error(plan, None, error.to_string()))?;
-    std::fs::File::open(&directory)
-        .and_then(|file| file.sync_all())
+    state
+        .history()
+        .write_atomic_new(&format!("{}.json", receipt.id), &bytes)
         .map_err(|error| io_error(plan, None, error.to_string()))
 }
 
@@ -1435,9 +1568,10 @@ fn persist_receipt_with_faults(
     plan: &MutationPlan,
     receipt: &OperationReceipt,
     faults: &dyn FaultInjector,
+    state: &ExecutionState,
 ) -> Result<(), AgentError> {
     fail_if_requested(plan, faults, ExecutionStep::PersistReceipt)?;
-    persist_receipt(plan, receipt)
+    persist_receipt(plan, receipt, state)
 }
 
 fn plan_error(

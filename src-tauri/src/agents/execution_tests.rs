@@ -652,6 +652,42 @@ fn receipt_construction_failure_compensates_all_writes_and_cleans_backups() {
 
 #[test]
 #[serial_test::serial(home_env)]
+fn execution_state_root_swap_cannot_redirect_transaction_artifacts() {
+    let (temp, store, plan_id, _, _) = setup_two_file_plan();
+    let root = temp.path().join(".ad");
+    let moved = temp.path().join(".ad.original");
+    let outside = temp.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    let faults = SwapAncestorAt {
+        step: ExecutionStep::Backup(0),
+        paths: std::sync::Mutex::new(Some((root, moved.clone(), outside.clone()))),
+    };
+
+    let receipt = ExecutionEngine
+        .apply_with_faults(&plan_id, &store, &faults)
+        .unwrap();
+
+    assert_eq!(receipt.status, OperationStatus::Complete);
+    assert!(moved
+        .join("backups/operations")
+        .join(receipt.id.as_str())
+        .join("manifest.json")
+        .exists());
+    assert!(moved
+        .join("history/operations")
+        .join(format!("{}.json", receipt.id))
+        .exists());
+    assert_eq!(
+        std::fs::read_dir(moved.join("state/operation-journals"))
+            .unwrap()
+            .count(),
+        1
+    );
+    assert_eq!(std::fs::read_dir(outside).unwrap().count(), 0);
+}
+
+#[test]
+#[serial_test::serial(home_env)]
 fn execution_applies_an_allowlisted_skill_symlink_plan() {
     let temp = tempfile::tempdir().unwrap();
     std::env::set_var("AD_HOME", temp.path());

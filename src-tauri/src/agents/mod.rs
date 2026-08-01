@@ -16,6 +16,9 @@ mod execution_confinement_tests;
 mod execution_fs;
 mod execution_journal;
 mod execution_lock;
+mod execution_state;
+#[cfg(test)]
+mod execution_state_tests;
 mod execution_targets;
 #[cfg(test)]
 mod execution_tests;

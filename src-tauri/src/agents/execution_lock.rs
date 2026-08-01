@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 
 use crate::fs::paths::execution_locks_dir;
 
+use super::execution_state::{ExecutionState, StateDirectory};
 use super::{AdapterRegistry, AgentContext, AgentError, AgentErrorCode, MutationPlan, ResourceRef};
 
 const LOCK_SCHEMA_VERSION: u32 = 1;
@@ -31,9 +32,10 @@ pub struct TargetLockSet {
 }
 
 impl TargetLockSet {
-    pub(crate) fn acquire_for_plan(
+    pub(super) fn acquire_for_plan(
         plan: &MutationPlan,
         registry: &AdapterRegistry,
+        state: &ExecutionState,
     ) -> Result<Self, AgentError> {
         let resources = plan
             .read_set
@@ -45,13 +47,14 @@ impl TargetLockSet {
                     .map(|mutation| mutation.resource.clone()),
             )
             .collect::<Vec<_>>();
-        Self::acquire_for_resources(&resources, plan.id.as_str(), registry)
+        Self::acquire_for_resources(&resources, plan.id.as_str(), registry, state)
     }
 
-    pub(crate) fn acquire_for_resources(
+    pub(super) fn acquire_for_resources(
         resources: &[ResourceRef],
         operation_id: &str,
         registry: &AdapterRegistry,
+        state: &ExecutionState,
     ) -> Result<Self, AgentError> {
         let mut targets = Vec::with_capacity(resources.len());
         for resource in resources {
@@ -66,7 +69,13 @@ impl TargetLockSet {
                     .to_path_buf(),
             );
         }
-        Self::acquire(&targets, execution_instance_id(), operation_id).map_err(|error| AgentError {
+        Self::acquire_in(
+            state.locks(),
+            &targets,
+            execution_instance_id(),
+            operation_id,
+        )
+        .map_err(|error| AgentError {
             code: if error.kind() == std::io::ErrorKind::WouldBlock {
                 AgentErrorCode::ResourceChanged
             } else {
@@ -144,6 +153,52 @@ impl TargetLockSet {
                 },
             )?;
             sync_directory(root)?;
+            files.push(file);
+        }
+        Ok(Self { files })
+    }
+
+    fn acquire_in(
+        root: &StateDirectory,
+        targets: &[PathBuf],
+        instance_id: &str,
+        operation_id: &str,
+    ) -> Result<Self, std::io::Error> {
+        let mut canonical_targets = targets
+            .iter()
+            .map(|target| canonical_physical_target(target))
+            .collect::<Result<Vec<_>, _>>()?;
+        canonical_targets.sort_by(|left, right| {
+            left.as_os_str()
+                .as_bytes()
+                .cmp(right.as_os_str().as_bytes())
+        });
+        canonical_targets.dedup();
+
+        let mut files = Vec::with_capacity(canonical_targets.len());
+        for target in canonical_targets {
+            let name = format!("{}.lock", target_fingerprint(&target));
+            let path = root.display_path().join(&name);
+            let mut file = root.open_lock(&name)?;
+            if let Err(error) = flock(&file, FlockOperation::NonBlockingLockExclusive) {
+                return Err(if error == rustix::io::Errno::WOULDBLOCK {
+                    std::io::Error::new(
+                        std::io::ErrorKind::WouldBlock,
+                        format!("Mutation target is locked: {}", target.display()),
+                    )
+                } else {
+                    error.into()
+                });
+            }
+            validate_previous_metadata(&mut file, &path)?;
+            write_metadata(
+                &mut file,
+                &LockMetadata {
+                    schema_version: LOCK_SCHEMA_VERSION,
+                    instance_id: instance_id.to_owned(),
+                    operation_id: operation_id.to_owned(),
+                },
+            )?;
             files.push(file);
         }
         Ok(Self { files })
