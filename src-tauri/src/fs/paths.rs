@@ -153,6 +153,14 @@ pub fn skill_migration_archive_dir() -> Result<PathBuf, FsError> {
     Ok(ad_home()?.join("archive").join("skill-catalog"))
 }
 
+pub fn skill_migration_journals_dir() -> Result<PathBuf, FsError> {
+    Ok(state_dir()?.join("skill-migration-journals"))
+}
+
+pub fn skill_migration_history_dir() -> Result<PathBuf, FsError> {
+    Ok(history_dir()?.join("skill-migration"))
+}
+
 pub fn project_skills_dir() -> Result<PathBuf, FsError> {
     Ok(state_dir()?.join("project_skills"))
 }

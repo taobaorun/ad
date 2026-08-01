@@ -45,6 +45,19 @@ impl TargetLockSet {
         )
     }
 
+    pub(super) fn acquire_for_ad_states(
+        targets: &[PathBuf],
+        operation_id: &str,
+        state: &ExecutionState,
+    ) -> Result<Self, std::io::Error> {
+        Self::acquire_in(
+            state.locks(),
+            targets,
+            execution_instance_id(),
+            operation_id,
+        )
+    }
+
     pub(super) fn acquire_for_resources(
         resources: &[ResourceRef],
         operation_id: &str,

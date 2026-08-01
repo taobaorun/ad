@@ -42,6 +42,7 @@ import {
   TabButton,
   TemplateBreadcrumb,
 } from './ProjectDetailSupport';
+import { LegacySkillMigrationCard } from './LegacySkillMigrationCard';
 
 export { ProjectCodexRuntimeCard } from './ProjectDetailSupport';
 
@@ -380,6 +381,8 @@ function Detail({ project }: { project: Project }) {
             onRetry={() => window.dispatchEvent(new Event('ad:project-codex-runtime-changed'))}
           />
         )}
+
+        {activeAgentId === 'claude-code' && <LegacySkillMigrationCard projectPath={project.path} />}
 
         {/* Breadcrumb: initialized from template + Switch */}
         {profileFeatures.legacyProjectTemplates && (

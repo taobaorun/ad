@@ -52,6 +52,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(agents::PlanStore::default())
         .manage(agents::SkillCatalogPlanStore::default())
+        .manage(agents::LegacySkillMigrationPlanStore::default())
         .manage(commands::shortcut::ShortcutState::default())
         .setup(|app| {
             // First-run: relocate AD data from ~/.claude/ to ~/.ad/ if needed.
@@ -121,6 +122,30 @@ pub fn run() {
                     tracing::warn!(
                         error = %error,
                         "Skill catalog recovery could not acquire a safe startup state"
+                    );
+                }
+            }
+
+            match agents::recover_legacy_skill_migrations() {
+                Ok(recovery) if recovery.writable() => {
+                    info!(
+                        inspected = recovery.inspected,
+                        recovered = recovery.recovered,
+                        compensated = recovery.compensated,
+                        "legacy Skill migration recovery completed"
+                    );
+                }
+                Ok(recovery) => {
+                    tracing::warn!(
+                        repair_required = recovery.repair_required,
+                        diagnostics = ?recovery.diagnostics,
+                        "legacy Skill migration recovery requires repair; cleanup is blocked"
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        error = %error,
+                        "legacy Skill migration recovery could not acquire a safe startup state"
                     );
                 }
             }
@@ -248,18 +273,6 @@ pub fn run() {
             commands::terminal::list_terminal_backends,
             commands::shortcut::set_global_shortcut,
             commands::settings::open_settings_window,
-            // Skill management
-            commands::skills::list_skill_sources,
-            commands::skills::add_skill_source,
-            commands::skills::remove_skill_source,
-            commands::skills::update_skill_source,
-            commands::skills::scan_skill_library,
-            commands::skills::get_project_skills,
-            commands::skills::toggle_skill,
-            commands::skills::set_skill_scope,
-            commands::skills::apply_project_skills,
-            commands::skills::list_plugins,
-            commands::skills::toggle_plugin,
             commands::skill_catalog::list_skill_catalog,
             commands::skill_catalog::preview_add_skill_catalog_source,
             commands::skill_catalog::preview_update_skill_catalog_source,
@@ -267,6 +280,10 @@ pub fn run() {
             commands::skill_catalog::apply_skill_catalog_source_plan,
             commands::skill_catalog::cancel_skill_catalog_source_plan,
             commands::skill_catalog::inspect_legacy_skill_state,
+            commands::skill_catalog::preview_legacy_project_skill_migration,
+            commands::skill_catalog::apply_legacy_project_skill_migration_plan,
+            commands::skill_catalog::cancel_legacy_project_skill_migration_plan,
+            commands::skill_catalog::restore_legacy_project_skill_state,
         ])
         .build(tauri::generate_context!())
         .expect("error while building ad")

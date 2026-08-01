@@ -29,6 +29,10 @@ pub(super) struct ExecutionState {
     skill_catalog_journals: StateDirectory,
     skill_catalog_backups: StateDirectory,
     skill_catalog_history: StateDirectory,
+    legacy_project_skills: StateDirectory,
+    skill_migration_archive: StateDirectory,
+    skill_migration_journals: StateDirectory,
+    skill_migration_history: StateDirectory,
 }
 
 impl ExecutionState {
@@ -58,6 +62,12 @@ impl ExecutionState {
         let history = history_root.open_or_create_directory("operations")?;
         let skill_catalog_history = history_root.open_or_create_directory("skill-catalog")?;
         let skill_catalog_journals = state.open_or_create_directory("skill-catalog-journals")?;
+        let legacy_project_skills = state.open_or_create_directory("project_skills")?;
+        let archive_root = root.open_or_create_directory("archive")?;
+        let skill_migration_archive = archive_root.open_or_create_directory("skill-catalog")?;
+        let skill_migration_journals =
+            state.open_or_create_directory("skill-migration-journals")?;
+        let skill_migration_history = history_root.open_or_create_directory("skill-migration")?;
         Ok(Self {
             state,
             locks,
@@ -68,6 +78,10 @@ impl ExecutionState {
             skill_catalog_journals,
             skill_catalog_backups,
             skill_catalog_history,
+            legacy_project_skills,
+            skill_migration_archive,
+            skill_migration_journals,
+            skill_migration_history,
         })
     }
 
@@ -105,6 +119,22 @@ impl ExecutionState {
 
     pub(super) fn skill_catalog_history(&self) -> &StateDirectory {
         &self.skill_catalog_history
+    }
+
+    pub(super) fn legacy_project_skills(&self) -> &StateDirectory {
+        &self.legacy_project_skills
+    }
+
+    pub(super) fn skill_migration_archive(&self) -> &StateDirectory {
+        &self.skill_migration_archive
+    }
+
+    pub(super) fn skill_migration_journals(&self) -> &StateDirectory {
+        &self.skill_migration_journals
+    }
+
+    pub(super) fn skill_migration_history(&self) -> &StateDirectory {
+        &self.skill_migration_history
     }
 }
 
@@ -220,6 +250,20 @@ impl StateDirectory {
     pub(super) fn remove(&self, name: &str) -> std::io::Result<()> {
         validate_name(OsStr::new(name))?;
         super::execution_tree::remove_entry(&self.fd, OsStr::new(name))
+    }
+
+    pub(super) fn rename_entry_to(
+        &self,
+        name: &str,
+        destination: &StateDirectory,
+        destination_name: &str,
+    ) -> std::io::Result<()> {
+        validate_name(OsStr::new(name))?;
+        validate_name(OsStr::new(destination_name))?;
+        renameat(&self.fd, name, &destination.fd, destination_name)?;
+        fsync(&self.fd)?;
+        fsync(&destination.fd)?;
+        Ok(())
     }
 
     pub(super) fn entry_names(&self) -> std::io::Result<Vec<OsString>> {
