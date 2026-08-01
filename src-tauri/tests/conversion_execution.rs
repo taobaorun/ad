@@ -125,6 +125,7 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     std::fs::write(&local_source_path, local_source).unwrap();
     std::fs::write(&project_target_path, project_target).unwrap();
     create_project_skill(home.path(), &project, "review");
+    create_user_skill(home.path(), &claude_home, "inherited");
 
     let previous_home = std::env::var("AD_HOME").ok();
     let previous_codex_home = std::env::var("CODEX_HOME").ok();
@@ -146,9 +147,10 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
             &ClaudeToCodexOptions {
                 target_model: Some("project-local".into()),
                 permission_preset: None,
-                confirmed_skill_ids: BTreeSet::from(["review".into()]),
+                confirmed_skill_ids: BTreeSet::from(["inherited".into(), "review".into()]),
                 profile_id: None,
                 inherit_base_config: true,
+                safe_subset: false,
             },
         )
         .unwrap();
@@ -157,12 +159,18 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     assert!(route_plan
         .artifacts
         .iter()
-        .all(|artifact| artifact.source.resource.scope == ResourceScope::Project));
+        .any(|artifact| artifact.source.resource.scope == ResourceScope::User));
     assert!(route_plan
         .plan
         .read_set
         .iter()
-        .all(|precondition| precondition.resource.scope == ResourceScope::Project));
+        .filter(|precondition| precondition.resource.installation_id == source.installation_id)
+        .all(|precondition| precondition.write_policy == ad_lib::agents::WritePolicy::ReadOnly));
+    assert!(route_plan
+        .plan
+        .read_set
+        .iter()
+        .any(|precondition| precondition.resource.scope == ResourceScope::User));
     assert!(route_plan
         .plan
         .mutations
@@ -171,6 +179,16 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     assert!(route_plan.plan.mutations.iter().any(|mutation| {
         mutation.resource.kind == ResourceKind::Skills && mutation.resource.logical_id == "review"
     }));
+    let inherited_skill = route_plan
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.id == "skill:inherited")
+        .unwrap();
+    assert_eq!(inherited_skill.source.resource.scope, ResourceScope::User);
+    assert_eq!(
+        inherited_skill.target.as_ref().unwrap().resource.scope,
+        ResourceScope::Project
+    );
     let plugin = route_plan
         .artifacts
         .iter()
@@ -233,8 +251,30 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     assert!(converted.contains("model = \"project-local\""));
     assert!(converted.contains("model_reasoning_effort = \"medium\""));
     assert!(converted.contains("model_verbosity = \"low\""));
+    assert!(converted.contains("sandbox_mode = \"read-only\""));
     let codex_skill = project.join(".agents/skills/review");
+    let inherited_codex_skill = project.join(".agents/skills/inherited");
     assert!(codex_skill.is_symlink());
+    assert!(inherited_codex_skill.is_symlink());
+
+    let repeated = route
+        .preview_with_options(
+            &source,
+            &target,
+            &ClaudeToCodexOptions {
+                target_model: Some("project-local".into()),
+                permission_preset: None,
+                confirmed_skill_ids: BTreeSet::from(["inherited".into(), "review".into()]),
+                profile_id: None,
+                inherit_base_config: true,
+                safe_subset: false,
+            },
+        )
+        .unwrap();
+    assert!(repeated.plan.mutations.is_empty());
+    assert!(repeated.artifacts.iter().any(|artifact| {
+        artifact.disposition == ad_lib::agents::ArtifactDisposition::Unchanged
+    }));
 
     let rollback = apply_rollback(&applied.id).unwrap();
 
@@ -244,6 +284,7 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     assert_eq!(std::fs::read(&user_target_path).unwrap(), user_target);
     assert!(!runtime_config_path.exists());
     assert!(!codex_skill.exists());
+    assert!(!inherited_codex_skill.exists());
     assert!(project.join(".claude/skills/review").is_symlink());
 }
 
@@ -457,6 +498,19 @@ fn create_project_skill(home: &std::path::Path, project: &std::path::Path, name:
     )
     .unwrap();
     let skills = project.join(".claude/skills");
+    std::fs::create_dir_all(&skills).unwrap();
+    std::os::unix::fs::symlink(skill, skills.join(name)).unwrap();
+}
+
+fn create_user_skill(home: &std::path::Path, claude_home: &std::path::Path, name: &str) {
+    let skill = home.join(".ad/skill-library/local").join(name);
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: Inherited user skill\n---\n"),
+    )
+    .unwrap();
+    let skills = claude_home.join("skills");
     std::fs::create_dir_all(&skills).unwrap();
     std::os::unix::fs::symlink(skill, skills.join(name)).unwrap();
 }

@@ -592,10 +592,18 @@ describe('Agent schemas', () => {
         unchanged: 0,
         dangerous: 0,
       },
+      report: {
+        workspaceKey: 'workspace:user-codex',
+        outcome: 'no_change',
+        items: [{ itemId: 'user-settings:model', state: 'mapped', residuals: [] }],
+        residuals: [],
+      },
+      safeSubset: false,
     });
 
     expect(preview.artifacts.at(0)?.disposition).toBe('mapped');
     expect(preview.plan).toBeUndefined();
+    expect(preview.report.receipt).toBeUndefined();
   });
 
   it('validates conversion progress without accepting backend-only details', () => {

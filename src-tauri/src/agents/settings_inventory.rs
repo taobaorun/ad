@@ -323,7 +323,7 @@ fn semantic_content(
     }
 }
 
-fn merge_semantic_value(target: &mut Value, incoming: &Value) {
+pub(super) fn merge_semantic_value(target: &mut Value, incoming: &Value) {
     match (target, incoming) {
         (Value::Object(target), Value::Object(incoming)) => {
             for (key, value) in incoming {
@@ -441,6 +441,21 @@ fn sensitivity_for_path(path: &str) -> SettingsValueSensitivity {
         SettingsValueSensitivity::Sensitive
     } else {
         SettingsValueSensitivity::Public
+    }
+}
+
+pub(super) fn settings_value_contains_sensitive_data(path: &str, value: &Value) -> bool {
+    match value {
+        Value::Object(values) => values.iter().any(|(key, value)| {
+            settings_value_contains_sensitive_data(
+                &format!("{path}/{}", json_pointer_segment(key)),
+                value,
+            )
+        }),
+        Value::Array(values) => values.iter().enumerate().any(|(index, value)| {
+            settings_value_contains_sensitive_data(&format!("{path}/{index}"), value)
+        }),
+        _ => sensitivity_for_path(path) == SettingsValueSensitivity::Sensitive,
     }
 }
 

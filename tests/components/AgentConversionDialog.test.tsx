@@ -1,10 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AgentConversionButton } from '@/components/AgentConversionDialog';
+import { AgentConversionButton } from '@/components/AgentConversionButton';
 import i18n from '@/i18n';
 import { AgentInstallationSchema } from '@/lib/agentTypes';
 import { useAgents } from '@/store/agents';
+import { resetConversionOperationTracker } from '@/store/conversionOperations';
 import { useProjects } from '@/store/projects';
 import { useUiState } from '@/store/ui';
 
@@ -47,6 +48,7 @@ const installations = AgentInstallationSchema.array().parse([
 
 describe('AgentConversionButton', () => {
   beforeEach(async () => {
+    resetConversionOperationTracker();
     await i18n.changeLanguage('en');
     useAgents.setState({ installations });
     useUiState.setState({ activeProjectPath: '/Users/test/project' });
@@ -108,6 +110,13 @@ describe('AgentConversionButton', () => {
         unchanged: 0,
         dangerous: 0,
       },
+      report: {
+        workspaceKey: 'workspace:user-codex',
+        outcome: 'changed',
+        items: [{ itemId: 'settings:model', state: 'mapped', residuals: [] }],
+        residuals: [],
+      },
+      safeSubset: false,
       plan: {
         id: 'conversion-plan',
         agentId: 'codex',
@@ -129,12 +138,18 @@ describe('AgentConversionButton', () => {
       },
     });
     applyConversionPlan.mockReset().mockResolvedValue({
-      id: 'conversion-receipt',
-      planId: 'conversion-plan',
-      status: 'complete',
-      appliedResources: [],
-      backupPaths: ['/Users/test/.ad/backups/config.toml'],
-      postApplyStates: [],
+      workspaceKey: 'workspace:user-codex',
+      outcome: 'changed',
+      items: [{ itemId: 'settings:model', state: 'mapped', residuals: [] }],
+      residuals: [],
+      receipt: {
+        id: 'conversion-receipt',
+        planId: 'conversion-plan',
+        status: 'complete',
+        appliedResources: [],
+        backupPaths: ['/Users/test/.ad/backups/config.toml'],
+        postApplyStates: [],
+      },
     });
     previewAgentRollback.mockReset().mockResolvedValue({
       id: 'conversion-rollback-plan',
@@ -206,13 +221,21 @@ describe('AgentConversionButton', () => {
 
   it('reports a compensated receipt as a failure without offering rollback', async () => {
     applyConversionPlan.mockResolvedValueOnce({
-      id: 'compensated-receipt',
-      planId: 'conversion-plan',
-      status: 'compensated',
-      appliedResources: [],
-      backupPaths: ['/Users/test/.ad/backups/config.toml'],
-      postApplyStates: [],
-      message: 'The target write failed and changes were restored.',
+      workspaceKey: 'workspace:user-codex',
+      outcome: 'partial_failure',
+      items: [{ itemId: 'settings:model', state: 'failed', residuals: [] }],
+      residuals: [
+        { code: 'conversion_compensated', messageKey: 'agentConversion.report.compensated' },
+      ],
+      receipt: {
+        id: 'compensated-receipt',
+        planId: 'conversion-plan',
+        status: 'compensated',
+        appliedResources: [],
+        backupPaths: ['/Users/test/.ad/backups/config.toml'],
+        postApplyStates: [],
+        message: 'The target write failed and changes were restored.',
+      },
     });
     render(<AgentConversionButton />);
 
@@ -230,13 +253,24 @@ describe('AgentConversionButton', () => {
 
   it('reports a partial receipt as recoverable failure', async () => {
     applyConversionPlan.mockResolvedValueOnce({
-      id: 'partial-receipt',
-      planId: 'conversion-plan',
-      status: 'partial_failure',
-      appliedResources: [],
-      backupPaths: ['/Users/test/.ad/backups/config.toml'],
-      postApplyStates: [],
-      message: 'One target could not be restored.',
+      workspaceKey: 'workspace:user-codex',
+      outcome: 'partial_failure',
+      items: [{ itemId: 'settings:model', state: 'failed', residuals: [] }],
+      residuals: [
+        {
+          code: 'conversion_execution_partial_failure',
+          messageKey: 'agentConversion.report.execution_partial_failure',
+        },
+      ],
+      receipt: {
+        id: 'partial-receipt',
+        planId: 'conversion-plan',
+        status: 'partial_failure',
+        appliedResources: [],
+        backupPaths: ['/Users/test/.ad/backups/config.toml'],
+        postApplyStates: [],
+        message: 'One target could not be restored.',
+      },
     });
     render(<AgentConversionButton />);
 
@@ -245,9 +279,7 @@ describe('AgentConversionButton', () => {
     await screen.findByText('Mapped');
     fireEvent.click(screen.getByRole('button', { name: 'Apply conversion' }));
 
-    expect(
-      await screen.findByText('Conversion partially applied; rollback is available'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Safe changes applied with residual items')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Rollback target' })).toBeEnabled();
   });
 
@@ -401,6 +433,29 @@ describe('AgentConversionButton', () => {
         unchanged: 0,
         dangerous: 0,
       },
+      report: {
+        workspaceKey: 'workspace:user-codex',
+        outcome: 'unsupported',
+        items: [
+          {
+            itemId: 'user-settings:model',
+            state: 'requires_input',
+            residuals: [
+              {
+                code: 'conversion_requires_input',
+                messageKey: 'agentConversion.report.requires_input',
+              },
+            ],
+          },
+        ],
+        residuals: [
+          {
+            code: 'conversion_requires_input',
+            messageKey: 'agentConversion.report.requires_input',
+          },
+        ],
+      },
+      safeSubset: false,
     });
     render(<AgentConversionButton />);
 
@@ -411,6 +466,72 @@ describe('AgentConversionButton', () => {
       '1 items require input',
     );
     expect(screen.queryByRole('button', { name: 'Apply conversion' })).not.toBeInTheDocument();
+  });
+
+  it('requires an explicit backend re-preview before applying a safe subset', async () => {
+    const resolvedPreview = await previewClaudeToCodexRoute();
+    const unresolved = {
+      ...resolvedPreview,
+      artifacts: [
+        ...resolvedPreview.artifacts,
+        {
+          ...resolvedPreview.artifacts[0],
+          id: 'settings:permissions',
+          disposition: 'requires_input',
+          resolution: { kind: 'select_permission_preset' },
+        },
+      ],
+      summary: { ...resolvedPreview.summary, total: 2, requiresInput: 1 },
+      report: {
+        ...resolvedPreview.report,
+        outcome: 'partial_failure',
+        residuals: [
+          {
+            code: 'conversion_requires_input',
+            messageKey: 'agentConversion.report.requires_input',
+          },
+        ],
+      },
+      safeSubset: false,
+      plan: undefined,
+    };
+    previewClaudeToCodexRoute.mockReset();
+    previewClaudeToCodexRoute.mockResolvedValueOnce(unresolved).mockResolvedValueOnce({
+      ...unresolved,
+      safeSubset: true,
+      plan: resolvedPreview.plan,
+    });
+    applyConversionPlan.mockResolvedValueOnce({
+      ...resolvedPreview.report,
+      outcome: 'partial_failure',
+      residuals: unresolved.report.residuals,
+      receipt: {
+        id: 'safe-subset-receipt',
+        planId: 'conversion-plan',
+        status: 'complete',
+        appliedResources: [],
+        backupPaths: [],
+        postApplyStates: [],
+      },
+    });
+    render(<AgentConversionButton />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Convert configuration' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview conversion' }));
+    expect(await screen.findByRole('button', { name: 'Preview safe subset' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Apply conversion' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview safe subset' }));
+    await waitFor(() =>
+      expect(previewClaudeToCodexRoute).toHaveBeenLastCalledWith(
+        { installationId: 'claude-code:default' },
+        { installationId: 'codex:default' },
+        { safeSubset: true },
+        expect.any(Function),
+      ),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply safe subset' }));
+    expect(await screen.findByText('Safe changes applied with residual items')).toBeInTheDocument();
   });
 
   it('turns a confirmed local Skill into a new backend preview', async () => {
@@ -546,8 +667,13 @@ describe('AgentConversionButton', () => {
     expect(progressStatus).toHaveTextContent('Applying…');
     expect(screen.getByTestId('conversion-sticky-footer')).toContainElement(progressStatus);
     for (const closeButton of screen.getAllByRole('button', { name: 'Close' })) {
-      expect(closeButton).toBeDisabled();
+      expect(closeButton).toBeEnabled();
     }
+    fireEvent.click(screen.getAllByRole('button', { name: 'Close' }).at(0)!);
+    expect(screen.queryByRole('dialog', { name: 'Claude Code → Codex' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Convert configuration' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Applying…');
+    expect(applyConversionPlan).toHaveBeenCalledOnce();
     expect(screen.getByRole('button', { name: 'Preview conversion' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Applying…' })).toBeDisabled();
   });

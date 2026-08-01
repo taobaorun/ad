@@ -52,6 +52,7 @@ fn route_reports_artifact_dispositions_and_builds_a_target_only_plan() {
                 confirmed_skill_ids: BTreeSet::from(["review".into()]),
                 profile_id: None,
                 inherit_base_config: true,
+                safe_subset: false,
             },
             &|event| progress.borrow_mut().push(event),
         )

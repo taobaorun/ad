@@ -11,7 +11,7 @@ import { useProjects } from './store/projects';
 import { useUiState } from './store/ui';
 import { useUiSettings } from './store/uiSettings';
 import { AgentSelector } from './components/AgentSelector';
-import { AgentConversionButton } from './components/AgentConversionDialog';
+import { AgentConversionButton } from './components/AgentConversionButton';
 import { AgentProfilesButton } from './components/AgentProfilesDialog';
 import { useAgents } from './store/agents';
 import { useReloadProfilesOnAgentChange } from './hooks/useReloadProfilesOnAgentChange';

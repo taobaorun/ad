@@ -1,16 +1,16 @@
 use crate::agents::{
-    builtin_registry, convert_claude_profile_to_codex, profile_settings_content,
-    AcknowledgementRequirement, AgentContext, AgentError, AgentErrorCode, AgentId,
-    AgentInstallation, AgentMetadata, CapabilityDescriptor, ClaudeToCodexOptions,
-    ClaudeToCodexRoute, CollectionInstallRequest, ContentDigest, ConversionPreview,
-    ConversionProgressEvent, ConversionRoutePreview, ExecutionEngine, InstallationId,
-    MutationPlanView, OperationHistoryEntry, OperationReceipt, PlanAcknowledgement,
-    PlanAcknowledgementCode, PlanId, PlanRiskLevel, PlanStore, ProcessObservation, ProfileId,
-    ProjectCodexRuntime, ProjectCodexRuntimeStatus, ProjectCollectionActionPreview,
-    ProjectCollectionActionRequest, ProjectWorkspaceInventory, ReadPrecondition, ReceiptId,
-    ResourceKind, ResourceLocation, ResourceOrigin, ResourceRef, ResourceScope, ResourceSnapshot,
-    RiskFingerprint, SettingsDocument, SettingsEdit, WorkspaceDescriptor, WorkspaceOperationReport,
-    WritePolicy,
+    builtin_registry, complete_conversion_report, conversion_plan_is_applicable, conversion_report,
+    convert_claude_profile_to_codex, profile_settings_content, AcknowledgementRequirement,
+    AgentContext, AgentError, AgentErrorCode, AgentId, AgentInstallation, AgentMetadata,
+    CapabilityDescriptor, ClaudeToCodexOptions, ClaudeToCodexRoute, CollectionInstallRequest,
+    ContentDigest, ConversionPreview, ConversionProgressEvent, ConversionReport,
+    ConversionRoutePreview, ExecutionEngine, InstallationId, MutationPlanView,
+    OperationHistoryEntry, OperationReceipt, PlanAcknowledgement, PlanAcknowledgementCode, PlanId,
+    PlanRiskLevel, PlanStore, ProcessObservation, ProfileId, ProjectCodexRuntime,
+    ProjectCodexRuntimeStatus, ProjectCollectionActionPreview, ProjectCollectionActionRequest,
+    ProjectWorkspaceInventory, ReadPrecondition, ReceiptId, ResourceKind, ResourceLocation,
+    ResourceOrigin, ResourceRef, ResourceScope, ResourceSnapshot, RiskFingerprint,
+    SettingsDocument, SettingsEdit, WorkspaceDescriptor, WorkspaceOperationReport, WritePolicy,
 };
 use crate::models::ProfileFile;
 use tauri::{ipc::Channel, Manager, State};
@@ -257,10 +257,20 @@ pub async fn preview_claude_to_codex_route(
     plans: State<'_, PlanStore>,
 ) -> Result<ConversionRoutePreview, AgentError> {
     let options = options.unwrap_or_default();
+    let safe_subset = options.safe_subset;
     let result =
         preview_conversion_route_off_thread(source_context, target_context, options, progress)
             .await?;
-    let plan = if result.plan.mutations.is_empty() {
+    let report = conversion_report(
+        &result.plan.context,
+        &result.artifacts,
+        !result.plan.mutations.is_empty(),
+    )?;
+    let plan = if !conversion_plan_is_applicable(
+        &result.artifacts,
+        !result.plan.mutations.is_empty(),
+        safe_subset,
+    ) {
         None
     } else {
         let mut requirements = vec![AcknowledgementRequirement {
@@ -273,13 +283,15 @@ pub async fn preview_claude_to_codex_route(
                 risk: PlanRiskLevel::Dangerous,
             });
         }
-        Some(plans.insert_with_acknowledgements(result.plan, requirements)?)
+        Some(plans.insert_conversion(result.plan, requirements, report.clone())?)
     };
     Ok(ConversionRoutePreview {
         source_agent_id: result.source_agent_id,
         target_agent_id: result.target_agent_id,
         artifacts: result.artifacts,
         summary: result.summary,
+        report,
+        safe_subset,
         plan,
     })
 }
@@ -518,16 +530,18 @@ pub async fn apply_conversion_plan(
     expected_context: AgentContext,
     expected_risk_fingerprint: RiskFingerprint,
     acknowledgements: Vec<PlanAcknowledgement>,
-) -> Result<OperationReceipt, AgentError> {
+) -> Result<ConversionReport, AgentError> {
     run_agent_operation_off_thread(move || {
         let plans = app.state::<PlanStore>();
-        ExecutionEngine.apply_acknowledged_bound(
+        let report = plans.conversion_report(&plan_id)?;
+        let receipt = ExecutionEngine.apply_acknowledged_bound(
             &plan_id,
             &expected_context,
             &expected_risk_fingerprint,
             plans.inner(),
             &acknowledgements,
-        )
+        )?;
+        Ok(complete_conversion_report(report, receipt))
     })
     .await
 }

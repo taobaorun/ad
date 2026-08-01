@@ -484,12 +484,63 @@ export const ConversionProgressEventSchema = z
   })
   .strict();
 
+export const WorkspaceOperationOutcomeSchema = z.enum([
+  'changed',
+  'no_change',
+  'external',
+  'unsupported',
+  'conflict',
+  'partial_failure',
+]);
+export const WorkspaceOperationIssueSchema = z
+  .object({
+    code: z.string().min(1),
+    messageKey: z.string().min(1),
+    resourceKey: ResourceKeySchema.optional(),
+  })
+  .strict();
+export const WorkspaceOperationReportSchema = z
+  .object({
+    workspaceKey: WorkspaceKeySchema,
+    outcome: WorkspaceOperationOutcomeSchema,
+    issues: z.array(WorkspaceOperationIssueSchema).default([]),
+    receipt: OperationReceiptSchema.optional(),
+  })
+  .strict();
+export const ConversionItemFinalStateSchema = z.enum([
+  'exact',
+  'mapped',
+  'unchanged',
+  'requires_input',
+  'unsupported',
+  'conflict',
+  'failed',
+]);
+export const ConversionItemReportSchema = z
+  .object({
+    itemId: z.string().min(1),
+    state: ConversionItemFinalStateSchema,
+    residuals: z.array(WorkspaceOperationIssueSchema).default([]),
+  })
+  .strict();
+export const ConversionReportSchema = z
+  .object({
+    workspaceKey: WorkspaceKeySchema,
+    outcome: WorkspaceOperationOutcomeSchema,
+    items: z.array(ConversionItemReportSchema).default([]),
+    residuals: z.array(WorkspaceOperationIssueSchema).default([]),
+    receipt: OperationReceiptSchema.optional(),
+  })
+  .strict();
+
 export const ConversionRoutePreviewSchema = z
   .object({
     sourceAgentId: AgentIdSchema,
     targetAgentId: AgentIdSchema,
     artifacts: z.array(ConversionArtifactSchema),
     summary: ConversionSummarySchema,
+    report: ConversionReportSchema,
+    safeSubset: z.boolean(),
     plan: MutationPlanViewSchema.optional(),
   })
   .strict();
@@ -551,6 +602,12 @@ export type ConversionArtifact = z.infer<typeof ConversionArtifactSchema>;
 export type ConversionSummary = z.infer<typeof ConversionSummarySchema>;
 export type ConversionProgressPhase = z.infer<typeof ConversionProgressPhaseSchema>;
 export type ConversionProgressEvent = z.infer<typeof ConversionProgressEventSchema>;
+export type WorkspaceOperationOutcome = z.infer<typeof WorkspaceOperationOutcomeSchema>;
+export type WorkspaceOperationIssue = z.infer<typeof WorkspaceOperationIssueSchema>;
+export type WorkspaceOperationReport = z.infer<typeof WorkspaceOperationReportSchema>;
+export type ConversionItemFinalState = z.infer<typeof ConversionItemFinalStateSchema>;
+export type ConversionItemReport = z.infer<typeof ConversionItemReportSchema>;
+export type ConversionReport = z.infer<typeof ConversionReportSchema>;
 export type ConversionRoutePreview = z.infer<typeof ConversionRoutePreviewSchema>;
 
 export function parseAgentInstallation(
