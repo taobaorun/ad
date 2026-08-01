@@ -12,6 +12,7 @@ dependencies = [
  "futures-util",
  "image",
  "reqwest 0.12.28",
+ "rustix",
  "semver",
  "serde",
  "serde_json",

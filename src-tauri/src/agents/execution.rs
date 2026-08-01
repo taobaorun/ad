@@ -13,10 +13,11 @@ use super::execution_fs::{
     write_directory_atomic, write_symlink_atomic, TargetState,
 };
 use super::{
-    builtin_registry, AgentContext, AgentError, AgentErrorCode, AppliedResourceState,
-    ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan, OperationReceipt,
-    OperationStatus, PlanAcknowledgement, PlanId, PlanStore, PlannedMutation, ReceiptId,
-    ResourceKind, ResourceRef, ResourceScope, ResourceStateKind, ResourceStorage, WritePolicy,
+    builtin_registry, execution_instance_id, AgentContext, AgentError, AgentErrorCode,
+    AppliedResourceState, ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan,
+    OperationJournalHandle, OperationJournalState, OperationReceipt, OperationStatus,
+    PlanAcknowledgement, PlanId, PlanStore, PlannedMutation, ReceiptId, ResourceKind, ResourceRef,
+    ResourceScope, ResourceStateKind, ResourceStorage, TargetLockSet, WritePolicy,
 };
 
 static EXECUTION_LOCK: Mutex<()> = Mutex::new(());
@@ -31,6 +32,7 @@ pub(crate) enum ExecutionStep {
     Compensate(usize),
     ConstructReceipt,
     PersistReceipt,
+    PersistJournalApplying,
 }
 
 trait FaultInjector {
@@ -72,6 +74,14 @@ struct ResolvedMutation {
     original: TargetState,
     backup_path: Option<PathBuf>,
     backup_digest: Option<ContentDigest>,
+}
+
+struct FailureContext<'a> {
+    resolved: &'a [ResolvedMutation],
+    applied: &'a [usize],
+    operation_dir: &'a Path,
+    faults: &'a dyn FaultInjector,
+    journal: &'a mut OperationJournalHandle,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,6 +164,7 @@ impl ExecutionEngine {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let registry = builtin_registry();
         let plan = rollback_plan(receipt_id, &registry)?;
+        let _target_locks = TargetLockSet::acquire_for_plan(&plan, &registry)?;
         let receipt = execute_plan(plan, &registry, &NoFaults)?;
         refresh_runtime_state(&receipt, false);
         Ok(receipt)
@@ -208,6 +219,9 @@ impl ExecutionEngine {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let registry = builtin_registry();
+        let resources = plans.resources_for_locking(plan_id)?;
+        let _target_locks =
+            TargetLockSet::acquire_for_resources(&resources, plan_id.as_str(), &registry)?;
         let observe = |resource: &ResourceRef| {
             let context = AgentContext {
                 installation_id: resource.installation_id.clone(),
@@ -774,6 +788,13 @@ fn execute_plan(
     faults: &dyn FaultInjector,
 ) -> Result<OperationReceipt, AgentError> {
     let receipt_id = ReceiptId::from(uuid::Uuid::new_v4().to_string());
+    let mut journal = OperationJournalHandle::prepare(
+        &plan,
+        &receipt_id,
+        execution_instance_id(),
+        plan.id.as_str(),
+    )
+    .map_err(|error| io_error(&plan, None, error.to_string()))?;
     let operation_dir = backups_dir()
         .map_err(|error| io_error(&plan, None, error.to_string()))?
         .join("operations")
@@ -839,8 +860,25 @@ fn execute_plan(
     })();
     let (resolved, manifest_digest) = match preparation {
         Ok(prepared) => prepared,
-        Err(error) => return Err(cleanup_pre_apply_failure(&plan, &operation_dir, error)),
+        Err(error) => {
+            journal
+                .transition(OperationJournalState::Compensated, None)
+                .map_err(|journal_error| io_error(&plan, None, journal_error.to_string()))?;
+            return Err(cleanup_pre_apply_failure(&plan, &operation_dir, error));
+        }
     };
+
+    fail_if_requested(&plan, faults, ExecutionStep::PersistJournalApplying)
+        .map_err(|error| cleanup_pre_apply_failure(&plan, &operation_dir, error))?;
+    journal
+        .transition(OperationJournalState::Applying, None)
+        .map_err(|error| {
+            cleanup_pre_apply_failure(
+                &plan,
+                &operation_dir,
+                io_error(&plan, None, error.to_string()),
+            )
+        })?;
 
     let mut applied = Vec::new();
     for (index, item) in resolved.iter().enumerate() {
@@ -850,11 +888,15 @@ fn execute_plan(
             return finish_failed(
                 &plan,
                 receipt_id,
-                &resolved,
-                &applied,
                 error,
-                faults,
                 manifest_digest,
+                FailureContext {
+                    resolved: &resolved,
+                    applied: &applied,
+                    operation_dir: &operation_dir,
+                    faults,
+                    journal: &mut journal,
+                },
             );
         }
         let apply_result = fail_if_requested(&plan, faults, ExecutionStep::Apply(index))
@@ -864,11 +906,15 @@ fn execute_plan(
             return finish_failed(
                 &plan,
                 receipt_id,
-                &resolved,
-                &applied,
                 error,
-                faults,
                 manifest_digest,
+                FailureContext {
+                    resolved: &resolved,
+                    applied: &applied,
+                    operation_dir: &operation_dir,
+                    faults,
+                    journal: &mut journal,
+                },
             );
         }
         applied.push(index);
@@ -891,26 +937,35 @@ fn execute_plan(
         Err(error) => {
             return compensate_after_receipt_failure(
                 &plan,
-                &resolved,
-                &applied,
-                &operation_dir,
                 error,
                 "constructed",
-                faults,
+                FailureContext {
+                    resolved: &resolved,
+                    applied: &applied,
+                    operation_dir: &operation_dir,
+                    faults,
+                    journal: &mut journal,
+                },
             )
         }
     };
     if let Err(error) = persist_receipt_with_faults(&plan, &receipt, faults) {
         return compensate_after_receipt_failure(
             &plan,
-            &resolved,
-            &applied,
-            &operation_dir,
             error,
             "persisted",
-            faults,
+            FailureContext {
+                resolved: &resolved,
+                applied: &applied,
+                operation_dir: &operation_dir,
+                faults,
+                journal: &mut journal,
+            },
         );
     }
+    journal
+        .transition(OperationJournalState::Committed, Some(&receipt.id))
+        .map_err(|error| io_error(&plan, None, error.to_string()))?;
     Ok(receipt)
 }
 
@@ -937,19 +992,22 @@ fn cleanup_pre_apply_failure(
 fn finish_failed(
     plan: &MutationPlan,
     receipt_id: ReceiptId,
-    resolved: &[ResolvedMutation],
-    applied: &[usize],
     cause: AgentError,
-    faults: &dyn FaultInjector,
     manifest_digest: ContentDigest,
+    context: FailureContext<'_>,
 ) -> Result<OperationReceipt, AgentError> {
-    if applied.is_empty() {
+    if context.applied.is_empty() {
+        context
+            .journal
+            .transition(OperationJournalState::Compensated, None)
+            .map_err(|error| io_error(plan, None, error.to_string()))?;
         return Err(cause);
     }
     let mut compensation_errors = Vec::new();
-    for index in applied.iter().rev() {
-        let restore_result = fail_if_requested(plan, faults, ExecutionStep::Compensate(*index))
-            .and_then(|()| restore_target(plan, &resolved[*index]));
+    for index in context.applied.iter().rev() {
+        let restore_result =
+            fail_if_requested(plan, context.faults, ExecutionStep::Compensate(*index))
+                .and_then(|()| restore_target(plan, &context.resolved[*index]));
         if let Err(error) = restore_result {
             compensation_errors.push(error.message);
         }
@@ -972,43 +1030,108 @@ fn finish_failed(
             ),
         )
     };
-    let receipt = receipt(
+    let receipt = match receipt(
         plan,
         receipt_id,
         status,
-        resolved,
-        applied,
+        context.resolved,
+        context.applied,
         Some(manifest_digest),
         Some(message),
-    )?;
-    persist_receipt_with_faults(plan, &receipt, faults)?;
+    ) {
+        Ok(receipt) => receipt,
+        Err(error) => {
+            return Err(unrecorded_result_error(
+                plan,
+                status,
+                context.journal,
+                error,
+            ))
+        }
+    };
+    if let Err(error) = persist_receipt_with_faults(plan, &receipt, context.faults) {
+        return Err(unrecorded_result_error(
+            plan,
+            status,
+            context.journal,
+            error,
+        ));
+    }
+    let journal_state = if status == OperationStatus::Compensated {
+        OperationJournalState::Compensated
+    } else {
+        OperationJournalState::RepairRequired
+    };
+    context
+        .journal
+        .transition(journal_state, Some(&receipt.id))
+        .map_err(|error| io_error(plan, None, error.to_string()))?;
     Ok(receipt)
+}
+
+fn unrecorded_result_error(
+    plan: &MutationPlan,
+    status: OperationStatus,
+    journal: &mut OperationJournalHandle,
+    mut error: AgentError,
+) -> AgentError {
+    let journal_state = if status == OperationStatus::Compensated {
+        OperationJournalState::Compensated
+    } else {
+        error.code = AgentErrorCode::PartialFailure;
+        error.retryable = false;
+        OperationJournalState::RepairRequired
+    };
+    if let Err(journal_error) = journal.transition(journal_state, None) {
+        error.message = format!(
+            "{}; failed to persist {:?} journal state: {journal_error}",
+            error.message, journal_state
+        );
+    }
+    error.agent_id = Some(plan.agent_id.clone());
+    error.installation_id = Some(plan.context.installation_id.clone());
+    error
 }
 
 fn compensate_after_receipt_failure(
     plan: &MutationPlan,
-    resolved: &[ResolvedMutation],
-    applied: &[usize],
-    operation_dir: &Path,
     mut receipt_error: AgentError,
     failure_action: &str,
-    faults: &dyn FaultInjector,
+    context: FailureContext<'_>,
 ) -> Result<OperationReceipt, AgentError> {
     let mut compensation_errors = Vec::new();
-    for index in applied.iter().rev() {
-        let restore_result = fail_if_requested(plan, faults, ExecutionStep::Compensate(*index))
-            .and_then(|()| restore_target(plan, &resolved[*index]));
+    for index in context.applied.iter().rev() {
+        let restore_result =
+            fail_if_requested(plan, context.faults, ExecutionStep::Compensate(*index))
+                .and_then(|()| restore_target(plan, &context.resolved[*index]));
         if let Err(error) = restore_result {
             compensation_errors.push(error.message);
         }
     }
     if compensation_errors.is_empty() {
+        if let Err(error) = context
+            .journal
+            .transition(OperationJournalState::Compensated, None)
+        {
+            receipt_error.message = format!(
+                "{}; failed to persist compensated journal state: {error}",
+                receipt_error.message
+            );
+        }
         receipt_error.message = format!(
             "Operation receipt could not be {failure_action}; applied changes were compensated: {}",
             receipt_error.message
         );
-        receipt_error = cleanup_pre_apply_failure(plan, operation_dir, receipt_error);
+        receipt_error = cleanup_pre_apply_failure(plan, context.operation_dir, receipt_error);
     } else {
+        if let Err(error) = context
+            .journal
+            .transition(OperationJournalState::RepairRequired, None)
+        {
+            compensation_errors.push(format!(
+                "failed to persist repair-required journal: {error}"
+            ));
+        }
         receipt_error.code = AgentErrorCode::PartialFailure;
         receipt_error.retryable = false;
         receipt_error.message = format!(
@@ -1334,6 +1457,9 @@ fn persist_receipt(plan: &MutationPlan, receipt: &OperationReceipt) -> Result<()
     let bytes = serde_json::to_vec_pretty(receipt)
         .map_err(|error| io_error(plan, None, error.to_string()))?;
     write_atomic(&directory.join(format!("{}.json", receipt.id)), &bytes)
+        .map_err(|error| io_error(plan, None, error.to_string()))?;
+    std::fs::File::open(&directory)
+        .and_then(|file| file.sync_all())
         .map_err(|error| io_error(plan, None, error.to_string()))
 }
 

@@ -53,6 +53,37 @@ impl PlanStore {
         self.insert_with_acknowledgements_at(plan, Utc::now(), requirements)
     }
 
+    pub(crate) fn resources_for_locking(
+        &self,
+        plan_id: &PlanId,
+    ) -> Result<Vec<ResourceRef>, AgentError> {
+        let state = self.state.lock().map_err(|_| lock_error())?;
+        let stored = state.active.get(plan_id).ok_or_else(|| {
+            plan_error(
+                AgentErrorCode::InvalidPlan,
+                None,
+                None,
+                "Unknown mutation plan",
+                false,
+            )
+        })?;
+        Ok(stored
+            .plan
+            .read_set
+            .iter()
+            .map(|precondition| precondition.resource.clone())
+            .chain(
+                stored
+                    .plan
+                    .mutations
+                    .iter()
+                    .map(|mutation| mutation.resource.clone()),
+            )
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect())
+    }
+
     pub fn claim_validated<F>(
         &self,
         plan_id: &PlanId,
