@@ -301,16 +301,6 @@ pub enum SkillScope {
     None,
 }
 
-/// Result of updating a skill source.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct SkillUpdateResult {
-    pub source_id: String,
-    pub updated: bool,
-    pub before_version: String,
-    pub after_version: String,
-}
-
 impl ProfileLayers {
     pub fn is_empty(&self) -> bool {
         self.shared.is_none() && self.local.is_none() && self.env.is_empty()

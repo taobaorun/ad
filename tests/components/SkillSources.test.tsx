@@ -89,7 +89,7 @@ function plan(action: 'add' | 'update' | 'remove') {
 describe('SkillSourcesSection', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
-    useSkills.setState({ sources: [], entries: [], plugins: [], projectConfig: null });
+    useSkills.setState({ sources: [] });
     listSkillCatalog.mockReset().mockResolvedValue({
       schemaVersion: 1,
       revision: 'sha256:catalog',

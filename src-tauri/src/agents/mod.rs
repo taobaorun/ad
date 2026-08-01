@@ -61,7 +61,9 @@ mod skill_artifacts_tests;
 mod skill_catalog;
 mod skill_catalog_execution;
 mod skill_catalog_plans;
+mod skill_legacy_discovery;
 mod skill_legacy_inventory;
+mod skill_legacy_migration;
 mod types;
 mod workspace_contracts;
 
@@ -102,6 +104,7 @@ pub use skill_catalog::*;
 pub use skill_catalog_execution::*;
 pub use skill_catalog_plans::*;
 pub use skill_legacy_inventory::*;
+pub use skill_legacy_migration::*;
 pub use types::*;
 pub use workspace_contracts::*;
 

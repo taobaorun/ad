@@ -722,6 +722,32 @@
     "apply": "应用",
     "applying": "应用中…"
   },
+  "legacySkillMigration": {
+    "title": "旧版项目 Skill 状态",
+    "archived": "已归档经过验证的旧版项目意图。当前项目 Skill 与所有权记录均未改变。",
+    "status": {
+      "ready_to_archive": "当前项目已使用经过验证的工作区所有权。可检查独立清理计划并归档旧版意图。",
+      "needs_reconciliation": "旧版链接或意图仍与托管工作区不一致。请先在“资源”中完成协调。",
+      "blocked": "所有权、来源身份或项目意图存在歧义，清理已阻止。AD 会保留旧版状态不变。",
+      "offline": "旧版项目当前离线。项目重新可验证之前，AD 会保留其状态不变。"
+    },
+    "review": "检查归档",
+    "restore": "恢复状态",
+    "outcome": {
+      "archived": "旧版意图已归档，并生成持久回执。",
+      "restored": "旧版状态已恢复；项目 Skill 未发生改变。",
+      "compensated": "未移除任何旧版状态。"
+    },
+    "dialog": {
+      "title": "归档已迁移的旧版状态",
+      "description": "AD 会重新校验当前项目，仅将旧版意图原子移动到版本化归档，并写入恢复回执。Skill 来源和项目链接不会被删除。",
+      "state": "旧版记录",
+      "evidence": "迁移证据",
+      "receipts_one": "{{count}} 条已提交工作区回执",
+      "receipts_other": "{{count}} 条已提交工作区回执",
+      "apply": "归档状态"
+    }
+  },
   "projectSkills": {
     "demote": {
       "title": "将 \"{{skillName}}\" 从全局降为项目级",

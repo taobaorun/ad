@@ -722,6 +722,32 @@
     "apply": "Apply",
     "applying": "Applying…"
   },
+  "legacySkillMigration": {
+    "title": "Legacy project Skill state",
+    "archived": "The verified legacy project intent is archived. Current project Skills and ownership records were not changed.",
+    "status": {
+      "ready_to_archive": "This project now uses verified workspace ownership. Review the independent cleanup plan to archive its legacy intent.",
+      "needs_reconciliation": "Legacy links or intent still differ from the managed workspace. Reconcile them in Resources before cleanup.",
+      "blocked": "Cleanup is blocked because ownership, source identity, or project intent is ambiguous. AD will keep the legacy state unchanged.",
+      "offline": "The legacy project is offline. AD will keep its state unchanged until the project can be verified."
+    },
+    "review": "Review archive",
+    "restore": "Restore state",
+    "outcome": {
+      "archived": "Legacy intent archived with a durable receipt.",
+      "restored": "Legacy state restored; project Skills were left unchanged.",
+      "compensated": "No legacy state was removed."
+    },
+    "dialog": {
+      "title": "Archive migrated legacy state",
+      "description": "AD will revalidate this project, atomically move only the legacy intent bytes into its versioned archive, and write a recovery receipt. Skill sources and project links are not deleted.",
+      "state": "Legacy record",
+      "evidence": "Migration evidence",
+      "receipts_one": "{{count}} committed workspace receipt",
+      "receipts_other": "{{count}} committed workspace receipts",
+      "apply": "Archive state"
+    }
+  },
   "projectSkills": {
     "demote": {
       "title": "Demote \"{{skillName}}\" from global to project scope",

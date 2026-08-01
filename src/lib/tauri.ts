@@ -13,13 +13,6 @@ import type {
   ProjectStatus,
   ScanRoot,
 } from './projectTypes';
-import type {
-  PluginInfo,
-  ProjectSkillConfig,
-  SkillEntry,
-  SkillSource,
-  SkillUpdateResult,
-} from './skillTypes';
 import {
   AgentContextSchema,
   CapabilityDescriptorSchema,
@@ -79,6 +72,14 @@ import {
   type SkillCatalogSnapshot,
   type SkillSourceRequest,
 } from './skillCatalogTypes';
+import {
+  LegacySkillInventorySchema,
+  LegacySkillMigrationPlanViewSchema,
+  LegacySkillMigrationReportSchema,
+  type LegacySkillInventory,
+  type LegacySkillMigrationPlanView,
+  type LegacySkillMigrationReport,
+} from './legacySkillMigrationTypes';
 
 export interface AgentSettingsEdit {
   resource: ResourceRef;
@@ -413,26 +414,32 @@ export const tauri = {
   cancelSkillCatalogSourcePlan: (planId: string) =>
     invoke<boolean>('cancel_skill_catalog_source_plan', { planId }),
 
-  // Skill management
-  listSkillSources: () => invoke<SkillSource[]>('list_skill_sources'),
-  addSkillSource: (source: SkillSource) => invoke<SkillSource>('add_skill_source', { source }),
-  removeSkillSource: (id: string) => invoke<void>('remove_skill_source', { id }),
-  updateSkillSource: (id: string) => invoke<SkillUpdateResult>('update_skill_source', { id }),
-  scanSkillLibrary: (projectPath?: string) =>
-    invoke<SkillEntry[]>('scan_skill_library', { projectPath: projectPath ?? null }),
-  getProjectSkills: (projectPath: string) =>
-    invoke<ProjectSkillConfig>('get_project_skills', { projectPath }),
-  toggleSkill: (projectPath: string, skillId: string, enabled: boolean) =>
-    invoke<ProjectSkillConfig>('toggle_skill', { projectPath, skillId, enabled }),
-  setSkillScope: (skillId: string, scope: string) =>
-    invoke<void>('set_skill_scope', { skillId, scope }),
-  applyProjectSkills: (projectPath: string) =>
-    invoke<string[]>('apply_project_skills', { projectPath }),
-
-  listPlugins: (projectPath?: string) =>
-    invoke<PluginInfo[]>('list_plugins', { projectPath: projectPath ?? null }),
-  togglePlugin: (projectPath: string, pluginId: string, enabled: boolean) =>
-    invoke<void>('toggle_plugin', { projectPath, pluginId, enabled }),
+  inspectLegacySkillState: async (): Promise<LegacySkillInventory> =>
+    LegacySkillInventorySchema.parse(await invoke('inspect_legacy_skill_state')),
+  previewLegacyProjectSkillMigration: async (
+    projectPath: string,
+  ): Promise<LegacySkillMigrationPlanView> =>
+    LegacySkillMigrationPlanViewSchema.parse(
+      await invoke('preview_legacy_project_skill_migration', { projectPath }),
+    ),
+  applyLegacyProjectSkillMigrationPlan: async (
+    plan: LegacySkillMigrationPlanView,
+  ): Promise<LegacySkillMigrationReport> =>
+    LegacySkillMigrationReportSchema.parse(
+      await invoke('apply_legacy_project_skill_migration_plan', {
+        claim: {
+          planId: plan.id,
+          riskFingerprint: plan.riskFingerprint,
+          confirmed: true,
+        },
+      }),
+    ),
+  cancelLegacyProjectSkillMigrationPlan: (planId: string) =>
+    invoke<boolean>('cancel_legacy_project_skill_migration_plan', { planId }),
+  restoreLegacyProjectSkillState: async (receiptId: string): Promise<LegacySkillMigrationReport> =>
+    LegacySkillMigrationReportSchema.parse(
+      await invoke('restore_legacy_project_skill_state', { receiptId }),
+    ),
 };
 
 export type TerminalBackendId = 'ghostty' | 'cmux' | 'apple-terminal' | 'custom';

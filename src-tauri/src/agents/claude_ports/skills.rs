@@ -4,10 +4,12 @@ use std::path::PathBuf;
 
 use chrono::{Duration, Utc};
 
-use crate::commands::skills::{is_ad_managed_symlink, scan_skill_library_read_only};
 use crate::models::{SkillEntry, SkillScope};
 
 use super::super::execution_state::ExecutionState;
+use super::super::skill_legacy_discovery::{
+    is_legacy_ad_managed_symlink, scan_legacy_skill_library_read_only,
+};
 use super::super::{
     directory_tree_digest, load_ownership_record, validate_ownership_artifact,
     validate_ownership_record, AgentContext, AgentError, AgentErrorCode, AgentId,
@@ -97,7 +99,7 @@ impl SkillsPort for ClaudeSkillsPort {
             validate_project_path(context, project_path)?;
         }
         let entries =
-            scan_skill_library_read_only(context.project_path.clone()).map_err(|error| {
+            scan_legacy_skill_library_read_only(context.project_path.clone()).map_err(|error| {
                 agent_error(
                     AgentErrorCode::Io,
                     context,
@@ -456,7 +458,7 @@ fn replacement_is_authorized(
     resource: &ResourceRef,
     digest: &ContentDigest,
 ) -> bool {
-    if is_ad_managed_symlink(target) {
+    if is_legacy_ad_managed_symlink(target) {
         return true;
     }
     if resource.scope != ResourceScope::Project {
