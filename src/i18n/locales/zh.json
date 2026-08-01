@@ -547,6 +547,20 @@
       "gitAcquisitionUsesLegacyFlow": "Git 获取仍使用旧版 Source 流程；本地 Skill 变更使用安全计划引擎。",
       "codexPluginInstallRequiresMarketplace": "项目级 Plugin 可由 AD 自动安装；用户级安装仍需使用 Codex Marketplace 流程。",
       "projectWritePending": "当前尚不支持项目级写入。"
+    },
+    "resources": {
+      "externalResource": "该资源不由 AD 持有，将保持只读。",
+      "skillNotInstalled": "请先在当前项目安装此 Skill，再执行更新或移除。",
+      "skillRevisionCurrent": "当前项目已使用目录中的最新版本。",
+      "skillSourceUnavailable": "Skill 来源已不在目录中，无法更新。",
+      "skillOwnershipUnproven": "AD 无法证明该项目 Skill 的所有权，已阻止修改。",
+      "codexRuntimeNotPrepared": "请先准备隔离的 Codex 项目 Runtime，再修改项目 Plugin。",
+      "pluginInheritedOnly": "该 Plugin 仅从上层继承，没有可重置的项目覆盖。",
+      "pluginUpdateRequiresConversionSource": "Codex Plugin 更新需要经过验证的配置转化来源或 Marketplace 来源。",
+      "pluginUpdateExternal": "Plugin 包更新仍需通过 Agent 自身的外部 Plugin 流程。",
+      "actionCompensated": "操作失败，所有变更均已恢复。",
+      "actionPartialFailure": "操作仅部分完成，请检查回执后再继续。",
+      "actionFailed": "项目资源操作失败。"
     }
   },
   "agentWorkspace": {
@@ -622,6 +636,14 @@
       "read_only": "只读",
       "external": "外部流程",
       "unsupported": "不支持"
+    },
+    "action": {
+      "install": "安装",
+      "update": "更新",
+      "remove": "移除",
+      "enable": "启用",
+      "disable": "禁用",
+      "resetPluginOverride": "重置项目覆盖"
     },
     "enable": "启用 {{name}}",
     "disable": "禁用 {{name}}",

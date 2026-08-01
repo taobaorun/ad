@@ -547,6 +547,20 @@
       "gitAcquisitionUsesLegacyFlow": "Git acquisition still uses the legacy source flow; local Skill changes use the safe plan engine.",
       "codexPluginInstallRequiresMarketplace": "AD can install Project Plugins automatically; User installation still uses the Codex Marketplace flow.",
       "projectWritePending": "Project writes are not currently available."
+    },
+    "resources": {
+      "externalResource": "This resource is owned outside AD and remains read-only.",
+      "skillNotInstalled": "Install this Skill in the project before updating or removing it.",
+      "skillRevisionCurrent": "This project already uses the current catalog revision.",
+      "skillSourceUnavailable": "The Skill source is no longer available in the catalog.",
+      "skillOwnershipUnproven": "AD cannot prove ownership of this project Skill, so mutation is blocked.",
+      "codexRuntimeNotPrepared": "Prepare the isolated Codex Project Runtime before changing project Plugins.",
+      "pluginInheritedOnly": "This Plugin is inherited and has no project override to reset.",
+      "pluginUpdateRequiresConversionSource": "Codex Plugin updates require a verified conversion or marketplace source.",
+      "pluginUpdateExternal": "Plugin package updates remain in the Agent's external plugin flow.",
+      "actionCompensated": "The action failed and all changes were restored.",
+      "actionPartialFailure": "The action completed only partially; inspect the receipt before continuing.",
+      "actionFailed": "The project resource action failed."
     }
   },
   "agentWorkspace": {
@@ -622,6 +636,14 @@
       "read_only": "Read-only",
       "external": "External flow",
       "unsupported": "Unsupported"
+    },
+    "action": {
+      "install": "Install",
+      "update": "Update",
+      "remove": "Remove",
+      "enable": "Enable",
+      "disable": "Disable",
+      "resetPluginOverride": "Reset project override"
     },
     "enable": "Enable {{name}}",
     "disable": "Disable {{name}}",
