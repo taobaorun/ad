@@ -145,6 +145,11 @@
     "restoreConfirm": "Restore this backup? Your current settings.json will itself be backed up first.",
     "noBackup": "No backup",
     "noResources": "No changed resources",
+    "diagnostic": {
+      "malformed": "An operation record is malformed",
+      "unsupported_version": "An operation record uses a newer unsupported version",
+      "unreadable": "An operation record cannot be read"
+    },
     "status": {
       "complete": "Complete",
       "compensated": "Compensated",

@@ -142,13 +142,21 @@ fn applying_with_a_complete_receipt_is_reconciled_as_committed() {
         .transition(OperationJournalState::Applying, None)
         .unwrap();
     let receipt = OperationReceipt {
+        schema_version: OPERATION_RECEIPT_SCHEMA_VERSION,
         id: receipt_id.clone(),
-        plan_id: plan.id,
+        plan_id: plan.id.clone(),
+        operation_kind: OperationKind::Apply,
+        parent_receipt_id: None,
+        context: Some(plan.context),
+        workspace_key: None,
+        action_id: None,
         status: OperationStatus::Complete,
         applied_resources: Vec::new(),
         backup_paths: Vec::new(),
         post_apply_states: Vec::new(),
         manifest_digest: None,
+        rollback: RollbackEligibility::available(),
+        created_at: Some(Utc::now()),
         message: None,
     };
     state

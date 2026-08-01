@@ -161,6 +161,17 @@ impl StateDirectory {
         Ok(bytes)
     }
 
+    pub(super) fn modified(&self, name: &str) -> std::io::Result<std::time::SystemTime> {
+        validate_name(OsStr::new(name))?;
+        let fd = openat(
+            &self.fd,
+            name,
+            OFlags::RDONLY | OFlags::NOFOLLOW,
+            Mode::empty(),
+        )?;
+        File::from(fd).metadata()?.modified()
+    }
+
     pub(super) fn directory_digest(&self, name: &str) -> std::io::Result<ContentDigest> {
         validate_name(OsStr::new(name))?;
         super::execution_tree::directory_digest(&self.fd, OsStr::new(name))

@@ -282,7 +282,23 @@ describe('AgentSettingsEditor', () => {
           id: 'stale-plan',
           agentId: 'codex',
           context: initialContext,
-          changes: [{ resource: snapshot.resource, kind: 'replace' }],
+          changes: [
+            {
+              resource: snapshot.resource,
+              kind: 'replace',
+              target: {
+                id: 'target:stale-settings',
+                kind: 'agent_resource',
+                display: 'settings/user-config',
+              },
+              scope: 'user',
+              dependencies: [],
+              activationImpact: [
+                { kind: 'configuration', summaryKey: 'agents.plan.impact.configuration' },
+              ],
+            },
+          ],
+          riskFingerprint: 'risk:stale-settings',
           expiresAt: '2026-07-15T01:05:00Z',
         }),
       );

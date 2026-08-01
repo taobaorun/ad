@@ -348,8 +348,11 @@ describe('Agent schemas', () => {
   it('validates partial receipts and structured errors', () => {
     expect(
       OperationReceiptSchema.parse({
+        schemaVersion: 2,
         id: 'receipt-1',
         planId: 'plan-1',
+        operationKind: 'apply',
+        context: { installationId: 'codex:default' },
         status: 'partial_failure',
         appliedResources: [],
         backupPaths: ['/Users/test/.ad/backups/config.toml'],
@@ -366,6 +369,8 @@ describe('Agent schemas', () => {
           },
         ],
         manifestDigest: 'sha256:manifest',
+        rollback: { available: true },
+        createdAt: '2026-07-15T01:00:00Z',
         message: 'A compensation write failed',
       }).status,
     ).toBe('partial_failure');
@@ -382,8 +387,14 @@ describe('Agent schemas', () => {
 
   it('accepts directory states in operation receipts', () => {
     const receipt = OperationReceiptSchema.parse({
+      schemaVersion: 2,
       id: 'receipt-directory',
       planId: 'plan-directory',
+      operationKind: 'apply',
+      context: {
+        installationId: 'codex:project',
+        projectPath: '/Users/test/project',
+      },
       status: 'complete',
       appliedResources: [],
       backupPaths: [],
@@ -400,6 +411,8 @@ describe('Agent schemas', () => {
           digest: 'sha256:directory',
         },
       ],
+      rollback: { available: true },
+      createdAt: '2026-07-15T01:00:00Z',
     });
 
     expect(receipt.postApplyStates[0]?.kind).toBe('directory');
@@ -409,16 +422,23 @@ describe('Agent schemas', () => {
     const entry = OperationHistoryEntrySchema.parse({
       createdAt: '2026-07-15T01:00:00Z',
       receipt: {
+        schemaVersion: 2,
         id: 'receipt-1',
         planId: 'plan-1',
+        operationKind: 'apply',
+        context: {
+          installationId: 'codex:default',
+        },
         status: 'complete',
         appliedResources: [],
         backupPaths: [],
         postApplyStates: [],
+        rollback: { available: false, reason: 'missing_evidence' },
+        createdAt: '2026-07-15T01:00:00Z',
       },
     });
 
-    expect(entry.receipt.id).toBe('receipt-1');
+    expect(entry.receipt?.id).toBe('receipt-1');
   });
 
   it('validates artifact conversion previews without mutation content', () => {

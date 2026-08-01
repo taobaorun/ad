@@ -5,7 +5,7 @@ import type { OperationHistoryEntry } from '@/lib/agentTypes';
 import { formatAgentError } from '@/lib/agentErrors';
 import { profileFeaturesFor } from '@/lib/profileEditorRegistry';
 import { Button } from './ui/button';
-import { RotateCcw, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RotateCcw, RefreshCw } from 'lucide-react';
 import { useAgents } from '@/store/agents';
 import { useProfiles } from '@/store/profiles';
 import { useUiState } from '@/store/ui';
@@ -54,6 +54,7 @@ export function HistoryPanel() {
   }, [refresh]);
 
   async function onRollback(entry: OperationHistoryEntry) {
+    if (!entry.receipt || !entry.receipt.rollback?.available) return;
     if (!window.confirm(t('history.operationRollbackConfirm'))) return;
     setBusy(true);
     setError(null);
@@ -104,41 +105,64 @@ export function HistoryPanel() {
             <div className="text-sm text-muted-foreground">{t('history.operationEmpty')}</div>
           ) : (
             <ul className="space-y-1">
-              {operations.map((entry) => (
-                <li
-                  key={entry.receipt.id}
-                  className="flex items-center gap-3 rounded border border-border bg-card px-3 py-2 text-sm"
-                >
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {new Date(entry.createdAt).toLocaleString()}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium">
-                      {entry.receipt.appliedResources
-                        .map((resource) => resource.logicalId)
-                        .join(', ') || t('history.noResources')}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {t(`history.status.${entry.receipt.status}`)}
-                      {entry.receipt.appliedResources.length > 0 &&
-                        ` · ${entry.receipt.appliedResources
-                          .map((resource) => `${resource.kind}/${resource.scope}`)
-                          .join(', ')}`}
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={
-                      busy || !['complete', 'partial_failure'].includes(entry.receipt.status)
-                    }
-                    onClick={() => void onRollback(entry)}
+              {operations.map((entry) => {
+                const receipt = entry.receipt;
+                if (!receipt) {
+                  const diagnostic = entry.diagnostic;
+                  return (
+                    <li
+                      key={`diagnostic:${diagnostic?.source ?? entry.createdAt}`}
+                      className="flex items-center gap-3 rounded border border-warning/40 bg-warning/5 px-3 py-2 text-sm"
+                      title={diagnostic?.message}
+                    >
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {new Date(entry.createdAt).toLocaleString()}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium">
+                          {t(`history.diagnostic.${diagnostic?.code ?? 'unreadable'}`)}
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {diagnostic?.source}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                }
+                return (
+                  <li
+                    key={receipt.id}
+                    className="flex items-center gap-3 rounded border border-border bg-card px-3 py-2 text-sm"
                   >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    {t('history.rollback')}
-                  </Button>
-                </li>
-              ))}
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium">
+                        {receipt.appliedResources.map((resource) => resource.logicalId).join(', ') ||
+                          t('history.noResources')}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {t(`history.status.${receipt.status}`)}
+                        {receipt.appliedResources.length > 0 &&
+                          ` · ${receipt.appliedResources
+                            .map((resource) => `${resource.kind}/${resource.scope}`)
+                            .join(', ')}`}
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy || !receipt.rollback?.available}
+                      onClick={() => void onRollback(entry)}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      {t('history.rollback')}
+                    </Button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

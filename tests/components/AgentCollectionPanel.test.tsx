@@ -200,7 +200,23 @@ describe('AgentCollectionPanel', () => {
           id: 'stale-plan',
           agentId: 'codex',
           context,
-          changes: [{ resource: skill.resource, kind: 'replace' }],
+          changes: [
+            {
+              resource: skill.resource,
+              kind: 'replace',
+              target: {
+                id: 'target:stale-skill',
+                kind: 'agent_resource',
+                display: 'skills/review',
+              },
+              scope: 'project',
+              dependencies: [],
+              activationImpact: [
+                { kind: 'code_execution', summaryKey: 'agents.plan.impact.codeExecution' },
+              ],
+            },
+          ],
+          riskFingerprint: 'risk:stale-skill',
           expiresAt: '2026-07-15T01:05:00Z',
         }),
       );
