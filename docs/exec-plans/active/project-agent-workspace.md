@@ -86,9 +86,11 @@
   - [x] (2026-08-01 14:56+08:00) ProjectWorkspaceInventory、InventoryRevision、AdapterDiscoveryContract、Settings effective/layer/field/editable-target/sensitivity 契约完成 Rust/Zod 同构；严格 schema 测试证明 unknown 字段被拒绝、未验证 Agent 版本保持 partial、敏感值边界只允许遮罩形态。
   - [x] (2026-08-01 15:25+08:00) Backend effective inventory 与分层 Settings 读取/编辑服务完成：Claude user/shared/local 与 Codex base/native-project/runtime-manifest 的 field winner、provenance、health、coverage 由后端统一解析；generated Codex config 不作为声明。敏感值在 IPC 前遮罩，私有 digest 仍使 secret rotation 改变 inventory revision；project edit 只提交项目语义层并由后端恢复遮罩字段、保留未知字段。Claude/Codex fixture、legacy project Settings IPC 限界、ownership recovery 与严格 Clippy 通过。
   - [x] (2026-08-01 15:35+08:00) Project Settings/Skills/Plugins 首屏切换到 typed inventory：effective 与继承层只读、backend editable target 才可 preview/apply/rollback，dirty draft 阻断项目/Agent切换；集合按 effective state、provenance、health、management 与 partial/failed coverage 展示，M3前不再暴露基于raw snapshot猜测的toggle。所有mutation使用inventory签发的effective context，stale response不会覆盖新workspace。前端143/143、typecheck/lint/build，Rust全量303 passed/4 ignored、全部integration tests与严格Clippy通过。
-- [ ] (2026-08-01 15:36+08:00 开始) M2：引入 immutable Skill artifact 和安全 source acquisition（验证标准：更新项目A不改变B，migration fixtures幂等）
+- [x] (2026-08-01 15:36+08:00 开始，16:22+08:00 完成) M2：引入 immutable Skill artifact 和安全 source acquisition（验证标准：更新项目A不改变B，migration fixtures幂等）
   - [x] (2026-08-01 15:43+08:00) Git执行边界不再拼接用户输入：固定`/bin/zsh -lc`只解析绝对Git路径和allowlisted GUI认证环境，后续URL/ref全部先校验并使用结构化argv；禁用submodule递归与LFS smudge，限制输出、总时长和无进展时长，超时终止整个process group。恶意URL/ref、credential URL、GUI最小PATH和timeout测试4/4，legacy Skill测试11/11与严格Clippy通过。
   - [x] (2026-08-01 16:01+08:00) Immutable Skill artifact tree与staging/publish服务完成：规范manifest覆盖相对path、节点类型、内容digest和执行位；排除Git/cache，限制depth/count/file/total bytes与磁盘保留量，拒绝hardlink、special file、absolute/逃逸/循环symlink及copy期间drift。artifact按tree digest只读发布，使用macOS no-replace rename；复用前完整复验manifest/tree，collision或篡改不覆盖。activation impact记录instruction、hook/MCP/command、script/binary与执行位；artifact/staging测试8/8与严格Clippy通过。
+  - [x] (2026-08-01 16:12+08:00) Source Catalog改为backend签发`skill-source:<uuid>`并通过独立Preview→确认→Apply事务管理；catalog/artifact/backup/journal/receipt均不暴露物理target，source drift、catalog drift、过期/重放/risk变化fail closed。跨进程catalog lock、staging flock lease、atomic catalog publish、崩溃后receipt补写/补偿和corrupt journal mutation gate完成；删除Source只删catalog entry，不物理删除artifact或legacy checkout。定向execution/recovery/migration测试10/10、Rust全量319 passed/1 ignored及全部integration tests、严格Clippy通过。
+  - [x] (2026-08-01 16:22+08:00) Settings的Skill Source入口切换到typed catalog与独立risk dialog：先检查完整tree和activation impact，再明确确认发布；刷新明确提示不会升级任何项目，移除明确提示保留project pin与旧artifact，取消计划立即释放staging。旧artifact ref在catalog刷新/移除后仍完整复验，两个独立revision pin互不变化；legacy registry/project/link盘点重复运行字节不变并阻断unsafe ID、path alias与external ownership。前端146/146、typecheck/lint/build通过。
 - [ ] M3：补齐 Skills/Plugins item lifecycle planners（验证标准：install/toggle/update/remove的支持与退化矩阵通过）
 - [ ] M4：完成统一 Project Agent Workspace UI（验证标准：所有真实动作可从ProjectDetail完成，draft/close行为、partial/stale/empty与可访问状态准确）
 - [ ] M5：让 Conversion 复用 workspace inventory/planners/result（验证标准：有效继承输入、resolver重新preview、safe subset、residual、补偿和rollback通过）
@@ -162,6 +164,9 @@
   日期/作者：2026-08-01 / Codex（承接用户确认的 brainstorm Product Contract）
 - 决策：保留source catalog，使用immutable artifact隔离项目revision。
   理由：兼容现有Git/local来源能力，同时消除mutable shared symlink造成的跨项目隐式更新。
+  日期/作者：2026-08-01 / Codex
+- 决策：Source Catalog使用独立的sealed AD-state transaction，不伪造AgentContext/ResourceRef；显示名称只作UI metadata，backend UUID才是身份。
+  理由：catalog、artifact与migration archive属于AD自身状态，伪装成Agent资源会错误继承scope/installation语义，并重新允许用户字符串成为路径身份。
   日期/作者：2026-08-01 / Codex
 - 决策：扩展现有`AgentCollectionPanel`路径，不恢复`ProjectSkills`或另建第三条项目资源路径。
   理由：新路径已经接入AgentContext、ExecutionEngine与stale request保护；继续双轨会让状态再次失控。
