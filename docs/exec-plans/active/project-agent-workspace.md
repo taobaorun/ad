@@ -107,7 +107,12 @@
   - [x] Resolution、Skill确认与safe subset都触发后端重新preview和新risk fingerprint；重复project conversion通过runtime manifest的`projectSettingsKeys`判定已物化overlay并收敛为no mutation，rollback恢复target并移除本次创建的project Skill link。
   - [x] Conversion UI接入workspace外置detached tracker，关闭/重开继续显示同一Apply且不会重复invoke；tracker按workspace+plan去重、拒绝同workspace不同plan并发，completed结果有界保留。Conversion主组件拆分后488行，safe subset、补偿/partial report、detached reopen与schema边界均有回归测试。
   - [x] `ce-simplify-code`三路审查完成：复用3项、质量3项、效率2项落实；保留完整inventory预检的fail-closed coverage语义，并保留report schema转发层以打断运行时循环。前端157/157、format/lint/typecheck/build，Rust326 passed/1 ignored、全部integration suites与严格Clippy通过；`pnpm tauri build`于18:17生成AD.app与DMG，`git diff --check`及frozen HTML零差异通过。
-- [ ] M6：迁移并删除 legacy project写路径（验证标准：旧用户状态可恢复，全仓库无legacy consumer）
+- [x] (2026-08-01 18:18+08:00 开始，19:41+08:00 完成) M6：迁移并删除 legacy project写路径（验证标准：旧用户状态可恢复，全仓库无legacy consumer）
+  - [x] Legacy Skill source/project/link盘点保持纯只读；项目状态只有在source-qualified intent、immutable artifact ownership、complete operation receipt与当前link状态全部一致时才进入Ready。allowlist要求精确集合相等，negative blocklist、重复名称、缺失来源、外部/悬空/ancestor symlink与不完整收据均降级或阻断。
+  - [x] Legacy project state退役改为独立Preview→确认→Archive事务：计划绑定canonical project、state digest、逐link证据、risk fingerprint与expiry；Apply在同一有序跨进程锁集合内重新盘点并持有project-root-confined link descriptors，只移动AD私有state，不修改当前项目link。archive/restore使用versioned marker、receipt与journal，支持崩溃恢复、byte-identical restore、restore后再次archive及旧代际receipt拒绝。
+  - [x] 删除`commands/skills.rs`的direct-write Skill IPC、`ProjectSkills.tsx`与`skillTypes.ts`，并从`store/skills.ts`移除legacy project/Plugin写方法，只保留typed source catalog；ProjectDetail只保留统一typed workspace与显式legacy reconciliation card。Tauri/Zod合同、busy时Cancel竞态和receipt-bound restore均有前端测试，全仓库搜索无旧consumer。
+  - [x] `ce-code-review`复核完成：source qualification、真实crash boundary、restore→rearchive、receipt proof、project target lock/confinement、marker generation与Cancel race均修复并复验；“用预览旧备份覆盖竞态新字节”的建议因会丢失并发用户更新而拒绝，保留最新字节并返回compensated。Agent-native改造建议与已批准KTD9/KTD11冲突，按本轮first-party UI/AD-state边界不采纳；外部Claude peer因执行上下文认证失败未产生可用结果。
+  - [x] 最终门禁：前端163/163、format/lint/typecheck/build通过；Rust library 321 passed/1 ignored、全部integration suites（legacy migration 10/10）与严格Clippy通过；`pnpm tauri build`于19:41生成最终AD.app与DMG，`git diff --check`及frozen HTML零差异通过。
 - [ ] M7：完成自动化、真机release验证和文档状态收敛（验证标准：所有门禁通过且evidence matrix有真实证据）
 - [ ] 完成结果回顾并将 MD + frozen HTML 一起移到 `docs/exec-plans/completed/`
 
@@ -185,6 +190,10 @@
   证据：共享tracker现在同时记录operation id；相同plan复用pending promise，不同plan明确拒绝且UI在workspace Applying期间保持busy。新增store测试覆盖单次invoke与冲突路径。
 - 发现：macOS `create-dmg`偶发在中间镜像已包含正确`AD.app`后因卸载阶段退出，并留下`/Volumes/dmg.*`挂载；立即重跑会继续受到陈旧DiskImages/Finder状态影响。
   证据：失败后`hdiutil info`显示AD的`rw.*.dmg`仍挂载且内容完整；只卸载明确的build interstitial、不改变代码后，同一提交再次`pnpm tauri build`成功生成18:17的AD.app与DMG，结束后无AD临时挂载。
+- 发现：published immutable Skill artifact会把目录/文件权限改成只读；使用包含原始mode的filesystem tree digest去匹配legacy source时，相同内容会被误判为不同来源。
+  证据：ownership、artifact和operation receipt验证全部通过，但legacy source digest与read-only artifact digest不同；改用acquisition manifest同款的规范化tree digest后，source-qualified fixture恢复Ready，同时相同内容的多个来源保持ambiguous并拒绝迁移。
+- 发现：legacy allowlist只验证“列出的Skill都已管理”仍不足以证明意图收敛；额外的AD-managed Skill会让当前有效集合大于legacy允许集合。
+  证据：双Skill fixture中只列`legacy/review`但项目同时启用`review`与`extra`；改为source-qualified集合精确相等后状态稳定降为`needs_reconciliation`且无法生成archive preview。
 
 ## 决策日志
 
@@ -281,6 +290,12 @@
 - 决策：Conversion tracker只把workspace+plan id相同的pending操作视为同一次Apply，报告也只在两者同时匹配时附着到当前preview；完成结果限制为最近32个workspace。
   理由：避免旧报告污染新preview、不同plan静默复用及renderer长期会话的无界内存增长；durable事实仍以后端History为准。
   日期/作者：2026-08-01 / Codex（ce-simplify-code）
+- 决策：legacy migration的source adoption使用规范化Skill tree identity，并同时要求当前ownership record、immutable artifact与其complete operation receipt精确一致。
+  理由：source identity必须忽略artifact发布时的只读mode归一化，但不能因此把内容相似或伪造receipt升级为迁移授权；多个相同来源继续fail closed。
+  日期/作者：2026-08-01 / Codex（ce-code-review）
+- 决策：archive竞态检测到state digest变化时，把实际最新字节移回legacy位置并返回compensated，不用preview时的旧副本覆盖。
+  理由：迁移目标是清理旧状态而不是回滚用户并发编辑；覆盖最新字节会造成真实数据丢失。旧plan失效后必须重新preview，测试明确证明changed bytes保留且archive不提交。
+  日期/作者：2026-08-01 / Codex（对ce-code-review finding的证据化pushback）
 
 ## 结果回顾
 
