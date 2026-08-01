@@ -54,6 +54,21 @@ pub enum ResourceKind {
     Rules,
 }
 
+impl ResourceKind {
+    pub(crate) fn contract_name(self) -> &'static str {
+        match self {
+            Self::Settings => "settings",
+            Self::Instructions => "instructions",
+            Self::Skills => "skills",
+            Self::Plugins => "plugins",
+            Self::Hooks => "hooks",
+            Self::Mcp => "mcp",
+            Self::Agents => "agents",
+            Self::Rules => "rules",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResourceScope {
@@ -147,76 +162,6 @@ pub struct MutationPlan {
     #[serde(default)]
     pub mutations: Vec<PlannedMutation>,
     pub expires_at: DateTime<Utc>,
-}
-
-/// Frontend-safe summary of one planned resource change.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MutationPlanChangeView {
-    pub resource: ResourceRef,
-    pub kind: MutationKind,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PlanAcknowledgementCode {
-    ConversionApply,
-    DangerousPermissionExpansion,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PlanRiskLevel {
-    Confirmation,
-    Dangerous,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AcknowledgementRequirement {
-    pub code: PlanAcknowledgementCode,
-    pub risk: PlanRiskLevel,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanAcknowledgement {
-    pub code: PlanAcknowledgementCode,
-    pub accepted: bool,
-}
-
-/// Public view of a backend-owned plan. Mutation content and preconditions stay private.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MutationPlanView {
-    pub id: PlanId,
-    pub agent_id: AgentId,
-    pub context: AgentContext,
-    #[serde(default)]
-    pub changes: Vec<MutationPlanChangeView>,
-    #[serde(default)]
-    pub required_acknowledgements: Vec<AcknowledgementRequirement>,
-    pub expires_at: DateTime<Utc>,
-}
-
-impl From<&MutationPlan> for MutationPlanView {
-    fn from(plan: &MutationPlan) -> Self {
-        Self {
-            id: plan.id.clone(),
-            agent_id: plan.agent_id.clone(),
-            context: plan.context.clone(),
-            changes: plan
-                .mutations
-                .iter()
-                .map(|mutation| MutationPlanChangeView {
-                    resource: mutation.resource.clone(),
-                    kind: mutation.kind,
-                })
-                .collect(),
-            required_acknowledgements: Vec::new(),
-            expires_at: plan.expires_at,
-        }
-    }
 }
 
 impl MutationPlan {

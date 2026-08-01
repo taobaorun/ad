@@ -4,6 +4,11 @@ import type {
   CapabilityOperation,
   ResourceScope,
 } from '@/lib/agentTypes';
+import type {
+  CollectionResourceView,
+  ResourceAction,
+  ResourceActionView,
+} from '@/lib/agentResourceInventoryTypes';
 
 export function capabilityAllows(
   capabilities: CapabilityDescriptor[],
@@ -25,4 +30,21 @@ export function capabilityFor(
   kind: CapabilityKind,
 ): CapabilityDescriptor | undefined {
   return capabilities.find((capability) => capability.kind === kind);
+}
+
+export function actionForResource(
+  resource: CollectionResourceView,
+  action: ResourceAction,
+): ResourceActionView | undefined {
+  return resource.management.actions.find((candidate) => candidate.action === action);
+}
+
+export function resourceActionAllows(
+  resource: CollectionResourceView,
+  action: ResourceAction,
+): boolean {
+  const itemAction = actionForResource(resource, action);
+  return (
+    itemAction?.availability === 'available' || itemAction?.availability === 'confirmation_required'
+  );
 }

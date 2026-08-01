@@ -2,10 +2,62 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use ad_lib::agents::{
-    builtin_registry, AgentAdapter, AgentContext, AgentErrorCode, CapabilityAvailability,
-    CapabilityOperation, CollectionInstallRequest, ExecutionEngine, MutationPlan, OperationStatus,
-    PlanStore, ResourceScope, SettingsEdit,
+    builtin_registry, AgentAdapter, AgentContext, AgentErrorCode, AgentId, AgentInstallation,
+    CapabilityAvailability, CapabilityOperation, CollectionInstallRequest, ExecutionEngine,
+    MutationPlan, OperationStatus, PlanStore, ResourceKey, ResourceKind, ResourceScope,
+    SettingsEdit, WorkspaceDescriptor,
 };
+
+#[test]
+fn workspace_contract_uses_stable_opaque_identity() {
+    let project = "/Users/test/project";
+    let installation = AgentInstallation {
+        id: "codex:default".into(),
+        agent_id: "codex".into(),
+        root_path: "/Users/test/.codex".into(),
+        project_path: None,
+        base_installation_id: None,
+    };
+    let first = WorkspaceDescriptor::for_installation(project, &installation, None);
+    let second = WorkspaceDescriptor::for_installation(project, &installation, None);
+
+    assert_eq!(first.key, second.key);
+    assert!(first.key.as_str().starts_with("workspace:sha256:"));
+    assert_eq!(first.agent_id, AgentId::from("codex"));
+    assert_eq!(first.base_installation_id.as_str(), "codex:default");
+    assert_eq!(first.effective_installation_id.as_str(), "codex:default");
+    let json = serde_json::to_value(first).unwrap();
+    assert!(json.get("physicalPath").is_none());
+}
+
+#[test]
+fn resource_identity_distinguishes_same_name_from_different_sources() {
+    let installation = AgentInstallation {
+        id: "codex:default".into(),
+        agent_id: "codex".into(),
+        root_path: "/Users/test/.codex".into(),
+        project_path: None,
+        base_installation_id: None,
+    };
+    let workspace =
+        WorkspaceDescriptor::for_installation("/Users/test/project", &installation, None);
+    let personal = ResourceKey::for_collection(
+        &workspace.key,
+        &AgentId::from("codex"),
+        ResourceKind::Skills,
+        "review",
+        "catalog:personal",
+    );
+    let team = ResourceKey::for_collection(
+        &workspace.key,
+        &AgentId::from("codex"),
+        ResourceKind::Skills,
+        "review",
+        "catalog:team",
+    );
+
+    assert_ne!(personal, team);
+}
 
 struct ContractExpectation {
     agent_id: &'static str,

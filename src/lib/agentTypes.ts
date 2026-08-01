@@ -27,6 +27,13 @@ export const ProfileIdSchema = RequiredIdSchema.brand<'ProfileId'>();
 export const PlanIdSchema = RequiredIdSchema.brand<'PlanId'>();
 export const ReceiptIdSchema = RequiredIdSchema.brand<'ReceiptId'>();
 export const ContentDigestSchema = RequiredIdSchema.brand<'ContentDigest'>();
+export const WorkspaceKeySchema = RequiredIdSchema.brand<'WorkspaceKey'>();
+export const WorkspaceRevisionSchema = RequiredIdSchema.brand<'WorkspaceRevision'>();
+export const ResourceKeySchema = RequiredIdSchema.brand<'ResourceKey'>();
+export const DeclarationKeySchema = RequiredIdSchema.brand<'DeclarationKey'>();
+export const PhysicalTargetIdSchema = RequiredIdSchema.brand<'PhysicalTargetId'>();
+export const OwnershipRecordIdSchema = RequiredIdSchema.brand<'OwnershipRecordId'>();
+export const RiskFingerprintSchema = RequiredIdSchema.brand<'RiskFingerprint'>();
 
 export const CapabilitySchema = z.enum([
   'settings',
@@ -138,6 +145,8 @@ export const CapabilityOperationSchema = z.enum([
   'rollback',
   'list',
   'install',
+  'update',
+  'remove',
   'enable',
   'disable',
   'detect',
@@ -194,6 +203,23 @@ export const MutationPlanChangeViewSchema = z
   .object({
     resource: ResourceRefSchema,
     kind: MutationKindSchema,
+    target: z
+      .object({
+        id: PhysicalTargetIdSchema,
+        kind: z.enum(['agent_resource', 'ad_state']),
+        display: z.string().min(1),
+      })
+      .strict(),
+    scope: ResourceScopeSchema,
+    dependencies: z.array(ResourceKeySchema),
+    activationImpact: z.array(
+      z
+        .object({
+          kind: z.enum(['configuration', 'instructions', 'code_execution', 'permissions']),
+          summaryKey: z.string().min(1),
+        })
+        .strict(),
+    ),
   })
   .strict();
 
@@ -222,6 +248,7 @@ export const MutationPlanViewSchema = z
     context: AgentContextSchema,
     changes: z.array(MutationPlanChangeViewSchema).default([]),
     requiredAcknowledgements: z.array(AcknowledgementRequirementSchema).default([]),
+    riskFingerprint: RiskFingerprintSchema,
     expiresAt: z.string().datetime({ offset: true }),
   })
   .strict();
@@ -397,6 +424,13 @@ export type ProfileId = z.infer<typeof ProfileIdSchema>;
 export type PlanId = z.infer<typeof PlanIdSchema>;
 export type ReceiptId = z.infer<typeof ReceiptIdSchema>;
 export type ContentDigest = z.infer<typeof ContentDigestSchema>;
+export type WorkspaceKey = z.infer<typeof WorkspaceKeySchema>;
+export type WorkspaceRevision = z.infer<typeof WorkspaceRevisionSchema>;
+export type ResourceKey = z.infer<typeof ResourceKeySchema>;
+export type DeclarationKey = z.infer<typeof DeclarationKeySchema>;
+export type PhysicalTargetId = z.infer<typeof PhysicalTargetIdSchema>;
+export type OwnershipRecordId = z.infer<typeof OwnershipRecordIdSchema>;
+export type RiskFingerprint = z.infer<typeof RiskFingerprintSchema>;
 export type Capability = z.infer<typeof CapabilitySchema>;
 export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
 export type AgentInstallation = z.infer<typeof AgentInstallationSchema>;

@@ -3,6 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 macro_rules! string_id {
     ($name:ident, $doc:literal) => {
@@ -49,6 +50,34 @@ string_id!(
 string_id!(ProfileId, "Profile identifier scoped by AgentId.");
 string_id!(PlanId, "Identifier for a backend-owned mutation plan.");
 string_id!(ReceiptId, "Identifier for an applied operation receipt.");
+string_id!(
+    WorkspaceKey,
+    "Opaque identity for one selected project and Agent context."
+);
+string_id!(
+    WorkspaceRevision,
+    "Opaque revision binding a workspace descriptor to its backend inputs."
+);
+string_id!(
+    ResourceKey,
+    "Stable effective identity for a workspace resource."
+);
+string_id!(
+    DeclarationKey,
+    "Stable identity for one layer declaration of a resource."
+);
+string_id!(
+    PhysicalTargetId,
+    "Opaque identity for a backend-resolved physical mutation target."
+);
+string_id!(
+    OwnershipRecordId,
+    "Opaque identity for an AD resource ownership record."
+);
+string_id!(
+    RiskFingerprint,
+    "Opaque fingerprint of the public risk-relevant plan shape."
+);
 
 /// Static definition for one built-in Agent product.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,6 +130,82 @@ pub struct AgentInstallation {
     pub project_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_installation_id: Option<InstallationId>,
+}
+
+/// Optional Project Runtime selected as the effective installation for a workspace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRuntimeIdentity {
+    pub installation_id: InstallationId,
+    pub base_installation_id: InstallationId,
+    pub revision: WorkspaceRevision,
+}
+
+/// Backend-created identity for one selected Agent context in a canonical project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDescriptor {
+    pub schema_version: u32,
+    pub key: WorkspaceKey,
+    pub revision: WorkspaceRevision,
+    pub agent_id: AgentId,
+    pub canonical_project_path: String,
+    pub base_installation_id: InstallationId,
+    pub effective_installation_id: InstallationId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_runtime: Option<ProjectRuntimeIdentity>,
+}
+
+impl WorkspaceDescriptor {
+    pub fn for_installation(
+        canonical_project_path: &str,
+        installation: &AgentInstallation,
+        project_runtime: Option<ProjectRuntimeIdentity>,
+    ) -> Self {
+        let base_installation_id = installation
+            .base_installation_id
+            .clone()
+            .or_else(|| {
+                project_runtime
+                    .as_ref()
+                    .map(|runtime| runtime.base_installation_id.clone())
+            })
+            .unwrap_or_else(|| installation.id.clone());
+        let effective_installation_id = project_runtime
+            .as_ref()
+            .map(|runtime| runtime.installation_id.clone())
+            .unwrap_or_else(|| installation.id.clone());
+        let key = WorkspaceKey::from(opaque_contract_id(
+            "workspace",
+            &[
+                canonical_project_path,
+                installation.agent_id.as_str(),
+                base_installation_id.as_str(),
+            ],
+        ));
+        let runtime_revision = project_runtime
+            .as_ref()
+            .map(|runtime| runtime.revision.as_str())
+            .unwrap_or("none");
+        let revision = WorkspaceRevision::from(opaque_contract_id(
+            "workspace-revision",
+            &[
+                key.as_str(),
+                effective_installation_id.as_str(),
+                runtime_revision,
+            ],
+        ));
+        Self {
+            schema_version: 1,
+            key,
+            revision,
+            agent_id: installation.agent_id.clone(),
+            canonical_project_path: canonical_project_path.to_owned(),
+            base_installation_id,
+            effective_installation_id,
+            project_runtime,
+        }
+    }
 }
 
 impl AgentInstallation {
@@ -172,6 +277,15 @@ fn normalize_root_path(path: &str) -> String {
     normalized
 }
 
+pub(crate) fn opaque_contract_id(prefix: &str, parts: &[&str]) -> String {
+    let mut hasher = Sha256::new();
+    for part in parts {
+        hasher.update((part.len() as u64).to_be_bytes());
+        hasher.update(part.as_bytes());
+    }
+    format!("{prefix}:sha256:{:x}", hasher.finalize())
+}
+
 #[cfg(test)]
 mod v1_contract_tests {
     use super::*;
@@ -184,6 +298,7 @@ mod v1_contract_tests {
             "profileId": ProfileId::from("default"),
             "planId": PlanId::from("plan-1"),
             "receiptId": ReceiptId::from("receipt-1"),
+            "workspaceKey": WorkspaceKey::from("workspace:sha256:test"),
         });
 
         assert_eq!(ids["agentId"], "codex");
@@ -191,6 +306,7 @@ mod v1_contract_tests {
         assert_eq!(ids["profileId"], "default");
         assert_eq!(ids["planId"], "plan-1");
         assert_eq!(ids["receiptId"], "receipt-1");
+        assert_eq!(ids["workspaceKey"], "workspace:sha256:test");
     }
 
     #[test]

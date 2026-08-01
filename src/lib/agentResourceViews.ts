@@ -1,4 +1,5 @@
 import type { JsonValue, ResourceSnapshot, SettingsDocument } from '@/lib/agentTypes';
+import type { CollectionResourceView } from '@/lib/agentResourceInventoryTypes';
 
 export interface CollectionItemView {
   name: string;
@@ -25,7 +26,16 @@ export function editedResourceContent(snapshot: SettingsDocument, text: string):
   return text;
 }
 
-export function collectionItemView(snapshot: ResourceSnapshot): CollectionItemView {
+export function collectionItemView(
+  snapshot: ResourceSnapshot | CollectionResourceView,
+): CollectionItemView {
+  if ('effectiveState' in snapshot) {
+    return {
+      name: snapshot.displayName,
+      description: snapshot.description,
+      enabled: snapshot.effectiveState === 'enabled',
+    };
+  }
   const content = isRecord(snapshot.content) ? snapshot.content : {};
   const name = typeof content.name === 'string' ? content.name : snapshot.resource.logicalId;
   const description = typeof content.description === 'string' ? content.description : undefined;
