@@ -1,12 +1,13 @@
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::io::{Read, Write};
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Component, Path, PathBuf};
 
 use rustix::fd::OwnedFd;
 use rustix::fs::{
-    fchmod, fstat, fsync, linkat, mkdirat, open, openat, renameat, unlinkat, AtFlags, FileType,
-    Mode, OFlags,
+    fchmod, fstat, fsync, linkat, mkdirat, open, openat, renameat, unlinkat, AtFlags, Dir,
+    FileType, Mode, OFlags,
 };
 
 use crate::fs::paths::ad_home;
@@ -172,6 +173,20 @@ impl StateDirectory {
     pub(super) fn remove(&self, name: &str) -> std::io::Result<()> {
         validate_name(OsStr::new(name))?;
         super::execution_tree::remove_entry(&self.fd, OsStr::new(name))
+    }
+
+    pub(super) fn entry_names(&self) -> std::io::Result<Vec<OsString>> {
+        let mut names = Dir::read_from(rustix::io::dup(&self.fd)?)?
+            .filter_map(|entry| match entry {
+                Ok(entry) if matches!(entry.file_name().to_bytes(), b"." | b"..") => None,
+                Ok(entry) => Some(Ok(OsString::from_vec(
+                    entry.file_name().to_bytes().to_vec(),
+                ))),
+                Err(error) => Some(Err(std::io::Error::from(error))),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        names.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+        Ok(names)
     }
 
     pub(super) fn create_directory(&self, name: &str) -> std::io::Result<Self> {

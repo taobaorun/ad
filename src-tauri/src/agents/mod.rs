@@ -16,6 +16,9 @@ mod execution_confinement_tests;
 mod execution_fs;
 mod execution_journal;
 mod execution_lock;
+mod execution_recovery;
+#[cfg(test)]
+mod execution_recovery_tests;
 mod execution_state;
 #[cfg(test)]
 mod execution_state_tests;
@@ -50,6 +53,7 @@ pub use execution::*;
 pub use execution_fs::directory_tree_digest;
 pub use execution_journal::*;
 pub use execution_lock::*;
+pub use execution_recovery::*;
 pub use operations::*;
 pub use plan_store::*;
 pub use plugin_conversion::*;

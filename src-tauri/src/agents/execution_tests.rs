@@ -289,7 +289,10 @@ fn execution_backs_up_all_targets_before_atomic_writes() {
     assert_eq!(journals.len(), 1);
     let journal_bytes = std::fs::read(journals[0].path()).unwrap();
     let journal: serde_json::Value = serde_json::from_slice(&journal_bytes).unwrap();
-    assert_eq!(journal["schemaVersion"], 1);
+    assert_eq!(
+        journal["schemaVersion"],
+        super::execution_journal::JOURNAL_SCHEMA_VERSION
+    );
     assert_eq!(journal["operationId"], plan_id.as_str());
     assert_eq!(journal["plannedReceiptId"], receipt.id.as_str());
     assert_eq!(journal["state"], "committed");

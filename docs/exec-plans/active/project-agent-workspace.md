@@ -77,7 +77,7 @@
       - [x] (2026-08-01 11:37+08:00) Project/user/runtime regular-file target已使用held parent fd执行observe、temp create、rename、unlink和directory sync；project/user ancestor symlink、active swap、0777 AD root及symlinked backup root sentinel测试通过。
       - [x] (2026-08-01 12:01+08:00) Skill/Plugin symlink与directory storage已统一使用held parent fd执行observe、digest、backup、temp publish、remove、compensation、rollback与receipt observe；directory digest保持旧合同，symlink/directory active-swap sentinel、ExecutionEngine补偿/rollback与Rust全量267/267测试通过。
       - [x] (2026-08-01 12:20+08:00) AD lock/journal/backup/manifest/history/cleanup已共享一次操作持有的state directory descriptors；整个`.ad`或journal child被swap成outside symlink时，事务artifact仍写入原目录且outside为空。初始journal和receipt使用no-replace发布，lock拒绝hard link；Rust全量272/272与严格Clippy通过。
-    - [ ] startup recovery/global recovery lock、mutation command gate与process-kill边界矩阵。
+    - [x] (2026-08-01 12:34+08:00) startup recovery/global recovery lock、ExecutionEngine mutation gate与process-kill边界矩阵完成：启动恢复持有跨进程exclusive lock，apply/rollback持有shared lease；prepared、prepared+backup、applying无receipt、applying+complete receipt及另一进程持锁边界由真实abort子进程覆盖。journal v2兼容读取v1，恢复测试6/6、真实进程测试2/2、Rust全量279 passed/4 ignored与严格Clippy通过；legacy direct-write命令仍按U6迁移退役。
     - [ ] versioned receipt/history decoder、ownership record与fresh inverse rollback plan。
 - [ ] M1：实现 effective inventory 与分层 Settings（验证标准：Claude/Codex provenance、coverage、canonical context测试通过）
 - [ ] M2：引入 immutable Skill artifact 和安全 source acquisition（验证标准：更新项目A不改变B，migration fixtures幂等）
@@ -126,6 +126,12 @@
   证据：`execution_state_root_swap_cannot_redirect_transaction_artifacts`在`Backup(0)`前替换整个`.ad`；只有让ExecutionEngine从lock获取到receipt提交共享同一组directory descriptors后，journal/manifest/receipt才全部留在原根且outside为空。
 - 发现：existing lockfile若是指向外部current-user文件的hard link，`O_NOFOLLOW`不能阻止metadata写入破坏外部文件；initial journal/receipt若使用replace rename也会在极小identity碰撞时覆盖既有证据。
   证据：新增hard-link sentinel与same-operation双writer测试；lock要求`st_nlink == 1`，journal/receipt通过synced temp + no-replace link发布。
+- 发现：`prepared` journal持久化完成与backup目录创建之间存在合法崩溃窗口；此时backup不存在代表尚无target写入，不能升级为人工修复。
+  证据：新增journal-only单元fixture与`prepared_empty`真实abort子进程边界；恢复把backup缺失视为幂等清理并转为`compensated`。
+- 发现：v1 journal只记录目标身份，不包含足以证明applying阶段已写入哪些target的逐项证据；applying且无有效receipt时自动覆盖目标可能破坏外部修改。
+  证据：真实abort子进程在target已变化但receipt缺失时，恢复保留target并转为`repair_required`，普通ExecutionEngine mutation被gate阻止。
+- 发现：引入`repaired`终态后继续写schema v1会破坏旧合同语义；但仓库已经可能存在v1 terminal/in-flight journal，不能简单拒绝旧版本。
+  证据：新写journal提升为v2，reader接受v1-v2；v1 journal发生恢复迁移时原子升级为v2，future/corrupt journal保持fail-closed。
 
 ## 决策日志
 
@@ -167,6 +173,15 @@
   日期/作者：2026-08-01 / Codex
 - 决策：新operation journal和receipt使用no-replace hard-link publish，lockfile必须是current-user、single-link regular file。
   理由：操作证据与锁身份不能被并发writer或预置hard link静默覆盖；transition仍使用同directory fd内的atomic replace。
+  日期/作者：2026-08-01 / Codex
+- 决策：startup recovery使用跨进程exclusive lease，ExecutionEngine apply/rollback使用shared lease；任何未终结或不可解码journal阻止普通mutation。
+  理由：恢复扫描与新写入不能并发，多个正常实例仍可在不同physical target上并行并由target lock协调。
+  日期/作者：2026-08-01 / Codex
+- 决策：prepared状态执行幂等backup清理后转`compensated`；applying仅在存在identity匹配的完整/补偿receipt时自动收敛，否则转`repair_required`且不猜测目标状态。
+  理由：journal-only阶段确定尚未写target，而applying v1/v2现有证据不足以安全重放或覆盖。
+  日期/作者：2026-08-01 / Codex
+- 决策：精确匹配repair-required receipt的guarded rollback可穿过mutation gate，成功后把原journal标记为v2 `repaired`；其他mutation继续阻断。
+  理由：修复动作本身必须可执行，但不能借修复入口放开无关写入。
   日期/作者：2026-08-01 / Codex
 
 ## 结果回顾

@@ -17,6 +17,11 @@ name = "crash_helper"
 path = "tests/bin/crash_helper.rs"
 test = false
 
+[[bin]]
+name = "recovery_crash_helper"
+path = "tests/bin/recovery_crash_helper.rs"
+test = false
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

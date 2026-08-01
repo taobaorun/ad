@@ -74,6 +74,23 @@ pub fn run() {
                 Err(err) => tracing::warn!(?err, "v1 -> layered migration failed; continuing"),
             }
 
+            let recovery = agents::recover_execution_state()
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
+            if recovery.writable() {
+                info!(
+                    inspected = recovery.inspected,
+                    recovered = recovery.recovered,
+                    "operation recovery completed"
+                );
+            } else {
+                tracing::warn!(
+                    inspected = recovery.inspected,
+                    repair_required = recovery.repair_required,
+                    diagnostics = ?recovery.diagnostics,
+                    "operation recovery requires repair; Agent mutations are blocked"
+                );
+            }
+
             // Show the theme-backed main window as navigation starts so the
             // HTML spotlight represents the actual startup work from its first
             // available frame instead of appearing after loading has finished.

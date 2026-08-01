@@ -6,7 +6,8 @@ use super::execution_state::StateWriteBoundary;
 use super::execution_state::{ExecutionState, StateDirectory};
 use super::{MutationPlan, PhysicalTargetId, PlanId, ReceiptId, ResourceKind, ResourceRef};
 
-const JOURNAL_SCHEMA_VERSION: u32 = 1;
+pub(super) const JOURNAL_SCHEMA_VERSION: u32 = 2;
+pub(super) const MIN_JOURNAL_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -16,6 +17,7 @@ pub enum OperationJournalState {
     Committed,
     Compensated,
     RepairRequired,
+    Repaired,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,6 +61,19 @@ pub(crate) struct OperationJournalHandle {
 }
 
 impl OperationJournalHandle {
+    pub(super) fn load(
+        state: &ExecutionState,
+        name: String,
+        mut journal: OperationJournal,
+    ) -> Result<Self, std::io::Error> {
+        journal.schema_version = JOURNAL_SCHEMA_VERSION;
+        Ok(Self {
+            directory: state.journals().duplicate()?,
+            name,
+            journal,
+        })
+    }
+
     pub(super) fn prepare(
         plan: &MutationPlan,
         planned_receipt_id: &ReceiptId,
@@ -130,6 +145,9 @@ fn valid_transition(from: OperationJournalState, to: OperationJournalState) -> b
             OperationJournalState::Committed
                 | OperationJournalState::Compensated
                 | OperationJournalState::RepairRequired
+        ) | (
+            OperationJournalState::RepairRequired,
+            OperationJournalState::Repaired
         )
     )
 }

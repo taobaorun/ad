@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::execution_confinement::ConfinedTarget;
 use super::execution_fs::{directory_tree_digest, render_content, TargetState};
+use super::execution_recovery::{mark_repaired, MutationRecoveryLease};
 use super::execution_state::{ExecutionState, StateDirectory};
 use super::{
     builtin_registry, execution_instance_id, AgentContext, AgentError, AgentErrorCode,
@@ -166,10 +167,12 @@ impl ExecutionEngine {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let state = ExecutionState::open().map_err(execution_state_error)?;
+        let _recovery_lease = MutationRecoveryLease::acquire_for_rollback(&state, receipt_id)?;
         let registry = builtin_registry();
         let plan = rollback_plan(receipt_id, &registry, &state)?;
         let _target_locks = TargetLockSet::acquire_for_plan(&plan, &registry, &state)?;
         let receipt = execute_plan(plan, &registry, &NoFaults, &state)?;
+        mark_repaired(&state, receipt_id)?;
         refresh_runtime_state(&receipt, false);
         Ok(receipt)
     }
@@ -223,6 +226,7 @@ impl ExecutionEngine {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let state = ExecutionState::open().map_err(execution_state_error)?;
+        let _recovery_lease = MutationRecoveryLease::acquire(&state)?;
         let registry = builtin_registry();
         let resources = plans.resources_for_locking(plan_id)?;
         let _target_locks =
