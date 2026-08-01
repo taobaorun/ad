@@ -1,4 +1,5 @@
 use chrono::{Duration, Utc};
+use std::os::unix::fs::PermissionsExt;
 
 use super::*;
 
@@ -66,6 +67,162 @@ fn setup_two_file_plan() -> (
     let store = PlanStore::default();
     store.insert(plan).unwrap();
     (temp, store, plan_id, shared, local)
+}
+
+fn single_file_plan(
+    agent_id: &str,
+    context: AgentContext,
+    resource: ResourceRef,
+    before: &[u8],
+    content: serde_json::Value,
+    media_type: &str,
+) -> (PlanStore, PlanId) {
+    let plan_id = PlanId::from(uuid::Uuid::new_v4().to_string());
+    let plan = MutationPlan {
+        id: plan_id.clone(),
+        agent_id: AgentId::from(agent_id),
+        context,
+        read_set: Vec::new(),
+        mutations: vec![PlannedMutation {
+            resource,
+            kind: MutationKind::Replace,
+            expected_digest: Some(ContentDigest::sha256(before)),
+            media_type: media_type.into(),
+            content: Some(content),
+        }],
+        expires_at: Utc::now() + Duration::minutes(5),
+    };
+    let store = PlanStore::default();
+    store.insert(plan).unwrap();
+    (store, plan_id)
+}
+
+#[test]
+#[serial_test::serial(home_env)]
+fn project_settings_ancestor_symlink_cannot_modify_outside_sentinel() {
+    let temp = tempfile::tempdir().unwrap();
+    std::env::set_var("AD_HOME", temp.path());
+    std::env::remove_var("CODEX_HOME");
+    std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+    let project = temp.path().join("project");
+    let outside = temp.path().join("outside");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    let sentinel = br#"{"model":"outside"}"#;
+    std::fs::write(outside.join("settings.json"), sentinel).unwrap();
+    std::os::unix::fs::symlink(&outside, project.join(".claude")).unwrap();
+    let project = std::fs::canonicalize(project).unwrap();
+    let installation = builtin_registry()
+        .discover()
+        .into_iter()
+        .find(|item| item.agent_id.as_str() == "claude-code")
+        .unwrap();
+    let context = AgentContext {
+        installation_id: installation.id,
+        project_path: Some(project.to_string_lossy().into_owned()),
+    };
+    let resource = ResourceRef {
+        installation_id: context.installation_id.clone(),
+        project_path: context.project_path.clone(),
+        kind: ResourceKind::Settings,
+        scope: ResourceScope::Project,
+        logical_id: "project-shared".into(),
+    };
+    let (store, plan_id) = single_file_plan(
+        "claude-code",
+        context,
+        resource,
+        sentinel,
+        serde_json::json!({"model": "escaped"}),
+        "application/json",
+    );
+
+    let error = ExecutionEngine.apply(&plan_id, &store).unwrap_err();
+
+    assert_eq!(error.code, AgentErrorCode::PermissionDenied);
+    assert_eq!(
+        std::fs::read(outside.join("settings.json")).unwrap(),
+        sentinel
+    );
+}
+
+#[test]
+#[serial_test::serial(home_env)]
+fn user_agent_root_symlink_cannot_modify_outside_sentinel() {
+    let temp = tempfile::tempdir().unwrap();
+    std::env::set_var("AD_HOME", temp.path());
+    std::env::remove_var("CODEX_HOME");
+    std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+    let outside = temp.path().join("outside-codex");
+    std::fs::create_dir_all(&outside).unwrap();
+    let sentinel = b"model = \"outside\"\n";
+    std::fs::write(outside.join("config.toml"), sentinel).unwrap();
+    std::os::unix::fs::symlink(&outside, temp.path().join(".codex")).unwrap();
+    let installation = builtin_registry()
+        .discover()
+        .into_iter()
+        .find(|item| item.agent_id.as_str() == "codex")
+        .unwrap();
+    let context = AgentContext {
+        installation_id: installation.id,
+        project_path: None,
+    };
+    let resource = ResourceRef {
+        installation_id: context.installation_id.clone(),
+        project_path: None,
+        kind: ResourceKind::Settings,
+        scope: ResourceScope::User,
+        logical_id: "user-config".into(),
+    };
+    let (store, plan_id) = single_file_plan(
+        "codex",
+        context,
+        resource,
+        sentinel,
+        serde_json::Value::String("model = \"escaped\"\n".into()),
+        "application/toml",
+    );
+
+    let error = ExecutionEngine.apply(&plan_id, &store).unwrap_err();
+
+    assert_eq!(error.code, AgentErrorCode::PermissionDenied);
+    assert_eq!(
+        std::fs::read(outside.join("config.toml")).unwrap(),
+        sentinel
+    );
+}
+
+#[test]
+#[serial_test::serial(home_env)]
+fn world_writable_ad_root_blocks_execution_before_target_write() {
+    let (temp, store, plan_id, shared, _local) = setup_two_file_plan();
+    let ad_root = temp.path().join(".ad");
+    std::fs::create_dir_all(&ad_root).unwrap();
+    std::fs::set_permissions(&ad_root, std::fs::Permissions::from_mode(0o777)).unwrap();
+
+    let error = ExecutionEngine.apply(&plan_id, &store).unwrap_err();
+
+    assert_eq!(error.code, AgentErrorCode::PermissionDenied);
+    assert_eq!(std::fs::read(shared).unwrap(), br#"{"model":"old"}"#);
+}
+
+#[test]
+#[serial_test::serial(home_env)]
+fn symlinked_ad_backup_root_blocks_execution_before_target_write() {
+    let (temp, store, plan_id, shared, _local) = setup_two_file_plan();
+    let ad_root = temp.path().join(".ad");
+    let outside = temp.path().join("outside-backups");
+    std::fs::create_dir_all(&ad_root).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("sentinel"), b"outside").unwrap();
+    std::os::unix::fs::symlink(&outside, ad_root.join("backups")).unwrap();
+
+    let error = ExecutionEngine.apply(&plan_id, &store).unwrap_err();
+
+    assert_eq!(error.code, AgentErrorCode::PermissionDenied);
+    assert_eq!(std::fs::read(shared).unwrap(), br#"{"model":"old"}"#);
+    assert_eq!(std::fs::read(outside.join("sentinel")).unwrap(), b"outside");
+    assert_eq!(std::fs::read_dir(outside).unwrap().count(), 1);
 }
 
 #[test]

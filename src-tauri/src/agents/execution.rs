@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::fs::atomic::write_atomic;
 use crate::fs::paths::{backups_dir, ensure_dir, history_dir};
 
+use super::execution_confinement::{validate_ad_managed_root, ConfinedFileTarget};
 use super::execution_fs::{
     copy_directory_tree, directory_tree_digest, observe_target, remove_target, render_content,
     write_directory_atomic, write_symlink_atomic, TargetState,
@@ -71,6 +72,7 @@ impl FaultInjector for FailAt {
 struct ResolvedMutation {
     mutation: PlannedMutation,
     target: ManagedResourceTarget,
+    confined_file: Option<ConfinedFileTarget>,
     original: TargetState,
     backup_path: Option<PathBuf>,
     backup_digest: Option<ContentDigest>,
@@ -162,6 +164,7 @@ impl ExecutionEngine {
         let _guard = EXECUTION_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        validate_ad_managed_root()?;
         let registry = builtin_registry();
         let plan = rollback_plan(receipt_id, &registry)?;
         let _target_locks = TargetLockSet::acquire_for_plan(&plan, &registry)?;
@@ -218,6 +221,7 @@ impl ExecutionEngine {
         let _guard = EXECUTION_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        validate_ad_managed_root()?;
         let registry = builtin_registry();
         let resources = plans.resources_for_locking(plan_id)?;
         let _target_locks =
@@ -813,7 +817,18 @@ fn execute_plan(
                     "Multiple mutations resolve to the same physical target",
                 ));
             }
-            let original = observe_target(&target)?;
+            let confined_file = if target.storage() == ResourceStorage::File {
+                Some(ConfinedFileTarget::resolve(
+                    &mutation.resource,
+                    target.path(),
+                )?)
+            } else {
+                None
+            };
+            let original = match &confined_file {
+                Some(confined) => confined.observe()?,
+                None => observe_target(&target)?,
+            };
             ensure_storage_compatible(&plan, &mutation.resource, target.storage(), &original)?;
             ensure_expected(&plan, &mutation, original.digest().as_ref())?;
             validate_mutation_source(&plan, &mutation, target.storage())?;
@@ -841,6 +856,7 @@ fn execute_plan(
             resolved.push(ResolvedMutation {
                 mutation,
                 target,
+                confined_file,
                 original,
                 backup_path,
                 backup_digest,
@@ -882,7 +898,7 @@ fn execute_plan(
 
     let mut applied = Vec::new();
     for (index, item) in resolved.iter().enumerate() {
-        let current = observe_target(&item.target)?;
+        let current = observe_resolved(item)?;
         if current.kind() != item.original.kind() || current.digest() != item.original.digest() {
             let error = changed_error(&plan, &item.mutation.resource);
             return finish_failed(
@@ -1292,17 +1308,19 @@ fn parse_directory_source(
 
 fn apply_mutation(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), AgentError> {
     match item.mutation.kind {
+        MutationKind::Delete if item.target.storage() == ResourceStorage::File => item
+            .confined_file
+            .as_ref()
+            .expect("file targets are confined during resolution")
+            .remove(),
         MutationKind::Delete => remove_target(item.target.path()),
         MutationKind::Create | MutationKind::Replace => match item.target.storage() {
             ResourceStorage::File => {
                 let bytes = render_content(&item.mutation)?;
-                write_atomic(item.target.path(), &bytes).map_err(|error| {
-                    io_error(
-                        plan,
-                        Some(item.mutation.resource.clone()),
-                        error.to_string(),
-                    )
-                })
+                item.confined_file
+                    .as_ref()
+                    .expect("file targets are confined during resolution")
+                    .write_atomic(&bytes)
             }
             ResourceStorage::Symlink => {
                 let source = parse_symlink_source(plan, &item.mutation)?;
@@ -1334,6 +1352,11 @@ fn apply_mutation(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), Ag
 
 fn restore_target(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), AgentError> {
     match &item.original {
+        TargetState::Missing if item.target.storage() == ResourceStorage::File => item
+            .confined_file
+            .as_ref()
+            .expect("file targets are confined during resolution")
+            .remove(),
         TargetState::Missing => remove_target(item.target.path()),
         TargetState::File(_) => {
             let backup = item.backup_path.as_ref().ok_or_else(|| {
@@ -1350,13 +1373,10 @@ fn restore_target(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), Ag
                     error.to_string(),
                 )
             })?;
-            write_atomic(item.target.path(), &bytes).map_err(|error| {
-                io_error(
-                    plan,
-                    Some(item.mutation.resource.clone()),
-                    error.to_string(),
-                )
-            })
+            item.confined_file
+                .as_ref()
+                .expect("file targets are confined during resolution")
+                .write_atomic(&bytes)
         }
         TargetState::Symlink(source) => {
             write_symlink_atomic(item.target.path(), source).map_err(|error| {
@@ -1409,6 +1429,13 @@ fn manifest_entry(item: &ResolvedMutation) -> BackupManifestEntry {
     }
 }
 
+fn observe_resolved(item: &ResolvedMutation) -> Result<TargetState, AgentError> {
+    match &item.confined_file {
+        Some(confined) => confined.observe(),
+        None => observe_target(&item.target),
+    }
+}
+
 fn receipt(
     plan: &MutationPlan,
     id: ReceiptId,
@@ -1422,7 +1449,7 @@ fn receipt(
         .iter()
         .map(|index| {
             let item = &resolved[*index];
-            let state = observe_target(&item.target)?;
+            let state = observe_resolved(item)?;
             Ok(AppliedResourceState {
                 resource: item.mutation.resource.clone(),
                 kind: state.kind(),

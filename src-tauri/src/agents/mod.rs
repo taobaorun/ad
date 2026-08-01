@@ -10,6 +10,7 @@ mod conversion;
 mod conversion_route;
 mod discovery;
 mod execution;
+mod execution_confinement;
 mod execution_fs;
 mod execution_journal;
 mod execution_lock;

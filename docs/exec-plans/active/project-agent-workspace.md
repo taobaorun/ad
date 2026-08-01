@@ -74,6 +74,8 @@
   - [ ] U10：sealed target接入执行、fd-relative confinement、跨进程锁、journal/startup recovery、versioned receipt、ownership与inverse rollback plan。
     - [x] (2026-08-01 11:22+08:00) 跨进程target lock与durable journal基础：真实子进程争用3/3、lock 2/2、journal 3/3、execution 14/14、PlanStore 11/11及严格Clippy通过；receipt file/parent sync后才提交journal，补偿和repair-required路径有持久状态。
     - [ ] fd-relative/no-follow confinement、unsafe root拒绝与ancestor-swap测试。
+      - [x] (2026-08-01 11:37+08:00) Project/user/runtime regular-file target已使用held parent fd执行observe、temp create、rename、unlink和directory sync；project/user ancestor symlink、active swap、0777 AD root及symlinked backup root sentinel测试通过。
+      - [ ] Skill/Plugin symlink与directory storage，以及AD journal/backup/history的active-swap fd-relative持久化仍待接入；本项不标完成。
     - [ ] startup recovery/global recovery lock、mutation command gate与process-kill边界矩阵。
     - [ ] versioned receipt/history decoder、ownership record与fresh inverse rollback plan。
 - [ ] M1：实现 effective inventory 与分层 Settings（验证标准：Claude/Codex provenance、coverage、canonical context测试通过）
@@ -113,6 +115,8 @@
   证据：首次实现后文件分别达到713、534和707行；集成审查后拆为`workspace_contracts.rs`、`resource_inventory.rs`、`agentWorkspaceTypes.ts`、`agentResourceInventoryTypes.ts`与`agentOperationReports.ts`，原文件回落到396、362和490行。
 - 发现：首次journal接线遗漏了“执行失败且补偿成功，但失败回执持久化失败”分支，该分支会把journal留在`applying`；同时prepared记录没有固定计划使用的receipt id，不利于启动恢复精确关联History。
   证据：主代理集成审查新增`failure_receipt_persistence_still_records_compensation`回归测试，并为journal加入`plannedReceiptId`；修复后ExecutionEngine聚焦测试14/14通过。
+- 发现：当前adapter target resolution会跟随项目`.claude`或用户`~/.codex` symlink；仅依赖canonical target与atomic rename时，ExecutionEngine会成功改写symlink后的outside配置。
+  证据：proof-first fixture中`project_settings_ancestor_symlink_cannot_modify_outside_sentinel`与`user_agent_root_symlink_cannot_modify_outside_sentinel`在修复前均返回Complete并改变outside bytes；fd-relative接入后18个ExecutionEngine测试全部通过。
 
 ## 决策日志
 
@@ -139,6 +143,9 @@
   日期/作者：2026-08-01 / Codex
 - 决策：跨进程advisory lock直接使用lockfile中已有的`rustix 1.1` `flock` API，只将`fs` feature声明为直接依赖。
   理由：满足macOS非阻塞排他锁与显式unlock需求，不增加新的crate或手写unsafe syscall；锁文件只承载version/instance/operation元数据。
+  日期/作者：2026-08-01 / Codex
+- 决策：regular-file target的受信root从raw project path、raw Claude/Codex home或canonical AD home重新建立，不能把adapter discovery已跟随symlink得到的canonical installation root当作写入授权。
+  理由：canonical路径能描述“最终去了哪里”，但不能证明用户配置的root本身没有被symlink替换；held directory fd和`openat(O_NOFOLLOW)`才是提交期边界。
   日期/作者：2026-08-01 / Codex
 
 ## 结果回顾
