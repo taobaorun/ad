@@ -10,13 +10,19 @@ use super::execution_fs::{directory_tree_digest, render_content, TargetState};
 use super::execution_recovery::{mark_repaired, MutationRecoveryLease};
 use super::execution_state::{ExecutionState, StateDirectory};
 use super::{
-    builtin_registry, decode_operation_receipt, execution_instance_id, AgentContext, AgentError,
-    AgentErrorCode, AppliedResourceState, ContentDigest, ManagedResourceTarget, MutationKind,
-    MutationPlan, OperationJournalHandle, OperationJournalState, OperationKind, OperationReceipt,
-    OperationStatus, PlanAcknowledgement, PlanId, PlanStore, PlannedMutation, ReceiptId,
-    ResourceKind, ResourceRef, ResourceScope, ResourceStateKind, ResourceStorage,
+    apply_ownership_changes, builtin_registry, decode_operation_receipt, execution_instance_id,
+    load_ownership_record, ownership_managed, ownership_record_id, ownership_workspace_key,
+    validate_ownership_artifact, validate_ownership_record, validate_ownership_record_identity,
+    workspace_key_for_context, AgentContext, AgentError, AgentErrorCode, AppliedResourceState,
+    ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan, MutationPlanView,
+    OperationJournalHandle, OperationJournalState, OperationKind, OperationReceipt,
+    OperationStatus, OwnershipArtifact, OwnershipRestore, PhysicalTargetId, PlanAcknowledgement,
+    PlanClaimBinding, PlanExecutionIntent, PlanId, PlanStore, PlannedMutation, ReceiptId,
+    ResourceKind, ResourceOwnershipChange, ResourceOwnershipChangeKind, ResourceOwnershipRecord,
+    ResourceRef, ResourceScope, ResourceStateKind, ResourceStorage, RiskFingerprint,
     RollbackEligibility, RollbackUnavailableReason, TargetLockSet, WritePolicy,
-    OPERATION_RECEIPT_SCHEMA_VERSION,
+    OPERATION_RECEIPT_SCHEMA_VERSION, OWNERSHIP_EVIDENCE_VERSION,
+    RESOURCE_OWNERSHIP_SCHEMA_VERSION,
 };
 
 static EXECUTION_LOCK: Mutex<()> = Mutex::new(());
@@ -28,9 +34,11 @@ pub struct ExecutionEngine;
 pub(crate) enum ExecutionStep {
     Backup(usize),
     Apply(usize),
+    ApplyPublished(usize),
     Compensate(usize),
     ConstructReceipt,
     PersistReceipt,
+    PersistReceiptPublished,
     PersistJournalApplying,
 }
 
@@ -78,6 +86,8 @@ struct ResolvedMutation {
     backup_name: Option<String>,
     backup_path: Option<PathBuf>,
     backup_digest: Option<ContentDigest>,
+    ownership_before: Option<ResourceOwnershipRecord>,
+    ownership_artifact: Option<OwnershipArtifact>,
 }
 
 struct FailureContext<'a> {
@@ -88,6 +98,16 @@ struct FailureContext<'a> {
     operation_name: &'a str,
     faults: &'a dyn FaultInjector,
     journal: &'a mut OperationJournalHandle,
+    intent: &'a PlanExecutionIntent,
+}
+
+struct ReceiptDraft<'a> {
+    status: OperationStatus,
+    resolved: &'a [ResolvedMutation],
+    applied: &'a [usize],
+    manifest_digest: Option<ContentDigest>,
+    message: Option<String>,
+    intent: &'a PlanExecutionIntent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,6 +127,13 @@ struct BackupManifestEntry {
     #[serde(default)]
     backup_digest: Option<ContentDigest>,
     link_target: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ownership_before: Option<ResourceOwnershipRecord>,
+}
+
+struct InverseMutationPlan {
+    plan: MutationPlan,
+    ownership_restores: BTreeMap<PhysicalTargetId, OwnershipRestore>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -144,7 +171,26 @@ impl ExecutionEngine {
         plan_id: &PlanId,
         plans: &PlanStore,
     ) -> Result<OperationReceipt, AgentError> {
-        self.apply_internal(plan_id, plans, &NoFaults)
+        let binding = plans.claim_binding(plan_id)?;
+        self.apply_internal(plan_id, plans, &binding, &NoFaults)
+    }
+
+    pub fn apply_bound(
+        &self,
+        plan_id: &PlanId,
+        expected_context: &AgentContext,
+        expected_risk_fingerprint: &RiskFingerprint,
+        plans: &PlanStore,
+    ) -> Result<OperationReceipt, AgentError> {
+        self.apply_internal(
+            plan_id,
+            plans,
+            &PlanClaimBinding {
+                context: expected_context.clone(),
+                risk_fingerprint: expected_risk_fingerprint.clone(),
+            },
+            &NoFaults,
+        )
     }
 
     pub fn apply_confirmed(
@@ -152,7 +198,8 @@ impl ExecutionEngine {
         plan_id: &PlanId,
         plans: &PlanStore,
     ) -> Result<OperationReceipt, AgentError> {
-        self.apply_internal_with_confirmation(plan_id, plans, &NoFaults, true)
+        let binding = plans.claim_binding(plan_id)?;
+        self.apply_internal_with_confirmation(plan_id, plans, &binding, &NoFaults, true)
     }
 
     pub fn apply_acknowledged(
@@ -161,22 +208,65 @@ impl ExecutionEngine {
         plans: &PlanStore,
         acknowledgements: &[PlanAcknowledgement],
     ) -> Result<OperationReceipt, AgentError> {
-        self.apply_internal_with_acknowledgements(plan_id, plans, &NoFaults, acknowledgements)
+        let binding = plans.claim_binding(plan_id)?;
+        self.apply_internal_with_acknowledgements(
+            plan_id,
+            plans,
+            &binding,
+            &NoFaults,
+            acknowledgements,
+        )
     }
 
-    pub fn rollback(&self, receipt_id: &ReceiptId) -> Result<OperationReceipt, AgentError> {
+    pub fn apply_acknowledged_bound(
+        &self,
+        plan_id: &PlanId,
+        expected_context: &AgentContext,
+        expected_risk_fingerprint: &RiskFingerprint,
+        plans: &PlanStore,
+        acknowledgements: &[PlanAcknowledgement],
+    ) -> Result<OperationReceipt, AgentError> {
+        self.apply_internal_with_acknowledgements(
+            plan_id,
+            plans,
+            &PlanClaimBinding {
+                context: expected_context.clone(),
+                risk_fingerprint: expected_risk_fingerprint.clone(),
+            },
+            &NoFaults,
+            acknowledgements,
+        )
+    }
+
+    pub fn preview_rollback(
+        &self,
+        receipt_id: &ReceiptId,
+        plans: &PlanStore,
+    ) -> Result<MutationPlanView, AgentError> {
         let _guard = EXECUTION_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let state = ExecutionState::open().map_err(execution_state_error)?;
         let _recovery_lease = MutationRecoveryLease::acquire_for_rollback(&state, receipt_id)?;
         let registry = builtin_registry();
-        let plan = rollback_plan(receipt_id, &registry, &state)?;
-        let _target_locks = TargetLockSet::acquire_for_plan(&plan, &registry, &state)?;
-        let receipt = execute_plan(plan, &registry, &NoFaults, &state)?;
-        mark_repaired(&state, receipt_id)?;
-        refresh_runtime_state(&receipt, false);
-        Ok(receipt)
+        let inverse = rollback_plan(receipt_id, None, &registry, &state)?;
+        plans.insert_rollback(inverse.plan, receipt_id.clone(), inverse.ownership_restores)
+    }
+
+    pub fn preview_rollback_bound(
+        &self,
+        receipt_id: &ReceiptId,
+        expected_context: &AgentContext,
+        plans: &PlanStore,
+    ) -> Result<MutationPlanView, AgentError> {
+        let _guard = EXECUTION_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state = ExecutionState::open().map_err(execution_state_error)?;
+        let _recovery_lease = MutationRecoveryLease::acquire_for_rollback(&state, receipt_id)?;
+        let registry = builtin_registry();
+        let inverse = rollback_plan(receipt_id, Some(expected_context), &registry, &state)?;
+        plans.insert_rollback(inverse.plan, receipt_id.clone(), inverse.ownership_restores)
     }
 
     #[cfg(test)]
@@ -186,22 +276,25 @@ impl ExecutionEngine {
         plans: &PlanStore,
         faults: &dyn FaultInjector,
     ) -> Result<OperationReceipt, AgentError> {
-        self.apply_internal(plan_id, plans, faults)
+        let binding = plans.claim_binding(plan_id)?;
+        self.apply_internal(plan_id, plans, &binding, faults)
     }
 
     fn apply_internal(
         &self,
         plan_id: &PlanId,
         plans: &PlanStore,
+        binding: &PlanClaimBinding,
         faults: &dyn FaultInjector,
     ) -> Result<OperationReceipt, AgentError> {
-        self.apply_internal_with_confirmation(plan_id, plans, faults, false)
+        self.apply_internal_with_confirmation(plan_id, plans, binding, faults, false)
     }
 
     fn apply_internal_with_confirmation(
         &self,
         plan_id: &PlanId,
         plans: &PlanStore,
+        binding: &PlanClaimBinding,
         faults: &dyn FaultInjector,
         confirmed: bool,
     ) -> Result<OperationReceipt, AgentError> {
@@ -212,6 +305,7 @@ impl ExecutionEngine {
         self.apply_internal_with_acknowledgements(
             plan_id,
             plans,
+            binding,
             faults,
             acknowledgements.as_slice(),
         )
@@ -221,6 +315,7 @@ impl ExecutionEngine {
         &self,
         plan_id: &PlanId,
         plans: &PlanStore,
+        binding: &PlanClaimBinding,
         faults: &dyn FaultInjector,
         acknowledgements: &[PlanAcknowledgement],
     ) -> Result<OperationReceipt, AgentError> {
@@ -228,7 +323,11 @@ impl ExecutionEngine {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let state = ExecutionState::open().map_err(execution_state_error)?;
-        let _recovery_lease = MutationRecoveryLease::acquire(&state)?;
+        let intent = plans.execution_intent(plan_id)?;
+        let _recovery_lease = match intent.parent_receipt_id.as_ref() {
+            Some(receipt_id) => MutationRecoveryLease::acquire_for_rollback(&state, receipt_id)?,
+            None => MutationRecoveryLease::acquire(&state)?,
+        };
         let registry = builtin_registry();
         let resources = plans.resources_for_locking(plan_id)?;
         let _target_locks =
@@ -239,11 +338,22 @@ impl ExecutionEngine {
                 project_path: resource.project_path.clone(),
             };
             let target = registry.resolve_resource(&context, resource)?;
-            Ok(ConfinedTarget::observe_dependency(resource, target.path())?.digest())
+            Ok(ConfinedTarget::observe_dependency_bound(
+                resource,
+                target.path(),
+                intent.project_root_identity,
+            )?
+            .digest())
         };
-        let plan = plans.claim_acknowledged(plan_id, acknowledgements, observe)?;
-        let refresh_base_config = plan_refreshes_base_config(&plan);
-        let receipt = execute_plan(plan, &registry, faults, &state)?;
+        let claimed =
+            plans.claim_acknowledged_for_execution(plan_id, binding, acknowledgements, observe)?;
+        let refresh_base_config = plan_refreshes_base_config(&claimed.plan);
+        let receipt = execute_plan(claimed.plan, &claimed.intent, &registry, faults, &state)?;
+        if receipt.status == OperationStatus::Complete {
+            if let Some(parent_receipt_id) = claimed.intent.parent_receipt_id.as_ref() {
+                mark_repaired(&state, parent_receipt_id)?;
+            }
+        }
         refresh_runtime_state(&receipt, refresh_base_config);
         Ok(receipt)
     }
@@ -315,9 +425,10 @@ fn refresh_runtime_state(receipt: &OperationReceipt, refresh_base_config: bool) 
 
 fn rollback_plan(
     receipt_id: &ReceiptId,
+    expected_context: Option<&AgentContext>,
     registry: &super::AdapterRegistry,
     execution_state: &ExecutionState,
-) -> Result<MutationPlan, AgentError> {
+) -> Result<InverseMutationPlan, AgentError> {
     uuid::Uuid::parse_str(receipt_id.as_str()).map_err(|_| {
         receipt_error(
             AgentErrorCode::InvalidPlan,
@@ -346,6 +457,22 @@ fn rollback_plan(
             format!("Invalid operation receipt: {error}"),
         )
     })?;
+    if expected_context.is_some() && receipt.context.as_ref() != expected_context {
+        return Err(receipt_error(
+            AgentErrorCode::ResourceChanged,
+            receipt_id,
+            None,
+            "Operation receipt does not belong to the expected workspace context",
+        ));
+    }
+    if receipt.operation_kind != OperationKind::Apply || receipt.parent_receipt_id.is_some() {
+        return Err(receipt_error(
+            AgentErrorCode::InvalidPlan,
+            receipt_id,
+            None,
+            "Only root apply operation receipts can be rolled back",
+        ));
+    }
     if !receipt.rollback.available {
         return Err(receipt_error(
             AgentErrorCode::Unsupported,
@@ -541,6 +668,21 @@ fn rollback_plan(
     }
 
     let mut mutations = Vec::new();
+    let ownership_change_count = receipt.ownership_changes.len();
+    let mut ownership_changes = receipt
+        .ownership_changes
+        .into_iter()
+        .map(|change| (change.record_id.clone(), change))
+        .collect::<BTreeMap<_, _>>();
+    if ownership_changes.len() != ownership_change_count {
+        return Err(receipt_error(
+            AgentErrorCode::InvalidPlan,
+            receipt_id,
+            None,
+            "Receipt contains duplicate ownership changes",
+        ));
+    }
+    let mut ownership_restores = BTreeMap::new();
     for resource in applied_resources {
         let entry = manifest_entries.remove(&resource).ok_or_else(|| {
             receipt_error(
@@ -583,6 +725,77 @@ fn rollback_plan(
                 "Target changed after apply; rollback refused",
             ));
         }
+        if ownership_managed(&entry.resource, target.storage()) {
+            if receipt.ownership_evidence_version != OWNERSHIP_EVIDENCE_VERSION {
+                return Err(receipt_error(
+                    AgentErrorCode::Unsupported,
+                    receipt_id,
+                    Some(entry.resource.clone()),
+                    "Receipt has no supported project resource ownership evidence",
+                ));
+            }
+            let record_id = ownership_record_id(&entry.resource);
+            let (expected_current, expected_matches_target) = match ownership_changes
+                .remove(&record_id)
+            {
+                Some(change) if change.kind == ResourceOwnershipChangeKind::Upsert => (
+                    Some(change.record.ok_or_else(|| {
+                        receipt_error(
+                            AgentErrorCode::InvalidPlan,
+                            receipt_id,
+                            Some(entry.resource.clone()),
+                            "Ownership upsert receipt is missing its record",
+                        )
+                    })?),
+                    true,
+                ),
+                Some(change) if change.kind == ResourceOwnershipChangeKind::Remove => (None, true),
+                Some(_) => unreachable!("ownership change kinds are exhaustive"),
+                None if receipt.status == OperationStatus::PartialFailure => {
+                    (entry.ownership_before.clone(), false)
+                }
+                None => {
+                    return Err(receipt_error(
+                        AgentErrorCode::InvalidPlan,
+                        receipt_id,
+                        Some(entry.resource.clone()),
+                        "Complete receipt is missing project resource ownership evidence",
+                    ))
+                }
+            };
+            let actual = load_ownership_record(execution_state, &entry.resource)?;
+            if actual != expected_current {
+                return Err(receipt_error(
+                    AgentErrorCode::PermissionDenied,
+                    receipt_id,
+                    Some(entry.resource.clone()),
+                    "Current ownership does not match the receipt",
+                ));
+            }
+            if let Some(record) = expected_current.as_ref() {
+                if expected_matches_target {
+                    validate_ownership_record(
+                        record,
+                        &entry.resource,
+                        target.path(),
+                        current.kind(),
+                        current.digest().as_ref(),
+                    )?;
+                }
+                validate_ownership_artifact(record)?;
+            }
+            if let Some(record) = entry.ownership_before.as_ref() {
+                validate_ownership_artifact(record)?;
+            }
+            ownership_restores.insert(
+                PhysicalTargetId::for_resource(&entry.resource),
+                OwnershipRestore {
+                    expected_current,
+                    expected_matches_target,
+                    restore: entry.ownership_before.clone(),
+                },
+            );
+        }
         mutations.push(rollback_mutation(
             receipt_id,
             &operation_dir,
@@ -599,6 +812,14 @@ fn rollback_plan(
             "Receipt resources do not match the backup manifest",
         ));
     }
+    if !ownership_changes.is_empty() {
+        return Err(receipt_error(
+            AgentErrorCode::InvalidPlan,
+            receipt_id,
+            None,
+            "Receipt ownership changes do not match its resources",
+        ));
+    }
     let plan = MutationPlan {
         id: PlanId::from(uuid::Uuid::new_v4().to_string()),
         agent_id,
@@ -608,7 +829,10 @@ fn rollback_plan(
         expires_at: Utc::now() + Duration::minutes(5),
     };
     plan.validate()?;
-    Ok(plan)
+    Ok(InverseMutationPlan {
+        plan,
+        ownership_restores,
+    })
 }
 
 fn rollback_mutation(
@@ -619,6 +843,7 @@ fn rollback_mutation(
     expected_digest: Option<ContentDigest>,
 ) -> Result<PlannedMutation, AgentError> {
     let recorded_backup_digest = entry.backup_digest.clone();
+    let ownership_before = entry.ownership_before.clone();
     let resource = entry.resource;
     match entry.original_kind.as_str() {
         "missing" => Ok(PlannedMutation {
@@ -687,6 +912,21 @@ fn rollback_mutation(
                     "Symlink rollback entry has no target",
                 )
             })?;
+            let content = match ownership_before {
+                Some(record) if record.artifact_id == link_target => serde_json::json!({
+                    "path": link_target,
+                    "digest": record.artifact_digest,
+                }),
+                Some(_) => {
+                    return Err(receipt_error(
+                        AgentErrorCode::InvalidPlan,
+                        receipt_id,
+                        Some(resource),
+                        "Owned symlink artifact does not match its backup",
+                    ))
+                }
+                None => serde_json::Value::String(link_target),
+            };
             Ok(PlannedMutation {
                 resource,
                 kind: if current_kind == ResourceStateKind::Missing {
@@ -696,7 +936,7 @@ fn rollback_mutation(
                 },
                 expected_digest,
                 media_type: "application/vnd.ad.symlink".into(),
-                content: Some(serde_json::Value::String(link_target)),
+                content: Some(content),
             })
         }
         "directory" => {
@@ -824,6 +1064,7 @@ fn receipt_error(
 
 fn execute_plan(
     plan: MutationPlan,
+    intent: &PlanExecutionIntent,
     registry: &super::AdapterRegistry,
     faults: &dyn FaultInjector,
     state: &ExecutionState,
@@ -855,10 +1096,16 @@ fn execute_plan(
                     "Multiple mutations resolve to the same physical target",
                 ));
             }
-            let confined_target = ConfinedTarget::resolve(&mutation.resource, target.path())?;
+            let confined_target = ConfinedTarget::resolve_bound(
+                &mutation.resource,
+                target.path(),
+                intent.project_root_identity,
+            )?;
             let original = confined_target.observe()?;
             ensure_storage_compatible(&plan, &mutation.resource, target.storage(), &original)?;
             ensure_expected(&plan, &mutation, original.digest().as_ref())?;
+            let (ownership_before, ownership_artifact) =
+                prepare_ownership_authority(&plan, &mutation, &target, &original, intent, state)?;
             let directory_source =
                 resolve_state_directory_source(&plan, &mutation, target.storage(), state)?;
             validate_mutation_source(
@@ -901,6 +1148,8 @@ fn execute_plan(
                     .map(str::to_owned),
                 backup_path,
                 backup_digest,
+                ownership_before,
+                ownership_artifact,
             });
         }
 
@@ -962,19 +1211,40 @@ fn execute_plan(
                     operation_name: &operation_name,
                     faults,
                     journal: &mut journal,
+                    intent,
                 },
             );
         }
-        let apply_result = fail_if_requested(&plan, faults, ExecutionStep::Apply(index))
-            .and_then(|()| {
+        let pre_publish =
+            fail_if_requested(&plan, faults, ExecutionStep::Apply(index)).and_then(|()| {
                 validate_mutation_source(
                     &plan,
                     &item.mutation,
                     item.target.storage(),
                     item.directory_source.as_ref(),
                 )
-            })
-            .and_then(|()| apply_mutation(&plan, item));
+            });
+        if let Err(error) = pre_publish {
+            return finish_failed(
+                &plan,
+                receipt_id,
+                error,
+                manifest_digest,
+                FailureContext {
+                    resolved: &resolved,
+                    applied: &applied,
+                    state,
+                    operation_dir: &operation_dir,
+                    operation_name: &operation_name,
+                    faults,
+                    journal: &mut journal,
+                    intent,
+                },
+            );
+        }
+        applied.push(index);
+        let apply_result = apply_mutation(&plan, item)
+            .and_then(|()| fail_if_requested(&plan, faults, ExecutionStep::ApplyPublished(index)));
         if let Err(error) = apply_result {
             return finish_failed(
                 &plan,
@@ -989,10 +1259,10 @@ fn execute_plan(
                     operation_name: &operation_name,
                     faults,
                     journal: &mut journal,
+                    intent,
                 },
             );
         }
-        applied.push(index);
     }
 
     let receipt =
@@ -1000,11 +1270,14 @@ fn execute_plan(
             receipt(
                 &plan,
                 receipt_id,
-                OperationStatus::Complete,
-                &resolved,
-                &applied,
-                Some(manifest_digest),
-                None,
+                ReceiptDraft {
+                    status: OperationStatus::Complete,
+                    resolved: &resolved,
+                    applied: &applied,
+                    manifest_digest: Some(manifest_digest),
+                    message: None,
+                    intent,
+                },
             )
         });
     let receipt = match receipt {
@@ -1022,25 +1295,62 @@ fn execute_plan(
                     operation_name: &operation_name,
                     faults,
                     journal: &mut journal,
+                    intent,
                 },
             )
         }
     };
-    if let Err(error) = persist_receipt_with_faults(&plan, &receipt, faults, state) {
-        return compensate_after_receipt_failure(
-            &plan,
-            error,
-            "persisted",
-            FailureContext {
-                resolved: &resolved,
-                applied: &applied,
-                state,
-                operation_dir: &operation_dir,
-                operation_name: &operation_name,
-                faults,
-                journal: &mut journal,
-            },
+    if let Err(mut error) = persist_receipt_with_faults(&plan, &receipt, faults, state) {
+        match receipt_is_published(&plan, &receipt, state) {
+            Ok(false) => {
+                return compensate_after_receipt_failure(
+                    &plan,
+                    error,
+                    "persisted",
+                    FailureContext {
+                        resolved: &resolved,
+                        applied: &applied,
+                        state,
+                        operation_dir: &operation_dir,
+                        operation_name: &operation_name,
+                        faults,
+                        journal: &mut journal,
+                        intent,
+                    },
+                )
+            }
+            Ok(true) => {
+                if let Err(sync_error) = state.history().sync() {
+                    error.code = AgentErrorCode::PartialFailure;
+                    error.retryable = false;
+                    error.message = format!(
+                        "Operation receipt was published but its directory could not be synced; recovery evidence was retained: {sync_error}"
+                    );
+                    return Err(error);
+                }
+            }
+            Err(mut visibility_error) => {
+                visibility_error.code = AgentErrorCode::PartialFailure;
+                visibility_error.retryable = false;
+                visibility_error.message = format!(
+                    "Operation receipt publication is indeterminate; recovery evidence was retained: {}",
+                    visibility_error.message
+                );
+                return Err(visibility_error);
+            }
+        }
+    }
+    if let Err(mut error) = apply_ownership_changes(state, &receipt.ownership_changes) {
+        error.code = AgentErrorCode::PartialFailure;
+        error.retryable = false;
+        error.message = format!(
+            "Operation receipt was persisted but ownership reconciliation failed: {}",
+            error.message
         );
+        journal
+            .transition(OperationJournalState::RepairRequired, Some(&receipt.id))
+            .map_err(|journal_error| io_error(&plan, None, journal_error.to_string()))?;
+        return Err(error);
     }
     journal
         .transition(OperationJournalState::Committed, Some(&receipt.id))
@@ -1126,11 +1436,14 @@ fn finish_failed(
     let receipt = match receipt(
         plan,
         receipt_id,
-        status,
-        context.resolved,
-        context.applied,
-        Some(manifest_digest),
-        Some(message),
+        ReceiptDraft {
+            status,
+            resolved: context.resolved,
+            applied: context.applied,
+            manifest_digest: Some(manifest_digest),
+            message: Some(message),
+            intent: context.intent,
+        },
     ) {
         Ok(receipt) => receipt,
         Err(error) => {
@@ -1298,6 +1611,147 @@ fn ensure_storage_compatible(
             retryable: true,
             details: None,
         })
+    }
+}
+
+fn prepare_ownership_authority(
+    plan: &MutationPlan,
+    mutation: &PlannedMutation,
+    target: &ManagedResourceTarget,
+    original: &TargetState,
+    intent: &PlanExecutionIntent,
+    state: &ExecutionState,
+) -> Result<(Option<ResourceOwnershipRecord>, Option<OwnershipArtifact>), AgentError> {
+    if !ownership_managed(&mutation.resource, target.storage()) {
+        return Ok((None, None));
+    }
+    let current = load_ownership_record(state, &mutation.resource)?;
+    let target_id = PhysicalTargetId::for_resource(&mutation.resource);
+    if intent.operation_kind == OperationKind::Rollback {
+        let restore = intent.ownership_restores.get(&target_id).ok_or_else(|| {
+            ownership_plan_error(
+                plan,
+                &mutation.resource,
+                "Rollback plan is missing ownership evidence",
+            )
+        })?;
+        if current != restore.expected_current {
+            return Err(ownership_plan_error(
+                plan,
+                &mutation.resource,
+                "Ownership changed after rollback preview",
+            ));
+        }
+        if let Some(record) = current.as_ref() {
+            if restore.expected_matches_target {
+                validate_ownership_record(
+                    record,
+                    &mutation.resource,
+                    target.path(),
+                    original.kind(),
+                    original.digest().as_ref(),
+                )?;
+            }
+            validate_ownership_artifact(record)?;
+        }
+        return Ok((current, None));
+    }
+
+    match original {
+        TargetState::Missing => {
+            if current.is_some() || mutation.kind != MutationKind::Create {
+                return Err(ownership_plan_error(
+                    plan,
+                    &mutation.resource,
+                    "Missing target has stale or incompatible ownership",
+                ));
+            }
+        }
+        _ => {
+            let record = current.as_ref().ok_or_else(|| {
+                ownership_plan_error(
+                    plan,
+                    &mutation.resource,
+                    "Project resource is not owned by AD",
+                )
+            })?;
+            if mutation.kind == MutationKind::Replace
+                && target.storage() == ResourceStorage::Directory
+            {
+                validate_ownership_record_identity(
+                    record,
+                    &mutation.resource,
+                    target.path(),
+                    original.kind(),
+                )?;
+            } else {
+                validate_ownership_record(
+                    record,
+                    &mutation.resource,
+                    target.path(),
+                    original.kind(),
+                    original.digest().as_ref(),
+                )?;
+                validate_ownership_artifact(record)?;
+            }
+        }
+    }
+
+    let artifact = match mutation.kind {
+        MutationKind::Delete => None,
+        MutationKind::Create | MutationKind::Replace => Some(mutation_ownership_artifact(
+            plan,
+            mutation,
+            target.storage(),
+        )?),
+    };
+    Ok((current, artifact))
+}
+
+fn mutation_ownership_artifact(
+    plan: &MutationPlan,
+    mutation: &PlannedMutation,
+    storage: ResourceStorage,
+) -> Result<OwnershipArtifact, AgentError> {
+    match storage {
+        ResourceStorage::Symlink => match parse_symlink_source(plan, mutation)? {
+            SymlinkMutationSource::Checked { path, digest } => {
+                Ok(OwnershipArtifact { id: path, digest })
+            }
+            SymlinkMutationSource::Legacy(_) => Err(ownership_plan_error(
+                plan,
+                &mutation.resource,
+                "Ownership-managed symlinks require a checked artifact digest",
+            )),
+        },
+        ResourceStorage::Directory => {
+            let source = parse_directory_source(plan, mutation)?;
+            Ok(OwnershipArtifact {
+                id: source.path,
+                digest: source.digest,
+            })
+        }
+        ResourceStorage::File => Err(ownership_plan_error(
+            plan,
+            &mutation.resource,
+            "File resources do not use collection ownership records",
+        )),
+    }
+}
+
+fn ownership_plan_error(
+    plan: &MutationPlan,
+    resource: &ResourceRef,
+    message: impl Into<String>,
+) -> AgentError {
+    AgentError {
+        code: AgentErrorCode::PermissionDenied,
+        message: message.into(),
+        agent_id: Some(plan.agent_id.clone()),
+        installation_id: Some(resource.installation_id.clone()),
+        resource: Some(resource.clone()),
+        retryable: false,
+        details: Some(serde_json::json!({"phase": "resource_ownership"})),
     }
 }
 
@@ -1521,6 +1975,7 @@ fn manifest_entry(item: &ResolvedMutation) -> BackupManifestEntry {
             .map(|path| path.to_string_lossy().into_owned()),
         backup_digest: item.backup_digest.clone(),
         link_target,
+        ownership_before: item.ownership_before.clone(),
     }
 }
 
@@ -1531,16 +1986,13 @@ fn observe_resolved(item: &ResolvedMutation) -> Result<TargetState, AgentError> 
 fn receipt(
     plan: &MutationPlan,
     id: ReceiptId,
-    status: OperationStatus,
-    resolved: &[ResolvedMutation],
-    applied: &[usize],
-    manifest_digest: Option<ContentDigest>,
-    message: Option<String>,
+    draft: ReceiptDraft<'_>,
 ) -> Result<OperationReceipt, AgentError> {
-    let post_apply_states = applied
+    let post_apply_states = draft
+        .applied
         .iter()
         .map(|index| {
-            let item = &resolved[*index];
+            let item = &draft.resolved[*index];
             let state = observe_resolved(item)?;
             Ok(AppliedResourceState {
                 resource: item.mutation.resource.clone(),
@@ -1549,35 +2001,165 @@ fn receipt(
             })
         })
         .collect::<Result<Vec<_>, AgentError>>()?;
+    let ownership_changes = if draft.status == OperationStatus::Complete {
+        draft
+            .applied
+            .iter()
+            .zip(post_apply_states.iter())
+            .filter_map(|(index, state)| {
+                ownership_change(&draft.resolved[*index], state, &id, draft.intent).transpose()
+            })
+            .collect::<Result<Vec<_>, AgentError>>()?
+    } else {
+        Vec::new()
+    };
     Ok(OperationReceipt {
         schema_version: OPERATION_RECEIPT_SCHEMA_VERSION,
         id,
         plan_id: plan.id.clone(),
-        operation_kind: OperationKind::Apply,
-        parent_receipt_id: None,
+        operation_kind: draft.intent.operation_kind,
+        parent_receipt_id: draft.intent.parent_receipt_id.clone(),
         context: Some(plan.context.clone()),
-        workspace_key: None,
-        action_id: None,
-        status,
-        applied_resources: applied
+        workspace_key: workspace_key_for_context(&plan.context),
+        action_id: (draft.intent.operation_kind == OperationKind::Rollback)
+            .then(|| "rollback".to_owned()),
+        status: draft.status,
+        applied_resources: draft
+            .applied
             .iter()
-            .map(|index| resolved[*index].mutation.resource.clone())
+            .map(|index| draft.resolved[*index].mutation.resource.clone())
             .collect(),
-        backup_paths: resolved
+        backup_paths: draft
+            .resolved
             .iter()
             .filter_map(|item| item.backup_path.as_ref())
             .map(|path| path.to_string_lossy().into_owned())
             .collect(),
         post_apply_states,
-        manifest_digest,
-        rollback: if status == OperationStatus::Compensated || applied.is_empty() {
+        manifest_digest: draft.manifest_digest,
+        ownership_changes,
+        ownership_evidence_version: OWNERSHIP_EVIDENCE_VERSION,
+        rollback: if draft.intent.operation_kind == OperationKind::Rollback {
+            RollbackEligibility::unavailable(RollbackUnavailableReason::RollbackReceipt)
+        } else if draft.status == OperationStatus::Compensated || draft.applied.is_empty() {
             RollbackEligibility::unavailable(RollbackUnavailableReason::Compensated)
         } else {
             RollbackEligibility::available()
         },
         created_at: Some(Utc::now()),
-        message,
+        message: draft.message,
     })
+}
+
+fn ownership_change(
+    item: &ResolvedMutation,
+    state: &AppliedResourceState,
+    receipt_id: &ReceiptId,
+    intent: &PlanExecutionIntent,
+) -> Result<Option<ResourceOwnershipChange>, AgentError> {
+    if !ownership_managed(&item.mutation.resource, item.target.storage()) {
+        return Ok(None);
+    }
+    let record_id = ownership_record_id(&item.mutation.resource);
+    if intent.operation_kind == OperationKind::Rollback {
+        let restore = intent
+            .ownership_restores
+            .get(&PhysicalTargetId::for_resource(&item.mutation.resource))
+            .ok_or_else(|| AgentError {
+                code: AgentErrorCode::InvalidPlan,
+                message: "Rollback ownership evidence disappeared during execution".into(),
+                agent_id: None,
+                installation_id: Some(item.mutation.resource.installation_id.clone()),
+                resource: Some(item.mutation.resource.clone()),
+                retryable: false,
+                details: Some(serde_json::json!({"phase": "resource_ownership"})),
+            })?;
+        return match restore.restore.as_ref() {
+            Some(record) => {
+                if state.kind != record.target_kind
+                    || state.digest.as_ref() != Some(&record.target_digest)
+                {
+                    return Err(AgentError {
+                        code: AgentErrorCode::PartialFailure,
+                        message: "Restored target does not match its ownership record".into(),
+                        agent_id: None,
+                        installation_id: Some(item.mutation.resource.installation_id.clone()),
+                        resource: Some(item.mutation.resource.clone()),
+                        retryable: false,
+                        details: Some(serde_json::json!({"phase": "resource_ownership"})),
+                    });
+                }
+                let mut record = record.clone();
+                record.updated_by_receipt_id = receipt_id.clone();
+                Ok(Some(ResourceOwnershipChange {
+                    kind: ResourceOwnershipChangeKind::Upsert,
+                    record_id,
+                    previous_record: restore.expected_current.clone(),
+                    record: Some(record),
+                }))
+            }
+            None if restore.expected_current.is_none() => Ok(None),
+            None => Ok(Some(ResourceOwnershipChange {
+                kind: ResourceOwnershipChangeKind::Remove,
+                record_id,
+                previous_record: restore.expected_current.clone(),
+                record: None,
+            })),
+        };
+    }
+
+    match item.mutation.kind {
+        MutationKind::Delete => Ok(Some(ResourceOwnershipChange {
+            kind: ResourceOwnershipChangeKind::Remove,
+            record_id,
+            previous_record: item.ownership_before.clone(),
+            record: None,
+        })),
+        MutationKind::Create | MutationKind::Replace => {
+            let artifact = item.ownership_artifact.as_ref().ok_or_else(|| AgentError {
+                code: AgentErrorCode::InvalidPlan,
+                message: "Ownership-managed mutation is missing artifact evidence".into(),
+                agent_id: None,
+                installation_id: Some(item.mutation.resource.installation_id.clone()),
+                resource: Some(item.mutation.resource.clone()),
+                retryable: false,
+                details: Some(serde_json::json!({"phase": "resource_ownership"})),
+            })?;
+            let target_digest = state.digest.clone().ok_or_else(|| AgentError {
+                code: AgentErrorCode::PartialFailure,
+                message: "Owned target has no post-apply digest".into(),
+                agent_id: None,
+                installation_id: Some(item.mutation.resource.installation_id.clone()),
+                resource: Some(item.mutation.resource.clone()),
+                retryable: false,
+                details: Some(serde_json::json!({"phase": "resource_ownership"})),
+            })?;
+            let record = ResourceOwnershipRecord {
+                schema_version: RESOURCE_OWNERSHIP_SCHEMA_VERSION,
+                id: record_id.clone(),
+                workspace_key: ownership_workspace_key(&item.mutation.resource)?,
+                resource: item.mutation.resource.clone(),
+                target_id: PhysicalTargetId::for_resource(&item.mutation.resource),
+                target_path: item.target.path().to_string_lossy().into_owned(),
+                target_kind: state.kind,
+                target_digest,
+                artifact_id: artifact.id.clone(),
+                artifact_digest: artifact.digest.clone(),
+                creating_receipt_id: item
+                    .ownership_before
+                    .as_ref()
+                    .map(|record| record.creating_receipt_id.clone())
+                    .unwrap_or_else(|| receipt_id.clone()),
+                updated_by_receipt_id: receipt_id.clone(),
+            };
+            Ok(Some(ResourceOwnershipChange {
+                kind: ResourceOwnershipChangeKind::Upsert,
+                record_id,
+                previous_record: item.ownership_before.clone(),
+                record: Some(record),
+            }))
+        }
+    }
 }
 
 fn persist_receipt(
@@ -1585,12 +2167,37 @@ fn persist_receipt(
     receipt: &OperationReceipt,
     state: &ExecutionState,
 ) -> Result<(), AgentError> {
-    let bytes = serde_json::to_vec_pretty(receipt)
-        .map_err(|error| io_error(plan, None, error.to_string()))?;
+    let bytes = receipt_bytes(plan, receipt)?;
     state
         .history()
         .write_atomic_new(&format!("{}.json", receipt.id), &bytes)
         .map_err(|error| io_error(plan, None, error.to_string()))
+}
+
+fn receipt_is_published(
+    plan: &MutationPlan,
+    receipt: &OperationReceipt,
+    state: &ExecutionState,
+) -> Result<bool, AgentError> {
+    let expected = receipt_bytes(plan, receipt)?;
+    match state.history().read(&format!("{}.json", receipt.id)) {
+        Ok(actual) if actual == expected => Ok(true),
+        Ok(_) => Err(AgentError {
+            code: AgentErrorCode::PermissionDenied,
+            message: "Published operation receipt bytes do not match the execution result".into(),
+            agent_id: Some(plan.agent_id.clone()),
+            installation_id: Some(plan.context.installation_id.clone()),
+            resource: None,
+            retryable: false,
+            details: Some(serde_json::json!({"phase": "operation_receipt"})),
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(io_error(plan, None, error.to_string())),
+    }
+}
+
+fn receipt_bytes(plan: &MutationPlan, receipt: &OperationReceipt) -> Result<Vec<u8>, AgentError> {
+    serde_json::to_vec_pretty(receipt).map_err(|error| io_error(plan, None, error.to_string()))
 }
 
 fn persist_receipt_with_faults(
@@ -1600,7 +2207,8 @@ fn persist_receipt_with_faults(
     state: &ExecutionState,
 ) -> Result<(), AgentError> {
     fail_if_requested(plan, faults, ExecutionStep::PersistReceipt)?;
-    persist_receipt(plan, receipt, state)
+    persist_receipt(plan, receipt, state)?;
+    fail_if_requested(plan, faults, ExecutionStep::PersistReceiptPublished)
 }
 
 fn plan_error(

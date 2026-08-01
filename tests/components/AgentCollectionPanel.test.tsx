@@ -15,13 +15,15 @@ const {
   listAgentPlugins,
   previewAgentCollectionToggle,
   applyAgentPlan,
-  rollbackAgentReceipt,
+  previewAgentRollback,
+  applyAgentRollbackPlan,
 } = vi.hoisted(() => ({
   listAgentSkills: vi.fn(),
   listAgentPlugins: vi.fn(),
   previewAgentCollectionToggle: vi.fn(),
   applyAgentPlan: vi.fn(),
-  rollbackAgentReceipt: vi.fn(),
+  previewAgentRollback: vi.fn(),
+  applyAgentRollbackPlan: vi.fn(),
 }));
 
 vi.mock('@/lib/tauri', () => ({
@@ -30,7 +32,8 @@ vi.mock('@/lib/tauri', () => ({
     listAgentPlugins,
     previewAgentCollectionToggle,
     applyAgentPlan,
-    rollbackAgentReceipt,
+    previewAgentRollback,
+    applyAgentRollbackPlan,
   },
 }));
 
@@ -92,6 +95,7 @@ describe('AgentCollectionPanel', () => {
       agentId: 'codex',
       context,
       changes: [{ resource: skill.resource, kind: 'replace' }],
+      riskFingerprint: 'risk:collection-plan',
       expiresAt: '2026-07-15T01:05:00Z',
     });
     applyAgentPlan.mockReset().mockResolvedValue({
@@ -102,7 +106,11 @@ describe('AgentCollectionPanel', () => {
       backupPaths: [],
       postApplyStates: [],
     });
-    rollbackAgentReceipt.mockReset().mockResolvedValue({
+    previewAgentRollback.mockReset().mockResolvedValue({
+      id: 'rollback-plan',
+      riskFingerprint: 'risk:collection-rollback',
+    });
+    applyAgentRollbackPlan.mockReset().mockResolvedValue({
       id: 'rollback-2',
       planId: 'rollback-plan',
       status: 'complete',
@@ -127,11 +135,19 @@ describe('AgentCollectionPanel', () => {
     expect(applyAgentPlan).not.toHaveBeenCalled();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
-    await waitFor(() => expect(applyAgentPlan).toHaveBeenCalledWith('plan-2'));
+    await waitFor(() =>
+      expect(applyAgentPlan).toHaveBeenCalledWith('plan-2', context, 'risk:collection-plan'),
+    );
     await waitFor(() => expect(runtimeChanged).toHaveBeenCalledTimes(1));
     expect(workspaceChanged).toHaveBeenCalledTimes(1);
     fireEvent.click(await screen.findByRole('button', { name: 'Rollback' }));
-    await waitFor(() => expect(rollbackAgentReceipt).toHaveBeenCalledWith('receipt-2', true));
+    await waitFor(() => expect(previewAgentRollback).toHaveBeenCalledWith('receipt-2', context));
+    expect(applyAgentRollbackPlan).toHaveBeenCalledWith(
+      'rollback-plan',
+      context,
+      'risk:collection-rollback',
+      true,
+    );
     await waitFor(() => expect(runtimeChanged).toHaveBeenCalledTimes(2));
     expect(workspaceChanged).toHaveBeenCalledTimes(2);
     window.removeEventListener('ad:project-codex-runtime-changed', runtimeChanged);
@@ -243,7 +259,15 @@ describe('AgentCollectionPanel', () => {
       await screen.findByText('Apply only completed partially; rollback is available.'),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Rollback' }));
-    await waitFor(() => expect(rollbackAgentReceipt).toHaveBeenCalledWith('partial-receipt', true));
+    await waitFor(() =>
+      expect(previewAgentRollback).toHaveBeenCalledWith('partial-receipt', context),
+    );
+    expect(applyAgentRollbackPlan).toHaveBeenCalledWith(
+      'rollback-plan',
+      context,
+      'risk:collection-rollback',
+      true,
+    );
   });
 
   it('reports a compensated receipt without offering rollback', async () => {

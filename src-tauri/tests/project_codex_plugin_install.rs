@@ -1,8 +1,27 @@
 use ad_lib::agents::{
-    builtin_registry, persist_project_codex_runtime, AgentContext, CollectionInstallRequest,
-    ExecutionEngine, OperationStatus, PlanStore, PluginInstallProgress, ProjectCodexRuntime,
+    builtin_registry, persist_project_codex_runtime, AgentContext, AgentError,
+    CollectionInstallRequest, ExecutionEngine, OperationReceipt, OperationStatus,
+    PlanAcknowledgement, PlanAcknowledgementCode, PlanStore, PluginInstallProgress,
+    ProjectCodexRuntime, ReceiptId,
 };
 use std::cell::RefCell;
+
+fn apply_rollback(receipt_id: &ReceiptId) -> Result<OperationReceipt, Box<AgentError>> {
+    let plans = PlanStore::default();
+    let plan = ExecutionEngine
+        .preview_rollback(receipt_id, &plans)
+        .map_err(Box::new)?;
+    ExecutionEngine
+        .apply_acknowledged(
+            &plan.id,
+            &plans,
+            &[PlanAcknowledgement {
+                code: PlanAcknowledgementCode::RollbackApply,
+                accepted: true,
+            }],
+        )
+        .map_err(Box::new)
+}
 
 #[test]
 #[serial_test::serial(home_env)]
@@ -112,13 +131,6 @@ fn project_plugin_install_applies_official_disk_contract_without_touching_base_h
     let inherited_target = runtime
         .runtime_home
         .join("plugins/cache/base-market/inherited/3.0.0");
-    std::fs::create_dir_all(inherited_target.join(".codex-plugin")).unwrap();
-    std::fs::write(
-        inherited_target.join(".codex-plugin/plugin.json"),
-        r#"{"name":"inherited","version":"3.0.0"}"#,
-    )
-    .unwrap();
-    std::fs::write(inherited_target.join("README.md"), "stale inherited").unwrap();
     persist_project_codex_runtime(&runtime).unwrap();
     let context = AgentContext {
         installation_id: runtime.runtime_installation_id.clone(),
@@ -384,10 +396,10 @@ fn project_plugin_install_applies_official_disk_contract_without_touching_base_h
         .join("plugins/cache/team/second/2.0.0/.codex-plugin/plugin.json")
         .is_file());
 
-    let second_rollback = ExecutionEngine.rollback(&second_receipt.id).unwrap();
+    let second_rollback = apply_rollback(&second_receipt.id).unwrap();
     assert_eq!(second_rollback.status, OperationStatus::Complete);
 
-    let rollback = ExecutionEngine.rollback(&receipt.id).unwrap();
+    let rollback = apply_rollback(&receipt.id).unwrap();
     assert_eq!(rollback.status, OperationStatus::Complete);
     assert!(!runtime.runtime_home.join("auth.json").exists());
     assert!(!runtime.runtime_home.join(".tmp/marketplaces/team").exists());
@@ -395,10 +407,7 @@ fn project_plugin_install_applies_official_disk_contract_without_touching_base_h
         .runtime_home
         .join("plugins/cache/team/demo/1.2.3")
         .exists());
-    assert_eq!(
-        std::fs::read_to_string(inherited_target.join("README.md")).unwrap(),
-        "stale inherited"
-    );
+    assert!(!inherited_target.exists());
     assert!(!runtime
         .runtime_home
         .join("plugins/cache/runtime-market/bundled/4.0.0")

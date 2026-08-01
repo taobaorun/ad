@@ -20,7 +20,8 @@ vi.mock('@/lib/tauri', () => ({
     listAgentSettingsDocuments,
     previewAgentSettingsEdit,
     applyAgentPlan,
-    rollbackAgentReceipt: vi.fn(),
+    previewAgentRollback: vi.fn(),
+    applyAgentRollbackPlan: vi.fn(),
   },
 }));
 
@@ -82,6 +83,7 @@ describe('AgentSettingsEditor', () => {
         projectPath: '/Users/test/project',
       },
       changes: [{ resource: snapshot.resource, kind: 'replace' }],
+      riskFingerprint: 'risk:settings-plan',
       expiresAt: '2026-07-15T01:05:00Z',
     });
     applyAgentPlan.mockReset().mockResolvedValue({
@@ -112,7 +114,16 @@ describe('AgentSettingsEditor', () => {
     expect(applyAgentPlan).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
 
-    await waitFor(() => expect(applyAgentPlan).toHaveBeenCalledWith('plan-1'));
+    await waitFor(() =>
+      expect(applyAgentPlan).toHaveBeenCalledWith(
+        'plan-1',
+        {
+          installationId: 'codex:default',
+          projectPath: '/Users/test/project',
+        },
+        'risk:settings-plan',
+      ),
+    );
   });
 
   it('previews creation when an editable settings target is missing', async () => {
@@ -131,6 +142,7 @@ describe('AgentSettingsEditor', () => {
         projectPath: '/Users/test/project',
       },
       changes: [{ resource: missingTarget.resource, kind: 'create' }],
+      riskFingerprint: 'risk:settings-create',
       expiresAt: '2026-07-15T01:05:00Z',
     });
     const context = AgentContextSchema.parse({

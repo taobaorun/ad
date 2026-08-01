@@ -74,21 +74,29 @@ pub fn run() {
                 Err(err) => tracing::warn!(?err, "v1 -> layered migration failed; continuing"),
             }
 
-            let recovery = agents::recover_execution_state()
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            if recovery.writable() {
-                info!(
-                    inspected = recovery.inspected,
-                    recovered = recovery.recovered,
-                    "operation recovery completed"
-                );
-            } else {
-                tracing::warn!(
-                    inspected = recovery.inspected,
-                    repair_required = recovery.repair_required,
-                    diagnostics = ?recovery.diagnostics,
-                    "operation recovery requires repair; Agent mutations are blocked"
-                );
+            match agents::recover_execution_state() {
+                Ok(recovery) if recovery.writable() => {
+                    info!(
+                        inspected = recovery.inspected,
+                        recovered = recovery.recovered,
+                        "operation recovery completed"
+                    );
+                }
+                Ok(recovery) => {
+                    tracing::warn!(
+                        inspected = recovery.inspected,
+                        repair_required = recovery.repair_required,
+                        diagnostics = ?recovery.diagnostics,
+                        "operation recovery requires repair; Agent mutations are blocked"
+                    );
+                }
+                Err(error) if recovery_can_be_deferred(&error) => {
+                    tracing::warn!(
+                        error = %error,
+                        "operation recovery is held by another AD process; startup continues"
+                    );
+                }
+                Err(error) => return Err(std::io::Error::other(error.to_string()).into()),
             }
 
             // Show the theme-backed main window as navigation starts so the
@@ -183,7 +191,8 @@ pub fn run() {
             commands::agents::preview_agent_collection_toggle,
             commands::agents::apply_agent_plan,
             commands::agents::apply_conversion_plan,
-            commands::agents::rollback_agent_receipt,
+            commands::agents::preview_agent_rollback,
+            commands::agents::apply_agent_rollback_plan,
             commands::history::read_history,
             commands::history::restore_backup,
             commands::importers::import_from_file,
@@ -234,11 +243,22 @@ pub fn run() {
         });
 }
 
+fn recovery_can_be_deferred(error: &agents::AgentError) -> bool {
+    error.retryable
+        && error
+            .details
+            .as_ref()
+            .and_then(|details| details.get("phase"))
+            .and_then(serde_json::Value::as_str)
+            == Some("operation_recovery")
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::agents;
     use tauri::webview::PageLoadEvent;
 
-    use super::{should_show_main_on_page_load, theme_bg_for};
+    use super::{recovery_can_be_deferred, should_show_main_on_page_load, theme_bg_for};
 
     #[test]
     fn maps_theme_mode_to_catppuccin_window_backgrounds() {
@@ -269,5 +289,25 @@ mod tests {
             "settings",
             PageLoadEvent::Finished
         ));
+    }
+
+    #[test]
+    fn only_retryable_recovery_lock_conflicts_defer_startup() {
+        let deferred = agents::AgentError {
+            code: agents::AgentErrorCode::ResourceChanged,
+            message: "locked".into(),
+            agent_id: None,
+            installation_id: None,
+            resource: None,
+            retryable: true,
+            details: Some(serde_json::json!({"phase": "operation_recovery"})),
+        };
+        let fatal = agents::AgentError {
+            retryable: false,
+            ..deferred.clone()
+        };
+
+        assert!(recovery_can_be_deferred(&deferred));
+        assert!(!recovery_can_be_deferred(&fatal));
     }
 }

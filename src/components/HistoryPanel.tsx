@@ -54,17 +54,24 @@ export function HistoryPanel() {
   }, [refresh]);
 
   async function onRollback(entry: OperationHistoryEntry) {
-    if (!entry.receipt || !entry.receipt.rollback?.available) return;
-    if (!window.confirm(t('history.operationRollbackConfirm'))) return;
+    if (!entry.receipt || !entry.receipt.rollback?.available || !activeContext) return;
     setBusy(true);
     setError(null);
     try {
-      await tauri.rollbackAgentReceipt(entry.receipt.id, true);
+      const rollbackPlan = await tauri.previewAgentRollback(entry.receipt.id, activeContext);
+      if (!window.confirm(t('history.operationRollbackConfirm'))) return;
+      await tauri.applyAgentRollbackPlan(
+        rollbackPlan.id,
+        activeContext,
+        rollbackPlan.riskFingerprint,
+        true,
+      );
       window.dispatchEvent(new Event('ad:project-codex-runtime-changed'));
       window.dispatchEvent(new Event('ad:agent-workspace-changed'));
       await refresh();
     } catch (e) {
       setError(formatAgentError(e));
+    } finally {
       setBusy(false);
     }
   }
@@ -140,8 +147,9 @@ export function HistoryPanel() {
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="font-medium">
-                        {receipt.appliedResources.map((resource) => resource.logicalId).join(', ') ||
-                          t('history.noResources')}
+                        {receipt.appliedResources
+                          .map((resource) => resource.logicalId)
+                          .join(', ') || t('history.noResources')}
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {t(`history.status.${receipt.status}`)}

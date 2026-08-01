@@ -12,12 +12,14 @@ const {
   resolveAgentContext,
   previewClaudeToCodexRoute,
   applyConversionPlan,
-  rollbackAgentReceipt,
+  previewAgentRollback,
+  applyAgentRollbackPlan,
 } = vi.hoisted(() => ({
   resolveAgentContext: vi.fn(),
   previewClaudeToCodexRoute: vi.fn(),
   applyConversionPlan: vi.fn(),
-  rollbackAgentReceipt: vi.fn(),
+  previewAgentRollback: vi.fn(),
+  applyAgentRollbackPlan: vi.fn(),
 }));
 
 vi.mock('@/lib/tauri', () => ({
@@ -25,7 +27,8 @@ vi.mock('@/lib/tauri', () => ({
     resolveAgentContext,
     previewClaudeToCodexRoute,
     applyConversionPlan,
-    rollbackAgentReceipt,
+    previewAgentRollback,
+    applyAgentRollbackPlan,
   },
 }));
 
@@ -121,6 +124,7 @@ describe('AgentConversionButton', () => {
           },
         ],
         requiredAcknowledgements: [{ code: 'conversion_apply', risk: 'confirmation' }],
+        riskFingerprint: 'risk:conversion-plan',
         expiresAt: '2026-07-15T01:05:00Z',
       },
     });
@@ -132,7 +136,11 @@ describe('AgentConversionButton', () => {
       backupPaths: ['/Users/test/.ad/backups/config.toml'],
       postApplyStates: [],
     });
-    rollbackAgentReceipt.mockReset().mockResolvedValue({
+    previewAgentRollback.mockReset().mockResolvedValue({
+      id: 'conversion-rollback-plan',
+      riskFingerprint: 'risk:conversion-rollback',
+    });
+    applyAgentRollbackPlan.mockReset().mockResolvedValue({
       id: 'rollback-receipt',
       planId: 'rollback-plan',
       status: 'complete',
@@ -169,15 +177,26 @@ describe('AgentConversionButton', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply conversion' }));
     await waitFor(() =>
-      expect(applyConversionPlan).toHaveBeenCalledWith('conversion-plan', [
-        { code: 'conversion_apply', accepted: true },
-      ]),
+      expect(applyConversionPlan).toHaveBeenCalledWith(
+        'conversion-plan',
+        { installationId: 'codex:default' },
+        'risk:conversion-plan',
+        [{ code: 'conversion_apply', accepted: true }],
+      ),
     );
     expect(await screen.findByText('1 backup created')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Rollback target' }));
     await waitFor(() =>
-      expect(rollbackAgentReceipt).toHaveBeenCalledWith('conversion-receipt', true),
+      expect(previewAgentRollback).toHaveBeenCalledWith('conversion-receipt', {
+        installationId: 'codex:default',
+      }),
+    );
+    expect(applyAgentRollbackPlan).toHaveBeenCalledWith(
+      'conversion-rollback-plan',
+      { installationId: 'codex:default' },
+      'risk:conversion-rollback',
+      true,
     );
     expect(runtimeChanged).toHaveBeenCalledTimes(2);
     expect(workspaceChanged).toHaveBeenCalledTimes(2);
@@ -629,10 +648,15 @@ describe('AgentConversionButton', () => {
     expect(applyConversionPlan).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Apply unrestricted permissions' }));
     await waitFor(() =>
-      expect(applyConversionPlan).toHaveBeenCalledWith('conversion-plan', [
-        { code: 'conversion_apply', accepted: true },
-        { code: 'dangerous_permission_expansion', accepted: true },
-      ]),
+      expect(applyConversionPlan).toHaveBeenCalledWith(
+        'conversion-plan',
+        { installationId: 'codex:default' },
+        'risk:conversion-plan',
+        [
+          { code: 'conversion_apply', accepted: true },
+          { code: 'dangerous_permission_expansion', accepted: true },
+        ],
+      ),
     );
   });
 });

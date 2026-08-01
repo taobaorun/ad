@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use super::execution_confinement::ConfinedTarget;
+use super::execution_confinement::{capture_project_root_identity, ConfinedTarget};
 use super::execution_fs::TargetState;
-use super::{InstallationId, ResourceKind, ResourceRef, ResourceScope};
+use super::{AgentContext, InstallationId, ResourceKind, ResourceRef, ResourceScope};
 
 fn project_resource(project: &Path) -> ResourceRef {
     ResourceRef {
@@ -115,4 +115,57 @@ fn confined_directory_digest_matches_existing_contract() {
         actual,
         super::execution_fs::directory_tree_digest(&target).unwrap()
     );
+}
+
+#[test]
+#[serial_test::serial(home_env)]
+fn bound_project_identity_rejects_a_swapped_root_ancestor() {
+    let temp = tempfile::tempdir().unwrap();
+    std::env::set_var("AD_HOME", temp.path().join("home"));
+    let parent = temp.path().join("workspace-parent");
+    let moved_parent = temp.path().join("workspace-parent.original");
+    let outside_parent = temp.path().join("outside-parent");
+    let project = parent.join("project");
+    std::fs::create_dir_all(project.join(".claude/skills")).unwrap();
+    std::fs::create_dir_all(outside_parent.join("project/.claude/skills")).unwrap();
+    let project = std::fs::canonicalize(project).unwrap();
+    let resource = project_resource(&project);
+    let context = AgentContext {
+        installation_id: resource.installation_id.clone(),
+        project_path: resource.project_path.clone(),
+    };
+    let identity = capture_project_root_identity(&context).unwrap();
+
+    std::fs::rename(&parent, &moved_parent).unwrap();
+    std::os::unix::fs::symlink(&outside_parent, &parent).unwrap();
+
+    let error =
+        ConfinedTarget::resolve_bound(&resource, &project.join(".claude/skills/demo"), identity)
+            .unwrap_err();
+
+    assert_eq!(error.code, super::AgentErrorCode::PermissionDenied);
+    assert!(!outside_parent.join("project/.claude/skills/demo").exists());
+}
+
+#[test]
+#[serial_test::serial(home_env)]
+fn project_root_cannot_alias_the_user_home() {
+    let temp = tempfile::tempdir().unwrap();
+    std::env::set_var("AD_HOME", temp.path());
+    std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+    std::fs::create_dir_all(temp.path().join(".codex")).unwrap();
+    let context = AgentContext {
+        installation_id: InstallationId::from("claude-code:test"),
+        project_path: Some(
+            std::fs::canonicalize(temp.path())
+                .unwrap()
+                .to_string_lossy()
+                .into(),
+        ),
+    };
+
+    let error = capture_project_root_identity(&context).unwrap_err();
+
+    assert_eq!(error.code, super::AgentErrorCode::PermissionDenied);
+    assert!(error.message.contains("overlaps"));
 }

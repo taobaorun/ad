@@ -1,11 +1,31 @@
 use ad_lib::agents::{
     builtin_registry, AcknowledgementRequirement, AgentContext, AgentErrorCode,
     ClaudeToCodexOptions, ClaudeToCodexRoute, CodexPermissionPreset, ConversionRoute,
-    ExecutionEngine, OperationStatus, PlanAcknowledgement, PlanAcknowledgementCode, PlanRiskLevel,
-    PlanStore, ProjectCodexRuntime, ResourceKind, ResourceScope,
+    ExecutionEngine, OperationReceipt, OperationStatus, PlanAcknowledgement,
+    PlanAcknowledgementCode, PlanRiskLevel, PlanStore, ProjectCodexRuntime, ReceiptId,
+    ResourceKind, ResourceScope,
 };
 use serial_test::serial;
 use std::collections::BTreeSet;
+
+fn apply_rollback(
+    receipt_id: &ReceiptId,
+) -> Result<OperationReceipt, Box<ad_lib::agents::AgentError>> {
+    let plans = PlanStore::default();
+    let plan = ExecutionEngine
+        .preview_rollback(receipt_id, &plans)
+        .map_err(Box::new)?;
+    ExecutionEngine
+        .apply_acknowledged(
+            &plan.id,
+            &plans,
+            &[PlanAcknowledgement {
+                code: PlanAcknowledgementCode::RollbackApply,
+                accepted: true,
+            }],
+        )
+        .map_err(Box::new)
+}
 
 #[test]
 #[serial(home_env)]
@@ -45,7 +65,7 @@ fn confirmed_conversion_applies_and_digest_protected_rollback_restores_target() 
     assert_eq!(std::fs::read(&source_path).unwrap(), source_bytes);
     assert_ne!(std::fs::read(&target_path).unwrap(), target_bytes);
 
-    let rollback = ExecutionEngine.rollback(&applied.id).unwrap();
+    let rollback = apply_rollback(&applied.id).unwrap();
     assert_eq!(rollback.status, OperationStatus::Complete);
     assert_eq!(std::fs::read(&target_path).unwrap(), target_bytes);
     assert_eq!(std::fs::read(&source_path).unwrap(), source_bytes);
@@ -58,7 +78,7 @@ fn confirmed_conversion_applies_and_digest_protected_rollback_restores_target() 
     let external = b"model = \"externally-edited\"\n";
     std::fs::write(&target_path, external).unwrap();
 
-    let error = ExecutionEngine.rollback(&applied.id).unwrap_err();
+    let error = apply_rollback(&applied.id).unwrap_err();
 
     restore_env(previous_home, previous_codex_home);
     assert_eq!(error.code, AgentErrorCode::ResourceChanged);
@@ -216,7 +236,7 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     let codex_skill = project.join(".agents/skills/review");
     assert!(codex_skill.is_symlink());
 
-    let rollback = ExecutionEngine.rollback(&applied.id).unwrap();
+    let rollback = apply_rollback(&applied.id).unwrap();
 
     restore_env(previous_home, previous_codex_home);
     assert_eq!(rollback.status, OperationStatus::Complete);
@@ -359,7 +379,7 @@ fn project_conversion_applies_explicit_model_and_permission_decisions() {
             ],
         )
         .unwrap();
-    let rollback = ExecutionEngine.rollback(&applied.id).unwrap();
+    let rollback = apply_rollback(&applied.id).unwrap();
 
     restore_env(previous_home, previous_codex_home);
     assert_eq!(rollback.status, OperationStatus::Complete);

@@ -69,18 +69,18 @@
 
 ## 进展
 
-- [ ] (2026-08-01 10:43+08:00 开始) M0：冻结 workspace contract 并加固ExecutionEngine（验证标准：Rust/TS contract、AD-state targets、fd-relative confinement、跨进程锁、synced crash recovery、legacy receipt与rollback-plan tests通过）
+- [x] (2026-08-01 10:43+08:00 开始，14:33+08:00 完成) M0：冻结 workspace contract 并加固ExecutionEngine（验证标准：Rust/TS contract、AD-state targets、fd-relative confinement、跨进程锁、synced crash recovery、legacy receipt与rollback-plan tests通过）
   - [x] (2026-08-01 11:06+08:00) U1：Rust/TypeScript workspace、resource/declaration/target identity、coverage/provenance/ownership/item action、sanitized plan与domain report契约完成；25个前端契约测试、Rust parity/operations/capability测试及typecheck通过。
-  - [ ] U10：sealed target接入执行、fd-relative confinement、跨进程锁、journal/startup recovery、versioned receipt、ownership与inverse rollback plan。
+  - [x] (2026-08-01 14:33+08:00) U10：sealed target接入执行、fd-relative confinement、跨进程锁、journal/startup recovery、versioned receipt、ownership与inverse rollback plan完成。
     - [x] (2026-08-01 11:22+08:00) 跨进程target lock与durable journal基础：真实子进程争用3/3、lock 2/2、journal 3/3、execution 14/14、PlanStore 11/11及严格Clippy通过；receipt file/parent sync后才提交journal，补偿和repair-required路径有持久状态。
     - [x] (2026-08-01 12:20+08:00) fd-relative/no-follow confinement、unsafe root拒绝与ancestor-swap测试完成；Agent target与AD transaction artifacts都在held descriptors下执行。
       - [x] (2026-08-01 11:37+08:00) Project/user/runtime regular-file target已使用held parent fd执行observe、temp create、rename、unlink和directory sync；project/user ancestor symlink、active swap、0777 AD root及symlinked backup root sentinel测试通过。
       - [x] (2026-08-01 12:01+08:00) Skill/Plugin symlink与directory storage已统一使用held parent fd执行observe、digest、backup、temp publish、remove、compensation、rollback与receipt observe；directory digest保持旧合同，symlink/directory active-swap sentinel、ExecutionEngine补偿/rollback与Rust全量267/267测试通过。
       - [x] (2026-08-01 12:20+08:00) AD lock/journal/backup/manifest/history/cleanup已共享一次操作持有的state directory descriptors；整个`.ad`或journal child被swap成outside symlink时，事务artifact仍写入原目录且outside为空。初始journal和receipt使用no-replace发布，lock拒绝hard link；Rust全量272/272与严格Clippy通过。
     - [x] (2026-08-01 12:34+08:00) startup recovery/global recovery lock、ExecutionEngine mutation gate与process-kill边界矩阵完成：启动恢复持有跨进程exclusive lock，apply/rollback持有shared lease；prepared、prepared+backup、applying无receipt、applying+complete receipt及另一进程持锁边界由真实abort子进程覆盖。journal v2兼容读取v1，恢复测试6/6、真实进程测试2/2、Rust全量279 passed/4 ignored与严格Clippy通过；legacy direct-write命令仍按U6迁移退役。
-    - [ ] versioned receipt/history decoder、ownership record与fresh inverse rollback plan。
+    - [x] (2026-08-01 14:33+08:00) versioned receipt/history decoder、ownership record与fresh inverse rollback plan完成。
       - [x] (2026-08-01 12:46+08:00) OperationReceipt v2与fd-confined per-file History decoder完成：新回执记录operation/context/rollback eligibility/createdAt，legacy无版本回执继续显示但rollback unavailable；损坏、identity不符和future schema成为单项diagnostic，不影响同目录正常记录。Rust全量283 passed/4 ignored、前端142/142、typecheck/lint与严格Clippy通过。
-      - [ ] ownership record与fresh inverse rollback plan。
+      - [x] (2026-08-01 14:33+08:00) Project Skill/Plugin ownership record、receipt ownership evidence、fresh preview-confirm-apply inverse rollback与startup replay完成；apply/rollback claim绑定preview时的canonical context与risk fingerprint，project root绑定device/inode并拒绝与AD/Claude/Codex root重叠。项目History中的user receipt保持可见但inspect-only；post-publish receipt错误、partial create、并发startup与Profiles关闭竞态均有回归测试。`cargo test --all-targets --all-features`、严格Clippy、前端143/143、format/lint/typecheck/build及`pnpm tauri build`通过，生成AD.app与DMG；本地多角色review完成，外部Claude peer因CLI未登录未产出结果。
 - [ ] M1：实现 effective inventory 与分层 Settings（验证标准：Claude/Codex provenance、coverage、canonical context测试通过）
 - [ ] M2：引入 immutable Skill artifact 和安全 source acquisition（验证标准：更新项目A不改变B，migration fixtures幂等）
 - [ ] M3：补齐 Skills/Plugins item lifecycle planners（验证标准：install/toggle/update/remove的支持与退化矩阵通过）
@@ -136,6 +136,16 @@
   证据：新写journal提升为v2，reader接受v1-v2；v1 journal发生恢复迁移时原子升级为v2，future/corrupt journal保持fail-closed。
 - 发现：旧History loader把单个损坏或future receipt静默跳过，既无法向用户说明历史不完整，也会让旧receipt继续借当前rollback decoder尝试执行。
   证据：History读取已迁入held state descriptor下的逐文件version gate；legacy receipt被规范化为schema v1并标记`legacy_receipt`不可回滚，corrupt/future fixture与正常legacy fixture同时返回。
+- 发现：只用`planId`执行mutating IPC时，renderer可以在用户切换project或preview失效后继续消费旧plan；仅靠plan内部context不能证明调用方仍在确认的workspace。
+  证据：apply与rollback command现要求提交preview时的canonical `AgentContext`和risk fingerprint，PlanStore在claim消费前逐项匹配；stale workspace/risk返回retryable `resource_changed`且不执行写入。
+- 发现：canonical project path既可能直接别名AD/Claude/Codex配置根，也可能在preview后由ancestor rename换成另一物理目录；字符串containment不能证明执行仍属于同一项目。
+  证据：项目添加和ExecutionEngine preview拒绝重叠root；PlanExecutionIntent记录project root的device/inode，held no-follow root在observe与apply时重验，alias-user-home与ancestor-swap fixtures通过。
+- 发现：no-replace receipt publish成功后，后续fault或directory fsync失败会让调用方看到错误，但磁盘上已经存在可用于startup reconciliation的commit证据；直接补偿会产生“成功receipt + 已回滚target”的矛盾状态。
+  证据：执行层在persist错误后读取并比对同一receipt bytes；已发布时重试history directory sync并继续ownership/journal commit，无法判定时保留journal/backups并返回non-retryable partial failure。
+- 发现：另一个AD实例持有startup recovery lease是合法并发状态，不应导致第二个实例启动失败；同时Profiles rollback preview在对话框关闭后仍可能继续apply。
+  证据：startup仅对`operation_recovery`阶段的retryable lock conflict延后恢复，其余错误仍fail closed；Profiles以request token和open ref使关闭后的异步结果失效，定向测试和全量前端测试通过。
+- 发现：项目History按installation过滤时会同时返回同installation的user-scope receipt；若直接沿用receipt自身rollback eligibility，项目页能触发用户层回滚。
+  证据：project filter下context不匹配的receipt仍用于理解继承历史，但统一覆盖为`workspace_mismatch` inspect-only；History组件测试和Rust decoder测试覆盖该边界。
 
 ## 决策日志
 
@@ -192,6 +202,21 @@
   日期/作者：2026-08-01 / Codex
 - 决策：History目录级错误仍使请求失败，但单个文件的unreadable/malformed/future-version作为可排序诊断项返回并与正常receipt共存。
   理由：目录边界不可信时无法证明扫描范围，单文件问题则不应隐藏其他有效历史。
+  日期/作者：2026-08-01 / Codex
+- 决策：所有第一方apply/rollback IPC在claim时同时绑定preview context与risk fingerprint，不能只提交opaque plan id。
+  理由：plan id证明后端生成过计划，但不能证明用户当前仍处于同一workspace、确认的风险摘要也未变化。
+  日期/作者：2026-08-01 / Codex（ce-code-review）
+- 决策：project root授权同时要求配置根不重叠、逐组件no-follow打开和preview/apply device+inode一致。
+  理由：项目级隔离必须绑定物理目录身份，不能把可替换的path string当作持续授权。
+  日期/作者：2026-08-01 / Codex（ce-code-review）
+- 决策：项目History保留user/inherited receipt用于解释来源，但只有context精确匹配当前project的receipt可生成rollback plan。
+  理由：隐藏user历史会损失provenance，允许项目页修改user层则违反项目默认隔离。
+  日期/作者：2026-08-01 / Codex（agent-native review）
+- 决策：receipt no-replace publish后的错误按可观察提交状态处理；精确receipt已存在时完成sync/reconciliation，不确定时保留恢复证据而不猜测补偿。
+  理由：发布后的外部可见状态不能用发布前失败语义处理，否则History、target与journal会互相矛盾。
+  日期/作者：2026-08-01 / Codex（ce-code-review）
+- 决策：AD-owned project Plugin目录的显式Replace允许目标或旧source digest漂移，但仍要求ownership identity、preview digest、fresh source digest与workspace绑定；Delete、Skill link和rollback继续要求精确证据。
+  理由：Plugin运行时可能产生可忽略缓存且source refresh是既有受支持流程；Replace本身已经显示并绑定当前内容，而破坏性删除和回滚必须保持更严格的外部修改保护。
   日期/作者：2026-08-01 / Codex
 
 ## 结果回顾

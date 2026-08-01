@@ -155,6 +155,8 @@ fn applying_with_a_complete_receipt_is_reconciled_as_committed() {
         backup_paths: Vec::new(),
         post_apply_states: Vec::new(),
         manifest_digest: None,
+        ownership_changes: Vec::new(),
+        ownership_evidence_version: OWNERSHIP_EVIDENCE_VERSION,
         rollback: RollbackEligibility::available(),
         created_at: Some(Utc::now()),
         message: None,
@@ -172,6 +174,102 @@ fn applying_with_a_complete_receipt_is_reconciled_as_committed() {
     assert!(report.writable());
     assert_eq!(report.recovered, 1);
     assert_eq!(only_journal(&state).state, OperationJournalState::Committed);
+}
+
+#[test]
+fn applying_receipt_replays_missing_ownership_before_commit() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = ExecutionState::open_at(&temp.path().join(".ad")).unwrap();
+    let plan = plan("ownership-recovery-plan");
+    let receipt_id = ReceiptId::from("ownership-recovery-receipt");
+    let mut journal = OperationJournalHandle::prepare(
+        &plan,
+        &receipt_id,
+        "instance",
+        "ownership-recovery-operation",
+        &state,
+    )
+    .unwrap();
+    journal
+        .transition(OperationJournalState::Applying, None)
+        .unwrap();
+    let resource = ResourceRef {
+        installation_id: plan.context.installation_id.clone(),
+        project_path: plan.context.project_path.clone(),
+        kind: ResourceKind::Plugins,
+        scope: ResourceScope::Project,
+        logical_id: "package:team:demo:1.0.0".into(),
+    };
+    let record_id = ownership_record_id(&resource);
+    let digest = ContentDigest::sha256(b"owned-directory");
+    let record = ResourceOwnershipRecord {
+        schema_version: RESOURCE_OWNERSHIP_SCHEMA_VERSION,
+        id: record_id.clone(),
+        workspace_key: ownership_workspace_key(&resource).unwrap(),
+        resource: resource.clone(),
+        target_id: PhysicalTargetId::for_resource(&resource),
+        target_path: temp
+            .path()
+            .join("project/plugins/demo")
+            .to_string_lossy()
+            .into_owned(),
+        target_kind: ResourceStateKind::Directory,
+        target_digest: digest.clone(),
+        artifact_id: temp
+            .path()
+            .join("artifacts/demo")
+            .to_string_lossy()
+            .into_owned(),
+        artifact_digest: digest.clone(),
+        creating_receipt_id: receipt_id.clone(),
+        updated_by_receipt_id: receipt_id.clone(),
+    };
+    let receipt = OperationReceipt {
+        schema_version: OPERATION_RECEIPT_SCHEMA_VERSION,
+        id: receipt_id.clone(),
+        plan_id: plan.id,
+        operation_kind: OperationKind::Apply,
+        parent_receipt_id: None,
+        context: Some(plan.context),
+        workspace_key: None,
+        action_id: None,
+        status: OperationStatus::Complete,
+        applied_resources: vec![resource.clone()],
+        backup_paths: Vec::new(),
+        post_apply_states: vec![AppliedResourceState {
+            resource: resource.clone(),
+            kind: ResourceStateKind::Directory,
+            digest: Some(digest),
+        }],
+        manifest_digest: None,
+        ownership_changes: vec![ResourceOwnershipChange {
+            kind: ResourceOwnershipChangeKind::Upsert,
+            record_id,
+            previous_record: None,
+            record: Some(record.clone()),
+        }],
+        ownership_evidence_version: OWNERSHIP_EVIDENCE_VERSION,
+        rollback: RollbackEligibility::available(),
+        created_at: Some(Utc::now()),
+        message: None,
+    };
+    state
+        .history()
+        .write_atomic_new(
+            &format!("{receipt_id}.json"),
+            &serde_json::to_vec(&receipt).unwrap(),
+        )
+        .unwrap();
+
+    let report = recover_state(&state).unwrap();
+
+    assert!(report.writable());
+    assert_eq!(report.recovered, 1);
+    assert_eq!(only_journal(&state).state, OperationJournalState::Committed);
+    assert_eq!(
+        load_ownership_record(&state, &resource).unwrap(),
+        Some(record)
+    );
 }
 
 #[test]

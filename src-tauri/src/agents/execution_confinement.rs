@@ -14,11 +14,98 @@ use crate::fs::paths::{ad_home, claude_dir, codex_dir};
 
 use super::execution_fs::TargetState;
 use super::execution_state::{ExecutionState, StateDirectory};
-use super::{AgentError, AgentErrorCode, ResourceRef};
+use super::{AgentContext, AgentError, AgentErrorCode, ResourceRef};
 
 const DIRECTORY_FLAGS: OFlags = OFlags::RDONLY
     .union(OFlags::DIRECTORY)
     .union(OFlags::NOFOLLOW);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct ProjectRootIdentity {
+    device: u64,
+    inode: u64,
+}
+
+pub(super) fn capture_project_root_identity(
+    context: &AgentContext,
+) -> Result<Option<ProjectRootIdentity>, AgentError> {
+    let Some(project_path) = context.project_path.as_deref() else {
+        return Ok(None);
+    };
+    let project = Path::new(project_path);
+    validate_project_workspace_root(project).map_err(|message| AgentError {
+        code: AgentErrorCode::PermissionDenied,
+        message,
+        agent_id: None,
+        installation_id: Some(context.installation_id.clone()),
+        resource: None,
+        retryable: false,
+        details: Some(serde_json::json!({"phase": "execution_confinement"})),
+    })?;
+    let fd = open_absolute_directory_nofollow(project).map_err(|error| AgentError {
+        code: AgentErrorCode::PermissionDenied,
+        message: format!(
+            "Failed to bind the project workspace root {}: {error}",
+            project.display()
+        ),
+        agent_id: None,
+        installation_id: Some(context.installation_id.clone()),
+        resource: None,
+        retryable: false,
+        details: Some(serde_json::json!({"phase": "execution_confinement"})),
+    })?;
+    validate_directory_fd(&fd, project).map_err(|message| AgentError {
+        code: AgentErrorCode::PermissionDenied,
+        message,
+        agent_id: None,
+        installation_id: Some(context.installation_id.clone()),
+        resource: None,
+        retryable: false,
+        details: Some(serde_json::json!({"phase": "execution_confinement"})),
+    })?;
+    project_root_identity(&fd)
+        .map(Some)
+        .map_err(|error| AgentError {
+            code: AgentErrorCode::Io,
+            message: format!("Failed to inspect the project workspace root: {error}"),
+            agent_id: None,
+            installation_id: Some(context.installation_id.clone()),
+            resource: None,
+            retryable: true,
+            details: Some(serde_json::json!({"phase": "execution_confinement"})),
+        })
+}
+
+pub(crate) fn validate_project_workspace_root(project: &Path) -> Result<(), String> {
+    if !project.is_absolute() {
+        return Err(format!(
+            "Project workspace root is not absolute: {}",
+            project.display()
+        ));
+    }
+    let mut managed_roots = vec![
+        ad_home().map_err(|error| error.to_string())?,
+        claude_dir().map_err(|error| error.to_string())?,
+        codex_dir().map_err(|error| error.to_string())?,
+    ];
+    if let Ok(environment_home) = std::env::var("CODEX_HOME") {
+        managed_roots.push(PathBuf::from(environment_home));
+    }
+    for configured in managed_roots {
+        for managed in [
+            configured.clone(),
+            std::fs::canonicalize(&configured).unwrap_or(configured),
+        ] {
+            if project == managed || project.starts_with(&managed) || managed.starts_with(project) {
+                return Err(format!(
+                    "Project workspace root overlaps an Agent or AD managed root: {}",
+                    project.display()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
 
 #[derive(Debug)]
 pub(super) struct ConfinedTarget {
@@ -30,33 +117,44 @@ pub(super) struct ConfinedTarget {
 }
 
 impl ConfinedTarget {
-    pub(super) fn observe_dependency(
+    pub(super) fn observe_dependency_bound(
         resource: &ResourceRef,
         target: &Path,
+        project_root_identity: Option<ProjectRootIdentity>,
     ) -> Result<TargetState, AgentError> {
-        Self::resolve_internal(resource, target, true)?.observe()
+        Self::resolve_internal(resource, target, true, project_root_identity)?.observe()
     }
 
     pub(super) fn observe_existing(
         resource: &ResourceRef,
         target: &Path,
     ) -> Result<TargetState, AgentError> {
-        Self::resolve_internal(resource, target, false)?.observe()
+        Self::resolve_internal(resource, target, false, None)?.observe()
     }
 
+    #[cfg(test)]
     pub(super) fn resolve(resource: &ResourceRef, target: &Path) -> Result<Self, AgentError> {
-        Self::resolve_internal(resource, target, false)
+        Self::resolve_internal(resource, target, false, None)
+    }
+
+    pub(super) fn resolve_bound(
+        resource: &ResourceRef,
+        target: &Path,
+        project_root_identity: Option<ProjectRootIdentity>,
+    ) -> Result<Self, AgentError> {
+        Self::resolve_internal(resource, target, false, project_root_identity)
     }
 
     fn resolve_internal(
         resource: &ResourceRef,
         target: &Path,
         allow_dependency_root: bool,
+        project_root_identity: Option<ProjectRootIdentity>,
     ) -> Result<Self, AgentError> {
         let root = if allow_dependency_root {
-            trusted_observation_root(resource, target)?
+            trusted_observation_root(resource, target, project_root_identity)?
         } else {
-            trusted_root(resource, target)?
+            trusted_root(resource, target, project_root_identity)?
         };
         let relative = target.strip_prefix(&root).map_err(|_| {
             confinement_error(
@@ -74,7 +172,12 @@ impl ConfinedTarget {
             .ok_or_else(|| confinement_error(resource, "Mutation target has no file name"))?
             .to_os_string();
         let parent_relative = relative.parent().unwrap_or_else(|| Path::new(""));
-        let root_fd = open_trusted_directory(&root, resource)?;
+        let expected_identity = resource
+            .project_path
+            .as_deref()
+            .filter(|project| Path::new(project) == root)
+            .and(project_root_identity);
+        let root_fd = open_trusted_directory(&root, resource, expected_identity)?;
         let (parent, pending_parents) = resolve_parent(root_fd, parent_relative, resource)?;
         Ok(Self {
             parent,
@@ -262,15 +365,23 @@ impl ConfinedTarget {
     }
 }
 
-fn trusted_root(resource: &ResourceRef, target: &Path) -> Result<PathBuf, AgentError> {
-    if let Some(root) = trusted_scoped_root(resource, target)? {
+fn trusted_root(
+    resource: &ResourceRef,
+    target: &Path,
+    project_root_identity: Option<ProjectRootIdentity>,
+) -> Result<PathBuf, AgentError> {
+    if let Some(root) = trusted_scoped_root(resource, target, project_root_identity)? {
         return Ok(root);
     }
     trusted_user_agent_root(resource, target)
 }
 
-fn trusted_observation_root(resource: &ResourceRef, target: &Path) -> Result<PathBuf, AgentError> {
-    if let Some(root) = trusted_scoped_root(resource, target)? {
+fn trusted_observation_root(
+    resource: &ResourceRef,
+    target: &Path,
+    project_root_identity: Option<ProjectRootIdentity>,
+) -> Result<PathBuf, AgentError> {
+    if let Some(root) = trusted_scoped_root(resource, target, project_root_identity)? {
         return Ok(root);
     }
     let (agent_id, _) = resource
@@ -283,7 +394,7 @@ fn trusted_observation_root(resource: &ResourceRef, target: &Path) -> Result<Pat
             continue;
         };
         if target.starts_with(&canonical) {
-            open_trusted_directory(&candidate, resource)?;
+            open_configured_agent_root(&candidate, resource)?;
             return Ok(canonical);
         }
     }
@@ -296,6 +407,7 @@ fn trusted_observation_root(resource: &ResourceRef, target: &Path) -> Result<Pat
 fn trusted_scoped_root(
     resource: &ResourceRef,
     target: &Path,
+    project_root_identity: Option<ProjectRootIdentity>,
 ) -> Result<Option<PathBuf>, AgentError> {
     let ad_root = ad_home().map_err(|error| confinement_error(resource, error.to_string()))?;
     let canonical_ad_root = std::fs::canonicalize(&ad_root).ok();
@@ -312,6 +424,9 @@ fn trusted_scoped_root(
     if let Some(project_path) = resource.project_path.as_deref() {
         let project = PathBuf::from(project_path);
         if target.starts_with(&project) {
+            validate_project_workspace_root(&project)
+                .map_err(|message| confinement_error(resource, message))?;
+            open_trusted_directory(&project, resource, project_root_identity)?;
             return Ok(Some(project));
         }
     }
@@ -330,7 +445,7 @@ fn trusted_user_agent_root(resource: &ResourceRef, target: &Path) -> Result<Path
             continue;
         };
         if canonical == expected_root {
-            open_trusted_directory(&candidate, resource)?;
+            open_configured_agent_root(&candidate, resource)?;
             if !target.starts_with(expected_root) {
                 return Err(confinement_error(
                     resource,
@@ -344,6 +459,21 @@ fn trusted_user_agent_root(resource: &ResourceRef, target: &Path) -> Result<Path
         resource,
         "Agent installation is not backed by a trusted configured root",
     ))
+}
+
+fn open_configured_agent_root(
+    configured: &Path,
+    resource: &ResourceRef,
+) -> Result<OwnedFd, AgentError> {
+    let parent = configured
+        .parent()
+        .ok_or_else(|| confinement_error(resource, "Agent root has no parent"))?;
+    let name = configured
+        .file_name()
+        .ok_or_else(|| confinement_error(resource, "Agent root has no name"))?;
+    let canonical_parent = std::fs::canonicalize(parent)
+        .map_err(|error| confinement_error(resource, error.to_string()))?;
+    open_trusted_directory(&canonical_parent.join(name), resource, None)
 }
 
 fn agent_root_candidates(
@@ -371,11 +501,61 @@ fn agent_root_candidates(
     Ok(candidates)
 }
 
-fn open_trusted_directory(root: &Path, resource: &ResourceRef) -> Result<OwnedFd, AgentError> {
-    let fd = open(root, DIRECTORY_FLAGS, Mode::empty())
+fn open_trusted_directory(
+    root: &Path,
+    resource: &ResourceRef,
+    expected_identity: Option<ProjectRootIdentity>,
+) -> Result<OwnedFd, AgentError> {
+    let fd = open_absolute_directory_nofollow(root)
         .map_err(|error| confinement_error(resource, error.to_string()))?;
     validate_directory_fd(&fd, root).map_err(|error| confinement_error(resource, error))?;
+    if expected_identity.is_some_and(|expected| {
+        project_root_identity(&fd)
+            .map(|actual| actual != expected)
+            .unwrap_or(true)
+    }) {
+        return Err(confinement_error(
+            resource,
+            "Project workspace root identity changed after preview",
+        ));
+    }
     Ok(fd)
+}
+
+fn open_absolute_directory_nofollow(root: &Path) -> Result<OwnedFd, std::io::Error> {
+    if !root.is_absolute() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Trusted root is not absolute: {}", root.display()),
+        ));
+    }
+    let mut current = open(Path::new("/"), DIRECTORY_FLAGS, Mode::empty())?;
+    for component in root.components() {
+        match component {
+            Component::RootDir => {}
+            Component::Normal(name) => {
+                current = openat(&current, name, DIRECTORY_FLAGS, Mode::empty())?;
+            }
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "Trusted root contains an unsafe component: {}",
+                        root.display()
+                    ),
+                ))
+            }
+        }
+    }
+    Ok(current)
+}
+
+fn project_root_identity(fd: &OwnedFd) -> Result<ProjectRootIdentity, std::io::Error> {
+    let stat = fstat(fd)?;
+    Ok(ProjectRootIdentity {
+        device: stat.st_dev as u64,
+        inode: stat.st_ino,
+    })
 }
 
 fn validate_directory_fd(fd: &OwnedFd, path: &Path) -> Result<(), String> {

@@ -7,16 +7,19 @@ import { AgentContextSchema, AgentInstallationSchema } from '@/lib/agentTypes';
 import { useAgents } from '@/store/agents';
 import { useUiState } from '@/store/ui';
 
-const { listAgentOperationHistory, rollbackAgentReceipt, readHistory } = vi.hoisted(() => ({
-  listAgentOperationHistory: vi.fn(),
-  rollbackAgentReceipt: vi.fn(),
-  readHistory: vi.fn(),
-}));
+const { listAgentOperationHistory, previewAgentRollback, applyAgentRollbackPlan, readHistory } =
+  vi.hoisted(() => ({
+    listAgentOperationHistory: vi.fn(),
+    previewAgentRollback: vi.fn(),
+    applyAgentRollbackPlan: vi.fn(),
+    readHistory: vi.fn(),
+  }));
 
 vi.mock('@/lib/tauri', () => ({
   tauri: {
     listAgentOperationHistory,
-    rollbackAgentReceipt,
+    previewAgentRollback,
+    applyAgentRollbackPlan,
     readHistory,
     restoreBackup: vi.fn(),
   },
@@ -62,7 +65,11 @@ describe('HistoryPanel', () => {
         },
       },
     ]);
-    rollbackAgentReceipt.mockReset().mockResolvedValue({
+    previewAgentRollback.mockReset().mockResolvedValue({
+      id: 'history-rollback-plan',
+      riskFingerprint: 'risk:history-rollback',
+    });
+    applyAgentRollbackPlan.mockReset().mockResolvedValue({
       schemaVersion: 2,
       id: 'rollback-1',
       planId: 'rollback-plan',
@@ -91,7 +98,17 @@ describe('HistoryPanel', () => {
     expect(readHistory).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Rollback' }));
 
-    await waitFor(() => expect(rollbackAgentReceipt).toHaveBeenCalledWith('receipt-1', true));
+    await waitFor(() =>
+      expect(previewAgentRollback).toHaveBeenCalledWith('receipt-1', {
+        installationId: 'codex:default',
+      }),
+    );
+    expect(applyAgentRollbackPlan).toHaveBeenCalledWith(
+      'history-rollback-plan',
+      { installationId: 'codex:default' },
+      'risk:history-rollback',
+      true,
+    );
     expect(runtimeChanged).toHaveBeenCalledOnce();
     expect(workspaceChanged).toHaveBeenCalledOnce();
     window.removeEventListener('ad:project-codex-runtime-changed', runtimeChanged);
@@ -129,7 +146,8 @@ describe('HistoryPanel', () => {
     expect(await screen.findByText('user-config')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Rollback' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Rollback' }));
-    expect(rollbackAgentReceipt).not.toHaveBeenCalled();
+    expect(previewAgentRollback).not.toHaveBeenCalled();
+    expect(applyAgentRollbackPlan).not.toHaveBeenCalled();
   });
 
   it('includes receipts from the effective Project Codex runtime', async () => {

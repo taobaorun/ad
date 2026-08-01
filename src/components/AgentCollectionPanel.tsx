@@ -160,7 +160,7 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
     setPlanBusy(true);
     setPlanError(null);
     try {
-      const receipt = await tauri.applyAgentPlan(plan.id);
+      const receipt = await tauri.applyAgentPlan(plan.id, context, plan.riskFingerprint);
       if (requestContextKey !== activeContextKeyRef.current) return;
       setPlan(null);
       if (receipt.status === 'partial_failure') {
@@ -188,11 +188,20 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
   }
 
   async function rollback() {
-    if (!lastReceipt || !window.confirm(t('agentCollections.rollbackConfirm'))) return;
+    if (!lastReceipt) return;
     const requestContextKey = contextKey;
+    setPlanBusy(true);
     setError(null);
     try {
-      await tauri.rollbackAgentReceipt(lastReceipt.id, true);
+      const rollbackPlan = await tauri.previewAgentRollback(lastReceipt.id, context);
+      if (requestContextKey !== activeContextKeyRef.current) return;
+      if (!window.confirm(t('agentCollections.rollbackConfirm'))) return;
+      await tauri.applyAgentRollbackPlan(
+        rollbackPlan.id,
+        context,
+        rollbackPlan.riskFingerprint,
+        true,
+      );
       if (requestContextKey !== activeContextKeyRef.current) return;
       setLastReceipt(null);
       setStatus(t('agentCollections.rollbackSuccess'));
@@ -202,6 +211,8 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
     } catch (caught) {
       if (requestContextKey !== activeContextKeyRef.current) return;
       setError(formatAgentError(caught));
+    } finally {
+      setPlanBusy(false);
     }
   }
 

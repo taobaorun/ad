@@ -22,6 +22,7 @@ const DIRECTORY_FLAGS: OFlags = OFlags::RDONLY
 pub(super) struct ExecutionState {
     locks: StateDirectory,
     journals: StateDirectory,
+    ownership: StateDirectory,
     backups: StateDirectory,
     history: StateDirectory,
 }
@@ -45,6 +46,7 @@ impl ExecutionState {
         let state = root.open_or_create_directory("state")?;
         let locks = state.open_or_create_directory("execution-locks")?;
         let journals = state.open_or_create_directory("operation-journals")?;
+        let ownership = state.open_or_create_directory("resource-ownership")?;
         let backups = root
             .open_or_create_directory("backups")?
             .open_or_create_directory("operations")?;
@@ -54,6 +56,7 @@ impl ExecutionState {
         Ok(Self {
             locks,
             journals,
+            ownership,
             backups,
             history,
         })
@@ -65,6 +68,10 @@ impl ExecutionState {
 
     pub(super) fn journals(&self) -> &StateDirectory {
         &self.journals
+    }
+
+    pub(super) fn ownership(&self) -> &StateDirectory {
+        &self.ownership
     }
 
     pub(super) fn backups(&self) -> &StateDirectory {
@@ -159,6 +166,10 @@ impl StateDirectory {
         let mut bytes = Vec::new();
         File::from(fd).read_to_end(&mut bytes)?;
         Ok(bytes)
+    }
+
+    pub(super) fn sync(&self) -> std::io::Result<()> {
+        fsync(&self.fd).map_err(Into::into)
     }
 
     pub(super) fn modified(&self, name: &str) -> std::io::Result<std::time::SystemTime> {

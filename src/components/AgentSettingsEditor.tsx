@@ -141,7 +141,7 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
     setPlanBusy(true);
     setPlanError(null);
     try {
-      const receipt = await tauri.applyAgentPlan(plan.id);
+      const receipt = await tauri.applyAgentPlan(plan.id, context, plan.riskFingerprint);
       if (requestContextKey !== activeContextKeyRef.current) return;
       setLastReceipt(receipt);
       setPlan(null);
@@ -165,11 +165,20 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
   }
 
   async function rollback() {
-    if (!lastReceipt || !window.confirm(t('agentSettings.rollbackConfirm'))) return;
+    if (!lastReceipt) return;
     const requestContextKey = contextKey;
+    setPlanBusy(true);
     setError(null);
     try {
-      await tauri.rollbackAgentReceipt(lastReceipt.id, true);
+      const rollbackPlan = await tauri.previewAgentRollback(lastReceipt.id, context);
+      if (requestContextKey !== activeContextKeyRef.current) return;
+      if (!window.confirm(t('agentSettings.rollbackConfirm'))) return;
+      await tauri.applyAgentRollbackPlan(
+        rollbackPlan.id,
+        context,
+        rollbackPlan.riskFingerprint,
+        true,
+      );
       if (requestContextKey !== activeContextKeyRef.current) return;
       setLastReceipt(null);
       setStatus(t('agentSettings.rollbackSuccess'));
@@ -177,6 +186,8 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
     } catch (caught) {
       if (requestContextKey !== activeContextKeyRef.current) return;
       setError(formatAgentError(caught));
+    } finally {
+      setPlanBusy(false);
     }
   }
 
