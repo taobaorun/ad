@@ -57,9 +57,16 @@ import {
   type JsonValue,
 } from './agentTypes';
 import {
+  ProjectCollectionActionPreviewSchema,
   ProjectWorkspaceInventorySchema,
+  type ProjectCollectionActionPreview,
+  type ProjectCollectionActionRequest,
   type ProjectWorkspaceInventory,
 } from './agentResourceInventoryTypes';
+import {
+  WorkspaceOperationReportSchema,
+  type WorkspaceOperationReport,
+} from './agentOperationReports';
 import { WorkspaceDescriptorSchema, type WorkspaceDescriptor } from './agentWorkspaceTypes';
 import {
   SkillCatalogOperationReportSchema,
@@ -134,6 +141,31 @@ export const tauri = {
   ): Promise<ProjectWorkspaceInventory> =>
     ProjectWorkspaceInventorySchema.parse(
       await invoke<unknown>('inspect_project_agent_workspace', { installationId, projectPath }),
+    ),
+  previewProjectCollectionAction: async (
+    installationId: InstallationId,
+    projectPath: string,
+    request: ProjectCollectionActionRequest,
+  ): Promise<ProjectCollectionActionPreview> =>
+    ProjectCollectionActionPreviewSchema.parse(
+      await invoke<unknown>('preview_project_collection_action', {
+        installationId,
+        projectPath,
+        request,
+      }),
+    ),
+  applyProjectCollectionAction: async (
+    planId: PlanId,
+    expectedContext: AgentContext,
+    expectedRiskFingerprint: MutationPlanView['riskFingerprint'],
+  ): Promise<WorkspaceOperationReport> =>
+    WorkspaceOperationReportSchema.parse(
+      await invoke<unknown>('apply_project_collection_action', {
+        planId,
+        expectedContext,
+        expectedRiskFingerprint,
+        confirmed: true,
+      }),
     ),
   previewClaudeToCodex: async (profile: ProfileFile): Promise<ConversionPreview> =>
     ConversionPreviewSchema.parse(await invoke<unknown>('preview_claude_to_codex', { profile })),

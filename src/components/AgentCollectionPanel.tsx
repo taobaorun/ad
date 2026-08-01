@@ -5,10 +5,16 @@ import { useTranslation } from 'react-i18next';
 import { formatAgentError } from '@/lib/agentErrors';
 import type {
   CollectionResourceView,
+  ProjectCollectionActionPreview,
   ProjectWorkspaceInventory,
+  ResourceAction,
+  ResourceActionView,
 } from '@/lib/agentResourceInventoryTypes';
 import type { AgentContext, CapabilityDescriptor } from '@/lib/agentTypes';
 import { tauri } from '@/lib/tauri';
+
+import { AgentPlanDialog } from './AgentPlanDialog';
+import { Button } from './ui/button';
 
 interface AgentCollectionPanelProps {
   context: AgentContext;
@@ -21,7 +27,12 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionPreview, setActionPreview] = useState<ProjectCollectionActionPreview | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionResult, setActionResult] = useState<string | null>(null);
   const loadRequestRef = useRef(0);
+  const actionRequestRef = useRef(0);
   const contextKey = useMemo(() => JSON.stringify(context), [context]);
   const activeContextKeyRef = useRef(contextKey);
   activeContextKeyRef.current = contextKey;
@@ -65,6 +76,106 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    actionRequestRef.current += 1;
+    setActionPreview(null);
+    setActionError(null);
+    setActionResult(null);
+  }, [contextKey]);
+
+  const previewAction = useCallback(
+    async (resource: CollectionResourceView, action: ResourceAction) => {
+      if (!inventory || !context.projectPath) return;
+      const requestId = ++actionRequestRef.current;
+      const requestContextKey = contextKey;
+      setActionBusy(true);
+      setActionError(null);
+      setActionResult(null);
+      try {
+        const next = await tauri.previewProjectCollectionAction(
+          context.installationId,
+          context.projectPath,
+          {
+            workspaceKey: inventory.workspace.key,
+            inventoryRevision: inventory.revision,
+            resourceKey: resource.key,
+            action,
+          },
+        );
+        if (
+          requestId === actionRequestRef.current &&
+          requestContextKey === activeContextKeyRef.current
+        ) {
+          setActionPreview(next);
+        }
+      } catch (caught) {
+        if (
+          requestId === actionRequestRef.current &&
+          requestContextKey === activeContextKeyRef.current
+        ) {
+          setActionError(formatAgentError(caught));
+        }
+      } finally {
+        if (
+          requestId === actionRequestRef.current &&
+          requestContextKey === activeContextKeyRef.current
+        ) {
+          setActionBusy(false);
+        }
+      }
+    },
+    [context.installationId, context.projectPath, contextKey, inventory],
+  );
+
+  const applyAction = useCallback(async () => {
+    if (!actionPreview) return;
+    const requestId = actionRequestRef.current;
+    const requestContextKey = contextKey;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      const report = await tauri.applyProjectCollectionAction(
+        actionPreview.plan.id,
+        actionPreview.plan.context,
+        actionPreview.plan.riskFingerprint,
+      );
+      if (
+        requestId !== actionRequestRef.current ||
+        requestContextKey !== activeContextKeyRef.current
+      ) {
+        return;
+      }
+      if (report.outcome === 'partial_failure') {
+        setActionError(t('agentCollections.partialFailure'));
+        return;
+      }
+      setActionPreview(null);
+      setActionResult(t('agentCollections.applySuccess'));
+      await load();
+    } catch (caught) {
+      if (
+        requestId === actionRequestRef.current &&
+        requestContextKey === activeContextKeyRef.current
+      ) {
+        setActionError(formatAgentError(caught));
+      }
+    } finally {
+      if (
+        requestId === actionRequestRef.current &&
+        requestContextKey === activeContextKeyRef.current
+      ) {
+        setActionBusy(false);
+      }
+    }
+  }, [actionPreview, contextKey, load, t]);
+
+  const cancelAction = useCallback(() => {
+    if (actionBusy) return;
+    actionRequestRef.current += 1;
+    setActionPreview(null);
+    setActionError(null);
+  }, [actionBusy]);
 
   const query = filter.trim().toLocaleLowerCase();
   const filteredSkills = useMemo(
@@ -121,6 +232,22 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
           {error}
         </div>
       )}
+      {actionError && !actionPreview && (
+        <div
+          role="alert"
+          className="shrink-0 border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
+          {actionError}
+        </div>
+      )}
+      {actionResult && (
+        <div
+          role="status"
+          className="shrink-0 border-b border-success/40 bg-success/10 px-3 py-2 text-xs text-foreground"
+        >
+          {actionResult}
+        </div>
+      )}
       {limitations.length > 0 && (
         <ul className="shrink-0 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-foreground">
           {limitations.map((limitation) => (
@@ -137,12 +264,16 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
               inventory={inventory.skills}
               resources={filteredSkills}
               t={t}
+              busy={actionBusy}
+              onAction={previewAction}
             />
             <CollectionSection
               title={t('agentCollections.plugins')}
               inventory={inventory.plugins}
               resources={filteredPlugins}
               t={t}
+              busy={actionBusy}
+              onAction={previewAction}
             />
           </>
         )}
@@ -152,6 +283,13 @@ export function AgentCollectionPanel({ context, capabilities }: AgentCollectionP
           </div>
         )}
       </div>
+      <AgentPlanDialog
+        plan={actionPreview?.plan ?? null}
+        busy={actionBusy}
+        error={actionPreview ? actionError : null}
+        onCancel={cancelAction}
+        onConfirm={() => void applyAction()}
+      />
     </div>
   );
 }
@@ -161,9 +299,18 @@ interface CollectionSectionProps {
   inventory: ProjectWorkspaceInventory['skills'];
   resources: CollectionResourceView[];
   t: ReturnType<typeof useTranslation>['t'];
+  busy: boolean;
+  onAction: (resource: CollectionResourceView, action: ResourceAction) => void;
 }
 
-function CollectionSection({ title, inventory, resources, t }: CollectionSectionProps) {
+function CollectionSection({
+  title,
+  inventory,
+  resources,
+  t,
+  busy,
+  onAction,
+}: CollectionSectionProps) {
   return (
     <section className="mb-5" aria-labelledby={`collection-${inventory.kind}`}>
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -220,6 +367,7 @@ function CollectionSection({ title, inventory, resources, t }: CollectionSection
                   </span>
                   <span>· {t(`agentCollections.management.${resource.management.status}`)}</span>
                 </div>
+                <ResourceActions resource={resource} busy={busy} t={t} onAction={onAction} />
               </div>
             </li>
           ))}
@@ -227,6 +375,56 @@ function CollectionSection({ title, inventory, resources, t }: CollectionSection
       )}
     </section>
   );
+}
+
+interface ResourceActionsProps {
+  resource: CollectionResourceView;
+  busy: boolean;
+  t: ReturnType<typeof useTranslation>['t'];
+  onAction: (resource: CollectionResourceView, action: ResourceAction) => void;
+}
+
+function ResourceActions({ resource, busy, t, onAction }: ResourceActionsProps) {
+  const actions = resource.management.actions.filter(isMutationAction);
+  if (actions.length === 0) return null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      {actions.map((action) => {
+        const available = ['available', 'confirmation_required'].includes(action.availability);
+        const label = actionLabel(resource, action, t);
+        return (
+          <Button
+            key={action.action}
+            type="button"
+            size="sm"
+            variant={action.action === 'remove' ? 'outline' : 'secondary'}
+            className="h-7 whitespace-nowrap px-2 text-xs"
+            disabled={busy || !available}
+            title={action.limitation ? t(action.limitation.messageKey) : undefined}
+            aria-label={`${label}: ${resource.displayName}`}
+            onClick={() => onAction(resource, action.action)}
+          >
+            {label}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
+function isMutationAction(action: ResourceActionView): boolean {
+  return ['install', 'update', 'remove', 'enable', 'disable'].includes(action.action);
+}
+
+function actionLabel(
+  resource: CollectionResourceView,
+  action: ResourceActionView,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (resource.kind === 'plugins' && action.action === 'remove') {
+    return t('agentCollections.action.resetPluginOverride');
+  }
+  return t(`agentCollections.action.${action.action}`);
 }
 
 function matches(resource: CollectionResourceView, query: string): boolean {

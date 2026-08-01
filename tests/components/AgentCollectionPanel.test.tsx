@@ -6,12 +6,22 @@ import i18n from '@/i18n';
 import { ProjectWorkspaceInventorySchema } from '@/lib/agentResourceInventoryTypes';
 import { AgentContextSchema, CapabilityDescriptorSchema } from '@/lib/agentTypes';
 
-const { inspectProjectAgentWorkspace } = vi.hoisted(() => ({
+const {
+  inspectProjectAgentWorkspace,
+  previewProjectCollectionAction,
+  applyProjectCollectionAction,
+} = vi.hoisted(() => ({
   inspectProjectAgentWorkspace: vi.fn(),
+  previewProjectCollectionAction: vi.fn(),
+  applyProjectCollectionAction: vi.fn(),
 }));
 
 vi.mock('@/lib/tauri', () => ({
-  tauri: { inspectProjectAgentWorkspace },
+  tauri: {
+    inspectProjectAgentWorkspace,
+    previewProjectCollectionAction,
+    applyProjectCollectionAction,
+  },
 }));
 
 const context = AgentContextSchema.parse({
@@ -168,10 +178,75 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function actionableInventory() {
+  const next = inventory('available');
+  const resource = next.skills.resources[0]!;
+  resource.effectiveState = 'unconfigured';
+  resource.provenance.declarations = [];
+  delete resource.provenance.winner;
+  resource.ownership = { kind: 'ad_managed' };
+  resource.management = {
+    status: 'managed',
+    actions: [
+      { action: 'inspect', availability: 'available' },
+      { action: 'install', availability: 'confirmation_required' },
+      {
+        action: 'remove',
+        availability: 'unavailable',
+        limitation: {
+          code: 'skill_not_installed',
+          messageKey: 'agents.resources.skillNotInstalled',
+        },
+      },
+    ],
+  };
+  return next;
+}
+
+function actionPreview() {
+  const current = actionableInventory();
+  const resource = current.skills.resources[0]!;
+  return {
+    workspaceKey: current.workspace.key,
+    resourceKey: resource.key,
+    action: 'install' as const,
+    plan: {
+      id: 'plan:install-review',
+      agentId: 'codex',
+      context,
+      changes: [
+        {
+          resource: {
+            installationId: context.installationId,
+            projectPath: context.projectPath,
+            kind: 'skills' as const,
+            scope: 'project' as const,
+            logicalId: resource.logicalId,
+          },
+          kind: 'create' as const,
+          target: {
+            id: 'target:sha256:review-install',
+            kind: 'agent_resource' as const,
+            display: 'Project Skill review',
+          },
+          scope: 'project' as const,
+          dependencies: [],
+          activationImpact: [],
+        },
+      ],
+      requiredAcknowledgements: [],
+      riskFingerprint: 'risk:sha256:install-review',
+      expiresAt: '2026-08-01T09:00:00Z',
+    },
+  };
+}
+
 describe('AgentCollectionPanel', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
     inspectProjectAgentWorkspace.mockReset().mockResolvedValue(inventory());
+    previewProjectCollectionAction.mockReset();
+    applyProjectCollectionAction.mockReset();
   });
 
   it('renders backend-owned effective state, provenance, health, and partial coverage', async () => {
@@ -222,5 +297,39 @@ describe('AgentCollectionPanel', () => {
     render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Inventory failed');
+  });
+
+  it('previews and applies only backend-offered project actions', async () => {
+    const available = actionableInventory();
+    inspectProjectAgentWorkspace.mockResolvedValue(available);
+    previewProjectCollectionAction.mockResolvedValue(actionPreview());
+    applyProjectCollectionAction.mockResolvedValue({
+      workspaceKey: available.workspace.key,
+      outcome: 'changed',
+      issues: [],
+    });
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Install: Review available' }));
+    expect(previewProjectCollectionAction).toHaveBeenCalledWith(
+      context.installationId,
+      context.projectPath,
+      {
+        workspaceKey: available.workspace.key,
+        inventoryRevision: available.revision,
+        resourceKey: available.skills.resources[0]!.key,
+        action: 'install',
+      },
+    );
+    expect(await screen.findByText('Review changes')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove: Review available' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(applyProjectCollectionAction).toHaveBeenCalledWith(
+      'plan:install-review',
+      context,
+      'risk:sha256:install-review',
+    );
+    expect(await screen.findByText('Applied')).toBeInTheDocument();
   });
 });

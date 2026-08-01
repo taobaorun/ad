@@ -11,6 +11,7 @@ import {
   ResourceScopeSchema,
   InventoryRevisionSchema,
   JsonValueSchema,
+  MutationPlanViewSchema,
   WorkspaceKeySchema,
   ResourceRefSchema,
 } from '@/lib/agentTypes';
@@ -210,6 +211,22 @@ export const ProjectWorkspaceInventorySchema = z
     diagnostics: z.array(ItemDiagnosticSchema).default([]),
   })
   .strict();
+export const ProjectCollectionActionRequestSchema = z
+  .object({
+    workspaceKey: WorkspaceKeySchema,
+    inventoryRevision: InventoryRevisionSchema,
+    resourceKey: ResourceKeySchema,
+    action: ResourceActionSchema,
+  })
+  .strict();
+export const ProjectCollectionActionPreviewSchema = z
+  .object({
+    workspaceKey: WorkspaceKeySchema,
+    resourceKey: ResourceKeySchema,
+    action: ResourceActionSchema,
+    plan: MutationPlanViewSchema,
+  })
+  .strict();
 
 export type CoverageStatus = z.infer<typeof CoverageStatusSchema>;
 export type ItemDiagnostic = z.infer<typeof ItemDiagnosticSchema>;
@@ -238,3 +255,5 @@ export type SettingsLayerView = z.infer<typeof SettingsLayerViewSchema>;
 export type SettingsEditableTargetView = z.infer<typeof SettingsEditableTargetViewSchema>;
 export type SettingsEffectiveView = z.infer<typeof SettingsEffectiveViewSchema>;
 export type ProjectWorkspaceInventory = z.infer<typeof ProjectWorkspaceInventorySchema>;
+export type ProjectCollectionActionRequest = z.infer<typeof ProjectCollectionActionRequestSchema>;
+export type ProjectCollectionActionPreview = z.infer<typeof ProjectCollectionActionPreviewSchema>;
