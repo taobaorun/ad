@@ -137,6 +137,8 @@
     "title": "历史记录",
     "operationTitle": "操作历史",
     "operationEmpty": "暂无 Agent 操作记录。",
+    "loading": "正在刷新操作历史…",
+    "loaded": "操作历史已是最新。",
     "activationTitle": "旧版激活历史",
     "activationEmpty": "暂无 Profile 激活记录。",
     "refresh": "刷新",
@@ -561,12 +563,22 @@
       "actionCompensated": "操作失败，所有变更均已恢复。",
       "actionPartialFailure": "操作仅部分完成，请检查回执后再继续。",
       "actionFailed": "项目资源操作失败。"
+    },
+    "plan": {
+      "impact": {
+        "configuration": "更改项目最终生效的配置",
+        "instructions": "更改 Coding Agent 加载的指令",
+        "codeExecution": "更改 Coding Agent 可使用的代码或运行时入口",
+        "permissions": "更改 Coding Agent 的权限"
+      }
     }
   },
   "agentWorkspace": {
     "tabs": {
+      "label": "项目 Agent 工作区",
       "settings": "配置",
-      "resources": "Skills 与 Plugins"
+      "resources": "Skills 与 Plugins",
+      "history": "历史"
     },
     "settingsUnavailable": "当前 Agent 与项目上下文不支持配置管理。",
     "resourcesUnavailable": "选择 Agent installation 后才能管理 Skills 与 Plugins。",
@@ -611,6 +623,9 @@
     "skills": "Skills",
     "plugins": "Plugins",
     "empty": "没有找到匹配的 Skill 或 Plugin。",
+    "workspaceEmpty": "当前项目工作区中未观察到 Skill 或 Plugin。",
+    "noMatches": "没有符合当前筛选条件的 Skill 或 Plugin。",
+    "categoryEmpty": "未观察到 {{category}}。",
     "coverageCount": "显示 {{visible}} 项 / 观察到 {{observed}} 个声明",
     "coverage": {
       "partial": "当前为部分清单。已验证资源仍会显示，但不会把未知位置宣称为完整覆盖。",
@@ -648,6 +663,16 @@
     "enable": "启用 {{name}}",
     "disable": "禁用 {{name}}",
     "applySuccess": "已应用",
+    "applyFailed": "操作失败，请检查错误后重试。",
+    "applyDetached": "正在为当前项目应用。你可以离开此页面，结果仍会保存在历史中。",
+    "viewHistory": "查看历史",
+    "viewReceipt": "查看回执",
+    "noChange": "无需变更。",
+    "outcome": {
+      "external": "此操作需要在 AD 外部完成，项目资源未发生变更。",
+      "unsupported": "当前项目工作区不支持此操作。",
+      "conflict": "项目资源存在冲突，操作已停止。"
+    },
     "compensated": "应用失败；所有集合变更均已恢复。",
     "partialFailure": "应用仅部分完成；可执行回滚。",
     "rollback": "回滚",
@@ -658,6 +683,20 @@
     "title": "检查变更",
     "description": "AD 会再次校验资源、创建备份，然后应用此计划。",
     "changes": "计划中的资源变更",
+    "risk": {
+      "confirmation": "需要确认",
+      "confirmationDescription": "此操作已绑定当前项目，写入前会再次校验。",
+      "dangerous": "危险权限变更",
+      "dangerousDescription": "此计划会扩大执行或权限边界，应用前请检查每项影响。"
+    },
+    "impact": "影响",
+    "noActivationImpact": "未声明运行时激活影响。",
+    "approval": "批准与权限",
+    "approvalRequired_one": "需要 {{count}} 项显式批准，且批准仅绑定此计划。",
+    "approvalRequired_other": "需要 {{count}} 项显式批准，且批准仅绑定此计划。",
+    "approvalBound": "应用已绑定当前项目、计划版本和风险指纹。",
+    "targets": "目标",
+    "technicalDetails": "技术细节",
     "operation": {
       "create": "创建",
       "replace": "替换",

@@ -120,6 +120,12 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
   }, [load]);
 
   useEffect(() => {
+    const reloadWorkspace = () => void load();
+    window.addEventListener('ad:agent-workspace-changed', reloadWorkspace);
+    return () => window.removeEventListener('ad:agent-workspace-changed', reloadWorkspace);
+  }, [load]);
+
+  useEffect(() => {
     previewRequestRef.current += 1;
     setPlan(null);
     setPlanError(null);

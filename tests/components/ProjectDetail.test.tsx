@@ -2,6 +2,7 @@ import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-li
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectCodexRuntimeCard } from '@/components/ProjectDetail';
+import { TabButton } from '@/components/ProjectDetailSupport';
 import { useProjectCodexRuntimeInspection } from '@/hooks/useProjectCodexRuntimeInspection';
 import i18n from '@/i18n';
 import {
@@ -14,6 +15,7 @@ import {
   resolveBaseProjectContext,
   resolveProjectAgentContext,
 } from '@/lib/projectCodexRuntime';
+import { handleProjectWorkspaceTabKeyDown } from '@/lib/projectWorkspaceTabs';
 
 const { inspectProjectCodexRuntime } = vi.hoisted(() => ({
   inspectProjectCodexRuntime: vi.fn(),
@@ -124,6 +126,36 @@ describe('ProjectCodexRuntimeCard', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Project Codex has not been prepared');
     expect(screen.getByRole('button', { name: 'Preview setup' })).toBeEnabled();
+  });
+});
+
+describe('Project workspace tabs', () => {
+  it('supports arrow-key navigation without relying on pointer input', () => {
+    const openSettings = vi.fn();
+    const openResources = vi.fn();
+    render(
+      <div role="tablist" onKeyDown={handleProjectWorkspaceTabKeyDown}>
+        <TabButton id="settings-tab" panelId="settings-panel" active onClick={openSettings}>
+          Settings
+        </TabButton>
+        <TabButton
+          id="resources-tab"
+          panelId="resources-panel"
+          active={false}
+          onClick={openResources}
+        >
+          Skills &amp; Plugins
+        </TabButton>
+      </div>,
+    );
+
+    const settings = screen.getByRole('tab', { name: 'Settings' });
+    const resources = screen.getByRole('tab', { name: 'Skills & Plugins' });
+    settings.focus();
+    fireEvent.keyDown(settings, { key: 'ArrowRight' });
+
+    expect(resources).toHaveFocus();
+    expect(openResources).toHaveBeenCalledOnce();
   });
 });
 
