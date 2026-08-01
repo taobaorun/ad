@@ -389,6 +389,47 @@ pub fn head_revision(repo_dir: &Path) -> Result<String> {
     }
 }
 
+/// Resolve the immutable commit currently selected by a remote source request.
+pub fn resolve_remote_revision(remote_url: &str, branch: Option<&str>) -> Result<String> {
+    validate_remote_url(remote_url)?;
+    if let Some(branch) = branch {
+        validate_ref(branch)?;
+    }
+    let git = TrustedGit::discover()?;
+    let reference = branch
+        .map(|branch| format!("refs/heads/{branch}"))
+        .unwrap_or_else(|| "HEAD".into());
+    let output = checked_output(
+        git.run(
+            [
+                "ls-remote".to_owned(),
+                "--exit-code".to_owned(),
+                remote_url.to_owned(),
+                reference.clone(),
+            ],
+            None,
+        )?,
+        "Git remote revision inspection",
+    )?;
+    let mut matches = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.split_once('\t'))
+        .filter(|(_, remote_ref)| *remote_ref == reference)
+        .map(|(revision, _)| revision.to_owned())
+        .collect::<Vec<_>>();
+    matches.sort();
+    matches.dedup();
+    let revision = matches
+        .pop()
+        .filter(|_| matches.is_empty())
+        .ok_or_else(|| anyhow!("Git remote returned an ambiguous revision"))?;
+    if revision.len() != 40 || !revision.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Err(anyhow!("Git remote returned an invalid commit revision"))
+    } else {
+        Ok(revision)
+    }
+}
+
 /// Read the configured origin URL without relying on the GUI process PATH.
 pub fn remote_url(repo_dir: &Path) -> Result<String> {
     let git = TrustedGit::discover()?;

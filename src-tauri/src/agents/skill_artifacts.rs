@@ -86,6 +86,7 @@ pub struct StagedSkillArtifact {
     artifact_root: PathBuf,
     manifest: StoredArtifactManifest,
     reference: SkillArtifactRef,
+    _lease: File,
     published: bool,
 }
 
@@ -127,6 +128,7 @@ pub fn stage_skill_source(source: &SkillSource) -> Result<StagedSkillArtifact, S
     std::fs::create_dir(&operation_root).map_err(|source| io_error(&operation_root, source))?;
     std::fs::set_permissions(&operation_root, std::fs::Permissions::from_mode(0o700))
         .map_err(|source| io_error(&operation_root, source))?;
+    let lease = super::skill_artifact_lease::acquire_staging_lease(&operation_root)?;
 
     let result = (|| {
         let (source_root, mut source_revision) = materialize_source(source, &operation_root)?;
@@ -182,6 +184,7 @@ pub fn stage_skill_source(source: &SkillSource) -> Result<StagedSkillArtifact, S
             artifact_root,
             manifest,
             reference,
+            _lease: lease,
             published: false,
         })
     })();
@@ -189,6 +192,28 @@ pub fn stage_skill_source(source: &SkillSource) -> Result<StagedSkillArtifact, S
         let _ = std::fs::remove_dir_all(&operation_root);
     }
     result
+}
+
+pub fn observe_skill_source_revision(source: &SkillSource) -> Result<String, SkillArtifactError> {
+    match source.source_type {
+        SkillSourceType::Local => {
+            let root = Path::new(&source.url);
+            let canonical = std::fs::canonicalize(root).map_err(|source| io_error(root, source))?;
+            if !canonical.is_dir() {
+                return Err(SkillArtifactError::InvalidSource(
+                    "local source is not a directory".into(),
+                ));
+            }
+            let selected = select_source_root(&canonical, source.subdirectory.as_deref())?;
+            let manifest = inspect_tree(&selected, ArtifactLimits::default())?;
+            Ok(format!("local:{}", manifest.digest()?.as_str()))
+        }
+        SkillSourceType::Git => {
+            crate::fs::git::resolve_remote_revision(&source.url, source.branch.as_deref())
+                .map(|revision| format!("git:{revision}"))
+                .map_err(|error| SkillArtifactError::Git(error.to_string()))
+        }
+    }
 }
 
 pub fn publish_staged_skill_artifact(
@@ -270,6 +295,10 @@ pub fn cleanup_unpublished_skill_staging(
         {
             continue;
         }
+        let Some(_lease) = super::skill_artifact_lease::acquire_cleanup_lease(&entry.path())?
+        else {
+            continue;
+        };
         std::fs::remove_dir_all(entry.path()).map_err(|source| io_error(&entry.path(), source))?;
         removed += 1;
     }

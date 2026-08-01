@@ -11,6 +11,7 @@ pub mod projects;
 pub mod scan_roots;
 pub mod settings;
 pub mod shortcut;
+pub mod skill_catalog;
 pub mod skills;
 pub mod terminal;
 

@@ -20,11 +20,15 @@ const DIRECTORY_FLAGS: OFlags = OFlags::RDONLY
 
 #[derive(Debug)]
 pub(super) struct ExecutionState {
+    state: StateDirectory,
     locks: StateDirectory,
     journals: StateDirectory,
     ownership: StateDirectory,
     backups: StateDirectory,
     history: StateDirectory,
+    skill_catalog_journals: StateDirectory,
+    skill_catalog_backups: StateDirectory,
+    skill_catalog_history: StateDirectory,
 }
 
 impl ExecutionState {
@@ -47,19 +51,28 @@ impl ExecutionState {
         let locks = state.open_or_create_directory("execution-locks")?;
         let journals = state.open_or_create_directory("operation-journals")?;
         let ownership = state.open_or_create_directory("resource-ownership")?;
-        let backups = root
-            .open_or_create_directory("backups")?
-            .open_or_create_directory("operations")?;
-        let history = root
-            .open_or_create_directory("history")?
-            .open_or_create_directory("operations")?;
+        let backup_root = root.open_or_create_directory("backups")?;
+        let backups = backup_root.open_or_create_directory("operations")?;
+        let skill_catalog_backups = backup_root.open_or_create_directory("skill-catalog")?;
+        let history_root = root.open_or_create_directory("history")?;
+        let history = history_root.open_or_create_directory("operations")?;
+        let skill_catalog_history = history_root.open_or_create_directory("skill-catalog")?;
+        let skill_catalog_journals = state.open_or_create_directory("skill-catalog-journals")?;
         Ok(Self {
+            state,
             locks,
             journals,
             ownership,
             backups,
             history,
+            skill_catalog_journals,
+            skill_catalog_backups,
+            skill_catalog_history,
         })
+    }
+
+    pub(super) fn state(&self) -> &StateDirectory {
+        &self.state
     }
 
     pub(super) fn locks(&self) -> &StateDirectory {
@@ -80,6 +93,18 @@ impl ExecutionState {
 
     pub(super) fn history(&self) -> &StateDirectory {
         &self.history
+    }
+
+    pub(super) fn skill_catalog_journals(&self) -> &StateDirectory {
+        &self.skill_catalog_journals
+    }
+
+    pub(super) fn skill_catalog_backups(&self) -> &StateDirectory {
+        &self.skill_catalog_backups
+    }
+
+    pub(super) fn skill_catalog_history(&self) -> &StateDirectory {
+        &self.skill_catalog_history
     }
 }
 

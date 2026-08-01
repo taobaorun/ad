@@ -51,6 +51,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(agents::PlanStore::default())
+        .manage(agents::SkillCatalogPlanStore::default())
         .manage(commands::shortcut::ShortcutState::default())
         .setup(|app| {
             // First-run: relocate AD data from ~/.claude/ to ~/.ad/ if needed.
@@ -97,6 +98,31 @@ pub fn run() {
                     );
                 }
                 Err(error) => return Err(std::io::Error::other(error.to_string()).into()),
+            }
+
+            match agents::recover_skill_catalog_state() {
+                Ok(recovery) if recovery.writable() => {
+                    info!(
+                        inspected = recovery.inspected,
+                        recovered = recovery.recovered,
+                        compensated = recovery.compensated,
+                        removed_staging = recovery.removed_staging,
+                        "Skill catalog recovery completed"
+                    );
+                }
+                Ok(recovery) => {
+                    tracing::warn!(
+                        repair_required = recovery.repair_required,
+                        diagnostics = ?recovery.diagnostics,
+                        "Skill catalog recovery requires repair; catalog mutations are blocked"
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        error = %error,
+                        "Skill catalog recovery could not acquire a safe startup state"
+                    );
+                }
             }
 
             // Show the theme-backed main window as navigation starts so the
@@ -232,6 +258,12 @@ pub fn run() {
             commands::skills::apply_project_skills,
             commands::skills::list_plugins,
             commands::skills::toggle_plugin,
+            commands::skill_catalog::list_skill_catalog,
+            commands::skill_catalog::preview_add_skill_catalog_source,
+            commands::skill_catalog::preview_update_skill_catalog_source,
+            commands::skill_catalog::preview_remove_skill_catalog_source,
+            commands::skill_catalog::apply_skill_catalog_source_plan,
+            commands::skill_catalog::inspect_legacy_skill_state,
         ])
         .build(tauri::generate_context!())
         .expect("error while building ad")
