@@ -1,14 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 
 use super::execution_confinement::{capture_project_root_identity, ProjectRootIdentity};
 
 use super::{
-    AcknowledgementRequirement, AgentError, AgentErrorCode, ContentDigest, MutationPlan,
-    MutationPlanView, OperationKind, OwnershipRestore, PhysicalTargetId, PlanAcknowledgement,
-    PlanAcknowledgementCode, PlanId, PlanRiskLevel, ReceiptId, ResourceRef, RiskFingerprint,
+    AcknowledgementRequirement, AgentError, AgentErrorCode, ContentDigest, ConversionReport,
+    MutationPlan, MutationPlanView, OperationKind, OwnershipRestore, PhysicalTargetId,
+    PlanAcknowledgement, PlanAcknowledgementCode, PlanId, PlanRiskLevel, ReceiptId, ResourceRef,
+    RiskFingerprint,
 };
 
 #[derive(Default)]
@@ -21,6 +22,7 @@ struct StoredPlan {
     plan: MutationPlan,
     required_acknowledgements: Vec<AcknowledgementRequirement>,
     intent: PlanExecutionIntent,
+    conversion_report: Option<Arc<ConversionReport>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,6 +122,42 @@ impl PlanStore {
         self.insert_with_acknowledgements_at(plan, Utc::now(), requirements)
     }
 
+    pub fn insert_conversion(
+        &self,
+        plan: MutationPlan,
+        requirements: Vec<AcknowledgementRequirement>,
+        report: ConversionReport,
+    ) -> Result<MutationPlanView, AgentError> {
+        let intent = PlanExecutionIntent::apply(&plan)?;
+        self.insert_with_intent_at(
+            plan,
+            Utc::now(),
+            requirements,
+            intent,
+            Some(Arc::new(report)),
+        )
+    }
+
+    pub fn conversion_report(&self, plan_id: &PlanId) -> Result<ConversionReport, AgentError> {
+        let report = {
+            let state = self.state.lock().map_err(|_| lock_error())?;
+            state
+                .active
+                .get(plan_id)
+                .and_then(|stored| stored.conversion_report.clone())
+                .ok_or_else(|| {
+                    plan_error(
+                        AgentErrorCode::InvalidPlan,
+                        None,
+                        None,
+                        "Mutation plan is not a conversion plan",
+                        false,
+                    )
+                })?
+        };
+        Ok((*report).clone())
+    }
+
     pub fn insert_workspace_action(
         &self,
         plan: MutationPlan,
@@ -156,6 +194,7 @@ impl PlanStore {
                 risk: PlanRiskLevel::Confirmation,
             }],
             intent,
+            None,
         )
     }
 
@@ -174,6 +213,7 @@ impl PlanStore {
                 risk: PlanRiskLevel::Confirmation,
             }],
             intent,
+            None,
         )
     }
 
@@ -311,7 +351,7 @@ impl PlanStore {
         requirements: Vec<AcknowledgementRequirement>,
     ) -> Result<MutationPlanView, AgentError> {
         let intent = PlanExecutionIntent::apply(&plan)?;
-        self.insert_with_intent_at(plan, now, requirements, intent)
+        self.insert_with_intent_at(plan, now, requirements, intent, None)
     }
 
     fn insert_with_intent_at(
@@ -320,6 +360,7 @@ impl PlanStore {
         now: DateTime<Utc>,
         requirements: Vec<AcknowledgementRequirement>,
         intent: PlanExecutionIntent,
+        conversion_report: Option<Arc<ConversionReport>>,
     ) -> Result<MutationPlanView, AgentError> {
         plan.validate()?;
         if plan.expires_at <= now {
@@ -350,6 +391,7 @@ impl PlanStore {
                 plan,
                 required_acknowledgements: requirements,
                 intent,
+                conversion_report,
             },
         );
         Ok(view)

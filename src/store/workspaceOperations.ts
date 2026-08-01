@@ -1,84 +1,30 @@
-import { create } from 'zustand';
-
-import { formatAgentError } from '@/lib/agentErrors';
 import type { WorkspaceOperationReport } from '@/lib/agentOperationReports';
 import type { WorkspaceKey } from '@/lib/agentTypes';
+import {
+  createDetachedOperationTracker,
+  type TrackedDetachedOperation,
+} from '@/store/detachedOperations';
 
 export const WORKSPACE_OPERATION_FINISHED_EVENT = 'ad:agent-operation-finished';
 
-export type TrackedWorkspaceOperation = {
-  operationId: string;
-  status: 'applying' | 'complete' | 'partial_failure' | 'failed';
-  startedAt: string;
-  finishedAt?: string;
-  report?: WorkspaceOperationReport;
-  error?: string;
-};
+const tracker = createDetachedOperationTracker<WorkspaceOperationReport>({
+  mismatchMessage: 'Workspace operation returned a result for a different workspace',
+  onFinished: dispatchFinished,
+});
 
-interface WorkspaceOperationsState {
-  operations: Record<string, TrackedWorkspaceOperation>;
-}
-
-export const useWorkspaceOperations = create<WorkspaceOperationsState>(() => ({
-  operations: {},
-}));
-
-const pending = new Map<string, Promise<WorkspaceOperationReport>>();
+export type TrackedWorkspaceOperation = TrackedDetachedOperation<WorkspaceOperationReport>;
+export const useWorkspaceOperations = tracker.useOperations;
 
 export function runDetachedWorkspaceOperation(
   workspaceKey: WorkspaceKey,
   operationId: string,
   apply: () => Promise<WorkspaceOperationReport>,
 ): Promise<WorkspaceOperationReport> {
-  const existing = pending.get(workspaceKey);
-  if (existing) return existing;
-
-  const startedAt = new Date().toISOString();
-  updateOperation(workspaceKey, {
-    operationId,
-    status: 'applying',
-    startedAt,
-  });
-  const task = apply()
-    .then((report) => {
-      if (report.workspaceKey !== workspaceKey) {
-        throw new Error('Workspace operation returned a result for a different workspace');
-      }
-      updateOperation(workspaceKey, {
-        operationId,
-        status: report.outcome === 'partial_failure' ? 'partial_failure' : 'complete',
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        report,
-      });
-      dispatchFinished(workspaceKey);
-      return report;
-    })
-    .catch((error: unknown) => {
-      updateOperation(workspaceKey, {
-        operationId,
-        status: 'failed',
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        error: formatAgentError(error),
-      });
-      dispatchFinished(workspaceKey);
-      throw error;
-    })
-    .finally(() => pending.delete(workspaceKey));
-  pending.set(workspaceKey, task);
-  return task;
+  return tracker.run(workspaceKey, operationId, apply);
 }
 
 export function resetWorkspaceOperationTracker(): void {
-  pending.clear();
-  useWorkspaceOperations.setState({ operations: {} });
-}
-
-function updateOperation(workspaceKey: WorkspaceKey, operation: TrackedWorkspaceOperation): void {
-  useWorkspaceOperations.setState((state) => ({
-    operations: { ...state.operations, [workspaceKey]: operation },
-  }));
+  tracker.reset();
 }
 
 function dispatchFinished(workspaceKey: WorkspaceKey): void {

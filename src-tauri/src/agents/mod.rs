@@ -14,6 +14,7 @@ mod collection_inventory;
 mod collection_management;
 mod collection_skills;
 mod conversion;
+mod conversion_reports;
 mod conversion_route;
 mod discovery;
 mod execution;
@@ -74,6 +75,7 @@ pub use conversion::{
     convert_claude_profile_to_codex, ArtifactDisposition, ConversionArtifact, ConversionEndpoint,
     ConversionResolutionKind, ConversionRiskLevel, ConversionSummary, ResolutionRequirement,
 };
+pub(crate) use conversion_reports::*;
 pub use conversion_route::*;
 pub use discovery::*;
 pub use execution::*;

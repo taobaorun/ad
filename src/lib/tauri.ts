@@ -26,6 +26,7 @@ import {
   AgentInstallationSchema,
   AgentMetadataSchema,
   ConversionProgressEventSchema,
+  ConversionReportSchema,
   ConversionPreviewSchema,
   ConversionRoutePreviewSchema,
   MutationPlanViewSchema,
@@ -40,6 +41,7 @@ import {
   type CapabilityDescriptor,
   type ConversionPreview,
   type ConversionProgressEvent,
+  type ConversionReport,
   type ConversionRoutePreview,
   type InstallationId,
   type MutationPlanView,
@@ -95,6 +97,7 @@ export interface ClaudeToCodexOptions {
   confirmedSkillIds?: string[];
   profileId?: string;
   inheritBaseConfig?: boolean;
+  safeSubset?: boolean;
 }
 
 export interface ClaudeProcess {
@@ -256,8 +259,8 @@ export const tauri = {
     expectedContext: AgentContext,
     expectedRiskFingerprint: MutationPlanView['riskFingerprint'],
     acknowledgements: PlanAcknowledgement[],
-  ): Promise<OperationReceipt> =>
-    OperationReceiptSchema.parse(
+  ): Promise<ConversionReport> =>
+    ConversionReportSchema.parse(
       await invoke<unknown>('apply_conversion_plan', {
         planId,
         expectedContext,

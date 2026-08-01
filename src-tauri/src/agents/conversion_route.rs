@@ -10,13 +10,14 @@ use super::conversion::{
     ConversionSummary, FieldMapping,
 };
 use super::execution_fs::observe_target;
+use super::settings_inventory::{merge_semantic_value, settings_value_contains_sensitive_data};
 use super::{
     builtin_registry, prepare_project_plugin_install, render_project_codex_runtime_manifest,
     AdapterRegistry, AgentAdapter, AgentContext, AgentError, AgentErrorCode, AgentId,
-    ClaudePluginDescriptor, CollectionInstallRequest, ContentDigest, MutationPlan,
-    MutationPlanView, PlanId, PlannedMutation, PluginInstallProgress, ProjectCodexRuntimeManifest,
-    ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin, ResourceRef, ResourceScope,
-    ResourceSnapshot, SettingsEdit, WritePolicy,
+    ClaudePluginDescriptor, CollectionInstallRequest, ContentDigest, ConversionReport,
+    MutationPlan, MutationPlanView, PlanId, PlannedMutation, PluginInstallProgress,
+    ProjectCodexRuntimeManifest, ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin,
+    ResourceRef, ResourceScope, ResourceSnapshot, SettingsEdit, WritePolicy,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,6 +27,8 @@ pub struct ConversionRoutePreview {
     pub target_agent_id: AgentId,
     pub artifacts: Vec<ConversionArtifact>,
     pub summary: ConversionSummary,
+    pub report: ConversionReport,
+    pub safe_subset: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<MutationPlanView>,
 }
@@ -55,6 +58,8 @@ pub struct ClaudeToCodexOptions {
     pub profile_id: Option<String>,
     #[serde(default = "default_true")]
     pub inherit_base_config: bool,
+    #[serde(default)]
+    pub safe_subset: bool,
 }
 
 impl Default for ClaudeToCodexOptions {
@@ -65,6 +70,7 @@ impl Default for ClaudeToCodexOptions {
             confirmed_skill_ids: BTreeSet::new(),
             profile_id: None,
             inherit_base_config: true,
+            safe_subset: false,
         }
     }
 }
@@ -168,6 +174,20 @@ impl ClaudeToCodexRoute {
                 "Source and target project contexts must match",
             ));
         }
+        if let Some(project_path) = source_context.project_path.as_deref() {
+            let inventory = super::inspect_project_workspace_inventory(
+                &source_context.installation_id,
+                std::path::Path::new(project_path),
+            )?;
+            if inventory.workspace.effective_installation_id != source_context.installation_id
+                || inventory.workspace.canonical_project_path != project_path
+            {
+                return Err(route_error(
+                    source_context,
+                    "Source inventory no longer matches the conversion workspace",
+                ));
+            }
+        }
         let scope = conversion_scope(source_context);
         let source_settings = source_adapter
             .settings()
@@ -179,8 +199,9 @@ impl ClaudeToCodexRoute {
             source_context,
             target_context,
             target_settings,
-            snapshots_in_scope(source_settings.inspect(source_context)?, scope),
+            source_snapshots_for_conversion(source_settings.inspect(source_context)?, scope),
             snapshots_in_scope(target_settings.inspect(target_context)?, scope),
+            scope,
             options,
         )?;
         append_collection_artifacts(
@@ -254,24 +275,23 @@ fn append_collection_artifacts(
         (source_adapter.skills(), target_adapter.skills())
     {
         let targets = snapshots_in_scope(target_port.list(target_context)?, scope);
-        let mut observed_names = BTreeSet::new();
-        for source in snapshots_in_scope(source_port.list(source_context)?, scope) {
+        let sources = effective_skill_sources(source_snapshots_for_conversion(
+            source_port.list(source_context)?,
+            scope,
+        ));
+        for source in sources {
             if source.content.get("scope").and_then(Value::as_str) == Some("none") {
                 continue;
             }
             let name = source.content.get("name").and_then(Value::as_str);
             let target = name.and_then(|name| {
                 targets.iter().find(|target| {
-                    target.resource.scope == source.resource.scope
-                        && target.resource.logical_id == name
+                    target.resource.scope == scope && target.resource.logical_id == name
                 })
             });
             let Some(name) = name else {
                 continue;
             };
-            if !observed_names.insert(name.to_owned()) {
-                continue;
-            }
             unmatched_skill_ids.remove(name);
             let target_resource = target
                 .map(|snapshot| snapshot.resource.clone())
@@ -287,6 +307,7 @@ fn append_collection_artifacts(
             if let Some(artifact) = map_skill_artifact(
                 &source,
                 target_context,
+                scope,
                 target,
                 ResourceLocation {
                     path: target_location,
@@ -1022,6 +1043,33 @@ fn snapshots_in_scope(
         .collect()
 }
 
+fn source_snapshots_for_conversion(
+    snapshots: Vec<ResourceSnapshot>,
+    target_scope: ResourceScope,
+) -> Vec<ResourceSnapshot> {
+    if target_scope == ResourceScope::Project {
+        snapshots
+    } else {
+        snapshots_in_scope(snapshots, ResourceScope::User)
+    }
+}
+
+fn effective_skill_sources(snapshots: Vec<ResourceSnapshot>) -> Vec<ResourceSnapshot> {
+    let mut winners = BTreeMap::new();
+    let mut ordered = snapshots;
+    ordered.sort_by_key(|snapshot| match snapshot.resource.scope {
+        ResourceScope::User => 0,
+        ResourceScope::Project => 1,
+    });
+    for snapshot in ordered {
+        let Some(name) = snapshot.content.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        winners.insert(name.to_owned(), snapshot);
+    }
+    winners.into_values().collect()
+}
+
 fn adapter_for_context<'a>(
     registry: &'a AdapterRegistry,
     context: &AgentContext,
@@ -1080,6 +1128,7 @@ fn build_settings_route(
     target_settings: &dyn super::SettingsPort,
     sources: Vec<ResourceSnapshot>,
     targets: Vec<ResourceSnapshot>,
+    target_scope: ResourceScope,
     options: &ClaudeToCodexOptions,
 ) -> Result<ConversionRoutePlan, AgentError> {
     let mut source_groups = BTreeMap::<ResourceScope, Vec<ResourceSnapshot>>::new();
@@ -1094,7 +1143,7 @@ fn build_settings_route(
             ));
         }
         source_groups
-            .entry(snapshot.resource.scope)
+            .entry(target_scope)
             .or_default()
             .push(snapshot);
     }
@@ -1125,8 +1174,10 @@ fn build_settings_route(
     let mut read_set = Vec::new();
     let mut mutations = Vec::new();
     let mut project_settings_overlay = BTreeMap::new();
+    let tracked_project_settings = tracked_project_settings(target_context)?;
     for (scope, mut scope_sources) in source_groups {
         scope_sources.sort_by_key(|snapshot| source_layer_order(&snapshot.resource.logical_id));
+        let inherited_sensitive_fields = inherited_sensitive_fields(&scope_sources, scope);
         let effective = effective_source_fields(source_context, &scope_sources)?;
         let target_snapshot = target_by_scope.remove(&scope);
         let target_resource = target_snapshot
@@ -1161,9 +1212,17 @@ fn build_settings_route(
             } else {
                 0
             };
-            let Some(mapping) = resolved_setting_mapping(&field, &value, options) else {
+            let Some(mut mapping) = resolved_setting_mapping(&field, &value, options) else {
                 continue;
             };
+            if inherited_sensitive_fields.contains(&field) {
+                mapping.target_values.clear();
+                mapping.disposition = ArtifactDisposition::Unsupported;
+                mapping.resolution = None;
+                mapping.risk = ConversionRiskLevel::Safe;
+                mapping.message =
+                    "Inherited sensitive Settings are never copied into Project scope".into();
+            }
             let id = format!("{}:{field}", source.resource.logical_id);
             let mut disposition = mapping.disposition;
             let mut message = mapping.message;
@@ -1178,7 +1237,9 @@ fn build_settings_route(
                 for (target_key, target_value) in &mapping.target_values {
                     match original.get(target_key) {
                         Some(existing) if existing == target_value => {
-                            if scope == ResourceScope::Project {
+                            if scope == ResourceScope::Project
+                                && !tracked_project_settings.contains(target_key)
+                            {
                                 project_settings_overlay
                                     .insert(target_key.clone(), target_value.clone());
                                 has_project_settings = true;
@@ -1292,6 +1353,19 @@ fn build_settings_route(
     };
     validate_route_plan(&result, source_context, target_context)?;
     Ok(result)
+}
+
+fn tracked_project_settings(context: &AgentContext) -> Result<BTreeSet<String>, AgentError> {
+    let Some(runtime) = super::runtime_for_installation(&context.installation_id) else {
+        return Ok(BTreeSet::new());
+    };
+    super::load_project_codex_runtime_manifest(&runtime)
+        .map_err(|error| route_error(context, error.to_string()))
+        .map(|snapshot| {
+            snapshot
+                .map(|snapshot| snapshot.manifest.project_settings_keys)
+                .unwrap_or_default()
+        })
 }
 
 fn append_marketplace_artifacts(
@@ -1433,6 +1507,8 @@ fn validate_route_plan(
     if result.plan.mutations.iter().any(|mutation| {
         mutation.resource.installation_id != target_context.installation_id
             || mutation.resource.installation_id == source_context.installation_id
+            || target_context.project_path.is_some()
+                && mutation.resource.scope != ResourceScope::Project
     }) {
         return Err(route_error(
             target_context,
@@ -1461,20 +1537,46 @@ fn effective_source_fields(
             route_error(context, "Claude settings snapshot must be a JSON object")
         })?;
         for (field, value) in object {
-            fields.insert(
-                field.clone(),
-                (ConversionEndpoint::from(snapshot), value.clone()),
-            );
+            let endpoint = ConversionEndpoint::from(snapshot);
+            match fields.get_mut(field) {
+                Some((current_endpoint, current_value)) => {
+                    merge_semantic_value(current_value, value);
+                    *current_endpoint = endpoint;
+                }
+                None => {
+                    fields.insert(field.clone(), (endpoint, value.clone()));
+                }
+            }
         }
     }
     Ok(fields)
 }
 
+fn inherited_sensitive_fields(
+    snapshots: &[ResourceSnapshot],
+    target_scope: ResourceScope,
+) -> BTreeSet<String> {
+    if target_scope != ResourceScope::Project {
+        return BTreeSet::new();
+    }
+    snapshots
+        .iter()
+        .filter(|snapshot| snapshot.resource.scope == ResourceScope::User)
+        .filter_map(|snapshot| snapshot.content.as_object())
+        .flat_map(|fields| fields.iter())
+        .filter(|(field, value)| {
+            settings_value_contains_sensitive_data(&format!("/{field}"), value)
+        })
+        .map(|(field, _)| field.clone())
+        .collect()
+}
+
 fn source_layer_order(logical_id: &str) -> u8 {
     match logical_id {
-        "user-settings" | "project-shared" => 0,
-        "project-local" => 1,
-        _ => 2,
+        "user-settings" => 0,
+        "project-shared" => 1,
+        "project-local" => 2,
+        _ => 3,
     }
 }
 

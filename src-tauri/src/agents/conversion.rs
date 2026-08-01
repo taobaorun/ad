@@ -279,6 +279,7 @@ pub(super) fn map_claude_setting(field: &str, value: &Value) -> Option<FieldMapp
 pub(super) fn map_skill_artifact(
     source: &ResourceSnapshot,
     target_context: &AgentContext,
+    target_scope: ResourceScope,
     target: Option<&ResourceSnapshot>,
     target_location: ResourceLocation,
     confirmed: bool,
@@ -291,12 +292,7 @@ pub(super) fn map_skill_artifact(
     let target_resource = target
         .map(|snapshot| snapshot.resource.clone())
         .unwrap_or_else(|| {
-            collection_target(
-                target_context,
-                ResourceKind::Skills,
-                source.resource.scope,
-                name,
-            )
+            collection_target(target_context, ResourceKind::Skills, target_scope, name)
         });
     let (disposition, resolution, message) = match target {
         Some(target) if locations_are_equivalent(source, target) => (
