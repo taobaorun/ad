@@ -176,6 +176,7 @@ pub fn run() {
             commands::agents::discover_agents,
             commands::agents::list_agent_capabilities,
             commands::agents::resolve_agent_context,
+            commands::agents::resolve_project_agent_workspace,
             commands::agents::inspect_agent_settings,
             commands::agents::list_agent_settings_documents,
             commands::agents::list_agent_skills,

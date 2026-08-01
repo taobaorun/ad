@@ -8,7 +8,7 @@ use crate::agents::{
     PlanAcknowledgementCode, PlanId, PlanRiskLevel, PlanStore, ProcessObservation, ProfileId,
     ProjectCodexRuntime, ProjectCodexRuntimeStatus, ReadPrecondition, ReceiptId, ResourceKind,
     ResourceRef, ResourceScope, ResourceSnapshot, RiskFingerprint, SettingsDocument, SettingsEdit,
-    WritePolicy,
+    WorkspaceDescriptor, WritePolicy,
 };
 use crate::models::ProfileFile;
 use tauri::{ipc::Channel, Manager, State};
@@ -180,6 +180,17 @@ pub fn resolve_agent_context(
         installation_id,
         project_path,
     })
+}
+
+#[tauri::command]
+pub fn resolve_project_agent_workspace(
+    installation_id: InstallationId,
+    project_path: String,
+) -> Result<WorkspaceDescriptor, AgentError> {
+    crate::agents::resolve_project_agent_workspace(
+        &installation_id,
+        std::path::Path::new(&project_path),
+    )
 }
 
 #[tauri::command]

@@ -92,10 +92,9 @@ pub(super) fn ownership_workspace_key(resource: &ResourceRef) -> Result<Workspac
 
 pub(super) fn workspace_key_for_context(context: &AgentContext) -> Option<WorkspaceKey> {
     let project_path = context.project_path.as_deref()?;
-    Some(WorkspaceKey::from(opaque_contract_id(
-        "ownership-workspace",
-        &[context.installation_id.as_str(), project_path],
-    )))
+    super::resolve_project_agent_workspace(&context.installation_id, Path::new(project_path))
+        .ok()
+        .map(|workspace| workspace.key)
 }
 
 pub(super) fn load_ownership_record(

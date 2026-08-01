@@ -155,6 +155,33 @@ fn seed_existing_directory_ownership(plan: &MutationPlan, registry: &AdapterRegi
     }
 }
 
+#[test]
+#[serial_test::serial(home_env)]
+fn ownership_workspace_key_matches_the_backend_workspace_descriptor() {
+    let temp = tempfile::tempdir().unwrap();
+    std::env::set_var("AD_HOME", temp.path());
+    std::env::remove_var("CODEX_HOME");
+    std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let canonical_project = std::fs::canonicalize(project).unwrap();
+    let installation = builtin_registry()
+        .discover()
+        .into_iter()
+        .find(|item| item.agent_id.as_str() == "claude-code")
+        .unwrap();
+    let descriptor = resolve_project_agent_workspace(&installation.id, &canonical_project).unwrap();
+    let resource = ResourceRef {
+        installation_id: installation.id,
+        project_path: Some(canonical_project.to_string_lossy().into_owned()),
+        kind: ResourceKind::Skills,
+        scope: ResourceScope::Project,
+        logical_id: "demo".into(),
+    };
+
+    assert_eq!(ownership_workspace_key(&resource).unwrap(), descriptor.key);
+}
+
 fn setup_project_claude_skill() -> (
     tempfile::TempDir,
     AdapterRegistry,
