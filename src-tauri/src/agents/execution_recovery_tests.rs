@@ -177,10 +177,31 @@ fn applying_with_a_complete_receipt_is_reconciled_as_committed() {
 }
 
 #[test]
+#[serial_test::serial(home_env)]
 fn applying_receipt_replays_missing_ownership_before_commit() {
     let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(temp.path().join(".codex")).unwrap();
+    std::fs::create_dir_all(&project).unwrap();
+    let previous_home = std::env::var("AD_HOME").ok();
+    let previous_codex_home = std::env::var("CODEX_HOME").ok();
+    std::env::set_var("AD_HOME", temp.path());
+    std::env::remove_var("CODEX_HOME");
+    let installation = builtin_registry()
+        .discover()
+        .into_iter()
+        .find(|installation| installation.agent_id.as_str() == "codex")
+        .unwrap();
+    let canonical_project = std::fs::canonicalize(project)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
     let state = ExecutionState::open_at(&temp.path().join(".ad")).unwrap();
-    let plan = plan("ownership-recovery-plan");
+    let mut plan = plan("ownership-recovery-plan");
+    plan.context.installation_id = installation.id.clone();
+    plan.context.project_path = Some(canonical_project.clone());
+    plan.mutations[0].resource.installation_id = installation.id;
+    plan.mutations[0].resource.project_path = Some(canonical_project);
     let receipt_id = ReceiptId::from("ownership-recovery-receipt");
     let mut journal = OperationJournalHandle::prepare(
         &plan,
@@ -270,6 +291,14 @@ fn applying_receipt_replays_missing_ownership_before_commit() {
         load_ownership_record(&state, &resource).unwrap(),
         Some(record)
     );
+    match previous_home {
+        Some(value) => std::env::set_var("AD_HOME", value),
+        None => std::env::remove_var("AD_HOME"),
+    }
+    match previous_codex_home {
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
+    }
 }
 
 #[test]

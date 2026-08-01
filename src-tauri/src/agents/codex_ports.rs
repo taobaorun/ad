@@ -110,6 +110,19 @@ impl SettingsPort for CodexSettingsPort {
         context: &AgentContext,
         edit: SettingsEdit,
     ) -> Result<MutationPlan, AgentError> {
+        if edit.media_type == "application/vnd.ad.project-settings+json" {
+            return super::codex_plugins::plan_project_runtime_semantic_settings_edit(
+                context, &edit,
+            )?
+            .ok_or_else(|| {
+                agent_error(
+                    AgentErrorCode::Unsupported,
+                    context,
+                    Some(edit.resource),
+                    "Project Codex settings require a prepared Project Runtime",
+                )
+            });
+        }
         if edit.resource.scope == ResourceScope::Project
             && edit.resource.logical_id == "project-config"
         {

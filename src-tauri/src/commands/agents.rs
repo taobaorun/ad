@@ -6,9 +6,10 @@ use crate::agents::{
     ConversionProgressEvent, ConversionRoutePreview, ExecutionEngine, InstallationId,
     MutationPlanView, OperationHistoryEntry, OperationReceipt, PlanAcknowledgement,
     PlanAcknowledgementCode, PlanId, PlanRiskLevel, PlanStore, ProcessObservation, ProfileId,
-    ProjectCodexRuntime, ProjectCodexRuntimeStatus, ReadPrecondition, ReceiptId, ResourceKind,
-    ResourceRef, ResourceScope, ResourceSnapshot, RiskFingerprint, SettingsDocument, SettingsEdit,
-    WorkspaceDescriptor, WritePolicy,
+    ProjectCodexRuntime, ProjectCodexRuntimeStatus, ProjectWorkspaceInventory, ReadPrecondition,
+    ReceiptId, ResourceKind, ResourceLocation, ResourceOrigin, ResourceRef, ResourceScope,
+    ResourceSnapshot, RiskFingerprint, SettingsDocument, SettingsEdit, WorkspaceDescriptor,
+    WritePolicy,
 };
 use crate::models::ProfileFile;
 use tauri::{ipc::Channel, Manager, State};
@@ -46,6 +47,38 @@ pub fn inspect_agent_settings(context: AgentContext) -> Result<Vec<ResourceSnaps
 pub fn list_agent_settings_documents(
     context: AgentContext,
 ) -> Result<Vec<SettingsDocument>, AgentError> {
+    if let Some(project_path) = context.project_path.as_deref() {
+        let inventory = crate::agents::inspect_project_workspace_inventory(
+            &context.installation_id,
+            std::path::Path::new(project_path),
+        )?;
+        return Ok(inventory
+            .settings
+            .editable_targets
+            .iter()
+            .filter_map(|target| {
+                let layer = inventory
+                    .settings
+                    .layers
+                    .iter()
+                    .find(|layer| layer.declaration.key == target.declaration_key)?;
+                Some(SettingsDocument {
+                    resource: target.resource.clone(),
+                    location: ResourceLocation {
+                        path: format!(
+                            "workspace://{}/settings/{}",
+                            inventory.workspace.key, layer.logical_id
+                        ),
+                        origin: ResourceOrigin::Project,
+                    },
+                    media_type: target.media_type.clone(),
+                    content: layer.content.clone(),
+                    exists: target.exists,
+                    digest: None,
+                })
+            })
+            .collect());
+    }
     with_context_adapter(&context, |adapter| {
         adapter
             .settings()
@@ -188,6 +221,17 @@ pub fn resolve_project_agent_workspace(
     project_path: String,
 ) -> Result<WorkspaceDescriptor, AgentError> {
     crate::agents::resolve_project_agent_workspace(
+        &installation_id,
+        std::path::Path::new(&project_path),
+    )
+}
+
+#[tauri::command]
+pub fn inspect_project_agent_workspace(
+    installation_id: InstallationId,
+    project_path: String,
+) -> Result<ProjectWorkspaceInventory, AgentError> {
+    crate::agents::inspect_project_workspace_inventory(
         &installation_id,
         std::path::Path::new(&project_path),
     )
@@ -1271,7 +1315,7 @@ mod tests {
 
     #[test]
     #[serial_test::serial(home_env)]
-    fn settings_documents_exclude_native_project_config_targets() {
+    fn project_settings_documents_do_not_expose_user_targets() {
         let temp = tempfile::tempdir().unwrap();
         let codex_home = temp.path().join(".codex");
         let project = temp.path().join("project");
@@ -1298,17 +1342,7 @@ mod tests {
         };
         let documents = list_agent_settings_documents(context).unwrap();
 
-        assert_eq!(documents.len(), 1);
-        let user_document = &documents[0];
-        assert_eq!(
-            user_document.resource.scope,
-            crate::agents::ResourceScope::User
-        );
-        assert!(!user_document.exists);
-        assert_eq!(
-            user_document.content,
-            serde_json::Value::String(String::new())
-        );
+        assert!(documents.is_empty());
 
         match previous_home {
             Some(value) => std::env::set_var("AD_HOME", value),
@@ -1322,7 +1356,7 @@ mod tests {
 
     #[test]
     #[serial_test::serial(home_env)]
-    fn settings_documents_accept_managed_project_runtime_symlink() {
+    fn legacy_project_runtime_without_manifest_exposes_no_editable_document() {
         let temp = tempfile::tempdir().unwrap();
         let codex_home = temp.path().join(".codex");
         let project = temp.path().join("project");
@@ -1362,12 +1396,7 @@ mod tests {
 
         let documents = list_agent_settings_documents(context).unwrap();
 
-        assert_eq!(documents.len(), 1);
-        assert_eq!(documents[0].resource.logical_id, "runtime-config");
-        assert_eq!(
-            documents[0].content,
-            serde_json::Value::String("model = \"runtime\"\n".into())
-        );
+        assert!(documents.is_empty());
 
         match previous_home {
             Some(value) => std::env::set_var("AD_HOME", value),
