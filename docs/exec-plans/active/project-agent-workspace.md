@@ -72,6 +72,10 @@
 - [ ] (2026-08-01 10:43+08:00 开始) M0：冻结 workspace contract 并加固ExecutionEngine（验证标准：Rust/TS contract、AD-state targets、fd-relative confinement、跨进程锁、synced crash recovery、legacy receipt与rollback-plan tests通过）
   - [x] (2026-08-01 11:06+08:00) U1：Rust/TypeScript workspace、resource/declaration/target identity、coverage/provenance/ownership/item action、sanitized plan与domain report契约完成；25个前端契约测试、Rust parity/operations/capability测试及typecheck通过。
   - [ ] U10：sealed target接入执行、fd-relative confinement、跨进程锁、journal/startup recovery、versioned receipt、ownership与inverse rollback plan。
+    - [x] (2026-08-01 11:22+08:00) 跨进程target lock与durable journal基础：真实子进程争用3/3、lock 2/2、journal 3/3、execution 14/14、PlanStore 11/11及严格Clippy通过；receipt file/parent sync后才提交journal，补偿和repair-required路径有持久状态。
+    - [ ] fd-relative/no-follow confinement、unsafe root拒绝与ancestor-swap测试。
+    - [ ] startup recovery/global recovery lock、mutation command gate与process-kill边界矩阵。
+    - [ ] versioned receipt/history decoder、ownership record与fresh inverse rollback plan。
 - [ ] M1：实现 effective inventory 与分层 Settings（验证标准：Claude/Codex provenance、coverage、canonical context测试通过）
 - [ ] M2：引入 immutable Skill artifact 和安全 source acquisition（验证标准：更新项目A不改变B，migration fixtures幂等）
 - [ ] M3：补齐 Skills/Plugins item lifecycle planners（验证标准：install/toggle/update/remove的支持与退化矩阵通过）
@@ -107,6 +111,8 @@
   证据：当前History decoder、`fs/git.rs` login-shell说明、Settings/conversion数据流与adapter discovery逻辑。
 - 发现：U1契约直接追加到既有`operations.rs`、`capabilities.rs`和`agentTypes.ts`会使三个核心文件越过项目约定的单文件规模，继续扩展会再次形成难以控制的边界。
   证据：首次实现后文件分别达到713、534和707行；集成审查后拆为`workspace_contracts.rs`、`resource_inventory.rs`、`agentWorkspaceTypes.ts`、`agentResourceInventoryTypes.ts`与`agentOperationReports.ts`，原文件回落到396、362和490行。
+- 发现：首次journal接线遗漏了“执行失败且补偿成功，但失败回执持久化失败”分支，该分支会把journal留在`applying`；同时prepared记录没有固定计划使用的receipt id，不利于启动恢复精确关联History。
+  证据：主代理集成审查新增`failure_receipt_persistence_still_records_compensation`回归测试，并为journal加入`plannedReceiptId`；修复后ExecutionEngine聚焦测试14/14通过。
 
 ## 决策日志
 
@@ -130,6 +136,9 @@
   日期/作者：2026-08-01 / Codex（ce-doc-review）
 - 决策：U1按workspace identity、inventory view、public plan/report三个边界拆分模块，同时保持Rust `agents`公共导出语义不变。
   理由：契约会被U3/U4/U5持续扩展，提前建立模块边界可避免再次把所有Agent语义堆入单文件。
+  日期/作者：2026-08-01 / Codex
+- 决策：跨进程advisory lock直接使用lockfile中已有的`rustix 1.1` `flock` API，只将`fs` feature声明为直接依赖。
+  理由：满足macOS非阻塞排他锁与显式unlock需求，不增加新的crate或手写unsafe syscall；锁文件只承载version/instance/operation元数据。
   日期/作者：2026-08-01 / Codex
 
 ## 结果回顾

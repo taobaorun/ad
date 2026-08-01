@@ -107,6 +107,14 @@ pub fn project_codex_runtimes_dir() -> Result<PathBuf, FsError> {
     Ok(state_dir()?.join("codex-project-runtimes"))
 }
 
+pub fn execution_locks_dir() -> Result<PathBuf, FsError> {
+    Ok(state_dir()?.join("execution-locks"))
+}
+
+pub fn operation_journals_dir() -> Result<PathBuf, FsError> {
+    Ok(state_dir()?.join("operation-journals"))
+}
+
 pub fn projects_state_path() -> Result<PathBuf, FsError> {
     Ok(state_dir()?.join("projects.json"))
 }
@@ -206,6 +214,14 @@ mod tests {
             assert_eq!(
                 project_codex_runtimes_dir().unwrap(),
                 home.join(".ad/state/codex-project-runtimes")
+            );
+            assert_eq!(
+                execution_locks_dir().unwrap(),
+                home.join(".ad/state/execution-locks")
+            );
+            assert_eq!(
+                operation_journals_dir().unwrap(),
+                home.join(".ad/state/operation-journals")
             );
             assert_eq!(
                 projects_state_path().unwrap(),

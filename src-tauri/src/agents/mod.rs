@@ -11,6 +11,8 @@ mod conversion_route;
 mod discovery;
 mod execution;
 mod execution_fs;
+mod execution_journal;
+mod execution_lock;
 mod execution_targets;
 #[cfg(test)]
 mod execution_tests;
@@ -39,6 +41,8 @@ pub use conversion_route::*;
 pub use discovery::*;
 pub use execution::*;
 pub use execution_fs::directory_tree_digest;
+pub use execution_journal::*;
+pub use execution_lock::*;
 pub use operations::*;
 pub use plan_store::*;
 pub use plugin_conversion::*;

@@ -103,6 +103,47 @@ fn execution_backs_up_all_targets_before_atomic_writes() {
         .join(".ad/history/operations")
         .join(format!("{}.json", receipt.id))
         .is_file());
+    let journals = std::fs::read_dir(temp.path().join(".ad/state/operation-journals"))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(journals.len(), 1);
+    let journal_bytes = std::fs::read(journals[0].path()).unwrap();
+    let journal: serde_json::Value = serde_json::from_slice(&journal_bytes).unwrap();
+    assert_eq!(journal["schemaVersion"], 1);
+    assert_eq!(journal["operationId"], plan_id.as_str());
+    assert_eq!(journal["plannedReceiptId"], receipt.id.as_str());
+    assert_eq!(journal["state"], "committed");
+    assert!(!String::from_utf8(journal_bytes)
+        .unwrap()
+        .contains("permissions"));
+}
+
+#[test]
+#[serial_test::serial(home_env)]
+fn applying_journal_failure_happens_before_target_writes() {
+    let (temp, store, plan_id, shared, local) = setup_two_file_plan();
+    let faults = FailAt::new([ExecutionStep::PersistJournalApplying]);
+
+    let error = ExecutionEngine
+        .apply_with_faults(&plan_id, &store, &faults)
+        .unwrap_err();
+
+    assert_eq!(error.code, AgentErrorCode::Io);
+    assert_eq!(std::fs::read(shared).unwrap(), br#"{"model":"old"}"#);
+    assert_eq!(
+        std::fs::read(local).unwrap(),
+        br#"{"permissions":{"allow":[]}}"#
+    );
+    let journal_path = std::fs::read_dir(temp.path().join(".ad/state/operation-journals"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let journal: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(journal_path).unwrap()).unwrap();
+    assert_eq!(journal["state"], "prepared");
 }
 
 #[test]
@@ -167,6 +208,15 @@ fn compensation_failure_returns_a_partial_receipt() {
         std::fs::read(&local).unwrap(),
         br#"{"permissions":{"allow":[]}}"#
     );
+    let journal_path = std::fs::read_dir(_temp.path().join(".ad/state/operation-journals"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let journal: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(journal_path).unwrap()).unwrap();
+    assert_eq!(journal["state"], "repair_required");
 
     let rollback = ExecutionEngine.rollback(&receipt.id).unwrap();
 
@@ -343,7 +393,7 @@ fn partial_unregistered_project_runtime_can_be_rolled_back() {
 #[test]
 #[serial_test::serial(home_env)]
 fn receipt_persistence_failure_compensates_all_writes() {
-    let (_temp, store, plan_id, shared, local) = setup_two_file_plan();
+    let (temp, store, plan_id, shared, local) = setup_two_file_plan();
     let faults = FailAt::new([ExecutionStep::PersistReceipt]);
 
     let error = ExecutionEngine
@@ -357,6 +407,42 @@ fn receipt_persistence_failure_compensates_all_writes() {
         std::fs::read(local).unwrap(),
         br#"{"permissions":{"allow":[]}}"#
     );
+    let journal_path = std::fs::read_dir(temp.path().join(".ad/state/operation-journals"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let journal: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(journal_path).unwrap()).unwrap();
+    assert_eq!(journal["state"], "compensated");
+}
+
+#[test]
+#[serial_test::serial(home_env)]
+fn failure_receipt_persistence_still_records_compensation() {
+    let (temp, store, plan_id, shared, local) = setup_two_file_plan();
+    let faults = FailAt::new([ExecutionStep::Apply(1), ExecutionStep::PersistReceipt]);
+
+    let error = ExecutionEngine
+        .apply_with_faults(&plan_id, &store, &faults)
+        .unwrap_err();
+
+    assert_eq!(error.code, AgentErrorCode::Io);
+    assert_eq!(std::fs::read(shared).unwrap(), br#"{"model":"old"}"#);
+    assert_eq!(
+        std::fs::read(local).unwrap(),
+        br#"{"permissions":{"allow":[]}}"#
+    );
+    let journal_path = std::fs::read_dir(temp.path().join(".ad/state/operation-journals"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let journal: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(journal_path).unwrap()).unwrap();
+    assert_eq!(journal["state"], "compensated");
 }
 
 #[test]
