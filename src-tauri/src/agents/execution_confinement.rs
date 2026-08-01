@@ -13,6 +13,7 @@ use rustix::fs::{
 use crate::fs::paths::{ad_home, claude_dir, codex_dir};
 
 use super::execution_fs::TargetState;
+use super::execution_state::{ExecutionState, StateDirectory};
 use super::{AgentError, AgentErrorCode, ResourceRef};
 
 const DIRECTORY_FLAGS: OFlags = OFlags::RDONLY
@@ -184,15 +185,36 @@ impl ConfinedTarget {
             .map_err(|error| self.io_error(error))
     }
 
-    pub(super) fn copy_directory_to(&self, destination: &Path) -> Result<(), AgentError> {
+    pub(super) fn write_directory_from(&self, source: &StateDirectory) -> Result<(), AgentError> {
+        let parent = self
+            .parent(true)?
+            .expect("creating target parents always returns a directory");
+        super::execution_tree::write_directory_atomic_from(
+            &parent,
+            self.name.as_os_str(),
+            source.fd(),
+        )
+        .map_err(|error| self.io_error(error))
+    }
+
+    pub(super) fn copy_directory_to(
+        &self,
+        destination: &StateDirectory,
+        name: &str,
+    ) -> Result<(), AgentError> {
         let parent = self.parent(false)?.ok_or_else(|| {
             self.io_error(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "Directory target parent no longer exists",
             ))
         })?;
-        super::execution_tree::copy_directory_to(&parent, self.name.as_os_str(), destination)
-            .map_err(|error| self.io_error(error))
+        super::execution_tree::copy_directory_to(
+            &parent,
+            self.name.as_os_str(),
+            destination.fd(),
+            OsStr::new(name),
+        )
+        .map_err(|error| self.io_error(error))
     }
 
     fn parent(&self, create: bool) -> Result<Option<OwnedFd>, AgentError> {
@@ -240,55 +262,6 @@ impl ConfinedTarget {
     }
 }
 
-pub(super) fn validate_ad_managed_root() -> Result<(), AgentError> {
-    let root = ad_home().map_err(|error| ad_root_error(error.to_string()))?;
-    if !root.exists() {
-        std::fs::create_dir(&root).map_err(|error| ad_root_error(error.to_string()))?;
-        std::fs::set_permissions(
-            &root,
-            <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700),
-        )
-        .map_err(|error| ad_root_error(error.to_string()))?;
-    }
-    let fd = open(&root, DIRECTORY_FLAGS, Mode::empty())
-        .map_err(|error| ad_root_error(error.to_string()))?;
-    validate_directory_fd(&fd, &root).map_err(ad_root_error)?;
-    let state = ensure_ad_directory(&fd, "state", &root.join("state"))?;
-    ensure_ad_directory(
-        &state,
-        "execution-locks",
-        &root.join("state/execution-locks"),
-    )?;
-    ensure_ad_directory(
-        &state,
-        "operation-journals",
-        &root.join("state/operation-journals"),
-    )?;
-    let backups = ensure_ad_directory(&fd, "backups", &root.join("backups"))?;
-    ensure_ad_directory(&backups, "operations", &root.join("backups/operations"))?;
-    let history = ensure_ad_directory(&fd, "history", &root.join("history"))?;
-    ensure_ad_directory(&history, "operations", &root.join("history/operations"))?;
-    Ok(())
-}
-
-fn ensure_ad_directory(
-    parent: &OwnedFd,
-    name: &str,
-    display_path: &Path,
-) -> Result<OwnedFd, AgentError> {
-    let fd = match openat(parent, name, DIRECTORY_FLAGS, Mode::empty()) {
-        Ok(fd) => fd,
-        Err(rustix::io::Errno::NOENT) => {
-            mkdirat(parent, name, Mode::RWXU).map_err(|error| ad_root_error(error.to_string()))?;
-            openat(parent, name, DIRECTORY_FLAGS, Mode::empty())
-                .map_err(|error| ad_root_error(error.to_string()))?
-        }
-        Err(error) => return Err(ad_root_error(error.to_string())),
-    };
-    validate_directory_fd(&fd, display_path).map_err(ad_root_error)?;
-    Ok(fd)
-}
-
 fn trusted_root(resource: &ResourceRef, target: &Path) -> Result<PathBuf, AgentError> {
     if let Some(root) = trusted_scoped_root(resource, target)? {
         return Ok(root);
@@ -331,7 +304,7 @@ fn trusted_scoped_root(
             .as_ref()
             .is_some_and(|root| target.starts_with(root))
     {
-        validate_ad_managed_root()?;
+        ExecutionState::open().map_err(|error| confinement_error(resource, error.to_string()))?;
         return std::fs::canonicalize(&ad_root)
             .map(Some)
             .map_err(|error| confinement_error(resource, error.to_string()));
@@ -474,18 +447,6 @@ fn confinement_error(resource: &ResourceRef, message: impl Into<String>) -> Agen
         agent_id: None,
         installation_id: Some(resource.installation_id.clone()),
         resource: Some(resource.clone()),
-        retryable: false,
-        details: None,
-    }
-}
-
-fn ad_root_error(message: impl Into<String>) -> AgentError {
-    AgentError {
-        code: AgentErrorCode::PermissionDenied,
-        message: format!("Unsafe AD data root: {}", message.into()),
-        agent_id: None,
-        installation_id: None,
-        resource: None,
         retryable: false,
         details: None,
     }

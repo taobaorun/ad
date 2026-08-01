@@ -19,8 +19,12 @@ const DIRECTORY_FLAGS: OFlags = OFlags::RDONLY
 
 pub(super) fn directory_digest(parent: &OwnedFd, name: &OsStr) -> std::io::Result<ContentDigest> {
     let root = openat(parent, name, DIRECTORY_FLAGS, Mode::empty())?;
+    directory_digest_fd(&root)
+}
+
+pub(super) fn directory_digest_fd(root: &OwnedFd) -> std::io::Result<ContentDigest> {
     let mut encoded = Vec::new();
-    digest_entries(&root, Path::new(""), &mut encoded)?;
+    digest_entries(root, Path::new(""), &mut encoded)?;
     Ok(ContentDigest::sha256(&encoded))
 }
 
@@ -34,7 +38,6 @@ pub(super) fn write_directory_atomic(
         return Err(invalid_data("Directory source is not a physical directory"));
     }
     let temporary = sibling_name(name, "tmp");
-    let previous = sibling_name(name, "previous");
     mkdirat(parent, temporary.as_os_str(), Mode::RWXU)?;
     let temporary_fd = openat(
         parent,
@@ -56,26 +59,58 @@ pub(super) fn write_directory_atomic(
         let _ = remove_entry(parent, temporary.as_os_str());
         return Err(error);
     }
+    publish_directory(parent, name, temporary.as_os_str())
+}
 
+pub(super) fn write_directory_atomic_from(
+    parent: &OwnedFd,
+    name: &OsStr,
+    source: &OwnedFd,
+) -> std::io::Result<()> {
+    let metadata = fstat(source)?;
+    let temporary = sibling_name(name, "tmp");
+    mkdirat(parent, temporary.as_os_str(), Mode::RWXU)?;
+    let temporary_fd = openat(
+        parent,
+        temporary.as_os_str(),
+        DIRECTORY_FLAGS,
+        Mode::empty(),
+    )?;
+    let populated = copy_fd_entries(source, &temporary_fd)
+        .and_then(|()| {
+            fchmod(&temporary_fd, Mode::from_raw_mode(metadata.st_mode as _))
+                .map_err(std::io::Error::from)
+        })
+        .and_then(|()| fsync(&temporary_fd).map_err(Into::into));
+    drop(temporary_fd);
+    if let Err(error) = populated {
+        let _ = remove_entry(parent, temporary.as_os_str());
+        return Err(error);
+    }
+    publish_directory(parent, name, temporary.as_os_str())
+}
+
+fn publish_directory(parent: &OwnedFd, name: &OsStr, temporary: &OsStr) -> std::io::Result<()> {
+    let previous = sibling_name(name, "previous");
     let existed = match statat(parent, name, AtFlags::SYMLINK_NOFOLLOW) {
         Ok(_) => true,
         Err(rustix::io::Errno::NOENT) => false,
         Err(error) => {
-            let _ = remove_entry(parent, temporary.as_os_str());
+            let _ = remove_entry(parent, temporary);
             return Err(error.into());
         }
     };
     if existed {
         if let Err(error) = renameat(parent, name, parent, previous.as_os_str()) {
-            let _ = remove_entry(parent, temporary.as_os_str());
+            let _ = remove_entry(parent, temporary);
             return Err(error.into());
         }
     }
-    if let Err(error) = renameat(parent, temporary.as_os_str(), parent, name) {
+    if let Err(error) = renameat(parent, temporary, parent, name) {
         if existed {
             let _ = renameat(parent, previous.as_os_str(), parent, name);
         }
-        let _ = remove_entry(parent, temporary.as_os_str());
+        let _ = remove_entry(parent, temporary);
         return Err(error.into());
     }
     fsync(parent)?;
@@ -90,19 +125,25 @@ pub(super) fn write_directory_atomic(
 pub(super) fn copy_directory_to(
     parent: &OwnedFd,
     name: &OsStr,
-    destination: &Path,
+    destination_parent: &OwnedFd,
+    destination_name: &OsStr,
 ) -> std::io::Result<()> {
     let root = openat(parent, name, DIRECTORY_FLAGS, Mode::empty())?;
     let metadata = fstat(&root)?;
-    std::fs::create_dir(destination)?;
-    if let Err(error) = copy_fd_entries(&root, destination) {
-        let _ = std::fs::remove_dir_all(destination);
+    mkdirat(destination_parent, destination_name, Mode::RWXU)?;
+    let destination = openat(
+        destination_parent,
+        destination_name,
+        DIRECTORY_FLAGS,
+        Mode::empty(),
+    )?;
+    if let Err(error) = copy_fd_entries(&root, &destination) {
+        let _ = remove_entry(destination_parent, destination_name);
         return Err(error);
     }
-    std::fs::set_permissions(
-        destination,
-        std::fs::Permissions::from_mode(metadata.st_mode as u32),
-    )
+    fchmod(&destination, Mode::from_raw_mode(metadata.st_mode as _))?;
+    fsync(&destination)?;
+    fsync(destination_parent).map_err(Into::into)
 }
 
 pub(super) fn remove_entry(parent: &OwnedFd, name: &OsStr) -> std::io::Result<()> {
@@ -217,34 +258,43 @@ fn copy_path_entries(source: &Path, relative: &Path, destination: &OwnedFd) -> s
     fsync(destination).map_err(Into::into)
 }
 
-fn copy_fd_entries(source: &OwnedFd, destination: &Path) -> std::io::Result<()> {
+fn copy_fd_entries(source: &OwnedFd, destination: &OwnedFd) -> std::io::Result<()> {
     for name in entry_names(source)? {
-        let target = destination.join(&name);
         let stat = statat(source, name.as_os_str(), AtFlags::SYMLINK_NOFOLLOW)?;
         match FileType::from_raw_mode(stat.st_mode) {
             FileType::Symlink => {
-                std::os::unix::fs::symlink(link_target(source, name.as_os_str())?, target)?
-            }
-            FileType::Directory => {
-                std::fs::create_dir(&target)?;
-                let child = openat(source, name.as_os_str(), DIRECTORY_FLAGS, Mode::empty())?;
-                copy_fd_entries(&child, &target)?;
-                std::fs::set_permissions(
-                    &target,
-                    std::fs::Permissions::from_mode(stat.st_mode as u32),
+                symlinkat(
+                    link_target(source, name.as_os_str())?,
+                    destination,
+                    name.as_os_str(),
                 )?;
             }
+            FileType::Directory => {
+                mkdirat(destination, name.as_os_str(), Mode::RWXU)?;
+                let source_child =
+                    openat(source, name.as_os_str(), DIRECTORY_FLAGS, Mode::empty())?;
+                let destination_child = openat(
+                    destination,
+                    name.as_os_str(),
+                    DIRECTORY_FLAGS,
+                    Mode::empty(),
+                )?;
+                copy_fd_entries(&source_child, &destination_child)?;
+                fchmod(&destination_child, Mode::from_raw_mode(stat.st_mode as _))?;
+                fsync(&destination_child)?;
+            }
             FileType::RegularFile => {
-                std::fs::write(&target, read_file(source, name.as_os_str())?)?;
-                std::fs::set_permissions(
-                    &target,
-                    std::fs::Permissions::from_mode(stat.st_mode as u32),
+                write_file(
+                    destination,
+                    name.as_os_str(),
+                    &read_file(source, name.as_os_str())?,
+                    stat.st_mode as u32,
                 )?;
             }
             _ => return Err(invalid_data("Unsupported directory entry")),
         }
     }
-    Ok(())
+    fsync(destination).map_err(Into::into)
 }
 
 fn entry_names(directory: &OwnedFd) -> std::io::Result<Vec<OsString>> {
