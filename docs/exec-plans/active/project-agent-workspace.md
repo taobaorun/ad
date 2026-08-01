@@ -91,7 +91,11 @@
   - [x] (2026-08-01 16:01+08:00) Immutable Skill artifact tree与staging/publish服务完成：规范manifest覆盖相对path、节点类型、内容digest和执行位；排除Git/cache，限制depth/count/file/total bytes与磁盘保留量，拒绝hardlink、special file、absolute/逃逸/循环symlink及copy期间drift。artifact按tree digest只读发布，使用macOS no-replace rename；复用前完整复验manifest/tree，collision或篡改不覆盖。activation impact记录instruction、hook/MCP/command、script/binary与执行位；artifact/staging测试8/8与严格Clippy通过。
   - [x] (2026-08-01 16:12+08:00) Source Catalog改为backend签发`skill-source:<uuid>`并通过独立Preview→确认→Apply事务管理；catalog/artifact/backup/journal/receipt均不暴露物理target，source drift、catalog drift、过期/重放/risk变化fail closed。跨进程catalog lock、staging flock lease、atomic catalog publish、崩溃后receipt补写/补偿和corrupt journal mutation gate完成；删除Source只删catalog entry，不物理删除artifact或legacy checkout。定向execution/recovery/migration测试10/10、Rust全量319 passed/1 ignored及全部integration tests、严格Clippy通过。
   - [x] (2026-08-01 16:22+08:00) Settings的Skill Source入口切换到typed catalog与独立risk dialog：先检查完整tree和activation impact，再明确确认发布；刷新明确提示不会升级任何项目，移除明确提示保留project pin与旧artifact，取消计划立即释放staging。旧artifact ref在catalog刷新/移除后仍完整复验，两个独立revision pin互不变化；legacy registry/project/link盘点重复运行字节不变并阻断unsafe ID、path alias与external ownership。前端146/146、typecheck/lint/build通过。
-- [ ] M3：补齐 Skills/Plugins item lifecycle planners（验证标准：install/toggle/update/remove的支持与退化矩阵通过）
+- [x] (2026-08-01 16:23+08:00 开始，16:56+08:00 完成) M3：补齐 Skills/Plugins item lifecycle planners（验证标准：install/toggle/update/remove的支持与退化矩阵通过）
+  - [x] Backend-owned item action pipeline 完成：renderer只提交workspace key、inventory revision、resource key和action；后端重新盘点并自行解析catalog artifact、ownership record和project override，拒绝stale inventory、未提供动作、risk未确认与外部/所有权不明目标。plan/receipt保留workspace与action identity，复用ExecutionEngine补偿和guarded rollback。
+  - [x] Skill生命周期完成：catalog资源按项目显示Install；AD-owned project link显示Enable/Disable、Update与Remove；source刷新后A/B继续pin旧artifact，只有显式Update的项目retarget。Claude旧`skill-library`路径启发式不再作为新artifact所有权，replace/remove必须通过legacy受控路径或精确ownership evidence。
+  - [x] Plugin项目override矩阵完成：Claude/Codex支持安全Enable/Disable和Reset override；仅继承user/shared声明、未准备Codex Runtime、外部更新或marketplace acquisition均明确Unavailable/External，不回退修改user/base配置。shared项目声明不会伪装成可移除的local override。
+  - [x] 第一方Project资源UI已提前接入backend actions与独立Preview→确认→Apply入口；不可用动作保持禁用并展示原因，Plugin Remove明确显示为“重置项目覆盖”。A/B Skill install/update/remove、Plugin local override/user/shared/peer isolation、stale request、external ownership、显式确认、receipt rollback测试5/5；Rust全量324 passed/1 ignored及全部integration suites、严格Clippy，前端147/147、format/lint/typecheck/build通过。
 - [ ] M4：完成统一 Project Agent Workspace UI（验证标准：所有真实动作可从ProjectDetail完成，draft/close行为、partial/stale/empty与可访问状态准确）
 - [ ] M5：让 Conversion 复用 workspace inventory/planners/result（验证标准：有效继承输入、resolver重新preview、safe subset、residual、补偿和rollback通过）
 - [ ] M6：迁移并删除 legacy project写路径（验证标准：旧用户状态可恢复，全仓库无legacy consumer）
@@ -156,6 +160,10 @@
   证据：project filter下context不匹配的receipt仍用于理解继承历史，但统一覆盖为`workspace_mismatch` inspect-only；History组件测试和Rust decoder测试覆盖该边界。
 - 发现：ProjectDetail通常会把prepared Codex runtime context传给资源组件，但盘点期间runtime状态变化时，renderer持有的context仍可能落后于后端签发的effective installation。
   证据：Settings editor改为从`ProjectWorkspaceInventory.workspace`构造mutation context，apply使用plan自身context，rollback优先使用receipt context；定向测试覆盖inventory context与组件输入context不同的情况。
+- 发现：Claude旧`is_ad_managed_symlink`把“link目标位于mutable skill-library”当成所有权；新immutable artifact正确安装后会被该启发式拒绝更新，而任意同目录link也不能因此获得所有权证明。
+  证据：A/B真实catalog lifecycle首次Update在adapter preview阶段失败；改为legacy library containment或project ownership record二选一，并在ExecutionEngine再次校验target/artifact evidence后，A-only Update、unmanaged user link拒绝与guarded rollback同时通过。
+- 发现：Plugin的`Project`层并不等于“可重置的项目覆盖”；Claude shared settings与local settings都属于项目输入，但Reset override只应移除local/runtime声明。
+  证据：inventory observation新增backend-only resettable语义；project B只有shared声明时Remove为Unavailable，项目A local override仍可Enable与Reset，user/shared/peer bytes保持不变。
 
 ## 决策日志
 
@@ -236,6 +244,9 @@
   日期/作者：2026-08-01 / Codex
 - 决策：legacy project Settings documents IPC只映射typed inventory中backend判定可编辑的项目层，并使用opaque workspace URI；user层与raw物理路径不再通过该项目入口返回。
   理由：兼容旧preview调用的同时关闭继承secret和跨scope target泄露，后续U6可在没有新consumer后删除该兼容入口。
+  日期/作者：2026-08-01 / Codex
+- 决策：Project collection action IPC只接受backend签发的workspace/inventory/resource身份和枚举动作；物理`ResourceRef`、path、catalog artifact与ownership record全部在重新盘点后由后端解析。
+  理由：renderer只能请求已展示的用户意图，不能把路径或伪造资源身份升级为写权限；stale inventory、ownership/source drift和未确认risk在plan claim前后分别fail closed。
   日期/作者：2026-08-01 / Codex
 
 ## 结果回顾
