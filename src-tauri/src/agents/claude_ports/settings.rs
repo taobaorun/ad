@@ -140,6 +140,21 @@ impl SettingsPort for ClaudeSettingsPort {
         }
         let path = resolve_settings_path(context, &edit.resource)?;
         let existing = read_optional(&path, context, Some(edit.resource.clone()))?;
+        let mut content = edit.content;
+        if let Some(existing) = existing.as_deref() {
+            let current = serde_json::from_slice(existing).map_err(|error| {
+                agent_error(
+                    AgentErrorCode::InvalidPlan,
+                    context,
+                    Some(edit.resource.clone()),
+                    format!("Invalid existing Claude settings JSON: {error}"),
+                )
+            })?;
+            super::super::settings_inventory::restore_masked_settings_values(
+                &mut content,
+                &current,
+            );
+        }
         let expected_digest = existing.as_deref().map(ContentDigest::sha256);
         let mutation_kind = if existing.is_some() {
             MutationKind::Replace
@@ -167,7 +182,7 @@ impl SettingsPort for ClaudeSettingsPort {
                 kind: mutation_kind,
                 expected_digest,
                 media_type: edit.media_type,
-                content: Some(edit.content),
+                content: Some(content),
             }],
             expires_at: Utc::now() + Duration::minutes(5),
         };

@@ -56,6 +56,10 @@ import {
   type SettingsDocument,
   type JsonValue,
 } from './agentTypes';
+import {
+  ProjectWorkspaceInventorySchema,
+  type ProjectWorkspaceInventory,
+} from './agentResourceInventoryTypes';
 import { WorkspaceDescriptorSchema, type WorkspaceDescriptor } from './agentWorkspaceTypes';
 
 export interface AgentSettingsEdit {
@@ -114,6 +118,13 @@ export const tauri = {
   ): Promise<WorkspaceDescriptor> =>
     WorkspaceDescriptorSchema.parse(
       await invoke<unknown>('resolve_project_agent_workspace', { installationId, projectPath }),
+    ),
+  inspectProjectAgentWorkspace: async (
+    installationId: InstallationId,
+    projectPath: string,
+  ): Promise<ProjectWorkspaceInventory> =>
+    ProjectWorkspaceInventorySchema.parse(
+      await invoke<unknown>('inspect_project_agent_workspace', { installationId, projectPath }),
     ),
   previewClaudeToCodex: async (profile: ProfileFile): Promise<ConversionPreview> =>
     ConversionPreviewSchema.parse(await invoke<unknown>('preview_claude_to_codex', { profile })),

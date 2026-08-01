@@ -569,6 +569,108 @@ pub(super) fn plan_project_runtime_settings_edit(
     Ok(Some(plan))
 }
 
+pub(super) fn plan_project_runtime_semantic_settings_edit(
+    context: &AgentContext,
+    edit: &SettingsEdit,
+) -> Result<Option<MutationPlan>, AgentError> {
+    let Some(runtime) = project_runtime_for_context(context)? else {
+        return Ok(None);
+    };
+    if edit.resource.kind != ResourceKind::Settings
+        || edit.resource.scope != ResourceScope::Project
+        || edit.resource.logical_id != "runtime-config"
+        || edit.resource.installation_id != context.installation_id
+        || edit.resource.project_path != context.project_path
+    {
+        return Ok(None);
+    }
+    let mut proposed = edit.content.clone();
+    if !proposed.is_object() {
+        return Err(agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            Some(edit.resource.clone()),
+            "Project Codex settings must be a JSON object",
+        ));
+    }
+    let config_target = ManagedResourceTarget::file(runtime.runtime_home.join("config.toml"));
+    let config_state = observe_target(&config_target)?;
+    validate_runtime_config_state(context, &runtime, &edit.resource, &config_state)?;
+    let manifest_resource = project_resource(context, "runtime-manifest");
+    let snapshot = load_project_codex_runtime_manifest(&runtime)
+        .map_err(|error| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                Some(manifest_resource),
+                error.to_string(),
+            )
+        })?
+        .ok_or_else(|| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                Some(edit.resource.clone()),
+                "Prepared Project Runtime manifest is missing",
+            )
+        })?;
+    let current_settings = project_settings_from_config(
+        context,
+        &config_state,
+        &snapshot.manifest.project_settings_keys,
+    )?;
+    let current_json = serde_json::to_value(&current_settings).map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            Some(edit.resource.clone()),
+            error.to_string(),
+        )
+    })?;
+    super::settings_inventory::restore_masked_settings_values(&mut proposed, &current_json);
+    let proposed = proposed.as_object().expect("object shape was validated");
+    let mut project_settings = BTreeMap::new();
+    for (key, value) in proposed {
+        let value = toml::Value::try_from(value.clone()).map_err(|error| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                Some(edit.resource.clone()),
+                format!("Invalid Project Codex setting {key}: {error}"),
+            )
+        })?;
+        project_settings.insert(key.clone(), value);
+    }
+    let base_home = base_home(context, &runtime.base_installation_id)?;
+    let base_config = if snapshot.manifest.applied_inherit_base_config {
+        read_optional(&base_home.join("config.toml"), context, None)?
+    } else {
+        None
+    };
+    let synthesized = synthesize_project_codex_config_with_settings(
+        base_config.as_deref(),
+        &base_home,
+        &snapshot.manifest.project_overlay,
+        &project_settings,
+    )
+    .map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            Some(edit.resource.clone()),
+            error.to_string(),
+        )
+    })?;
+    plan_project_runtime_settings_edit(
+        context,
+        &SettingsEdit {
+            resource: edit.resource.clone(),
+            media_type: "application/toml".into(),
+            content: serde_json::Value::String(synthesized.content),
+        },
+    )
+}
+
 impl ResourcePort for CodexPluginsPort {
     fn resolve(
         &self,

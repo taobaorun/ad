@@ -84,6 +84,7 @@
 - [ ] (2026-08-01 14:35+08:00 开始) M1：实现 effective inventory 与分层 Settings（验证标准：Claude/Codex provenance、coverage、canonical context测试通过）
   - [x] (2026-08-01 14:50+08:00) Canonical WorkspaceDescriptor 后端签发入口完成：项目真实路径、base/effective installation 与 prepared Codex runtime revision 统一生成 workspace identity，ownership workspace key 改为复用同一签名。路径别名、同名不同项目、base/runtime 收敛、unknown/mismatched installation 及 Rust/TypeScript IPC 边界测试通过。
   - [x] (2026-08-01 14:56+08:00) ProjectWorkspaceInventory、InventoryRevision、AdapterDiscoveryContract、Settings effective/layer/field/editable-target/sensitivity 契约完成 Rust/Zod 同构；严格 schema 测试证明 unknown 字段被拒绝、未验证 Agent 版本保持 partial、敏感值边界只允许遮罩形态。
+  - [x] (2026-08-01 15:25+08:00) Backend effective inventory 与分层 Settings 读取/编辑服务完成：Claude user/shared/local 与 Codex base/native-project/runtime-manifest 的 field winner、provenance、health、coverage 由后端统一解析；generated Codex config 不作为声明。敏感值在 IPC 前遮罩，私有 digest 仍使 secret rotation 改变 inventory revision；project edit 只提交项目语义层并由后端恢复遮罩字段、保留未知字段。Claude/Codex fixture、legacy project Settings IPC 限界、ownership recovery 与严格 Clippy 通过。
 - [ ] M2：引入 immutable Skill artifact 和安全 source acquisition（验证标准：更新项目A不改变B，migration fixtures幂等）
 - [ ] M3：补齐 Skills/Plugins item lifecycle planners（验证标准：install/toggle/update/remove的支持与退化矩阵通过）
 - [ ] M4：完成统一 Project Agent Workspace UI（验证标准：所有真实动作可从ProjectDetail完成，draft/close行为、partial/stale/empty与可访问状态准确）

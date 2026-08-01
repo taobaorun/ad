@@ -10,6 +10,7 @@ import {
   ResourceKindSchema,
   ResourceScopeSchema,
   InventoryRevisionSchema,
+  JsonValueSchema,
   WorkspaceKeySchema,
   ResourceRefSchema,
 } from '@/lib/agentTypes';
@@ -152,14 +153,14 @@ export const SettingsFieldDeclarationViewSchema = z
   .object({
     declarationKey: DeclarationKeySchema,
     layer: ResourceLayerSchema,
-    value: z.unknown(),
+    value: JsonValueSchema,
     sensitivity: SettingsValueSensitivitySchema,
   })
   .strict();
 export const SettingsFieldViewSchema = z
   .object({
     path: z.string().min(1),
-    value: z.unknown(),
+    value: JsonValueSchema,
     sensitivity: SettingsValueSensitivitySchema,
     declarations: z.array(SettingsFieldDeclarationViewSchema).default([]),
     winner: DeclarationKeySchema,
@@ -170,7 +171,7 @@ export const SettingsLayerViewSchema = z
     declaration: ResourceDeclarationViewSchema,
     logicalId: z.string().min(1),
     mediaType: z.string().min(1),
-    content: z.unknown(),
+    content: JsonValueSchema,
     exists: z.boolean(),
     editable: z.boolean(),
     preservesUnknownFields: z.boolean(),
@@ -191,7 +192,7 @@ export const SettingsEffectiveViewSchema = z
   .object({
     workspaceKey: WorkspaceKeySchema,
     coverage: CategoryCoverageSchema,
-    effectiveContent: z.unknown(),
+    effectiveContent: JsonValueSchema,
     fields: z.array(SettingsFieldViewSchema).default([]),
     layers: z.array(SettingsLayerViewSchema).default([]),
     editableTargets: z.array(SettingsEditableTargetViewSchema).default([]),

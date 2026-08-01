@@ -185,6 +185,16 @@ describe('Agent schemas', () => {
     expect(inventory.discovery.compatibility).toBe('unverified');
     expect(inventory.settings.fields[0]?.value).toBe('••••••••');
     expect(JSON.stringify(inventory)).not.toContain('secret-value');
+    const settingsWithoutEffective = { ...inventory.settings } as Partial<
+      typeof inventory.settings
+    >;
+    delete settingsWithoutEffective.effectiveContent;
+    expect(
+      ProjectWorkspaceInventorySchema.safeParse({
+        ...inventory,
+        settings: settingsWithoutEffective,
+      }).success,
+    ).toBe(false);
     expect(
       ProjectWorkspaceInventorySchema.safeParse({
         ...inventory,
