@@ -84,17 +84,6 @@ pub(super) fn render_content(mutation: &PlannedMutation) -> Result<Vec<u8>, Agen
     }
 }
 
-pub(super) fn remove_target(path: &Path) -> Result<(), AgentError> {
-    match std::fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
-            std::fs::remove_dir_all(path).map_err(|error| standalone_io_error(path, error))
-        }
-        Ok(_) => std::fs::remove_file(path).map_err(|error| standalone_io_error(path, error)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(standalone_io_error(path, error)),
-    }
-}
-
 pub fn directory_tree_digest(root: &Path) -> Result<ContentDigest, std::io::Error> {
     directory_tree_digest_filtered(root, |_| Ok(true))
 }
@@ -350,27 +339,6 @@ fn remove_path(path: &Path) -> Result<(), std::io::Error> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
     }
-}
-
-pub(super) fn write_symlink_atomic(target: &Path, source: &Path) -> Result<(), std::io::Error> {
-    let parent = target.parent().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Symlink target has no parent",
-        )
-    })?;
-    std::fs::create_dir_all(parent)?;
-    let name = target
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("link");
-    let temporary = parent.join(format!(".{name}.tmp.{}", uuid::Uuid::new_v4().simple()));
-    std::os::unix::fs::symlink(source, &temporary)?;
-    if let Err(error) = std::fs::rename(&temporary, target) {
-        let _ = std::fs::remove_file(&temporary);
-        return Err(error);
-    }
-    Ok(())
 }
 
 fn content_error(mutation: &PlannedMutation, error: serde_json::Error) -> AgentError {
