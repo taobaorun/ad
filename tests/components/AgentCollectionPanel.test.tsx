@@ -1,72 +1,35 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentCollectionPanel } from '@/components/AgentCollectionPanel';
 import i18n from '@/i18n';
-import {
-  AgentContextSchema,
-  CapabilityDescriptorSchema,
-  MutationPlanViewSchema,
-  ResourceSnapshotSchema,
-} from '@/lib/agentTypes';
+import { ProjectWorkspaceInventorySchema } from '@/lib/agentResourceInventoryTypes';
+import { AgentContextSchema, CapabilityDescriptorSchema } from '@/lib/agentTypes';
 
-const {
-  listAgentSkills,
-  listAgentPlugins,
-  previewAgentCollectionToggle,
-  applyAgentPlan,
-  previewAgentRollback,
-  applyAgentRollbackPlan,
-} = vi.hoisted(() => ({
-  listAgentSkills: vi.fn(),
-  listAgentPlugins: vi.fn(),
-  previewAgentCollectionToggle: vi.fn(),
-  applyAgentPlan: vi.fn(),
-  previewAgentRollback: vi.fn(),
-  applyAgentRollbackPlan: vi.fn(),
+const { inspectProjectAgentWorkspace } = vi.hoisted(() => ({
+  inspectProjectAgentWorkspace: vi.fn(),
 }));
 
 vi.mock('@/lib/tauri', () => ({
-  tauri: {
-    listAgentSkills,
-    listAgentPlugins,
-    previewAgentCollectionToggle,
-    applyAgentPlan,
-    previewAgentRollback,
-    applyAgentRollbackPlan,
-  },
+  tauri: { inspectProjectAgentWorkspace },
 }));
 
 const context = AgentContextSchema.parse({
   installationId: 'codex:default',
   projectPath: '/Users/test/project',
 });
-const skill = ResourceSnapshotSchema.parse({
-  resource: {
-    installationId: 'codex:default',
-    projectPath: '/Users/test/project',
-    kind: 'skills',
-    scope: 'project',
-    logicalId: 'review',
-  },
-  location: { path: '/Users/test/project/.agents/skills/review', origin: 'project' },
-  mediaType: 'application/vnd.ad.skill+json',
-  content: { name: 'Review', enabled: true },
-  digest: 'sha256:skill',
-  observedAt: '2026-07-15T01:00:00Z',
-});
 const capabilities = CapabilityDescriptorSchema.array().parse([
   {
     kind: 'skills',
     scopes: ['user', 'project'],
-    operations: ['list', 'enable', 'disable', 'preview', 'apply'],
+    operations: ['list'],
     availability: 'available',
     limitations: [],
   },
   {
     kind: 'plugins',
-    scopes: ['user'],
-    operations: ['list', 'enable', 'disable', 'preview', 'apply'],
+    scopes: ['user', 'project'],
+    operations: ['list'],
     availability: 'degraded',
     limitations: [
       {
@@ -76,6 +39,126 @@ const capabilities = CapabilityDescriptorSchema.array().parse([
     ],
   },
 ]);
+
+function inventory(model = 'current', key = 'workspace:sha256:project') {
+  const coverage = {
+    status: 'partial',
+    observed: 1,
+    visible: 1,
+    diagnostics: [
+      {
+        code: 'agent_version_unverified',
+        messageKey: 'agents.inventory.agentVersionUnverified',
+      },
+    ],
+  } as const;
+  return ProjectWorkspaceInventorySchema.parse({
+    schemaVersion: 1,
+    workspace: {
+      schemaVersion: 1,
+      key,
+      revision: `workspace-revision:sha256:${model}`,
+      agentId: 'codex',
+      canonicalProjectPath: '/Users/test/project',
+      baseInstallationId: 'codex:default',
+      effectiveInstallationId: 'codex:default',
+    },
+    revision: `inventory-revision:sha256:${model}`,
+    discovery: {
+      adapterVersion: 1,
+      locationSet: 'codex-project-v1',
+      schemaVersions: ['codex-config-toml-v1'],
+      verifiedAgentVersions: [],
+      compatibility: 'unverified',
+    },
+    settings: {
+      workspaceKey: key,
+      coverage: { ...coverage, observed: 0, visible: 0 },
+      effectiveContent: {},
+      fields: [],
+      layers: [],
+      editableTargets: [],
+    },
+    skills: {
+      workspaceKey: key,
+      agentId: 'codex',
+      kind: 'skills',
+      coverage,
+      resources: [
+        {
+          key: `resource:sha256:review-${model}`,
+          kind: 'skills',
+          logicalId: `review-${model}`,
+          displayName: `Review ${model}`,
+          description: 'Reviews the active change',
+          effectiveState: 'enabled',
+          provenance: {
+            declarations: [
+              {
+                key: 'declaration:sha256:review',
+                layer: 'project',
+                sourceId: 'catalog:team',
+                targetId: 'target:sha256:review',
+                scope: 'project',
+              },
+            ],
+            winner: 'declaration:sha256:review',
+          },
+          ownership: { kind: 'external' },
+          health: { status: 'healthy' },
+          management: {
+            status: 'read_only',
+            actions: [{ action: 'inspect', availability: 'available' }],
+          },
+        },
+      ],
+    },
+    plugins: {
+      workspaceKey: key,
+      agentId: 'codex',
+      kind: 'plugins',
+      coverage,
+      resources: [
+        {
+          key: `resource:sha256:plugin-${model}`,
+          kind: 'plugins',
+          logicalId: `demo@market-${model}`,
+          displayName: `Demo ${model}`,
+          effectiveState: 'conflict',
+          provenance: {
+            declarations: [
+              {
+                key: 'declaration:sha256:plugin-user',
+                layer: 'user',
+                sourceId: 'agent-plugin:demo',
+                targetId: 'target:sha256:plugin-user',
+                scope: 'user',
+              },
+              {
+                key: 'declaration:sha256:plugin-project',
+                layer: 'runtime',
+                sourceId: 'agent-plugin:demo',
+                targetId: 'target:sha256:plugin-project',
+                scope: 'project',
+              },
+            ],
+            winner: 'declaration:sha256:plugin-project',
+          },
+          ownership: { kind: 'unknown' },
+          health: {
+            status: 'degraded',
+            diagnostic: {
+              code: 'plugin_conflict',
+              messageKey: 'agents.inventory.pluginConflict',
+            },
+          },
+          management: { status: 'read_only', actions: [] },
+        },
+      ],
+    },
+    diagnostics: [],
+  });
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -88,205 +171,56 @@ function deferred<T>() {
 describe('AgentCollectionPanel', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
-    listAgentSkills.mockReset().mockResolvedValue([skill]);
-    listAgentPlugins.mockReset().mockResolvedValue([]);
-    previewAgentCollectionToggle.mockReset().mockResolvedValue({
-      id: 'plan-2',
-      agentId: 'codex',
-      context,
-      changes: [{ resource: skill.resource, kind: 'replace' }],
-      riskFingerprint: 'risk:collection-plan',
-      expiresAt: '2026-07-15T01:05:00Z',
-    });
-    applyAgentPlan.mockReset().mockResolvedValue({
-      id: 'receipt-2',
-      planId: 'plan-2',
-      status: 'complete',
-      appliedResources: [skill.resource],
-      backupPaths: [],
-      postApplyStates: [],
-    });
-    previewAgentRollback.mockReset().mockResolvedValue({
-      id: 'rollback-plan',
-      riskFingerprint: 'risk:collection-rollback',
-    });
-    applyAgentRollbackPlan.mockReset().mockResolvedValue({
-      id: 'rollback-2',
-      planId: 'rollback-plan',
-      status: 'complete',
-      appliedResources: [],
-      backupPaths: [],
-      postApplyStates: [],
-    });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    inspectProjectAgentWorkspace.mockReset().mockResolvedValue(inventory());
   });
 
-  it('previews a collection toggle before applying it', async () => {
-    const runtimeChanged = vi.fn();
-    const workspaceChanged = vi.fn();
-    window.addEventListener('ad:project-codex-runtime-changed', runtimeChanged);
-    window.addEventListener('ad:agent-workspace-changed', workspaceChanged);
+  it('renders backend-owned effective state, provenance, health, and partial coverage', async () => {
     render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
 
-    fireEvent.click(await screen.findByRole('switch', { name: 'Disable Review' }));
-    await waitFor(() =>
-      expect(previewAgentCollectionToggle).toHaveBeenCalledWith(context, skill.resource, false),
-    );
-    expect(applyAgentPlan).not.toHaveBeenCalled();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
-    await waitFor(() =>
-      expect(applyAgentPlan).toHaveBeenCalledWith('plan-2', context, 'risk:collection-plan'),
-    );
-    await waitFor(() => expect(runtimeChanged).toHaveBeenCalledTimes(1));
-    expect(workspaceChanged).toHaveBeenCalledTimes(1);
-    fireEvent.click(await screen.findByRole('button', { name: 'Rollback' }));
-    await waitFor(() => expect(previewAgentRollback).toHaveBeenCalledWith('receipt-2', context));
-    expect(applyAgentRollbackPlan).toHaveBeenCalledWith(
-      'rollback-plan',
-      context,
-      'risk:collection-rollback',
-      true,
-    );
-    await waitFor(() => expect(runtimeChanged).toHaveBeenCalledTimes(2));
-    expect(workspaceChanged).toHaveBeenCalledTimes(2);
-    window.removeEventListener('ad:project-codex-runtime-changed', runtimeChanged);
-    window.removeEventListener('ad:agent-workspace-changed', workspaceChanged);
+    expect(await screen.findByText('Review current')).toBeInTheDocument();
+    expect(screen.getByText('Demo current')).toBeInTheDocument();
+    expect(screen.getByText('Conflict')).toBeInTheDocument();
+    expect(screen.getAllByText(/Read-only/)).toHaveLength(2);
+    expect(screen.getByLabelText('Degraded resource')).toBeInTheDocument();
+    expect(screen.getAllByText(/partial inventory/i)).toHaveLength(2);
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(screen.queryByText('/Users/test/project')).not.toBeInTheDocument();
   });
 
-  it('keeps Skills visible when Plugin loading fails', async () => {
-    listAgentPlugins.mockRejectedValueOnce(new Error('Plugin metadata failed'));
-
+  it('filters typed Skills and Plugins without inspecting raw snapshot content', async () => {
     render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+    await screen.findByText('Review current');
 
-    expect(await screen.findByRole('switch', { name: 'Disable Review' })).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Plugin metadata failed');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'demo' } });
+    expect(screen.queryByText('Review current')).not.toBeInTheDocument();
+    expect(screen.getByText('Demo current')).toBeInTheDocument();
   });
 
-  it('disables toggles that are not allowed by the capability descriptor', async () => {
-    const listOnly = CapabilityDescriptorSchema.array().parse([
-      {
-        kind: 'skills',
-        scopes: ['project'],
-        operations: ['list'],
-        availability: 'available',
-        limitations: [],
-      },
-    ]);
-
-    render(<AgentCollectionPanel context={context} capabilities={listOnly} />);
-
-    expect(await screen.findByRole('switch', { name: 'Disable Review' })).toBeDisabled();
-    expect(previewAgentCollectionToggle).not.toHaveBeenCalled();
-  });
-
-  it('discards a pending collection preview when the Agent context changes', async () => {
-    const pendingPreview = deferred<ReturnType<typeof MutationPlanViewSchema.parse>>();
+  it('ignores inventory responses from a superseded Agent context', async () => {
+    const first = deferred<ReturnType<typeof inventory>>();
+    const second = deferred<ReturnType<typeof inventory>>();
+    inspectProjectAgentWorkspace
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
     const nextContext = AgentContextSchema.parse({
-      installationId: 'codex:project',
+      installationId: 'codex:next',
       projectPath: '/Users/test/project',
     });
-    const nextSkill = ResourceSnapshotSchema.parse({
-      ...skill,
-      resource: {
-        ...skill.resource,
-        installationId: nextContext.installationId,
-        logicalId: 'runtime-review',
-      },
-      content: { name: 'Runtime Review', enabled: true },
-      digest: 'sha256:runtime-skill',
-    });
-    listAgentSkills.mockResolvedValueOnce([skill]).mockResolvedValueOnce([nextSkill]);
-    listAgentPlugins.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
-    previewAgentCollectionToggle.mockReturnValueOnce(pendingPreview.promise);
 
     const { rerender } = render(
       <AgentCollectionPanel context={context} capabilities={capabilities} />,
     );
-    fireEvent.click(await screen.findByRole('switch', { name: 'Disable Review' }));
-    await waitFor(() => expect(previewAgentCollectionToggle).toHaveBeenCalledTimes(1));
-
     rerender(<AgentCollectionPanel context={nextContext} capabilities={capabilities} />);
-    expect(
-      await screen.findByRole('switch', { name: 'Disable Runtime Review' }),
-    ).toBeInTheDocument();
-    await act(async () => {
-      pendingPreview.resolve(
-        MutationPlanViewSchema.parse({
-          id: 'stale-plan',
-          agentId: 'codex',
-          context,
-          changes: [
-            {
-              resource: skill.resource,
-              kind: 'replace',
-              target: {
-                id: 'target:stale-skill',
-                kind: 'agent_resource',
-                display: 'skills/review',
-              },
-              scope: 'project',
-              dependencies: [],
-              activationImpact: [
-                { kind: 'code_execution', summaryKey: 'agents.plan.impact.codeExecution' },
-              ],
-            },
-          ],
-          riskFingerprint: 'risk:stale-skill',
-          expiresAt: '2026-07-15T01:05:00Z',
-        }),
-      );
-    });
-
-    expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
+    second.resolve(inventory('next', 'workspace:sha256:next'));
+    expect(await screen.findByText('Review next')).toBeInTheDocument();
+    await act(async () => first.resolve(inventory('stale')));
+    expect(screen.queryByText('Review stale')).not.toBeInTheDocument();
   });
 
-  it('retains a partial receipt so the collection change can be rolled back', async () => {
-    applyAgentPlan.mockResolvedValueOnce({
-      id: 'partial-receipt',
-      planId: 'plan-2',
-      status: 'partial_failure',
-      appliedResources: [skill.resource],
-      backupPaths: ['/tmp/backup'],
-      postApplyStates: [],
-    });
+  it('shows command failures without fabricating an empty complete inventory', async () => {
+    inspectProjectAgentWorkspace.mockRejectedValueOnce(new Error('Inventory failed'));
     render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
 
-    fireEvent.click(await screen.findByRole('switch', { name: 'Disable Review' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
-
-    expect(
-      await screen.findByText('Apply only completed partially; rollback is available.'),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Rollback' }));
-    await waitFor(() =>
-      expect(previewAgentRollback).toHaveBeenCalledWith('partial-receipt', context),
-    );
-    expect(applyAgentRollbackPlan).toHaveBeenCalledWith(
-      'rollback-plan',
-      context,
-      'risk:collection-rollback',
-      true,
-    );
-  });
-
-  it('reports a compensated receipt without offering rollback', async () => {
-    applyAgentPlan.mockResolvedValueOnce({
-      id: 'compensated-receipt',
-      planId: 'plan-2',
-      status: 'compensated',
-      appliedResources: [skill.resource],
-      backupPaths: ['/tmp/backup'],
-      postApplyStates: [],
-    });
-    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
-
-    fireEvent.click(await screen.findByRole('switch', { name: 'Disable Review' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
-
-    expect(
-      await screen.findByText('Apply failed; all collection changes were restored.'),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Rollback' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Inventory failed');
   });
 });

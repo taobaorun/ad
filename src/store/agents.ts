@@ -10,6 +10,7 @@ import {
   type AgentMetadata,
 } from '@/lib/agentTypes';
 import { z } from 'zod';
+import { requestAgentWorkspaceChange } from '@/lib/workspaceDraftGuard';
 
 const LEGACY_STORAGE_KEY = 'ad.agent-state.v1';
 const STORAGE_KEY = 'ad.agent-context.v2';
@@ -169,6 +170,12 @@ export const useAgents = create<State>((set, get) => ({
       installationId: installation.id,
       projectPath: candidate.id === installation.id ? parsed.data.projectPath : undefined,
     });
+    if (
+      JSON.stringify(activeContext) !== JSON.stringify(get().activeContext) &&
+      !requestAgentWorkspaceChange()
+    ) {
+      return;
+    }
     set({
       activeAgentId: installation.agentId,
       activeContext,

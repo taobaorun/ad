@@ -530,6 +530,19 @@
     "empty": "当前 Agent 上下文中没有找到可编辑配置。",
     "loadError": "加载 Agent 配置失败：{{error}}",
     "resources": "配置资源",
+    "effective": "最终生效",
+    "readOnly": "只读",
+    "discardDraftConfirm": "放弃未保存的配置草稿并切换工作区？",
+    "coverage": {
+      "partial": "AD 已展示可验证的观察结果，但当前 Agent 版本尚未通过完整覆盖验证。",
+      "failed": "AD 无法检查此配置类别，编辑功能已停用。"
+    },
+    "layer": {
+      "system": "系统级",
+      "user": "用户级",
+      "project": "项目级",
+      "runtime": "本地 / Runtime"
+    },
     "scope": {
       "user": "用户级",
       "project": "项目级"
@@ -550,6 +563,32 @@
     "skills": "Skills",
     "plugins": "Plugins",
     "empty": "没有找到匹配的 Skill 或 Plugin。",
+    "coverageCount": "显示 {{visible}} 项 / 观察到 {{observed}} 个声明",
+    "coverage": {
+      "partial": "当前为部分清单。已验证资源仍会显示，但不会把未知位置宣称为完整覆盖。",
+      "failed": "无法检查此类别，所有写操作均已停用。"
+    },
+    "declarations_one": "{{count}} 个声明",
+    "declarations_other": "{{count}} 个声明",
+    "state": {
+      "enabled": "已启用",
+      "disabled": "已停用",
+      "unconfigured": "未配置",
+      "conflict": "存在冲突",
+      "external": "外部资源",
+      "unsupported": "不支持",
+      "unknown": "未知"
+    },
+    "health": {
+      "degraded": "资源状态降级",
+      "error": "资源检查错误"
+    },
+    "management": {
+      "managed": "由 AD 管理",
+      "read_only": "只读",
+      "external": "外部流程",
+      "unsupported": "不支持"
+    },
     "enable": "启用 {{name}}",
     "disable": "禁用 {{name}}",
     "applySuccess": "已应用",

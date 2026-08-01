@@ -530,6 +530,19 @@
     "empty": "No editable settings were found for this Agent context.",
     "loadError": "Failed to load Agent settings: {{error}}",
     "resources": "Settings resources",
+    "effective": "Effective",
+    "readOnly": "read-only",
+    "discardDraftConfirm": "Discard the unsaved Settings draft and switch workspace?",
+    "coverage": {
+      "partial": "AD can show verified observations, but the installed Agent version is not verified for complete coverage.",
+      "failed": "AD could not inspect this Settings category. Editing is unavailable."
+    },
+    "layer": {
+      "system": "System",
+      "user": "User",
+      "project": "Project",
+      "runtime": "Local / Runtime"
+    },
     "scope": {
       "user": "User",
       "project": "Project"
@@ -550,6 +563,32 @@
     "skills": "Skills",
     "plugins": "Plugins",
     "empty": "No matching Skills or Plugins were found.",
+    "coverageCount": "{{visible}} visible / {{observed}} declarations",
+    "coverage": {
+      "partial": "This is a partial inventory. Verified resources remain visible; unverified locations are not claimed as complete.",
+      "failed": "This category could not be inspected. No write actions are available."
+    },
+    "declarations_one": "{{count}} declaration",
+    "declarations_other": "{{count}} declarations",
+    "state": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "unconfigured": "Unconfigured",
+      "conflict": "Conflict",
+      "external": "External",
+      "unsupported": "Unsupported",
+      "unknown": "Unknown"
+    },
+    "health": {
+      "degraded": "Degraded resource",
+      "error": "Resource inspection error"
+    },
+    "management": {
+      "managed": "Managed by AD",
+      "read_only": "Read-only",
+      "external": "External flow",
+      "unsupported": "Unsupported"
+    },
     "enable": "Enable {{name}}",
     "disable": "Disable {{name}}",
     "applySuccess": "Applied",

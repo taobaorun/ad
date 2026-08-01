@@ -81,10 +81,11 @@
     - [x] (2026-08-01 14:33+08:00) versioned receipt/history decoder、ownership record与fresh inverse rollback plan完成。
       - [x] (2026-08-01 12:46+08:00) OperationReceipt v2与fd-confined per-file History decoder完成：新回执记录operation/context/rollback eligibility/createdAt，legacy无版本回执继续显示但rollback unavailable；损坏、identity不符和future schema成为单项diagnostic，不影响同目录正常记录。Rust全量283 passed/4 ignored、前端142/142、typecheck/lint与严格Clippy通过。
       - [x] (2026-08-01 14:33+08:00) Project Skill/Plugin ownership record、receipt ownership evidence、fresh preview-confirm-apply inverse rollback与startup replay完成；apply/rollback claim绑定preview时的canonical context与risk fingerprint，project root绑定device/inode并拒绝与AD/Claude/Codex root重叠。项目History中的user receipt保持可见但inspect-only；post-publish receipt错误、partial create、并发startup与Profiles关闭竞态均有回归测试。`cargo test --all-targets --all-features`、严格Clippy、前端143/143、format/lint/typecheck/build及`pnpm tauri build`通过，生成AD.app与DMG；本地多角色review完成，外部Claude peer因CLI未登录未产出结果。
-- [ ] (2026-08-01 14:35+08:00 开始) M1：实现 effective inventory 与分层 Settings（验证标准：Claude/Codex provenance、coverage、canonical context测试通过）
+- [x] (2026-08-01 14:35+08:00 开始，15:35+08:00 完成) M1：实现 effective inventory 与分层 Settings（验证标准：Claude/Codex provenance、coverage、canonical context测试通过）
   - [x] (2026-08-01 14:50+08:00) Canonical WorkspaceDescriptor 后端签发入口完成：项目真实路径、base/effective installation 与 prepared Codex runtime revision 统一生成 workspace identity，ownership workspace key 改为复用同一签名。路径别名、同名不同项目、base/runtime 收敛、unknown/mismatched installation 及 Rust/TypeScript IPC 边界测试通过。
   - [x] (2026-08-01 14:56+08:00) ProjectWorkspaceInventory、InventoryRevision、AdapterDiscoveryContract、Settings effective/layer/field/editable-target/sensitivity 契约完成 Rust/Zod 同构；严格 schema 测试证明 unknown 字段被拒绝、未验证 Agent 版本保持 partial、敏感值边界只允许遮罩形态。
   - [x] (2026-08-01 15:25+08:00) Backend effective inventory 与分层 Settings 读取/编辑服务完成：Claude user/shared/local 与 Codex base/native-project/runtime-manifest 的 field winner、provenance、health、coverage 由后端统一解析；generated Codex config 不作为声明。敏感值在 IPC 前遮罩，私有 digest 仍使 secret rotation 改变 inventory revision；project edit 只提交项目语义层并由后端恢复遮罩字段、保留未知字段。Claude/Codex fixture、legacy project Settings IPC 限界、ownership recovery 与严格 Clippy 通过。
+  - [x] (2026-08-01 15:35+08:00) Project Settings/Skills/Plugins 首屏切换到 typed inventory：effective 与继承层只读、backend editable target 才可 preview/apply/rollback，dirty draft 阻断项目/Agent切换；集合按 effective state、provenance、health、management 与 partial/failed coverage 展示，M3前不再暴露基于raw snapshot猜测的toggle。所有mutation使用inventory签发的effective context，stale response不会覆盖新workspace。前端143/143、typecheck/lint/build，Rust全量303 passed/4 ignored、全部integration tests与严格Clippy通过。
 - [ ] M2：引入 immutable Skill artifact 和安全 source acquisition（验证标准：更新项目A不改变B，migration fixtures幂等）
 - [ ] M3：补齐 Skills/Plugins item lifecycle planners（验证标准：install/toggle/update/remove的支持与退化矩阵通过）
 - [ ] M4：完成统一 Project Agent Workspace UI（验证标准：所有真实动作可从ProjectDetail完成，draft/close行为、partial/stale/empty与可访问状态准确）
@@ -149,6 +150,8 @@
   证据：startup仅对`operation_recovery`阶段的retryable lock conflict延后恢复，其余错误仍fail closed；Profiles以request token和open ref使关闭后的异步结果失效，定向测试和全量前端测试通过。
 - 发现：项目History按installation过滤时会同时返回同installation的user-scope receipt；若直接沿用receipt自身rollback eligibility，项目页能触发用户层回滚。
   证据：project filter下context不匹配的receipt仍用于理解继承历史，但统一覆盖为`workspace_mismatch` inspect-only；History组件测试和Rust decoder测试覆盖该边界。
+- 发现：ProjectDetail通常会把prepared Codex runtime context传给资源组件，但盘点期间runtime状态变化时，renderer持有的context仍可能落后于后端签发的effective installation。
+  证据：Settings editor改为从`ProjectWorkspaceInventory.workspace`构造mutation context，apply使用plan自身context，rollback优先使用receipt context；定向测试覆盖inventory context与组件输入context不同的情况。
 
 ## 决策日志
 
@@ -220,6 +223,12 @@
   日期/作者：2026-08-01 / Codex（ce-code-review）
 - 决策：AD-owned project Plugin目录的显式Replace允许目标或旧source digest漂移，但仍要求ownership identity、preview digest、fresh source digest与workspace绑定；Delete、Skill link和rollback继续要求精确证据。
   理由：Plugin运行时可能产生可忽略缓存且source refresh是既有受支持流程；Replace本身已经显示并绑定当前内容，而破坏性删除和回滚必须保持更严格的外部修改保护。
+  日期/作者：2026-08-01 / Codex
+- 决策：在尚无可验证Agent二进制版本来源时，Claude/Codex Settings、Skills、Plugins coverage统一保持`partial`并返回`agent_version_unverified`，不因已扫描当前已知目录而宣称complete。
+  理由：产品目标中的“管理全”必须建立在version/schema/location compatibility证据上；未知版本的完整性声明会制造虚假完成感。
+  日期/作者：2026-08-01 / Codex
+- 决策：legacy project Settings documents IPC只映射typed inventory中backend判定可编辑的项目层，并使用opaque workspace URI；user层与raw物理路径不再通过该项目入口返回。
+  理由：兼容旧preview调用的同时关闭继承secret和跨scope target泄露，后续U6可在没有新consumer后删除该兼容入口。
   日期/作者：2026-08-01 / Codex
 
 ## 结果回顾
