@@ -101,7 +101,12 @@
   - [x] Project collection Apply接入按workspace key跟踪的detached operation：UI离开/卸载不取消后端命令，重开原workspace恢复Applying/complete/partial/failed状态，单workspace重复Apply复用同一pending promise；完成事件刷新inventory与History，持久事实仍以后端receipt为准。report workspace不匹配时fail closed，external/unsupported/conflict/no-change不再伪装为“已应用”。
   - [x] 通用plan确认按风险、activation impact、批准/权限、target、技术细节排序；危险计划使用文本与图标而非仅颜色表达。Dialog补齐label/description关系、初始安全焦点、Tab trap、Escape与focus return，busy时关闭入口真实禁用。资源页明确区分loading、inspection error、workspace empty、category empty、filter no-match及partial/failed coverage。
   - [x] History对Claude与Codex统一使用project filter；受保护回滚使用backend返回且已判定eligible的receipt context，不再用缺少project的base active context。dirty Settings在workspace refresh时保留草稿，只更新其inventory baseline。React定向30/30、前端全量154/154、format/lint/typecheck/build、Rust全量324 passed/1 ignored与全部integration suites、严格Clippy通过；`pnpm tauri build`生成17:18的AD.app与DMG，`git diff --check`通过。
-- [ ] M5：让 Conversion 复用 workspace inventory/planners/result（验证标准：有效继承输入、resolver重新preview、safe subset、residual、补偿和rollback通过）
+- [x] (2026-08-01 17:19+08:00 开始，18:17+08:00 完成) M5：让 Conversion 复用 workspace inventory/planners/result（验证标准：有效继承输入、resolver重新preview、safe subset、residual、补偿和rollback通过）
+  - [x] Project Conversion先校验typed workspace inventory，再把Claude user/shared/local Settings与user/project Skills作为只读有效输入；Settings按层级深合并，继承敏感字段不跨scope复制，所有写入严格落到Codex project runtime/overlay，source user/shared/local bytes保持不变。
+  - [x] Conversion plan与sealed `ConversionReport`一起存储；required residual阻止full Apply，只有显式safe-subset重新preview才签发可应用计划。Apply返回domain report并分层附带receipt，complete/compensated/partial、逐项final state与residual不再由UI从receipt猜测。
+  - [x] Resolution、Skill确认与safe subset都触发后端重新preview和新risk fingerprint；重复project conversion通过runtime manifest的`projectSettingsKeys`判定已物化overlay并收敛为no mutation，rollback恢复target并移除本次创建的project Skill link。
+  - [x] Conversion UI接入workspace外置detached tracker，关闭/重开继续显示同一Apply且不会重复invoke；tracker按workspace+plan去重、拒绝同workspace不同plan并发，completed结果有界保留。Conversion主组件拆分后488行，safe subset、补偿/partial report、detached reopen与schema边界均有回归测试。
+  - [x] `ce-simplify-code`三路审查完成：复用3项、质量3项、效率2项落实；保留完整inventory预检的fail-closed coverage语义，并保留report schema转发层以打断运行时循环。前端157/157、format/lint/typecheck/build，Rust326 passed/1 ignored、全部integration suites与严格Clippy通过；`pnpm tauri build`于18:17生成AD.app与DMG，`git diff --check`及frozen HTML零差异通过。
 - [ ] M6：迁移并删除 legacy project写路径（验证标准：旧用户状态可恢复，全仓库无legacy consumer）
 - [ ] M7：完成自动化、真机release验证和文档状态收敛（验证标准：所有门禁通过且evidence matrix有真实证据）
 - [ ] 完成结果回顾并将 MD + frozen HTML 一起移到 `docs/exec-plans/completed/`
@@ -174,6 +179,12 @@
   证据：History现在对所有Agent提交active project filter，并只对backend标记eligible的receipt使用其持久化context；Claude project fixture验证filter和rollback context均精确包含project path。
 - 发现：renderer组件卸载不会取消已进入Rust的Apply，但原资源UI把busy/result只保存在组件local state，重开后无法区分“仍在执行”“已完成”或“已取消”，容易诱发重复操作。
   证据：workspace operation tracker在组件外持有pending promise和暂态结果；卸载/重开测试证明Apply只调用一次，结果通过History持久化并回到原workspace。
+- 发现：重复project conversion不能只用generated runtime config中的值相等判断no-change；首次bootstrap时base值可能恰好相同，但若manifest尚未记录该key，跳过overlay会让isolated runtime丢失项目声明。
+  证据：初始启发式使project plugin conversion测试报`Project settings require a generated runtime config plan`；改为同时检查runtime manifest的`projectSettingsKeys`后，首次bootstrap保留overlay，第二次preview才稳定返回空mutation。
+- 发现：detached operation仅按workspace key复用Promise时，同workspace的新plan可能静默拿到旧plan结果，造成“按钮已点但新Apply未执行”的假象。
+  证据：共享tracker现在同时记录operation id；相同plan复用pending promise，不同plan明确拒绝且UI在workspace Applying期间保持busy。新增store测试覆盖单次invoke与冲突路径。
+- 发现：macOS `create-dmg`偶发在中间镜像已包含正确`AD.app`后因卸载阶段退出，并留下`/Volumes/dmg.*`挂载；立即重跑会继续受到陈旧DiskImages/Finder状态影响。
+  证据：失败后`hdiutil info`显示AD的`rw.*.dmg`仍挂载且内容完整；只卸载明确的build interstitial、不改变代码后，同一提交再次`pnpm tauri build`成功生成18:17的AD.app与DMG，结束后无AD临时挂载。
 
 ## 决策日志
 
@@ -264,6 +275,12 @@
 - 决策：Project Workspace的三个tab保持surface挂载，并由各surface在同workspace内执行保留草稿的refresh；切换project/Agent仍走统一dirty guard。
   理由：tab是同一workspace的不同观察面，不应被当作销毁编辑会话的context切换；外部Apply完成也不应静默覆盖用户草稿。
   日期/作者：2026-08-01 / Codex
+- 决策：Conversion的完整应用资格由后端根据required residual判定；safe subset必须作为显式option重新preview，不能由renderer从同一计划中自行删减mutation。
+  理由：用户选择和risk fingerprint必须绑定真正执行的计划，renderer不能把“部分可做”自行升级为写权限；residual仍由domain report如实保留。
+  日期/作者：2026-08-01 / Codex
+- 决策：Conversion tracker只把workspace+plan id相同的pending操作视为同一次Apply，报告也只在两者同时匹配时附着到当前preview；完成结果限制为最近32个workspace。
+  理由：避免旧报告污染新preview、不同plan静默复用及renderer长期会话的无界内存增长；durable事实仍以后端History为准。
+  日期/作者：2026-08-01 / Codex（ce-simplify-code）
 
 ## 结果回顾
 
