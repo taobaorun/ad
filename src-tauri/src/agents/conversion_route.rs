@@ -15,7 +15,7 @@ use super::{
     builtin_registry, prepare_project_plugin_install, render_project_codex_runtime_manifest,
     AdapterRegistry, AgentAdapter, AgentContext, AgentError, AgentErrorCode, AgentId,
     ClaudePluginDescriptor, CollectionInstallRequest, ContentDigest, ConversionReport,
-    MutationPlan, MutationPlanView, PlanId, PlannedMutation, PluginInstallProgress,
+    CoverageStatus, MutationPlan, MutationPlanView, PlanId, PlannedMutation, PluginInstallProgress,
     ProjectCodexRuntimeManifest, ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin,
     ResourceRef, ResourceScope, ResourceSnapshot, SettingsEdit, WritePolicy,
 };
@@ -185,6 +185,15 @@ impl ClaudeToCodexRoute {
                 return Err(route_error(
                     source_context,
                     "Source inventory no longer matches the conversion workspace",
+                ));
+            }
+            if inventory.settings.coverage.status == CoverageStatus::Failed
+                || inventory.skills.coverage.status == CoverageStatus::Failed
+                || inventory.plugins.coverage.status == CoverageStatus::Failed
+            {
+                return Err(route_error(
+                    source_context,
+                    "Source workspace inventory is incomplete",
                 ));
             }
         }
