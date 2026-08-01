@@ -947,6 +947,110 @@ mod tests {
 
     #[test]
     #[serial_test::serial(home_env)]
+    fn project_conversion_command_plan_applies_without_self_invalidating() {
+        let temp = tempfile::tempdir().unwrap();
+        let claude_home = temp.path().join(".claude");
+        let codex_home = temp.path().join(".codex");
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(&claude_home).unwrap();
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        std::fs::create_dir_all(project.join(".codex")).unwrap();
+        std::fs::write(codex_home.join("config.toml"), "model = \"gpt-5.6\"\n").unwrap();
+        std::fs::write(codex_home.join("auth.json"), "{}").unwrap();
+        std::fs::write(
+            project.join(".claude/settings.json"),
+            r#"{"maxContextTokens":120000}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            project.join(".claude/settings.local.json"),
+            r#"{"model":"claude-opus-4-6"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            project.join(".codex/config.toml"),
+            "model_context_window = 64000\n",
+        )
+        .unwrap();
+
+        let previous_home = std::env::var("AD_HOME").ok();
+        let previous_codex_home = std::env::var("CODEX_HOME").ok();
+        let canonical_home = std::fs::canonicalize(temp.path()).unwrap();
+        std::env::set_var("AD_HOME", &canonical_home);
+        std::env::remove_var("CODEX_HOME");
+        let registered =
+            crate::commands::projects::add_project(project.to_string_lossy().into_owned())
+                .expect("register project");
+        let installations = builtin_registry().discover();
+        let source = AgentContext {
+            installation_id: installations
+                .iter()
+                .find(|installation| installation.agent_id.as_str() == "claude-code")
+                .unwrap()
+                .id
+                .clone(),
+            project_path: Some(registered.path.clone()),
+        };
+        let base_target = AgentContext {
+            installation_id: installations
+                .iter()
+                .find(|installation| installation.agent_id.as_str() == "codex")
+                .unwrap()
+                .id
+                .clone(),
+            project_path: Some(registered.path),
+        };
+        let options = ClaudeToCodexOptions {
+            safe_subset: true,
+            ..ClaudeToCodexOptions::default()
+        };
+        let target = ensure_project_codex_target_context(base_target, None).unwrap();
+        let mut route_plan = ClaudeToCodexRoute
+            .preview_with_options(&source, &target, &options)
+            .unwrap();
+        append_project_policy_precondition(&target, &options, &mut route_plan.plan).unwrap();
+        let report = conversion_report(
+            &route_plan.plan.context,
+            &route_plan.artifacts,
+            !route_plan.plan.mutations.is_empty(),
+        )
+        .unwrap();
+        let plans = PlanStore::default();
+        let view = plans
+            .insert_conversion(
+                route_plan.plan,
+                vec![AcknowledgementRequirement {
+                    code: PlanAcknowledgementCode::ConversionApply,
+                    risk: PlanRiskLevel::Confirmation,
+                }],
+                report,
+            )
+            .unwrap();
+        let result = ExecutionEngine.apply_acknowledged_bound(
+            &view.id,
+            &view.context,
+            &view.risk_fingerprint,
+            &plans,
+            &[PlanAcknowledgement {
+                code: PlanAcknowledgementCode::ConversionApply,
+                accepted: true,
+            }],
+        );
+
+        match previous_home {
+            Some(value) => std::env::set_var("AD_HOME", value),
+            None => std::env::remove_var("AD_HOME"),
+        }
+        match previous_codex_home {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+        result.unwrap();
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
     fn project_runtime_inspection_rejects_a_different_project() {
         let temp = tempfile::tempdir().unwrap();
         let codex_home = temp.path().join(".codex");

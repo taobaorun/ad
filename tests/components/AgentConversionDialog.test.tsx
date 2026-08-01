@@ -318,6 +318,67 @@ describe('AgentConversionButton', () => {
     });
   });
 
+  it('applies and rolls back a Project plan with its backend-derived runtime context', async () => {
+    const basePreview = await previewClaudeToCodexRoute();
+    const runtimeContext = {
+      installationId: 'codex:/Users/test/.ad/codex-homes/project',
+      projectPath: '/Users/test/project',
+    };
+    previewClaudeToCodexRoute.mockReset().mockResolvedValue({
+      ...basePreview,
+      report: { ...basePreview.report, workspaceKey: 'workspace:project-codex' },
+      plan: { ...basePreview.plan, context: runtimeContext },
+    });
+    applyConversionPlan.mockResolvedValueOnce({
+      workspaceKey: 'workspace:project-codex',
+      outcome: 'changed',
+      items: [{ itemId: 'settings:model', state: 'mapped', residuals: [] }],
+      residuals: [],
+      receipt: {
+        id: 'project-conversion-receipt',
+        planId: 'conversion-plan',
+        status: 'complete',
+        context: runtimeContext,
+        appliedResources: [],
+        backupPaths: ['/Users/test/.ad/backups/config.toml'],
+        postApplyStates: [],
+      },
+    });
+    render(<AgentConversionButton />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Convert configuration' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Conversion scope' }), {
+      target: { value: 'project' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview conversion' }));
+    await screen.findByText('Mapped');
+    fireEvent.click(screen.getByRole('button', { name: 'Apply conversion' }));
+
+    await waitFor(() =>
+      expect(applyConversionPlan).toHaveBeenCalledWith(
+        'conversion-plan',
+        runtimeContext,
+        'risk:conversion-plan',
+        [{ code: 'conversion_apply', accepted: true }],
+      ),
+    );
+    expect(resolveAgentContext).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rollback target' }));
+    await waitFor(() =>
+      expect(previewAgentRollback).toHaveBeenCalledWith(
+        'project-conversion-receipt',
+        runtimeContext,
+      ),
+    );
+    expect(applyAgentRollbackPlan).toHaveBeenCalledWith(
+      'conversion-rollback-plan',
+      runtimeContext,
+      'risk:conversion-rollback',
+      true,
+    );
+  });
+
   it('hides configuration instance controls when each Agent has one installation', () => {
     render(<AgentConversionButton />);
 
