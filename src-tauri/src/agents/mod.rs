@@ -11,12 +11,15 @@ mod conversion_route;
 mod discovery;
 mod execution;
 mod execution_confinement;
+#[cfg(test)]
+mod execution_confinement_tests;
 mod execution_fs;
 mod execution_journal;
 mod execution_lock;
 mod execution_targets;
 #[cfg(test)]
 mod execution_tests;
+mod execution_tree;
 mod operations;
 mod plan_store;
 mod plugin_conversion;

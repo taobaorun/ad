@@ -75,7 +75,8 @@
     - [x] (2026-08-01 11:22+08:00) 跨进程target lock与durable journal基础：真实子进程争用3/3、lock 2/2、journal 3/3、execution 14/14、PlanStore 11/11及严格Clippy通过；receipt file/parent sync后才提交journal，补偿和repair-required路径有持久状态。
     - [ ] fd-relative/no-follow confinement、unsafe root拒绝与ancestor-swap测试。
       - [x] (2026-08-01 11:37+08:00) Project/user/runtime regular-file target已使用held parent fd执行observe、temp create、rename、unlink和directory sync；project/user ancestor symlink、active swap、0777 AD root及symlinked backup root sentinel测试通过。
-      - [ ] Skill/Plugin symlink与directory storage，以及AD journal/backup/history的active-swap fd-relative持久化仍待接入；本项不标完成。
+      - [x] (2026-08-01 12:01+08:00) Skill/Plugin symlink与directory storage已统一使用held parent fd执行observe、digest、backup、temp publish、remove、compensation、rollback与receipt observe；directory digest保持旧合同，symlink/directory active-swap sentinel、ExecutionEngine补偿/rollback与Rust全量267/267测试通过。
+      - [ ] AD journal/backup/history的active-swap fd-relative持久化仍待接入；本项不标完成。
     - [ ] startup recovery/global recovery lock、mutation command gate与process-kill边界矩阵。
     - [ ] versioned receipt/history decoder、ownership record与fresh inverse rollback plan。
 - [ ] M1：实现 effective inventory 与分层 Settings（验证标准：Claude/Codex provenance、coverage、canonical context测试通过）
@@ -117,6 +118,10 @@
   证据：主代理集成审查新增`failure_receipt_persistence_still_records_compensation`回归测试，并为journal加入`plannedReceiptId`；修复后ExecutionEngine聚焦测试14/14通过。
 - 发现：当前adapter target resolution会跟随项目`.claude`或用户`~/.codex` symlink；仅依赖canonical target与atomic rename时，ExecutionEngine会成功改写symlink后的outside配置。
   证据：proof-first fixture中`project_settings_ancestor_symlink_cannot_modify_outside_sentinel`与`user_agent_root_symlink_cannot_modify_outside_sentinel`在修复前均返回Complete并改变outside bytes；fd-relative接入后18个ExecutionEngine测试全部通过。
+- 发现：把symlink/directory接入统一confinement后，若锁内read-only dependency与mutation共用同一root授权，Codex Project Runtime读取base config所需的跨installation观察会迫使写权限一起放宽；两者必须是不同能力。
+  证据：恢复严格installation identity检查后，`project_plugin_config_failure_restores_replaced_directories_before_activation`在base-config read-set处正确暴露边界冲突；拆分只读dependency root后通过，而mutation仍保持identity绑定。
+- 发现：首次统一`ConfinedTarget`会在执行准备阶段创建缺失的target parent；如果后续precondition或backup失败，项目会留下没有receipt的空目录。
+  证据：新增`resolving_a_missing_target_does_not_create_parent_directories`；实现改为持有最近存在ancestor fd与pending components，只在Apply写入时逐级创建并sync后测试通过。
 
 ## 决策日志
 
@@ -146,6 +151,12 @@
   日期/作者：2026-08-01 / Codex
 - 决策：regular-file target的受信root从raw project path、raw Claude/Codex home或canonical AD home重新建立，不能把adapter discovery已跟随symlink得到的canonical installation root当作写入授权。
   理由：canonical路径能描述“最终去了哪里”，但不能证明用户配置的root本身没有被symlink替换；held directory fd和`openat(O_NOFOLLOW)`才是提交期边界。
+  日期/作者：2026-08-01 / Codex
+- 决策：ExecutionEngine的read-only dependency observation与mutation confinement使用不同root capability；前者可观察另一个已配置且受信的base installation，后者必须严格绑定resource installation identity。
+  理由：Project Runtime需要把base config作为只读precondition，但这不能隐式授权runtime plan写入base installation。
+  日期/作者：2026-08-01 / Codex
+- 决策：缺失的target parent以“最近存在ancestor fd + pending components”表示，precondition/backup阶段只观察，只有Apply写入才通过no-follow `openat/mkdirat`创建并同步目录项。
+  理由：既保持ancestor-swap安全，也避免失败计划在receipt之前留下项目目录副作用。
   日期/作者：2026-08-01 / Codex
 
 ## 结果回顾

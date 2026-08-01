@@ -8,11 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::fs::atomic::write_atomic;
 use crate::fs::paths::{backups_dir, ensure_dir, history_dir};
 
-use super::execution_confinement::{validate_ad_managed_root, ConfinedFileTarget};
-use super::execution_fs::{
-    copy_directory_tree, directory_tree_digest, observe_target, remove_target, render_content,
-    write_directory_atomic, write_symlink_atomic, TargetState,
-};
+use super::execution_confinement::{validate_ad_managed_root, ConfinedTarget};
+use super::execution_fs::{directory_tree_digest, render_content, TargetState};
 use super::{
     builtin_registry, execution_instance_id, AgentContext, AgentError, AgentErrorCode,
     AppliedResourceState, ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan,
@@ -36,7 +33,9 @@ pub(crate) enum ExecutionStep {
     PersistJournalApplying,
 }
 
-trait FaultInjector {
+pub(crate) trait FaultInjector {
+    fn before_step(&self, _step: ExecutionStep) {}
+
     fn should_fail(&self, step: ExecutionStep) -> bool;
 }
 
@@ -72,7 +71,7 @@ impl FaultInjector for FailAt {
 struct ResolvedMutation {
     mutation: PlannedMutation,
     target: ManagedResourceTarget,
-    confined_file: Option<ConfinedFileTarget>,
+    confined_target: ConfinedTarget,
     original: TargetState,
     backup_path: Option<PathBuf>,
     backup_digest: Option<ContentDigest>,
@@ -178,7 +177,7 @@ impl ExecutionEngine {
         &self,
         plan_id: &PlanId,
         plans: &PlanStore,
-        faults: &FailAt,
+        faults: &dyn FaultInjector,
     ) -> Result<OperationReceipt, AgentError> {
         self.apply_internal(plan_id, plans, faults)
     }
@@ -232,7 +231,7 @@ impl ExecutionEngine {
                 project_path: resource.project_path.clone(),
             };
             let target = registry.resolve_resource(&context, resource)?;
-            Ok(observe_target(&target)?.digest())
+            Ok(ConfinedTarget::observe_dependency(resource, target.path())?.digest())
         };
         let plan = plans.claim_acknowledged(plan_id, acknowledgements, observe)?;
         let refresh_base_config = plan_refreshes_base_config(&plan);
@@ -549,7 +548,7 @@ fn rollback_plan(
             project_path: entry.resource.project_path.clone(),
         };
         let target = registry.resolve_resource(&resource_context, &entry.resource)?;
-        let current = observe_target(&target)?;
+        let current = ConfinedTarget::observe_existing(&entry.resource, target.path())?;
         if current.kind() != state.kind || current.digest() != state.digest {
             return Err(receipt_error(
                 AgentErrorCode::ResourceChanged,
@@ -817,18 +816,8 @@ fn execute_plan(
                     "Multiple mutations resolve to the same physical target",
                 ));
             }
-            let confined_file = if target.storage() == ResourceStorage::File {
-                Some(ConfinedFileTarget::resolve(
-                    &mutation.resource,
-                    target.path(),
-                )?)
-            } else {
-                None
-            };
-            let original = match &confined_file {
-                Some(confined) => confined.observe()?,
-                None => observe_target(&target)?,
-            };
+            let confined_target = ConfinedTarget::resolve(&mutation.resource, target.path())?;
+            let original = confined_target.observe()?;
             ensure_storage_compatible(&plan, &mutation.resource, target.storage(), &original)?;
             ensure_expected(&plan, &mutation, original.digest().as_ref())?;
             validate_mutation_source(&plan, &mutation, target.storage())?;
@@ -843,9 +832,7 @@ fn execute_plan(
                 }
                 TargetState::Directory(_) => {
                     let path = operation_dir.join(format!("{index}.backup"));
-                    copy_directory_tree(target.path(), &path).map_err(|error| {
-                        io_error(&plan, Some(mutation.resource.clone()), error.to_string())
-                    })?;
+                    confined_target.copy_directory_to(&path)?;
                     let digest = directory_tree_digest(&path).map_err(|error| {
                         io_error(&plan, Some(mutation.resource.clone()), error.to_string())
                     })?;
@@ -856,7 +843,7 @@ fn execute_plan(
             resolved.push(ResolvedMutation {
                 mutation,
                 target,
-                confined_file,
+                confined_target,
                 original,
                 backup_path,
                 backup_digest,
@@ -1164,6 +1151,7 @@ fn fail_if_requested(
     faults: &dyn FaultInjector,
     step: ExecutionStep,
 ) -> Result<(), AgentError> {
+    faults.before_step(step);
     if faults.should_fail(step) {
         Err(io_error(
             plan,
@@ -1308,43 +1296,21 @@ fn parse_directory_source(
 
 fn apply_mutation(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), AgentError> {
     match item.mutation.kind {
-        MutationKind::Delete if item.target.storage() == ResourceStorage::File => item
-            .confined_file
-            .as_ref()
-            .expect("file targets are confined during resolution")
-            .remove(),
-        MutationKind::Delete => remove_target(item.target.path()),
+        MutationKind::Delete => item.confined_target.remove(),
         MutationKind::Create | MutationKind::Replace => match item.target.storage() {
             ResourceStorage::File => {
                 let bytes = render_content(&item.mutation)?;
-                item.confined_file
-                    .as_ref()
-                    .expect("file targets are confined during resolution")
-                    .write_atomic(&bytes)
+                item.confined_target.write_atomic(&bytes)
             }
             ResourceStorage::Symlink => {
                 let source = parse_symlink_source(plan, &item.mutation)?;
-                write_symlink_atomic(item.target.path(), Path::new(source.path())).map_err(
-                    |error| {
-                        io_error(
-                            plan,
-                            Some(item.mutation.resource.clone()),
-                            error.to_string(),
-                        )
-                    },
-                )
+                item.confined_target
+                    .write_symlink_atomic(Path::new(source.path()))
             }
             ResourceStorage::Directory => {
                 let source = parse_directory_source(plan, &item.mutation)?;
-                write_directory_atomic(item.target.path(), Path::new(&source.path)).map_err(
-                    |error| {
-                        io_error(
-                            plan,
-                            Some(item.mutation.resource.clone()),
-                            error.to_string(),
-                        )
-                    },
-                )
+                item.confined_target
+                    .write_directory_atomic(Path::new(&source.path))
             }
         },
     }
@@ -1352,12 +1318,7 @@ fn apply_mutation(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), Ag
 
 fn restore_target(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), AgentError> {
     match &item.original {
-        TargetState::Missing if item.target.storage() == ResourceStorage::File => item
-            .confined_file
-            .as_ref()
-            .expect("file targets are confined during resolution")
-            .remove(),
-        TargetState::Missing => remove_target(item.target.path()),
+        TargetState::Missing => item.confined_target.remove(),
         TargetState::File(_) => {
             let backup = item.backup_path.as_ref().ok_or_else(|| {
                 io_error(
@@ -1373,20 +1334,9 @@ fn restore_target(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), Ag
                     error.to_string(),
                 )
             })?;
-            item.confined_file
-                .as_ref()
-                .expect("file targets are confined during resolution")
-                .write_atomic(&bytes)
+            item.confined_target.write_atomic(&bytes)
         }
-        TargetState::Symlink(source) => {
-            write_symlink_atomic(item.target.path(), source).map_err(|error| {
-                io_error(
-                    plan,
-                    Some(item.mutation.resource.clone()),
-                    error.to_string(),
-                )
-            })
-        }
+        TargetState::Symlink(source) => item.confined_target.write_symlink_atomic(source),
         TargetState::Directory(_) => {
             let backup = item.backup_path.as_ref().ok_or_else(|| {
                 io_error(
@@ -1395,13 +1345,7 @@ fn restore_target(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), Ag
                     "Missing directory backup",
                 )
             })?;
-            write_directory_atomic(item.target.path(), backup).map_err(|error| {
-                io_error(
-                    plan,
-                    Some(item.mutation.resource.clone()),
-                    error.to_string(),
-                )
-            })
+            item.confined_target.write_directory_atomic(backup)
         }
     }
 }
@@ -1430,10 +1374,7 @@ fn manifest_entry(item: &ResolvedMutation) -> BackupManifestEntry {
 }
 
 fn observe_resolved(item: &ResolvedMutation) -> Result<TargetState, AgentError> {
-    match &item.confined_file {
-        Some(confined) => confined.observe(),
-        None => observe_target(&item.target),
-    }
+    item.confined_target.observe()
 }
 
 fn receipt(

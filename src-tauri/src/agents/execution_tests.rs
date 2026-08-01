@@ -3,6 +3,28 @@ use std::os::unix::fs::PermissionsExt;
 
 use super::*;
 
+struct SwapAncestorAt {
+    step: ExecutionStep,
+    paths: std::sync::Mutex<Option<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf)>>,
+}
+
+impl FaultInjector for SwapAncestorAt {
+    fn before_step(&self, step: ExecutionStep) {
+        if step != self.step {
+            return;
+        }
+        let Some((ancestor, moved, outside)) = self.paths.lock().unwrap().take() else {
+            return;
+        };
+        std::fs::rename(&ancestor, moved).unwrap();
+        std::os::unix::fs::symlink(outside, ancestor).unwrap();
+    }
+
+    fn should_fail(&self, _step: ExecutionStep) -> bool {
+        false
+    }
+}
+
 fn setup_two_file_plan() -> (
     tempfile::TempDir,
     PlanStore,
@@ -671,6 +693,67 @@ fn execution_applies_an_allowlisted_skill_symlink_plan() {
     assert_eq!(
         std::fs::read_link(temp.path().join(".claude/skills/demo")).unwrap(),
         std::fs::canonicalize(source).unwrap()
+    );
+}
+
+#[test]
+#[serial_test::serial(home_env)]
+fn execution_skill_symlink_ancestor_swap_cannot_modify_outside_sentinel() {
+    let temp = tempfile::tempdir().unwrap();
+    std::env::set_var("AD_HOME", temp.path());
+    std::env::remove_var("CODEX_HOME");
+    let skills = temp.path().join(".claude/skills");
+    let moved = temp.path().join(".claude/skills.original");
+    let outside = temp.path().join("outside");
+    std::fs::create_dir_all(&skills).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    std::os::unix::fs::symlink("outside-original", outside.join("demo")).unwrap();
+    let source = temp.path().join("source/demo");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+    let registry = builtin_registry();
+    let installation = registry
+        .discover()
+        .into_iter()
+        .find(|item| item.agent_id.as_str() == "claude-code")
+        .unwrap();
+    let context = AgentContext {
+        installation_id: installation.id,
+        project_path: None,
+    };
+    let plan = registry
+        .adapter("claude-code")
+        .unwrap()
+        .skills()
+        .unwrap()
+        .plan_install(
+            &context,
+            CollectionInstallRequest {
+                logical_id: "demo".into(),
+                source: serde_json::json!({"path": source}),
+            },
+        )
+        .unwrap();
+    let plan_id = plan.id.clone();
+    let store = PlanStore::default();
+    store.insert(plan).unwrap();
+    let faults = SwapAncestorAt {
+        step: ExecutionStep::Apply(0),
+        paths: std::sync::Mutex::new(Some((skills, moved.clone(), outside.clone()))),
+    };
+
+    let receipt = ExecutionEngine
+        .apply_with_faults(&plan_id, &store, &faults)
+        .unwrap();
+
+    assert_eq!(receipt.status, OperationStatus::Complete);
+    assert_eq!(
+        std::fs::read_link(moved.join("demo")).unwrap(),
+        std::fs::canonicalize(source).unwrap()
+    );
+    assert_eq!(
+        std::fs::read_link(outside.join("demo")).unwrap(),
+        std::path::PathBuf::from("outside-original")
     );
 }
 

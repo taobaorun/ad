@@ -1,12 +1,13 @@
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::io::{Read, Write};
+use std::os::unix::ffi::OsStringExt;
 use std::path::{Component, Path, PathBuf};
 
 use rustix::fd::OwnedFd;
 use rustix::fs::{
-    fstat, fsync, mkdirat, open, openat, renameat, statat, unlinkat, AtFlags, FileType, Mode,
-    OFlags,
+    fstat, fsync, mkdirat, open, openat, readlinkat, renameat, statat, unlinkat, AtFlags, FileType,
+    Mode, OFlags,
 };
 
 use crate::fs::paths::{ad_home, claude_dir, codex_dir};
@@ -19,16 +20,43 @@ const DIRECTORY_FLAGS: OFlags = OFlags::RDONLY
     .union(OFlags::NOFOLLOW);
 
 #[derive(Debug)]
-pub(super) struct ConfinedFileTarget {
+pub(super) struct ConfinedTarget {
     parent: OwnedFd,
+    pending_parents: Vec<OsString>,
     name: OsString,
     resource: ResourceRef,
     display_path: PathBuf,
 }
 
-impl ConfinedFileTarget {
+impl ConfinedTarget {
+    pub(super) fn observe_dependency(
+        resource: &ResourceRef,
+        target: &Path,
+    ) -> Result<TargetState, AgentError> {
+        Self::resolve_internal(resource, target, true)?.observe()
+    }
+
+    pub(super) fn observe_existing(
+        resource: &ResourceRef,
+        target: &Path,
+    ) -> Result<TargetState, AgentError> {
+        Self::resolve_internal(resource, target, false)?.observe()
+    }
+
     pub(super) fn resolve(resource: &ResourceRef, target: &Path) -> Result<Self, AgentError> {
-        let root = trusted_root(resource, target)?;
+        Self::resolve_internal(resource, target, false)
+    }
+
+    fn resolve_internal(
+        resource: &ResourceRef,
+        target: &Path,
+        allow_dependency_root: bool,
+    ) -> Result<Self, AgentError> {
+        let root = if allow_dependency_root {
+            trusted_observation_root(resource, target)?
+        } else {
+            trusted_root(resource, target)?
+        };
         let relative = target.strip_prefix(&root).map_err(|_| {
             confinement_error(
                 resource,
@@ -46,9 +74,10 @@ impl ConfinedFileTarget {
             .to_os_string();
         let parent_relative = relative.parent().unwrap_or_else(|| Path::new(""));
         let root_fd = open_trusted_directory(&root, resource)?;
-        let parent = open_relative_directories(root_fd, parent_relative, resource)?;
+        let (parent, pending_parents) = resolve_parent(root_fd, parent_relative, resource)?;
         Ok(Self {
             parent,
+            pending_parents,
             name,
             resource: resource.clone(),
             display_path: target.to_path_buf(),
@@ -56,43 +85,57 @@ impl ConfinedFileTarget {
     }
 
     pub(super) fn observe(&self) -> Result<TargetState, AgentError> {
-        let stat = match statat(
-            &self.parent,
-            self.name.as_os_str(),
-            AtFlags::SYMLINK_NOFOLLOW,
-        ) {
+        let Some(parent) = self.parent(false)? else {
+            return Ok(TargetState::Missing);
+        };
+        let stat = match statat(&parent, self.name.as_os_str(), AtFlags::SYMLINK_NOFOLLOW) {
             Ok(stat) => stat,
             Err(rustix::io::Errno::NOENT) => return Ok(TargetState::Missing),
             Err(error) => return Err(self.io_error(error.into())),
         };
-        if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile {
-            return Err(confinement_error(
+        match FileType::from_raw_mode(stat.st_mode) {
+            FileType::RegularFile => {
+                let fd = openat(
+                    &parent,
+                    self.name.as_os_str(),
+                    OFlags::RDONLY | OFlags::NOFOLLOW,
+                    Mode::empty(),
+                )
+                .map_err(|error| self.io_error(error.into()))?;
+                let mut bytes = Vec::new();
+                File::from(fd)
+                    .read_to_end(&mut bytes)
+                    .map_err(|error| self.io_error(error))?;
+                Ok(TargetState::File(bytes))
+            }
+            FileType::Symlink => readlinkat(&parent, self.name.as_os_str(), Vec::new())
+                .map(|link| {
+                    TargetState::Symlink(OsString::from_vec(link.as_bytes().to_vec()).into())
+                })
+                .map_err(|error| self.io_error(error.into())),
+            FileType::Directory => {
+                super::execution_tree::directory_digest(&parent, self.name.as_os_str())
+                    .map(TargetState::Directory)
+                    .map_err(|error| self.io_error(error))
+            }
+            _ => Err(confinement_error(
                 &self.resource,
                 format!(
-                    "Managed file target is not a regular file: {}",
+                    "Unsupported managed target: {}",
                     self.display_path.display()
                 ),
-            ));
+            )),
         }
-        let fd = openat(
-            &self.parent,
-            self.name.as_os_str(),
-            OFlags::RDONLY | OFlags::NOFOLLOW,
-            Mode::empty(),
-        )
-        .map_err(|error| self.io_error(error.into()))?;
-        let mut file = File::from(fd);
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)
-            .map_err(|error| self.io_error(error))?;
-        Ok(TargetState::File(bytes))
     }
 
     pub(super) fn write_atomic(&self, bytes: &[u8]) -> Result<(), AgentError> {
+        let parent = self
+            .parent(true)?
+            .expect("creating target parents always returns a directory");
         let temporary = temporary_name(&self.name);
         let result = (|| -> Result<(), std::io::Error> {
             let fd = openat(
-                &self.parent,
+                &parent,
                 temporary.as_os_str(),
                 OFlags::CREATE | OFlags::EXCL | OFlags::WRONLY | OFlags::NOFOLLOW,
                 Mode::RUSR | Mode::WUSR,
@@ -102,28 +145,76 @@ impl ConfinedFileTarget {
             file.write_all(bytes)?;
             file.sync_all()?;
             renameat(
-                &self.parent,
+                &parent,
                 temporary.as_os_str(),
-                &self.parent,
+                &parent,
                 self.name.as_os_str(),
             )
             .map_err(std::io::Error::from)?;
-            fsync(&self.parent).map_err(std::io::Error::from)
+            fsync(&parent).map_err(std::io::Error::from)
         })();
         if let Err(error) = result {
-            let _ = unlinkat(&self.parent, temporary.as_os_str(), AtFlags::empty());
+            let _ = unlinkat(&parent, temporary.as_os_str(), AtFlags::empty());
             return Err(self.io_error(error));
         }
         Ok(())
     }
 
     pub(super) fn remove(&self) -> Result<(), AgentError> {
-        match unlinkat(&self.parent, self.name.as_os_str(), AtFlags::empty()) {
-            Ok(()) | Err(rustix::io::Errno::NOENT) => {
-                fsync(&self.parent).map_err(|error| self.io_error(error.into()))
-            }
-            Err(error) => Err(self.io_error(error.into())),
+        let Some(parent) = self.parent(false)? else {
+            return Ok(());
+        };
+        super::execution_tree::remove_entry(&parent, self.name.as_os_str())
+            .map_err(|error| self.io_error(error))
+    }
+
+    pub(super) fn write_symlink_atomic(&self, source: &Path) -> Result<(), AgentError> {
+        let parent = self
+            .parent(true)?
+            .expect("creating target parents always returns a directory");
+        super::execution_tree::write_symlink_atomic(&parent, self.name.as_os_str(), source)
+            .map_err(|error| self.io_error(error))
+    }
+
+    pub(super) fn write_directory_atomic(&self, source: &Path) -> Result<(), AgentError> {
+        let parent = self
+            .parent(true)?
+            .expect("creating target parents always returns a directory");
+        super::execution_tree::write_directory_atomic(&parent, self.name.as_os_str(), source)
+            .map_err(|error| self.io_error(error))
+    }
+
+    pub(super) fn copy_directory_to(&self, destination: &Path) -> Result<(), AgentError> {
+        let parent = self.parent(false)?.ok_or_else(|| {
+            self.io_error(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Directory target parent no longer exists",
+            ))
+        })?;
+        super::execution_tree::copy_directory_to(&parent, self.name.as_os_str(), destination)
+            .map_err(|error| self.io_error(error))
+    }
+
+    fn parent(&self, create: bool) -> Result<Option<OwnedFd>, AgentError> {
+        let mut current =
+            rustix::io::dup(&self.parent).map_err(|error| self.io_error(error.into()))?;
+        for name in &self.pending_parents {
+            current = match openat(&current, name, DIRECTORY_FLAGS, Mode::empty()) {
+                Ok(fd) => fd,
+                Err(rustix::io::Errno::NOENT) if !create => return Ok(None),
+                Err(rustix::io::Errno::NOENT) => {
+                    mkdirat(&current, name, Mode::RWXU)
+                        .map_err(|error| self.io_error(error.into()))?;
+                    fsync(&current).map_err(|error| self.io_error(error.into()))?;
+                    openat(&current, name, DIRECTORY_FLAGS, Mode::empty())
+                        .map_err(|error| self.io_error(error.into()))?
+                }
+                Err(error) => return Err(self.io_error(error.into())),
+            };
+            validate_directory_fd(&current, &self.display_path)
+                .map_err(|error| confinement_error(&self.resource, error))?;
         }
+        Ok(Some(current))
     }
 
     fn io_error(&self, error: std::io::Error) -> AgentError {
@@ -199,20 +290,59 @@ fn ensure_ad_directory(
 }
 
 fn trusted_root(resource: &ResourceRef, target: &Path) -> Result<PathBuf, AgentError> {
+    if let Some(root) = trusted_scoped_root(resource, target)? {
+        return Ok(root);
+    }
+    trusted_user_agent_root(resource, target)
+}
+
+fn trusted_observation_root(resource: &ResourceRef, target: &Path) -> Result<PathBuf, AgentError> {
+    if let Some(root) = trusted_scoped_root(resource, target)? {
+        return Ok(root);
+    }
+    let (agent_id, _) = resource
+        .installation_id
+        .as_str()
+        .split_once(':')
+        .ok_or_else(|| confinement_error(resource, "Invalid Agent installation identity"))?;
+    for candidate in agent_root_candidates(resource, agent_id)? {
+        let Ok(canonical) = std::fs::canonicalize(&candidate) else {
+            continue;
+        };
+        if target.starts_with(&canonical) {
+            open_trusted_directory(&candidate, resource)?;
+            return Ok(canonical);
+        }
+    }
+    Err(confinement_error(
+        resource,
+        "Agent dependency is not backed by a trusted configured root",
+    ))
+}
+
+fn trusted_scoped_root(
+    resource: &ResourceRef,
+    target: &Path,
+) -> Result<Option<PathBuf>, AgentError> {
     let ad_root = ad_home().map_err(|error| confinement_error(resource, error.to_string()))?;
-    validate_ad_managed_root()?;
-    let canonical_ad_root = std::fs::canonicalize(&ad_root)
-        .map_err(|error| confinement_error(resource, error.to_string()))?;
-    if target.starts_with(&canonical_ad_root) {
-        return Ok(canonical_ad_root);
+    let canonical_ad_root = std::fs::canonicalize(&ad_root).ok();
+    if target.starts_with(&ad_root)
+        || canonical_ad_root
+            .as_ref()
+            .is_some_and(|root| target.starts_with(root))
+    {
+        validate_ad_managed_root()?;
+        return std::fs::canonicalize(&ad_root)
+            .map(Some)
+            .map_err(|error| confinement_error(resource, error.to_string()));
     }
     if let Some(project_path) = resource.project_path.as_deref() {
         let project = PathBuf::from(project_path);
         if target.starts_with(&project) {
-            return Ok(project);
+            return Ok(Some(project));
         }
     }
-    trusted_user_agent_root(resource, target)
+    Ok(None)
 }
 
 fn trusted_user_agent_root(resource: &ResourceRef, target: &Path) -> Result<PathBuf, AgentError> {
@@ -222,25 +352,7 @@ fn trusted_user_agent_root(resource: &ResourceRef, target: &Path) -> Result<Path
         .split_once(':')
         .ok_or_else(|| confinement_error(resource, "Invalid Agent installation identity"))?;
     let expected_root = Path::new(expected_root);
-    let mut candidates = Vec::new();
-    match agent_id {
-        "claude-code" => candidates
-            .push(claude_dir().map_err(|error| confinement_error(resource, error.to_string()))?),
-        "codex" => {
-            if let Ok(environment_home) = std::env::var("CODEX_HOME") {
-                candidates.push(PathBuf::from(environment_home));
-            }
-            candidates
-                .push(codex_dir().map_err(|error| confinement_error(resource, error.to_string()))?);
-        }
-        _ => {
-            return Err(confinement_error(
-                resource,
-                format!("Unsupported Agent target root: {agent_id}"),
-            ))
-        }
-    }
-    for candidate in candidates {
+    for candidate in agent_root_candidates(resource, agent_id)? {
         let Ok(canonical) = std::fs::canonicalize(&candidate) else {
             continue;
         };
@@ -259,6 +371,31 @@ fn trusted_user_agent_root(resource: &ResourceRef, target: &Path) -> Result<Path
         resource,
         "Agent installation is not backed by a trusted configured root",
     ))
+}
+
+fn agent_root_candidates(
+    resource: &ResourceRef,
+    agent_id: &str,
+) -> Result<Vec<PathBuf>, AgentError> {
+    let mut candidates = Vec::new();
+    match agent_id {
+        "claude-code" => candidates
+            .push(claude_dir().map_err(|error| confinement_error(resource, error.to_string()))?),
+        "codex" => {
+            if let Ok(environment_home) = std::env::var("CODEX_HOME") {
+                candidates.push(PathBuf::from(environment_home));
+            }
+            candidates
+                .push(codex_dir().map_err(|error| confinement_error(resource, error.to_string()))?);
+        }
+        _ => {
+            return Err(confinement_error(
+                resource,
+                format!("Unsupported Agent target root: {agent_id}"),
+            ))
+        }
+    }
+    Ok(candidates)
 }
 
 fn open_trusted_directory(root: &Path, resource: &ResourceRef) -> Result<OwnedFd, AgentError> {
@@ -294,31 +431,33 @@ fn validate_directory_fd(fd: &OwnedFd, path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn open_relative_directories(
+fn resolve_parent(
     mut current: OwnedFd,
     relative: &Path,
     resource: &ResourceRef,
-) -> Result<OwnedFd, AgentError> {
-    for component in relative.components() {
-        let Component::Normal(name) = component else {
-            return Err(confinement_error(
+) -> Result<(OwnedFd, Vec<OsString>), AgentError> {
+    let components = relative
+        .components()
+        .map(|component| match component {
+            Component::Normal(name) => Ok(name.to_os_string()),
+            _ => Err(confinement_error(
                 resource,
                 "Mutation target contains an unsafe path component",
-            ));
-        };
-        let next = match openat(&current, name, DIRECTORY_FLAGS, Mode::empty()) {
-            Ok(fd) => fd,
-            Err(rustix::io::Errno::NOENT) => {
-                mkdirat(&current, name, Mode::RWXU)
-                    .map_err(|error| confinement_error(resource, error.to_string()))?;
-                openat(&current, name, DIRECTORY_FLAGS, Mode::empty())
-                    .map_err(|error| confinement_error(resource, error.to_string()))?
+            )),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    for (index, name) in components.iter().enumerate() {
+        match openat(&current, name, DIRECTORY_FLAGS, Mode::empty()) {
+            Ok(fd) => {
+                validate_directory_fd(&fd, relative)
+                    .map_err(|error| confinement_error(resource, error))?;
+                current = fd;
             }
+            Err(rustix::io::Errno::NOENT) => return Ok((current, components[index..].to_vec())),
             Err(error) => return Err(confinement_error(resource, error.to_string())),
-        };
-        current = next;
+        }
     }
-    Ok(current)
+    Ok((current, Vec::new()))
 }
 
 fn temporary_name(name: &OsStr) -> OsString {
@@ -349,47 +488,5 @@ fn ad_root_error(message: impl Into<String>) -> AgentError {
         resource: None,
         retryable: false,
         details: None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::agents::{InstallationId, ResourceKind, ResourceScope};
-
-    #[test]
-    fn held_parent_fd_prevents_ancestor_swap_escape() {
-        let temp = tempfile::tempdir().unwrap();
-        let project = temp.path().join("project");
-        let original_parent = project.join(".claude");
-        let moved_parent = project.join(".claude.original");
-        let outside = temp.path().join("outside");
-        std::fs::create_dir_all(&original_parent).unwrap();
-        std::fs::create_dir_all(&outside).unwrap();
-        std::fs::write(original_parent.join("settings.json"), b"original").unwrap();
-        std::fs::write(outside.join("settings.json"), b"outside").unwrap();
-        let project = std::fs::canonicalize(project).unwrap();
-        let resource = ResourceRef {
-            installation_id: InstallationId::from("claude-code:test"),
-            project_path: Some(project.to_string_lossy().into_owned()),
-            kind: ResourceKind::Settings,
-            scope: ResourceScope::Project,
-            logical_id: "project-shared".into(),
-        };
-        let confined =
-            ConfinedFileTarget::resolve(&resource, &project.join(".claude/settings.json")).unwrap();
-
-        std::fs::rename(&original_parent, &moved_parent).unwrap();
-        std::os::unix::fs::symlink(&outside, &original_parent).unwrap();
-        confined.write_atomic(b"confined").unwrap();
-
-        assert_eq!(
-            std::fs::read(moved_parent.join("settings.json")).unwrap(),
-            b"confined"
-        );
-        assert_eq!(
-            std::fs::read(outside.join("settings.json")).unwrap(),
-            b"outside"
-        );
     }
 }
