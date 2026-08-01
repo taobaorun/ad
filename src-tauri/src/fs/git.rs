@@ -374,6 +374,21 @@ pub fn head_hash(repo_dir: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
+/// Get the full immutable HEAD commit hash of a repository.
+pub fn head_revision(repo_dir: &Path) -> Result<String> {
+    let git = TrustedGit::discover()?;
+    let output = checked_output(
+        git.run(["rev-parse", "HEAD"], Some(repo_dir))?,
+        "Git revision inspection",
+    )?;
+    let revision = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if revision.len() != 40 || !revision.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Err(anyhow!("Git returned an invalid commit revision"))
+    } else {
+        Ok(revision)
+    }
+}
+
 /// Read the configured origin URL without relying on the GUI process PATH.
 pub fn remote_url(repo_dir: &Path) -> Result<String> {
     let git = TrustedGit::discover()?;

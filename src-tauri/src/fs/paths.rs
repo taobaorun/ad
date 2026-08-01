@@ -137,6 +137,22 @@ pub fn skill_sources_path() -> Result<PathBuf, FsError> {
     Ok(state_dir()?.join("skill_sources.json"))
 }
 
+pub fn skill_artifacts_dir() -> Result<PathBuf, FsError> {
+    Ok(ad_home()?.join("artifacts").join("skills"))
+}
+
+pub fn skill_acquisition_staging_dir() -> Result<PathBuf, FsError> {
+    Ok(ad_home()?.join("staging").join("skill-acquisition"))
+}
+
+pub fn skill_catalog_path() -> Result<PathBuf, FsError> {
+    Ok(state_dir()?.join("skill_catalog.json"))
+}
+
+pub fn skill_migration_archive_dir() -> Result<PathBuf, FsError> {
+    Ok(ad_home()?.join("archive").join("skill-catalog"))
+}
+
 pub fn project_skills_dir() -> Result<PathBuf, FsError> {
     Ok(state_dir()?.join("project_skills"))
 }

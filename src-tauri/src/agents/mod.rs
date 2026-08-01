@@ -43,6 +43,13 @@ mod resource_inventory;
 mod resource_ownership;
 mod runtime;
 mod settings_inventory;
+mod skill_activation;
+mod skill_artifact_tree;
+#[cfg(test)]
+mod skill_artifact_tree_tests;
+mod skill_artifacts;
+#[cfg(test)]
+mod skill_artifacts_tests;
 mod types;
 mod workspace_contracts;
 
@@ -75,6 +82,7 @@ pub use registry::*;
 pub use resource_inventory::*;
 pub use resource_ownership::*;
 pub use runtime::*;
+pub use skill_artifacts::*;
 pub use types::*;
 pub use workspace_contracts::*;
 
