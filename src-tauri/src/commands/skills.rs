@@ -283,20 +283,7 @@ fn auto_register_discovered(sources: &mut Vec<SkillSource>) -> CmdResult<bool> {
 }
 
 fn git_remote_url(repo: &Path) -> Option<String> {
-    let out = std::process::Command::new("git")
-        .args(["remote", "get-url", "origin"])
-        .current_dir(repo)
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let url = String::from_utf8(out.stdout).ok()?.trim().to_string();
-    if url.is_empty() {
-        None
-    } else {
-        Some(url)
-    }
+    crate::fs::git::remote_url(repo).ok()
 }
 
 #[tauri::command]
