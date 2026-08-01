@@ -122,17 +122,21 @@ fn unpublished_staging_cleanup_preserves_referenced_operations() {
     let source = tempfile::tempdir().unwrap();
     std::env::set_var("AD_HOME", home.path());
     write_skill(source.path(), "first");
-    let first = stage_skill_source(&local_source(source.path())).unwrap();
-    let first_id = first.operation_id().unwrap().to_owned();
-    let second = stage_skill_source(&local_source(source.path())).unwrap();
-    let second_id = second.operation_id().unwrap().to_owned();
-    std::mem::forget(first);
-    std::mem::forget(second);
+    let active = stage_skill_source(&local_source(source.path())).unwrap();
+    let active_id = active.operation_id().unwrap().to_owned();
+    let root = skill_acquisition_staging_dir().unwrap();
+    let first_id = uuid::Uuid::new_v4().to_string();
+    let second_id = uuid::Uuid::new_v4().to_string();
+    for id in [&first_id, &second_id] {
+        std::fs::create_dir(root.join(id)).unwrap();
+        std::fs::write(root.join(id).join(".lease"), []).unwrap();
+    }
 
     let removed = cleanup_unpublished_skill_staging(&BTreeSet::from([first_id.clone()])).unwrap();
 
     assert_eq!(removed, 1);
-    let root = skill_acquisition_staging_dir().unwrap();
     assert!(root.join(first_id).is_dir());
     assert!(!root.join(second_id).exists());
+    assert!(root.join(active_id).is_dir());
+    drop(active);
 }

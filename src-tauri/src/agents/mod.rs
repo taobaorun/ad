@@ -44,15 +44,21 @@ mod resource_ownership;
 mod runtime;
 mod settings_inventory;
 mod skill_activation;
+mod skill_artifact_lease;
 mod skill_artifact_tree;
 #[cfg(test)]
 mod skill_artifact_tree_tests;
 mod skill_artifacts;
 #[cfg(test)]
 mod skill_artifacts_tests;
+mod skill_catalog;
+mod skill_catalog_execution;
+mod skill_catalog_plans;
+mod skill_legacy_inventory;
 mod types;
 mod workspace_contracts;
 
+pub use crate::models::SkillSourceType;
 pub use capabilities::*;
 pub use claude::ClaudeAdapter;
 pub use codex::CodexAdapter;
@@ -83,6 +89,10 @@ pub use resource_inventory::*;
 pub use resource_ownership::*;
 pub use runtime::*;
 pub use skill_artifacts::*;
+pub use skill_catalog::*;
+pub use skill_catalog_execution::*;
+pub use skill_catalog_plans::*;
+pub use skill_legacy_inventory::*;
 pub use types::*;
 pub use workspace_contracts::*;
 
