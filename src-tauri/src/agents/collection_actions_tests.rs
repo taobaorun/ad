@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serial_test::serial;
 
+use super::collection_inventory::{collection_inventory, CollectionObservation};
 use super::*;
 use crate::models::SkillSourceType;
 
@@ -57,10 +58,14 @@ fn claude_installation() -> InstallationId {
 }
 
 fn add_catalog_source(source: &Path) -> String {
+    add_catalog_source_named(source, "Review Skills")
+}
+
+fn add_catalog_source_named(source: &Path, display_name: &str) -> String {
     let plans = SkillCatalogPlanStore::default();
     let plan = plans
         .preview_add(SkillSourceRequest {
-            display_name: "Review Skills".into(),
+            display_name: display_name.into(),
             source_type: SkillSourceType::Local,
             location: source.to_string_lossy().into_owned(),
             branch: None,
@@ -79,6 +84,10 @@ fn add_catalog_source(source: &Path) -> String {
     )
     .unwrap();
     source_id
+}
+
+fn resource_source(resource: &CollectionResourceView) -> &ResourceSourceView {
+    resource.provenance.source.as_ref().unwrap()
 }
 
 fn update_catalog_source(source_id: &str) {
@@ -212,6 +221,16 @@ fn catalog_skill_actions_keep_project_revisions_isolated() {
         skill(&inventory_a, "review"),
         ResourceAction::Install
     ));
+    assert_eq!(
+        resource_source(skill(&inventory_a, "review")),
+        &ResourceSourceView {
+            kind: ResourceSourceKind::CatalogLocal,
+            display_name: "Review Skills".into(),
+            location: source.to_string_lossy().into_owned(),
+            branch: None,
+            subdirectory: None,
+        }
+    );
 
     apply_action(
         &installation_id,
@@ -239,6 +258,14 @@ fn catalog_skill_actions_keep_project_revisions_isolated() {
     update_catalog_source(&source_id);
     let inventory_a = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
     let inventory_b = inspect_project_workspace_inventory(&installation_id, &project_b).unwrap();
+    assert_eq!(
+        resource_source(skill(&inventory_a, "review")).kind,
+        ResourceSourceKind::CatalogLocal
+    );
+    assert_eq!(
+        resource_source(skill(&inventory_a, "review")).location,
+        source.to_string_lossy()
+    );
     assert!(action_is_available(
         skill(&inventory_a, "review"),
         ResourceAction::Update
@@ -340,13 +367,176 @@ fn stale_inventory_and_external_skill_never_become_mutation_authority() {
     .unwrap_err();
     assert_eq!(error.code, AgentErrorCode::ResourceChanged);
 
-    let external = project_a.join(".claude/skills/external");
-    std::fs::create_dir_all(&external).unwrap();
-    std::fs::write(external.join("SKILL.md"), "# External\n").unwrap();
+    let external_path = project_a.join(".claude/skills/external");
+    std::fs::create_dir_all(&external_path).unwrap();
+    std::fs::write(external_path.join("SKILL.md"), "# External\n").unwrap();
+    let canonical_external_path = std::fs::canonicalize(&external_path).unwrap();
     let inventory = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
     let external = skill(&inventory, "external");
     assert_eq!(external.ownership.kind, ResourceOwnershipKind::External);
     assert!(!action_is_available(external, ResourceAction::Remove));
+    assert_eq!(
+        resource_source(external),
+        &ResourceSourceView {
+            kind: ResourceSourceKind::InstalledPath,
+            display_name: "external".into(),
+            location: canonical_external_path.to_string_lossy().into_owned(),
+            branch: None,
+            subdirectory: None,
+        }
+    );
+}
+
+#[test]
+#[serial(home_env)]
+fn same_named_catalog_skills_are_distinct_conflict_sources() {
+    let (home, _guard, source, project_a, _project_b) = setup();
+    let peer_source = home.path().join("peer-source");
+    write_skill(&peer_source, "peer revision");
+    add_catalog_source_named(&source, "Primary Skills");
+    add_catalog_source_named(&peer_source, "Peer Skills");
+    let installation_id = claude_installation();
+
+    let inventory = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    let resources = inventory
+        .skills
+        .resources
+        .iter()
+        .filter(|resource| resource.logical_id == "review")
+        .collect::<Vec<_>>();
+
+    assert_eq!(resources.len(), 2);
+    assert!(resources
+        .iter()
+        .all(|resource| resource.effective_state == EffectiveResourceState::Conflict));
+    assert_eq!(
+        resources
+            .iter()
+            .map(|resource| resource_source(resource).location.clone())
+            .collect::<std::collections::BTreeSet<_>>(),
+        std::collections::BTreeSet::from([
+            source.to_string_lossy().into_owned(),
+            peer_source.to_string_lossy().into_owned(),
+        ])
+    );
+}
+
+#[test]
+#[serial(home_env)]
+fn git_catalog_source_is_redacted_at_the_inventory_boundary() {
+    let (home, _guard, source, project_a, _project_b) = setup();
+    let source_id = add_catalog_source(&source);
+    let catalog_path = home.path().join(".ad/state/skill_catalog.json");
+    let mut catalog: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&catalog_path).unwrap()).unwrap();
+    let entry = catalog["entries"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["sourceId"] == source_id)
+        .unwrap();
+    entry["sourceType"] = serde_json::json!("git");
+    entry["location"] =
+        serde_json::json!("https://user:password@example.com/team/skills.git?token=hidden#review");
+    entry["branch"] = serde_json::json!("stable");
+    entry["subdirectory"] = serde_json::json!("skills/review");
+    std::fs::write(&catalog_path, serde_json::to_vec_pretty(&catalog).unwrap()).unwrap();
+
+    let inventory =
+        inspect_project_workspace_inventory(&claude_installation(), &project_a).unwrap();
+    let source = resource_source(skill(&inventory, "review"));
+
+    assert_eq!(source.kind, ResourceSourceKind::CatalogGit);
+    assert_eq!(source.location, "https://example.com/team/skills.git");
+    assert_eq!(source.branch.as_deref(), Some("stable"));
+    assert_eq!(source.subdirectory.as_deref(), Some("skills/review"));
+}
+
+#[test]
+#[serial(home_env)]
+fn contradictory_source_metadata_fails_closed_without_hiding_resource() {
+    let (_home, _guard, _source, project_a, _project_b) = setup();
+    let installation_id = claude_installation();
+    let workspace = resolve_project_agent_workspace(&installation_id, &project_a).unwrap();
+    let version_diagnostic = ItemDiagnostic {
+        code: "agent_version_unverified".into(),
+        message_key: "agents.inventory.agentVersionUnverified".into(),
+        retryable: false,
+        resource_key: None,
+    };
+    let resource = ResourceRef {
+        installation_id: workspace.effective_installation_id.clone(),
+        project_path: Some(workspace.canonical_project_path.clone()),
+        kind: ResourceKind::Skills,
+        scope: ResourceScope::Project,
+        logical_id: "review".into(),
+    };
+    let observation = |kind: ResourceSourceKind, location: &str| CollectionObservation {
+        resource: resource.clone(),
+        layer: ResourceLayer::Project,
+        source_id: "skill-source:shared".into(),
+        target_id: PhysicalTargetId::for_resource(&resource),
+        logical_id: "review".into(),
+        display_name: "review".into(),
+        description: None,
+        enabled: false,
+        ownership: ResourceOwnershipKind::AdManaged,
+        ownership_record: None,
+        health: ResourceHealthView {
+            status: ResourceHealthStatus::Healthy,
+            diagnostic: None,
+        },
+        configured: false,
+        artifact_id: Some("artifact".into()),
+        resettable: false,
+        source: Some(ResourceSourceView {
+            kind,
+            display_name: "Shared Skills".into(),
+            location: location.into(),
+            branch: None,
+            subdirectory: None,
+        }),
+    };
+
+    let inventory = collection_inventory(
+        &workspace,
+        ResourceKind::Skills,
+        vec![
+            observation(ResourceSourceKind::CatalogLocal, "/catalog/a"),
+            observation(ResourceSourceKind::CatalogLocal, "/catalog/b"),
+        ],
+        &version_diagnostic,
+        Vec::new(),
+    );
+
+    assert_eq!(inventory.resources.len(), 1);
+    assert!(inventory.resources[0].provenance.source.is_none());
+    assert!(inventory
+        .coverage
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "resource_source_conflict"
+            && diagnostic.resource_key.as_ref() == Some(&inventory.resources[0].key)));
+
+    let inventory = collection_inventory(
+        &workspace,
+        ResourceKind::Skills,
+        vec![
+            observation(ResourceSourceKind::InstalledPath, "/installed/a"),
+            observation(ResourceSourceKind::InstalledPath, "/installed/b"),
+        ],
+        &version_diagnostic,
+        Vec::new(),
+    );
+
+    assert_eq!(inventory.resources.len(), 1);
+    assert!(inventory.resources[0].provenance.source.is_none());
+    assert!(inventory
+        .coverage
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "resource_source_conflict"
+            && diagnostic.resource_key.as_ref() == Some(&inventory.resources[0].key)));
 }
 
 #[test]
@@ -434,6 +624,7 @@ fn plugin_override_actions_never_mutate_user_or_peer_project_state() {
         plugin(&inventory_b, "demo"),
         ResourceAction::Remove
     ));
+    assert!(plugin(&inventory_a, "demo").provenance.source.is_none());
 
     apply_action(
         &installation_id,

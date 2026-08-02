@@ -11,8 +11,8 @@ use super::{
     DeclarationKey, EffectiveResourceState, ItemDiagnostic, PhysicalTargetId,
     ProjectCodexRuntimeManifest, ResourceDeclarationView, ResourceHealthStatus, ResourceHealthView,
     ResourceKey, ResourceKind, ResourceLayer, ResourceOwnershipKind, ResourceOwnershipRecord,
-    ResourceOwnershipView, ResourceProvenanceView, ResourceRef, ResourceScope, WorkspaceDescriptor,
-    WorkspaceKey,
+    ResourceOwnershipView, ResourceProvenanceView, ResourceRef, ResourceScope, ResourceSourceKind,
+    ResourceSourceView, WorkspaceDescriptor, WorkspaceKey,
 };
 
 pub(super) fn inspect_plugins(
@@ -71,6 +71,7 @@ pub(super) struct CollectionObservation {
     pub configured: bool,
     pub artifact_id: Option<String>,
     pub resettable: bool,
+    pub source: Option<ResourceSourceView>,
 }
 
 fn inspect_plugin_health(
@@ -161,6 +162,7 @@ fn plugin_observation(
         configured: true,
         artifact_id: None,
         resettable: layer.logical_id == "project-local",
+        source: None,
     }
 }
 
@@ -198,6 +200,7 @@ fn runtime_plugin_observation(
         configured: true,
         artifact_id: None,
         resettable: true,
+        source: None,
     }
 }
 
@@ -248,6 +251,18 @@ pub(super) fn collection_inventory(
                 &logical_id,
                 &source_id,
             );
+            let source = match source_for_group(&declarations) {
+                Ok(source) => source,
+                Err(()) => {
+                    diagnostics.push(ItemDiagnostic {
+                        code: "resource_source_conflict".into(),
+                        message_key: "agents.inventory.resourceSourceConflict".into(),
+                        retryable: false,
+                        resource_key: Some(resource_key.clone()),
+                    });
+                    None
+                }
+            };
             let declaration_views = configured
                 .iter()
                 .map(|declaration| ResourceDeclarationView {
@@ -271,10 +286,10 @@ pub(super) fn collection_inventory(
             let ownership = configured_winner
                 .map(|declaration| declaration.ownership)
                 .unwrap_or(winner.ownership);
-            let effective_state = if configured.is_empty() {
-                EffectiveResourceState::Unconfigured
-            } else if conflict {
+            let effective_state = if conflict {
                 EffectiveResourceState::Conflict
+            } else if configured.is_empty() {
+                EffectiveResourceState::Unconfigured
             } else if configured_winner.is_some_and(|winner| winner.enabled) {
                 EffectiveResourceState::Enabled
             } else {
@@ -303,6 +318,7 @@ pub(super) fn collection_inventory(
                 provenance: ResourceProvenanceView {
                     declarations: declaration_views,
                     winner: winner_key,
+                    source,
                 },
                 ownership: ResourceOwnershipView {
                     kind: ownership,
@@ -333,6 +349,40 @@ pub(super) fn collection_inventory(
         },
         resources,
     }
+}
+
+fn source_for_group(
+    declarations: &[CollectionObservation],
+) -> Result<Option<ResourceSourceView>, ()> {
+    let catalog_source = unique_source(declarations.iter().filter_map(|declaration| {
+        declaration.source.as_ref().filter(|source| {
+            matches!(
+                source.kind,
+                ResourceSourceKind::CatalogGit | ResourceSourceKind::CatalogLocal
+            )
+        })
+    }))?;
+    if let Some(source) = catalog_source {
+        return Ok(Some(source.clone()));
+    }
+
+    unique_source(
+        declarations
+            .iter()
+            .filter_map(|declaration| declaration.source.as_ref())
+            .filter(|source| source.kind == ResourceSourceKind::InstalledPath),
+    )
+    .map(|source| source.cloned())
+}
+
+fn unique_source<'a>(
+    mut sources: impl Iterator<Item = &'a ResourceSourceView>,
+) -> Result<Option<&'a ResourceSourceView>, ()> {
+    let selected = sources.next();
+    if selected.is_some_and(|selected| sources.any(|source| source != selected)) {
+        return Err(());
+    }
+    Ok(selected)
 }
 
 pub(super) fn failed_collection(

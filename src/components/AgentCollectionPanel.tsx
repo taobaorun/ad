@@ -163,6 +163,15 @@ export function AgentCollectionPanel({
     setActionError(null);
   }, [actionBusy]);
 
+  const openSkillSources = useCallback(async () => {
+    setActionError(null);
+    try {
+      await tauri.openSettingsWindow();
+    } catch (caught) {
+      setActionError(formatAgentError(caught));
+    }
+  }, []);
+
   const query = filter.trim().toLocaleLowerCase();
   const filteredSkills = useMemo(
     () => inventory?.skills.resources.filter((resource) => matches(resource, query)) ?? [],
@@ -310,6 +319,8 @@ export function AgentCollectionPanel({
               queryActive={query.length > 0}
               showEmptyState={hasResources}
               onAction={previewAction}
+              onOpenSkillSources={openSkillSources}
+              onReload={load}
             />
             <CollectionSection
               title={t('agentCollections.plugins')}
@@ -320,6 +331,7 @@ export function AgentCollectionPanel({
               queryActive={query.length > 0}
               showEmptyState={hasResources}
               onAction={previewAction}
+              onReload={load}
             />
           </>
         )}
@@ -354,6 +366,8 @@ interface CollectionSectionProps {
   queryActive: boolean;
   showEmptyState: boolean;
   onAction: (resource: CollectionResourceView, action: ResourceAction) => void;
+  onOpenSkillSources?: () => Promise<void>;
+  onReload: () => Promise<void>;
 }
 
 function CollectionSection({
@@ -365,7 +379,10 @@ function CollectionSection({
   queryActive,
   showEmptyState,
   onAction,
+  onOpenSkillSources,
+  onReload,
 }: CollectionSectionProps) {
+  const conflicts = groupedConflicts(inventory.resources, resources);
   return (
     <section className="mb-5" aria-labelledby={`collection-${inventory.kind}`}>
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -391,6 +408,18 @@ function CollectionSection({
           {t(`agentCollections.coverage.${inventory.coverage.status}`)}
         </div>
       )}
+      {conflicts.map((conflict) => (
+        <ConflictGuidance
+          key={conflict.logicalId}
+          kind={inventory.kind}
+          logicalId={conflict.logicalId}
+          resources={conflict.resources}
+          busy={busy}
+          t={t}
+          onOpenSkillSources={onOpenSkillSources}
+          onReload={onReload}
+        />
+      ))}
       {resources.length > 0 && (
         <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
           {resources.map((resource) => (
@@ -438,6 +467,189 @@ function CollectionSection({
         )}
     </section>
   );
+}
+
+interface ConflictGuidanceProps {
+  kind: CollectionResourceView['kind'];
+  logicalId: string;
+  resources: CollectionResourceView[];
+  busy: boolean;
+  t: ReturnType<typeof useTranslation>['t'];
+  onOpenSkillSources?: () => Promise<void>;
+  onReload: () => Promise<void>;
+}
+
+function ConflictGuidance({
+  kind,
+  logicalId,
+  resources,
+  busy,
+  t,
+  onOpenSkillSources,
+  onReload,
+}: ConflictGuidanceProps) {
+  const candidates = conflictCandidates(kind, resources, t);
+  return (
+    <div
+      role="alert"
+      className="mb-2 flex items-start gap-2 rounded-md border border-warning/50 bg-warning/10 px-3 py-2.5 text-xs text-foreground"
+    >
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <div className="font-medium">
+          {t(`agentCollections.conflictResolution.${kind}.title`, {
+            name: logicalId,
+            count: candidates.length,
+          })}
+        </div>
+        <p className="mt-1 text-muted-foreground">
+          {t(`agentCollections.conflictResolution.${kind}.description`)}
+        </p>
+        <ul
+          className="mt-2 space-y-1.5"
+          aria-label={t('agentCollections.conflictResolution.candidates')}
+        >
+          {candidates.map((candidate, index) => (
+            <li
+              key={candidate.key}
+              className="flex min-w-0 items-start gap-2 rounded border border-border bg-background/70 px-2 py-2 text-[11px]"
+            >
+              <span className="text-muted-foreground">{index + 1}.</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="break-words font-medium">{candidate.displayName}</span>
+                  {candidate.source && (
+                    <span className="whitespace-nowrap rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      {t(`agentCollections.conflictResolution.sourceKind.${candidate.source.kind}`)}
+                    </span>
+                  )}
+                </div>
+                {candidate.source && (
+                  <>
+                    <div
+                      aria-label={`${t('agentCollections.conflictResolution.sourceAddress')}: ${candidate.source.location}`}
+                      className="mt-1 break-all font-mono leading-relaxed text-foreground [overflow-wrap:anywhere]"
+                    >
+                      {candidate.source.location}
+                    </div>
+                    {(candidate.source.branch || candidate.source.subdirectory) && (
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground">
+                        {candidate.source.branch && (
+                          <span>
+                            {t('agentCollections.conflictResolution.branch', {
+                              branch: candidate.source.branch,
+                            })}
+                          </span>
+                        )}
+                        {candidate.source.subdirectory && (
+                          <span className="break-all">
+                            {t('agentCollections.conflictResolution.subdirectory', {
+                              subdirectory: candidate.source.subdirectory,
+                            })}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+                {candidate.sourceUnavailable && (
+                  <div className="mt-1 text-muted-foreground">
+                    {t('agentCollections.conflictResolution.sourceAddressUnavailable')}
+                  </div>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {onOpenSkillSources && (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="h-7 whitespace-nowrap px-2 text-xs"
+              disabled={busy}
+              onClick={() => void onOpenSkillSources()}
+            >
+              {t('agentCollections.conflictResolution.manageSkillSources')}
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 whitespace-nowrap px-2 text-xs"
+            disabled={busy}
+            onClick={() => void onReload()}
+          >
+            {t('agentCollections.conflictResolution.checkAgain')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function groupedConflicts(
+  resources: CollectionResourceView[],
+  visibleResources: CollectionResourceView[],
+): Array<{ logicalId: string; resources: CollectionResourceView[] }> {
+  const visibleKeys = new Set(visibleResources.map((resource) => resource.key));
+  const groups = new Map<string, CollectionResourceView[]>();
+  for (const resource of resources) {
+    if (resource.effectiveState !== 'conflict') continue;
+    const group = groups.get(resource.logicalId) ?? [];
+    group.push(resource);
+    groups.set(resource.logicalId, group);
+  }
+  return Array.from(groups, ([logicalId, conflictingResources]) => ({
+    logicalId,
+    resources: conflictingResources,
+  })).filter((group) => group.resources.some((resource) => visibleKeys.has(resource.key)));
+}
+
+interface ConflictCandidate {
+  key: string;
+  displayName: string;
+  source?: NonNullable<CollectionResourceView['provenance']['source']>;
+  sourceUnavailable?: boolean;
+}
+
+function conflictCandidates(
+  kind: CollectionResourceView['kind'],
+  resources: CollectionResourceView[],
+  t: ReturnType<typeof useTranslation>['t'],
+): ConflictCandidate[] {
+  const orderedResources = [...resources].sort((left, right) => left.key.localeCompare(right.key));
+  if (kind === 'skills') {
+    return orderedResources.map((resource, index) => ({
+      key: resource.key,
+      displayName:
+        resource.provenance.source?.displayName ??
+        resource.description ??
+        t('agentCollections.conflictResolution.unnamedSource', { index: index + 1 }),
+      source: resource.provenance.source,
+      sourceUnavailable: !resource.provenance.source,
+    }));
+  }
+
+  const declarations = orderedResources
+    .flatMap((resource) => resource.provenance.declarations)
+    .sort((left, right) => left.key.localeCompare(right.key));
+  if (declarations.length > 0) {
+    return declarations.map((declaration) => ({
+      key: declaration.key,
+      displayName: t('agentCollections.conflictResolution.layerDeclaration', {
+        layer: t(`agentSettings.layer.${declaration.layer}`),
+      }),
+    }));
+  }
+  return orderedResources.map((resource, index) => ({
+    key: resource.key,
+    displayName:
+      resource.description ??
+      t('agentCollections.conflictResolution.unnamedSource', { index: index + 1 }),
+  }));
 }
 
 interface ResourceActionsProps {

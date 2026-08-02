@@ -658,6 +658,33 @@
       "unsupported": "不支持",
       "unknown": "未知"
     },
+    "conflictResolution": {
+      "skills": {
+        "title_one": "“{{name}}” 有 {{count}} 个同名来源",
+        "title_other": "“{{name}}” 有 {{count}} 个同名来源",
+        "description": "AD 无法安全决定使用哪个来源，因此已暂停写操作。请在设置 → Skill 来源中只保留一个来源，或重命名来源中的重复 Skill。"
+      },
+      "plugins": {
+        "title_one": "“{{name}}” 有 {{count}} 个冲突声明",
+        "title_other": "“{{name}}” 有 {{count}} 个冲突声明",
+        "description": "AD 无法安全决定哪个 Plugin 声明应当生效，因此已暂停写操作。请在对应 Agent 配置中移除重复声明或项目覆盖。"
+      },
+      "candidates": "参与冲突的来源",
+      "unnamedSource": "来源 {{index}}",
+      "unknownSource": "未标识来源",
+      "layerDeclaration": "{{layer}} 层声明",
+      "sourceKind": {
+        "catalog_git": "Git 来源",
+        "catalog_local": "本地来源",
+        "installed_path": "当前安装位置"
+      },
+      "sourceAddress": "来源地址",
+      "sourceAddressUnavailable": "来源地址不可用",
+      "branch": "分支：{{branch}}",
+      "subdirectory": "子目录：{{subdirectory}}",
+      "manageSkillSources": "管理 Skill 来源",
+      "checkAgain": "重新检查"
+    },
     "health": {
       "degraded": "资源状态降级",
       "error": "资源检查错误"

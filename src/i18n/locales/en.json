@@ -658,6 +658,33 @@
       "unsupported": "Unsupported",
       "unknown": "Unknown"
     },
+    "conflictResolution": {
+      "skills": {
+        "title_one": "“{{name}}” has {{count}} conflicting source",
+        "title_other": "“{{name}}” has {{count}} conflicting sources",
+        "description": "AD cannot safely choose a source, so write actions are paused. In Settings → Skill Sources, keep one source or rename the duplicate Skill."
+      },
+      "plugins": {
+        "title_one": "“{{name}}” has {{count}} conflicting declaration",
+        "title_other": "“{{name}}” has {{count}} conflicting declarations",
+        "description": "AD cannot safely choose which Plugin declaration should apply, so write actions are paused. Remove the duplicate declaration or project override from the relevant Agent configuration."
+      },
+      "candidates": "Conflicting sources",
+      "unnamedSource": "Source {{index}}",
+      "unknownSource": "Unidentified source",
+      "layerDeclaration": "{{layer}} layer declaration",
+      "sourceKind": {
+        "catalog_git": "Git source",
+        "catalog_local": "Local source",
+        "installed_path": "Current installation"
+      },
+      "sourceAddress": "Source address",
+      "sourceAddressUnavailable": "Source address unavailable",
+      "branch": "Branch: {{branch}}",
+      "subdirectory": "Subdirectory: {{subdirectory}}",
+      "manageSkillSources": "Manage Skill sources",
+      "checkAgain": "Check again"
+    },
     "health": {
       "degraded": "Degraded resource",
       "error": "Resource inspection error"

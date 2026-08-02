@@ -1,20 +1,26 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentCollectionPanel } from '@/components/AgentCollectionPanel';
 import i18n from '@/i18n';
 import { ProjectWorkspaceInventorySchema } from '@/lib/agentResourceInventoryTypes';
-import { AgentContextSchema, CapabilityDescriptorSchema } from '@/lib/agentTypes';
+import {
+  AgentContextSchema,
+  CapabilityDescriptorSchema,
+  ResourceKeySchema,
+} from '@/lib/agentTypes';
 import { resetWorkspaceOperationTracker } from '@/store/workspaceOperations';
 
 const {
   inspectProjectAgentWorkspace,
   previewProjectCollectionAction,
   applyProjectCollectionAction,
+  openSettingsWindow,
 } = vi.hoisted(() => ({
   inspectProjectAgentWorkspace: vi.fn(),
   previewProjectCollectionAction: vi.fn(),
   applyProjectCollectionAction: vi.fn(),
+  openSettingsWindow: vi.fn(),
 }));
 
 vi.mock('@/lib/tauri', () => ({
@@ -22,6 +28,7 @@ vi.mock('@/lib/tauri', () => ({
     inspectProjectAgentWorkspace,
     previewProjectCollectionAction,
     applyProjectCollectionAction,
+    openSettingsWindow,
   },
 }));
 
@@ -204,6 +211,44 @@ function actionableInventory() {
   return next;
 }
 
+function conflictingSkillInventory() {
+  const next = inventory('conflicting-skills');
+  const personal = next.skills.resources[0]!;
+  personal.logicalId = 'html-artifact';
+  personal.displayName = 'html-artifact';
+  personal.description = 'Personal catalog candidate';
+  personal.effectiveState = 'conflict';
+  personal.provenance.declarations = [];
+  personal.provenance.source = {
+    kind: 'catalog_git',
+    displayName: 'Personal Skill Catalog',
+    location:
+      'https://github.com/example/a-very-long-personal-skill-catalog-location-that-must-remain-fully-readable.git',
+    branch: 'stable',
+    subdirectory: 'skills/html-artifact',
+  };
+  delete personal.provenance.winner;
+  personal.management = {
+    status: 'read_only',
+    actions: [{ action: 'inspect', availability: 'available' }],
+  };
+  const team = structuredClone(personal);
+  team.key = ResourceKeySchema.parse('resource:sha256:html-artifact-team');
+  team.description = 'Team catalog candidate';
+  team.provenance.source = {
+    kind: 'catalog_local',
+    displayName: 'Team Skill Catalog',
+    location: '/Users/test/team/skill-sources',
+  };
+  next.skills.resources = [personal, team];
+  next.skills.coverage.observed = 2;
+  next.skills.coverage.visible = 2;
+  next.plugins.resources = [];
+  next.plugins.coverage.observed = 0;
+  next.plugins.coverage.visible = 0;
+  return next;
+}
+
 function actionPreview() {
   const current = actionableInventory();
   const resource = current.skills.resources[0]!;
@@ -255,7 +300,80 @@ describe('AgentCollectionPanel', () => {
     inspectProjectAgentWorkspace.mockReset().mockResolvedValue(inventory());
     previewProjectCollectionAction.mockReset();
     applyProjectCollectionAction.mockReset();
+    openSettingsWindow.mockReset().mockResolvedValue(undefined);
     resetWorkspaceOperationTracker();
+  });
+
+  it('lists complete catalog source addresses and offers conflict recovery actions', async () => {
+    inspectProjectAgentWorkspace.mockResolvedValue(conflictingSkillInventory());
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+
+    expect(
+      await screen.findByText('“html-artifact” has 2 conflicting sources'),
+    ).toBeInTheDocument();
+    const guidance = screen.getByRole('alert');
+    expect(within(guidance).getByText('Personal Skill Catalog')).toBeInTheDocument();
+    expect(within(guidance).getByText('Git source')).toBeInTheDocument();
+    const gitAddress = within(guidance).getByText(
+      'https://github.com/example/a-very-long-personal-skill-catalog-location-that-must-remain-fully-readable.git',
+    );
+    expect(gitAddress).toHaveClass('font-mono', 'break-all');
+    expect(gitAddress).not.toHaveClass('truncate');
+    expect(within(guidance).getByText('Branch: stable')).toBeInTheDocument();
+    expect(within(guidance).getByText('Subdirectory: skills/html-artifact')).toBeInTheDocument();
+    expect(within(guidance).getByText('Team Skill Catalog')).toBeInTheDocument();
+    expect(within(guidance).getByText('Local source')).toBeInTheDocument();
+    expect(within(guidance).getByText('/Users/test/team/skill-sources')).toBeInTheDocument();
+    expect(
+      within(guidance).getByText(/keep one source or rename the duplicate Skill/i),
+    ).toBeInTheDocument();
+    expect(within(guidance).queryByRole('link')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Manage Skill sources' }));
+    expect(openSettingsWindow).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    await act(async () => undefined);
+    expect(inspectProjectAgentWorkspace).toHaveBeenCalledTimes(2);
+  });
+
+  it('surfaces a Settings launch failure from conflict recovery', async () => {
+    inspectProjectAgentWorkspace.mockResolvedValue(conflictingSkillInventory());
+    openSettingsWindow.mockRejectedValueOnce(new Error('Settings unavailable'));
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Manage Skill sources',
+      }),
+    );
+
+    expect(await screen.findByText('Settings unavailable')).toBeInTheDocument();
+  });
+
+  it('labels an installed Skill location and reports unavailable source provenance', async () => {
+    const conflicting = conflictingSkillInventory();
+    const installed = conflicting.skills.resources[0]!;
+    installed.provenance.source = {
+      kind: 'installed_path',
+      displayName: 'Codex Skill directory',
+      location: '/Users/test/.codex/skills/html-artifact',
+    };
+    const unavailable = conflicting.skills.resources[1]!;
+    unavailable.description = 'Untracked Skill';
+    delete unavailable.provenance.source;
+    inspectProjectAgentWorkspace.mockResolvedValue(conflicting);
+
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+
+    const guidance = await screen.findByRole('alert');
+    expect(within(guidance).getByText('Codex Skill directory')).toBeInTheDocument();
+    expect(within(guidance).getByText('Current installation')).toBeInTheDocument();
+    expect(
+      within(guidance).getByText('/Users/test/.codex/skills/html-artifact'),
+    ).toBeInTheDocument();
+    expect(within(guidance).getByText('Untracked Skill')).toBeInTheDocument();
+    expect(within(guidance).getByText('Source address unavailable')).toBeInTheDocument();
   });
 
   it('renders backend-owned effective state, provenance, health, and partial coverage', async () => {
@@ -267,6 +385,8 @@ describe('AgentCollectionPanel', () => {
     expect(screen.getAllByText(/Read-only/)).toHaveLength(2);
     expect(screen.getByLabelText('Degraded resource')).toBeInTheDocument();
     expect(screen.getAllByText(/partial inventory/i)).toHaveLength(2);
+    expect(screen.getByText('User layer declaration')).toBeInTheDocument();
+    expect(screen.getByText('Local / Runtime layer declaration')).toBeInTheDocument();
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     expect(screen.queryByText('/Users/test/project')).not.toBeInTheDocument();
   });

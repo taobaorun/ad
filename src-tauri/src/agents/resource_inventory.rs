@@ -59,6 +59,27 @@ pub struct ResourceDeclarationView {
     pub scope: Option<ResourceScope>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceSourceKind {
+    CatalogGit,
+    CatalogLocal,
+    InstalledPath,
+}
+
+/// Display-only source provenance. Mutation requests continue to use opaque resource keys.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResourceSourceView {
+    pub kind: ResourceSourceKind,
+    pub display_name: String,
+    pub location: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subdirectory: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceProvenanceView {
@@ -66,6 +87,8 @@ pub struct ResourceProvenanceView {
     pub declarations: Vec<ResourceDeclarationView>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub winner: Option<DeclarationKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<ResourceSourceView>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -297,4 +320,53 @@ pub struct ProjectWorkspaceInventory {
     pub plugins: CollectionResourceInventory,
     #[serde(default)]
     pub diagnostics: Vec<ItemDiagnostic>,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn resource_provenance_serializes_display_only_source_metadata() {
+        let provenance = ResourceProvenanceView {
+            declarations: Vec::new(),
+            winner: None,
+            source: Some(ResourceSourceView {
+                kind: ResourceSourceKind::CatalogGit,
+                display_name: "Team skills".into(),
+                location: "https://example.com/team/skills.git".into(),
+                branch: Some("main".into()),
+                subdirectory: Some("skills/review".into()),
+            }),
+        };
+
+        assert_eq!(
+            serde_json::to_value(provenance).unwrap(),
+            json!({
+                "declarations": [],
+                "source": {
+                    "kind": "catalog_git",
+                    "displayName": "Team skills",
+                    "location": "https://example.com/team/skills.git",
+                    "branch": "main",
+                    "subdirectory": "skills/review"
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn resource_provenance_omits_source_when_unavailable() {
+        let provenance = ResourceProvenanceView {
+            declarations: Vec::new(),
+            winner: None,
+            source: None,
+        };
+
+        let value = serde_json::to_value(provenance).unwrap();
+
+        assert!(value.get("source").is_none());
+    }
 }
