@@ -29,6 +29,18 @@
 
 **ExecPlan 创建后不能自动执行，必须等用户确认。**
 
+### 任务收尾清理（必须执行）
+
+涉及本地开发、测试、生产构建、应用安装或 PR 交付的任务，在全部验证和安装完成后，Agent 必须自动清理本次任务产生且可重新生成的中间产物，无需等待用户再次提醒：
+
+- 清理 Rust/Tauri 构建缓存：`src-tauri/target/`（优先使用 `cargo clean --manifest-path src-tauri/Cargo.toml`）
+- 清理前端与 Tauri 生成目录：`dist/`、`src-tauri/gen/`
+- 清理 TypeScript 增量和生成配置前，先用 `git ls-files --error-unmatch <path>` 检查；仅删除未被 Git 跟踪的 `*.tsbuildinfo`、`vite.config.{js,d.ts}`、`tailwind.config.{js,d.ts}`、`vitest.config.{js,d.ts}`。本仓库已跟踪的 `tailwind.config.js` 必须保留
+- 清理本次任务明确创建的 `/tmp` 文件、监控状态、调试安装包和废弃的旧版 `AD.app`
+- 清理后运行 `git status --short`，确认没有误删源码或产生未预期的工作区变更
+
+清理必须在构建验证、安装复制和产物交付之后执行。用户明确要求保留 `.app`、`.dmg` 或其他交付物时，保留指定产物。不得删除 `node_modules/`、项目级 `.claude/` 配置、`~/.ad/` 用户数据、源码、文档或当前 `/Applications/AD.app` 正式安装版本。
+
 ---
 
 ## 技术栈
