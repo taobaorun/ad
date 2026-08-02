@@ -20,7 +20,10 @@ import {
 import {
   CollectionResourceInventorySchema,
   CollectionResourceViewSchema,
+  ProjectCollectionActionRequestSchema,
   ProjectWorkspaceInventorySchema,
+  ResourceProvenanceViewSchema,
+  ResourceSourceViewSchema,
 } from '@/lib/agentResourceInventoryTypes';
 import { WorkspaceOperationReportSchema } from '@/lib/agentOperationReports';
 import { WorkspaceDescriptorSchema } from '@/lib/agentWorkspaceTypes';
@@ -250,6 +253,60 @@ describe('Agent schemas', () => {
       CollectionResourceViewSchema.safeParse({
         ...resource,
         physicalPath: '/Users/test/project/.agents/skills/review',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts structured display-only Skill source provenance', () => {
+    const sources = [
+      {
+        kind: 'catalog_git',
+        displayName: 'Team skills',
+        location: 'https://example.com/team/skills.git',
+        branch: 'main',
+        subdirectory: 'skills/review',
+      },
+      {
+        kind: 'catalog_local',
+        displayName: 'Local skills',
+        location: '/Users/test/skills',
+      },
+      {
+        kind: 'installed_path',
+        displayName: 'Codex installation',
+        location: '/Users/test/.codex/skills/review',
+      },
+    ] as const;
+
+    for (const source of sources) {
+      expect(ResourceSourceViewSchema.parse(source)).toEqual(source);
+      expect(ResourceProvenanceViewSchema.parse({ declarations: [], source }).source).toEqual(
+        source,
+      );
+    }
+  });
+
+  it('rejects invalid or extensible Skill source provenance', () => {
+    const source = {
+      kind: 'catalog_git',
+      displayName: 'Team skills',
+      location: 'https://example.com/team/skills.git',
+    };
+
+    expect(ResourceSourceViewSchema.safeParse({ ...source, location: '' }).success).toBe(false);
+    expect(ResourceSourceViewSchema.safeParse({ ...source, kind: 'catalog_http' }).success).toBe(
+      false,
+    );
+    expect(ResourceSourceViewSchema.safeParse({ ...source, credential: 'secret' }).success).toBe(
+      false,
+    );
+    expect(
+      ProjectCollectionActionRequestSchema.safeParse({
+        workspaceKey: 'workspace:sha256:test',
+        inventoryRevision: 'inventory-revision:sha256:test',
+        resourceKey: 'resource:sha256:review',
+        action: 'remove',
+        source,
       }).success,
     ).toBe(false);
   });

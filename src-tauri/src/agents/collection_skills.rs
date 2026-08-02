@@ -7,13 +7,14 @@ use super::collection_inventory::{
     collection_inventory, inventory_error, layer_for_scope, opaque_source_id, CollectionObservation,
 };
 use super::execution_state::ExecutionState;
+use super::skill_catalog::format_safe_source_location;
 use super::{
     builtin_registry, load_ownership_record, load_skill_catalog_snapshot,
     validate_ownership_artifact, validate_ownership_record, verify_skill_artifact, AgentContext,
     AgentError, CollectionResourceInventory, ContentDigest, ItemDiagnostic, PhysicalTargetId,
     ResourceHealthStatus, ResourceHealthView, ResourceKind, ResourceLayer, ResourceOwnershipKind,
-    ResourceOwnershipRecord, ResourceRef, ResourceScope, ResourceSnapshot, ResourceStateKind,
-    WorkspaceDescriptor,
+    ResourceOwnershipRecord, ResourceRef, ResourceScope, ResourceSnapshot, ResourceSourceKind,
+    ResourceSourceView, ResourceStateKind, SkillSourceType, WorkspaceDescriptor,
 };
 
 pub(super) fn inspect_skills(
@@ -87,6 +88,7 @@ fn skill_observation(
         .get("enabled")
         .and_then(Value::as_bool)
         .unwrap_or(true);
+    let source = installed_path_source(&logical_id, &snapshot.location.path);
     let mut ownership_kind = match snapshot.content.get("source").and_then(Value::as_str) {
         Some("external") => ResourceOwnershipKind::External,
         _ => ResourceOwnershipKind::Unknown,
@@ -137,6 +139,7 @@ fn skill_observation(
         health,
         configured: true,
         resettable: false,
+        source,
     })
 }
 
@@ -190,6 +193,7 @@ fn scan_claude_project_skills(
             ownership_record = None;
             ResourceOwnershipKind::External
         };
+        let source = installed_path_source(&logical_id, &path.to_string_lossy());
         observations.push(CollectionObservation {
             target_id: PhysicalTargetId::for_resource(&resource),
             resource,
@@ -218,6 +222,7 @@ fn scan_claude_project_skills(
             },
             configured: true,
             resettable: false,
+            source,
         });
     }
     Ok(observations)
@@ -303,6 +308,19 @@ fn catalog_skill_observations(
     let mut observations = Vec::new();
     let mut diagnostics = Vec::new();
     for entry in catalog.entries {
+        let source =
+            format_safe_source_location(entry.source_type, &entry.location).map(|location| {
+                ResourceSourceView {
+                    kind: match entry.source_type {
+                        SkillSourceType::Git => ResourceSourceKind::CatalogGit,
+                        SkillSourceType::Local => ResourceSourceKind::CatalogLocal,
+                    },
+                    display_name: entry.display_name.clone(),
+                    location,
+                    branch: entry.branch.clone(),
+                    subdirectory: entry.subdirectory.clone(),
+                }
+            });
         let tree = match verify_skill_artifact(&entry.current_artifact) {
             Ok(tree) => tree,
             Err(_) => {
@@ -341,8 +359,20 @@ fn catalog_skill_observations(
                 configured: false,
                 artifact_id: Some(tree.join(&skill.subpath).to_string_lossy().into_owned()),
                 resettable: false,
+                source: source.clone(),
             });
         }
     }
     (observations, diagnostics)
+}
+
+fn installed_path_source(display_name: &str, location: &str) -> Option<ResourceSourceView> {
+    let location = format_safe_source_location(SkillSourceType::Local, location)?;
+    Some(ResourceSourceView {
+        kind: ResourceSourceKind::InstalledPath,
+        display_name: display_name.to_owned(),
+        location,
+        branch: None,
+        subdirectory: None,
+    })
 }

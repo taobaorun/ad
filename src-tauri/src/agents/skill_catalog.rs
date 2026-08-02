@@ -2,6 +2,7 @@ use std::path::{Component, Path};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use super::execution_state::{ExecutionState, StateDirectory};
 use super::{ContentDigest, SkillArtifactRef};
@@ -340,6 +341,12 @@ pub(crate) fn validate_request(request: &SkillSourceRequest) -> Result<(), Skill
                 "local source path must be absolute".into(),
             ));
         }
+    } else if request.branch.as_deref().is_some_and(|branch| {
+        branch.is_empty() || branch.trim() != branch || branch.chars().any(char::is_control)
+    }) {
+        return Err(SkillCatalogError::InvalidRequest(
+            "Git source branch must not be empty, padded, or contain control characters".into(),
+        ));
     }
     if let Some(subdirectory) = request.subdirectory.as_deref() {
         let path = Path::new(subdirectory);
@@ -373,6 +380,52 @@ fn same_source_location(entry: &SkillCatalogEntry, request: &SkillSourceRequest)
         && entry.location == request.location
         && entry.branch == request.branch
         && entry.subdirectory == request.subdirectory
+}
+
+pub(crate) fn format_safe_source_location(
+    source_type: SkillSourceType,
+    location: &str,
+) -> Option<String> {
+    if location.is_empty() || location.trim() != location || location.chars().any(char::is_control)
+    {
+        return None;
+    }
+    if source_type == SkillSourceType::Local {
+        return Path::new(location)
+            .is_absolute()
+            .then(|| location.to_owned());
+    }
+
+    if let Ok(mut url) = Url::parse(location) {
+        if !matches!(url.scheme(), "https" | "ssh") || url.host_str().is_none() {
+            return None;
+        }
+        url.set_password(None).ok()?;
+        url.set_username("").ok()?;
+        url.set_query(None);
+        url.set_fragment(None);
+        return Some(url.to_string());
+    }
+
+    is_safe_scp_git_location(location).then(|| location.to_owned())
+}
+
+fn is_safe_scp_git_location(location: &str) -> bool {
+    if location.starts_with('-')
+        || location.contains(['\\', ' ', ';', '|', '&', '`', '$', '?', '#'])
+    {
+        return false;
+    }
+    let Some((user_host, path)) = location.split_once(':') else {
+        return false;
+    };
+    user_host.contains('@')
+        && !user_host.starts_with('@')
+        && !user_host.ends_with('@')
+        && !user_host.contains('/')
+        && !path.is_empty()
+        && !path.starts_with('/')
+        && !path.split('/').any(|component| component == "..")
 }
 
 #[cfg(test)]
@@ -460,5 +513,76 @@ mod tests {
             "skill-artifact:sha256:abc"
         );
         assert!(catalog.entries.is_empty());
+    }
+
+    #[test]
+    fn catalog_rejects_git_branches_that_cannot_round_trip_inventory() {
+        for branch in ["", " main", "main ", "main\n"] {
+            let request = SkillSourceRequest {
+                display_name: "Review".into(),
+                source_type: SkillSourceType::Git,
+                location: "https://example.com/team/skills.git".into(),
+                branch: Some(branch.into()),
+                subdirectory: None,
+                auto_update: false,
+            };
+
+            assert!(
+                validate_request(&request).is_err(),
+                "unexpected valid branch: {branch:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn safe_display_location_redacts_standard_git_url_secrets() {
+        assert_eq!(
+            format_safe_source_location(
+                SkillSourceType::Git,
+                "https://user:password@example.com/team/skills.git?token=hidden#review",
+            )
+            .as_deref(),
+            Some("https://example.com/team/skills.git")
+        );
+        assert_eq!(
+            format_safe_source_location(
+                SkillSourceType::Git,
+                "ssh://git:password@example.com/team/skills.git?token=hidden#review",
+            )
+            .as_deref(),
+            Some("ssh://example.com/team/skills.git")
+        );
+    }
+
+    #[test]
+    fn safe_display_location_preserves_scp_and_local_locations() {
+        assert_eq!(
+            format_safe_source_location(SkillSourceType::Git, "git@example.com:team/skills.git",)
+                .as_deref(),
+            Some("git@example.com:team/skills.git")
+        );
+        assert_eq!(
+            format_safe_source_location(
+                SkillSourceType::Local,
+                "/Users/test/Skill Sources/review",
+            )
+            .as_deref(),
+            Some("/Users/test/Skill Sources/review")
+        );
+    }
+
+    #[test]
+    fn safe_display_location_fails_closed_for_unsafe_git_values() {
+        for location in [
+            "ftp://user:password@example.com/skills.git?token=hidden",
+            "git@example.com:../outside.git",
+            "not a Git location",
+        ] {
+            assert_eq!(
+                format_safe_source_location(SkillSourceType::Git, location),
+                None,
+                "unexpected display value for {location}",
+            );
+        }
     }
 }

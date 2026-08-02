@@ -53,10 +53,21 @@ export const ResourceDeclarationViewSchema = z
     scope: ResourceScopeSchema.optional(),
   })
   .strict();
+export const ResourceSourceKindSchema = z.enum(['catalog_git', 'catalog_local', 'installed_path']);
+export const ResourceSourceViewSchema = z
+  .object({
+    kind: ResourceSourceKindSchema,
+    displayName: z.string().min(1),
+    location: z.string().min(1),
+    branch: z.string().min(1).optional(),
+    subdirectory: z.string().min(1).optional(),
+  })
+  .strict();
 export const ResourceProvenanceViewSchema = z
   .object({
     declarations: z.array(ResourceDeclarationViewSchema).default([]),
     winner: DeclarationKeySchema.optional(),
+    source: ResourceSourceViewSchema.optional(),
   })
   .strict();
 export const ResourceOwnershipKindSchema = z.enum([
@@ -234,6 +245,8 @@ export type CategoryCoverage = z.infer<typeof CategoryCoverageSchema>;
 export type EffectiveResourceState = z.infer<typeof EffectiveResourceStateSchema>;
 export type ResourceLayer = z.infer<typeof ResourceLayerSchema>;
 export type ResourceDeclarationView = z.infer<typeof ResourceDeclarationViewSchema>;
+export type ResourceSourceKind = z.infer<typeof ResourceSourceKindSchema>;
+export type ResourceSourceView = z.infer<typeof ResourceSourceViewSchema>;
 export type ResourceProvenanceView = z.infer<typeof ResourceProvenanceViewSchema>;
 export type ResourceOwnershipKind = z.infer<typeof ResourceOwnershipKindSchema>;
 export type ResourceOwnershipView = z.infer<typeof ResourceOwnershipViewSchema>;
