@@ -535,14 +535,21 @@ fn select_source_root(
     root: &Path,
     subdirectory: Option<&str>,
 ) -> Result<PathBuf, SkillArtifactError> {
+    let metadata = std::fs::symlink_metadata(root).map_err(|error| io_error(root, error))?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(SkillArtifactError::InvalidSource(
+            "Skill source root must be a physical directory".into(),
+        ));
+    }
+    let canonical_root = std::fs::canonicalize(root).map_err(|error| io_error(root, error))?;
     let Some(subdirectory) = subdirectory else {
-        return Ok(root.to_path_buf());
+        return Ok(canonical_root);
     };
     let relative = safe_subdirectory(subdirectory)?;
-    let requested = root.join(relative);
+    let requested = canonical_root.join(relative);
     let selected =
         std::fs::canonicalize(&requested).map_err(|error| io_error(&requested, error))?;
-    if !selected.is_dir() || !selected.starts_with(root) {
+    if !selected.is_dir() || !selected.starts_with(&canonical_root) {
         return Err(SkillArtifactError::InvalidSource(
             "Skill source subdirectory escapes its source root".into(),
         ));
