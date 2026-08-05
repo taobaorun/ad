@@ -3,9 +3,9 @@ use std::path::Path;
 use super::collection_skills::project_ownership_records;
 use super::{
     builtin_registry, inspect_project_workspace_inventory, load_skill_catalog_snapshot,
-    verify_skill_artifact, AgentContext, AgentError, AgentErrorCode, CollectionInstallRequest,
-    CollectionResourceView, ExecutionEngine, InstallationId, MutationPlan, OperationStatus,
-    PlanAcknowledgement, PlanAcknowledgementCode, PlanId, PlanStore,
+    resolve_skill_source_item, verify_skill_artifact, AgentContext, AgentError, AgentErrorCode,
+    CollectionInstallRequest, CollectionResourceView, ExecutionEngine, InstallationId,
+    MutationPlan, OperationStatus, PlanAcknowledgement, PlanAcknowledgementCode, PlanId, PlanStore,
     ProjectCollectionActionPreview, ProjectCollectionActionRequest, ProjectWorkspaceInventory,
     ResourceAction, ResourceActionAvailability, ResourceKey, ResourceKind, ResourceRef,
     ResourceScope, RiskFingerprint, WorkspaceDescriptor, WorkspaceOperationIssue,
@@ -217,7 +217,7 @@ fn catalog_binding(
     let catalog = load_skill_catalog_snapshot()
         .map_err(|error| action_error(workspace, error.to_string()))?;
     for source in catalog.entries {
-        for skill in &source.current_artifact.skills {
+        for skill in source.skills() {
             let key = ResourceKey::for_collection(
                 &workspace.key,
                 &workspace.agent_id,
@@ -226,14 +226,38 @@ fn catalog_binding(
                 &source.source_id,
             );
             if &key == resource_key {
-                let tree = verify_skill_artifact(&source.current_artifact)
-                    .map_err(|error| action_error(workspace, error.to_string()))?;
+                let (path, source_facts) = if let Some(binding) = &source.current_binding {
+                    let (stable, physical) = resolve_skill_source_item(binding, skill)
+                        .map_err(|error| action_error(workspace, error.to_string()))?;
+                    (
+                        stable,
+                        serde_json::json!({
+                            "bindingId": binding.binding_id,
+                            "sourceId": binding.source_id,
+                            "sourceType": binding.source_type,
+                            "stableRoot": binding.stable_root,
+                            "physicalRoot": binding.physical_root,
+                            "subpath": skill.subpath,
+                            "canonicalPath": physical,
+                        }),
+                    )
+                } else {
+                    let artifact = source.current_artifact.as_ref().ok_or_else(|| {
+                        action_error(workspace, "Catalog Skill payload is unavailable")
+                    })?;
+                    let tree = verify_skill_artifact(artifact)
+                        .map_err(|error| action_error(workspace, error.to_string()))?;
+                    (
+                        tree.join(&skill.subpath),
+                        serde_json::json!({"artifactId": artifact.artifact_id}),
+                    )
+                };
                 return Ok(CatalogBinding {
                     request: CollectionInstallRequest {
                         logical_id: format!("{}/{}", source.source_id, skill.logical_id),
                         source: serde_json::json!({
-                            "artifactId": source.current_artifact.artifact_id,
-                            "path": tree.join(&skill.subpath),
+                            "path": path,
+                            "catalog": source_facts,
                         }),
                     },
                 });

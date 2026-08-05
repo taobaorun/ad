@@ -139,6 +139,7 @@ fn seed_existing_directory_ownership(plan: &MutationPlan, registry: &AdapterRegi
             target_digest: digest.clone(),
             artifact_id: target.path().to_string_lossy().into_owned(),
             artifact_digest: digest,
+            source_binding: None,
             creating_receipt_id: receipt_id.clone(),
             updated_by_receipt_id: receipt_id,
         };
@@ -741,6 +742,7 @@ fn partial_plugin_failure_rolls_back_with_pre_apply_ownership() {
         target_digest: target_digest.clone(),
         artifact_id: old_artifact.to_string_lossy().into_owned(),
         artifact_digest: old_artifact_digest,
+        source_binding: None,
         creating_receipt_id: seed_receipt.clone(),
         updated_by_receipt_id: seed_receipt,
     };
@@ -1323,7 +1325,7 @@ fn execution_applies_an_allowlisted_skill_symlink_plan() {
     assert_eq!(receipt.status, OperationStatus::Complete);
     assert_eq!(
         std::fs::read_link(temp.path().join(".claude/skills/demo")).unwrap(),
-        std::fs::canonicalize(source).unwrap()
+        source
     );
 }
 
@@ -1532,10 +1534,7 @@ fn execution_skill_symlink_ancestor_swap_cannot_modify_outside_sentinel() {
         .unwrap();
 
     assert_eq!(receipt.status, OperationStatus::Complete);
-    assert_eq!(
-        std::fs::read_link(moved.join("demo")).unwrap(),
-        std::fs::canonicalize(source).unwrap()
-    );
+    assert_eq!(std::fs::read_link(moved.join("demo")).unwrap(), source);
     assert_eq!(
         std::fs::read_link(outside.join("demo")).unwrap(),
         std::path::PathBuf::from("outside-original")

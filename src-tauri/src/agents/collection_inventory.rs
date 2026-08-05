@@ -305,6 +305,8 @@ pub(super) fn collection_inventory(
                 has_health_error: configured_winner
                     .is_some_and(|winner| winner.health.status == ResourceHealthStatus::Error),
                 owned_artifact: ownership_record.map(|record| record.artifact_id.as_str()),
+                owned_source_binding: ownership_record
+                    .is_some_and(|record| record.source_binding.is_some()),
                 available_artifact,
                 has_resettable_declaration,
             });

@@ -299,6 +299,16 @@ export const ResourceOwnershipRecordSchema = z
     targetDigest: ContentDigestSchema,
     artifactId: z.string().min(1),
     artifactDigest: ContentDigestSchema,
+    sourceBinding: z
+      .object({
+        sourceId: z.string().startsWith('skill-source:'),
+        sourceType: z.enum(['git', 'local']),
+        bindingId: z.string().startsWith('skill-source-binding:'),
+        stableRoot: z.string().min(1),
+        skillSubpath: z.string(),
+      })
+      .strict()
+      .optional(),
     creatingReceiptId: ReceiptIdSchema,
     updatedByReceiptId: ReceiptIdSchema,
   })

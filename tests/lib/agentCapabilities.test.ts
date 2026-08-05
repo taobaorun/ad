@@ -36,6 +36,7 @@ describe('capabilityAllows', () => {
         actions: [
           {
             action: 'disable',
+            intent: 'standard',
             availability: 'unavailable',
             limitation: { code: 'external', messageKey: 'agents.resources.external' },
           },

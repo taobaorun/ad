@@ -163,10 +163,19 @@ pub enum ResourceActionAvailability {
     External,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceActionIntent {
+    Standard,
+    Relink,
+    Repair,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceActionView {
     pub action: ResourceAction,
+    pub intent: ResourceActionIntent,
     pub availability: ResourceActionAvailability,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limitation: Option<CapabilityLimitation>,

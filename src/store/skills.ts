@@ -14,6 +14,7 @@ interface SkillsState {
   previewAddSource: (source: SkillSourceRequest) => Promise<SkillCatalogPlanView>;
   previewRemoveSource: (sourceId: string) => Promise<SkillCatalogPlanView>;
   previewUpdateSource: (sourceId: string) => Promise<SkillCatalogPlanView>;
+  previewRollbackSourceUpdate: (receiptId: string) => Promise<SkillCatalogPlanView>;
   applySourcePlan: (plan: SkillCatalogPlanView) => Promise<SkillCatalogOperationReport>;
   cancelSourcePlan: (planId: string) => Promise<void>;
 }
@@ -31,6 +32,9 @@ export const useSkills = create<SkillsState>((set, get) => ({
   previewRemoveSource: (sourceId) => tauri.previewRemoveSkillCatalogSource(sourceId),
 
   previewUpdateSource: (sourceId) => tauri.previewUpdateSkillCatalogSource(sourceId),
+
+  previewRollbackSourceUpdate: (receiptId) =>
+    tauri.previewRollbackSkillCatalogSourceUpdate(receiptId),
 
   applySourcePlan: async (plan) => {
     const report = await tauri.applySkillCatalogSourcePlan(plan);

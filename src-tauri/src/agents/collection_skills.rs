@@ -321,19 +321,41 @@ fn catalog_skill_observations(
                     subdirectory: entry.subdirectory.clone(),
                 }
             });
-        let tree = match verify_skill_artifact(&entry.current_artifact) {
-            Ok(tree) => tree,
-            Err(_) => {
-                diagnostics.push(ItemDiagnostic {
-                    code: "skill_artifact_invalid".into(),
-                    message_key: "agents.inventory.skillArtifactInvalid".into(),
-                    retryable: false,
-                    resource_key: None,
-                });
-                continue;
-            }
+        let legacy_tree = match entry.current_artifact.as_ref() {
+            Some(artifact) => match verify_skill_artifact(artifact) {
+                Ok(tree) => Some(tree),
+                Err(_) => {
+                    diagnostics.push(ItemDiagnostic {
+                        code: "skill_artifact_invalid".into(),
+                        message_key: "agents.inventory.skillArtifactInvalid".into(),
+                        retryable: false,
+                        resource_key: None,
+                    });
+                    continue;
+                }
+            },
+            None => None,
         };
-        for skill in &entry.current_artifact.skills {
+        for skill in entry.skills() {
+            let install_target = if let Some(binding) = &entry.current_binding {
+                match super::resolve_skill_source_item(binding, skill) {
+                    Ok((stable, _)) => stable,
+                    Err(_) => {
+                        diagnostics.push(ItemDiagnostic {
+                            code: "skill_source_binding_invalid".into(),
+                            message_key: "agents.inventory.skillArtifactInvalid".into(),
+                            retryable: false,
+                            resource_key: None,
+                        });
+                        continue;
+                    }
+                }
+            } else {
+                legacy_tree
+                    .as_ref()
+                    .expect("validated catalog artifact has a verified tree")
+                    .join(&skill.subpath)
+            };
             let resource = ResourceRef {
                 installation_id: workspace.effective_installation_id.clone(),
                 project_path: Some(workspace.canonical_project_path.clone()),
@@ -357,7 +379,7 @@ fn catalog_skill_observations(
                     diagnostic: None,
                 },
                 configured: false,
-                artifact_id: Some(tree.join(&skill.subpath).to_string_lossy().into_owned()),
+                artifact_id: Some(install_target.to_string_lossy().into_owned()),
                 resettable: false,
                 source: source.clone(),
             });

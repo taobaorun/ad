@@ -5,12 +5,14 @@ use serde::{Deserialize, Serialize};
 use super::execution_fs::directory_tree_digest;
 use super::execution_state::ExecutionState;
 use super::{
-    opaque_contract_id, AgentContext, AgentError, AgentErrorCode, ContentDigest, OwnershipRecordId,
-    PhysicalTargetId, ReceiptId, ResourceKind, ResourceRef, ResourceScope, ResourceStateKind,
-    ResourceStorage, WorkspaceKey,
+    load_skill_catalog_snapshot, opaque_contract_id, resolve_skill_source_item, AgentContext,
+    AgentError, AgentErrorCode, ContentDigest, OwnershipRecordId, PhysicalTargetId, ReceiptId,
+    ResourceKind, ResourceRef, ResourceScope, ResourceStateKind, ResourceStorage, SkillSourceType,
+    WorkspaceKey,
 };
 
-pub const RESOURCE_OWNERSHIP_SCHEMA_VERSION: u32 = 1;
+pub const RESOURCE_OWNERSHIP_SCHEMA_VERSION: u32 = 2;
+const LEGACY_RESOURCE_OWNERSHIP_SCHEMA_VERSION: u32 = 1;
 pub const OWNERSHIP_EVIDENCE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,8 +28,20 @@ pub struct ResourceOwnershipRecord {
     pub target_digest: ContentDigest,
     pub artifact_id: String,
     pub artifact_digest: ContentDigest,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_binding: Option<SkillOwnershipBinding>,
     pub creating_receipt_id: ReceiptId,
     pub updated_by_receipt_id: ReceiptId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SkillOwnershipBinding {
+    pub source_id: String,
+    pub source_type: SkillSourceType,
+    pub binding_id: String,
+    pub stable_root: String,
+    pub skill_subpath: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,6 +66,7 @@ pub struct ResourceOwnershipChange {
 pub(super) struct OwnershipArtifact {
     pub id: String,
     pub digest: ContentDigest,
+    pub source_binding: Option<SkillOwnershipBinding>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -173,6 +188,9 @@ pub(super) fn validate_ownership_record_identity(
 pub(super) fn validate_ownership_artifact(
     record: &ResourceOwnershipRecord,
 ) -> Result<(), AgentError> {
+    if let Some(source_binding) = &record.source_binding {
+        return validate_owned_skill_binding(record, source_binding);
+    }
     let path = Path::new(&record.artifact_id);
     let metadata = std::fs::symlink_metadata(path).map_err(|error| {
         ownership_error(
@@ -210,6 +228,131 @@ pub(super) fn validate_ownership_artifact(
             AgentErrorCode::ResourceChanged,
             &record.resource,
             "Owned artifact content changed",
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn ownership_source_binding(
+    resource: &ResourceRef,
+    artifact_id: &str,
+) -> Result<Option<SkillOwnershipBinding>, AgentError> {
+    if resource.kind != ResourceKind::Skills {
+        return Ok(None);
+    }
+    let Some((source_id, logical_id)) = resource.logical_id.rsplit_once('/') else {
+        return Ok(None);
+    };
+    let catalog = load_skill_catalog_snapshot().map_err(|error| {
+        ownership_error(
+            AgentErrorCode::InvalidPlan,
+            resource,
+            format!("Skill catalog is unavailable: {error}"),
+        )
+    })?;
+    let Some(entry) = catalog
+        .entries
+        .iter()
+        .find(|entry| entry.source_id == source_id)
+    else {
+        return Ok(None);
+    };
+    let Some(binding) = &entry.current_binding else {
+        return Ok(None);
+    };
+    let item = binding
+        .skills
+        .iter()
+        .find(|item| item.logical_id == logical_id)
+        .ok_or_else(|| {
+            ownership_error(
+                AgentErrorCode::InvalidPlan,
+                resource,
+                "Catalog Skill binding no longer contains the requested Skill",
+            )
+        })?;
+    let (stable_skill, _) = resolve_skill_source_item(binding, item).map_err(|error| {
+        ownership_error(AgentErrorCode::InvalidPlan, resource, error.to_string())
+    })?;
+    if stable_skill != Path::new(artifact_id) {
+        return Err(ownership_error(
+            AgentErrorCode::InvalidPlan,
+            resource,
+            "Skill link target does not match its catalog source binding",
+        ));
+    }
+    Ok(Some(SkillOwnershipBinding {
+        source_id: binding.source_id.clone(),
+        source_type: binding.source_type,
+        binding_id: binding.binding_id.clone(),
+        stable_root: binding.stable_root.clone(),
+        skill_subpath: item.subpath.clone(),
+    }))
+}
+
+fn validate_owned_skill_binding(
+    record: &ResourceOwnershipRecord,
+    owned: &SkillOwnershipBinding,
+) -> Result<(), AgentError> {
+    let catalog = load_skill_catalog_snapshot().map_err(|error| {
+        ownership_error(
+            AgentErrorCode::ResourceChanged,
+            &record.resource,
+            format!("Skill catalog is unavailable: {error}"),
+        )
+    })?;
+    let entry = catalog
+        .entries
+        .iter()
+        .find(|entry| entry.source_id == owned.source_id)
+        .ok_or_else(|| {
+            ownership_error(
+                AgentErrorCode::ResourceChanged,
+                &record.resource,
+                "Owned Skill source is no longer cataloged",
+            )
+        })?;
+    let binding = entry.current_binding.as_ref().ok_or_else(|| {
+        ownership_error(
+            AgentErrorCode::ResourceChanged,
+            &record.resource,
+            "Owned Skill source is not a live source binding",
+        )
+    })?;
+    if binding.binding_id != owned.binding_id
+        || binding.source_id != owned.source_id
+        || binding.source_type != owned.source_type
+        || binding.stable_root != owned.stable_root
+    {
+        return Err(ownership_error(
+            AgentErrorCode::PermissionDenied,
+            &record.resource,
+            "Owned Skill source identity changed",
+        ));
+    }
+    let item = binding
+        .skills
+        .iter()
+        .find(|item| item.subpath == owned.skill_subpath)
+        .ok_or_else(|| {
+            ownership_error(
+                AgentErrorCode::ResourceChanged,
+                &record.resource,
+                "Owned Skill subpath is unavailable",
+            )
+        })?;
+    let (stable_skill, _) = resolve_skill_source_item(binding, item).map_err(|error| {
+        ownership_error(
+            AgentErrorCode::ResourceChanged,
+            &record.resource,
+            error.to_string(),
+        )
+    })?;
+    if stable_skill != Path::new(&record.artifact_id) {
+        return Err(ownership_error(
+            AgentErrorCode::PermissionDenied,
+            &record.resource,
+            "Owned Skill link target changed identity",
         ));
     }
     Ok(())
@@ -388,7 +531,12 @@ fn validate_record_identity(
     );
     let valid_paths = Path::new(&record.target_path).is_absolute()
         && Path::new(&record.artifact_id).is_absolute();
-    let valid_identity = record.schema_version == RESOURCE_OWNERSHIP_SCHEMA_VERSION
+    let valid_schema = matches!(
+        record.schema_version,
+        LEGACY_RESOURCE_OWNERSHIP_SCHEMA_VERSION | RESOURCE_OWNERSHIP_SCHEMA_VERSION
+    ) && (record.schema_version != LEGACY_RESOURCE_OWNERSHIP_SCHEMA_VERSION
+        || record.source_binding.is_none());
+    let valid_identity = valid_schema
         && &record.id == expected_id
         && record.target_id == PhysicalTargetId::for_resource(&record.resource)
         && record.workspace_key == ownership_workspace_key(&record.resource)?

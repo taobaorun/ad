@@ -1,11 +1,13 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use chrono::Utc;
 use serial_test::serial;
 
 use super::collection_inventory::{collection_inventory, CollectionObservation};
+use super::execution_state::ExecutionState;
 use super::*;
-use crate::models::SkillSourceType;
+use crate::models::{SkillSource, SkillSourceType};
 
 struct EnvironmentGuard {
     ad_home: Option<OsString>,
@@ -90,7 +92,7 @@ fn resource_source(resource: &CollectionResourceView) -> &ResourceSourceView {
     resource.provenance.source.as_ref().unwrap()
 }
 
-fn update_catalog_source(source_id: &str) {
+fn update_catalog_source(source_id: &str) -> SkillCatalogOperationReport {
     let plans = SkillCatalogPlanStore::default();
     let plan = plans.preview_update(source_id).unwrap();
     apply_skill_catalog_plan(
@@ -101,7 +103,7 @@ fn update_catalog_source(source_id: &str) {
             confirmed: true,
         },
     )
-    .unwrap();
+    .unwrap()
 }
 
 fn skill<'a>(
@@ -201,7 +203,7 @@ fn setup() -> (
 
 #[test]
 #[serial(home_env)]
-fn catalog_skill_actions_keep_project_revisions_isolated() {
+fn catalog_local_skill_actions_share_the_original_live_source() {
     let (_home, _guard, source, project_a, project_b) = setup();
     let source_id = add_catalog_source(&source);
     let installation_id = claude_installation();
@@ -253,9 +255,25 @@ fn catalog_skill_actions_keep_project_revisions_isolated() {
     let first_a = std::fs::read_link(&link_a).unwrap();
     let first_b = std::fs::read_link(&link_b).unwrap();
     assert_eq!(first_a, first_b);
+    assert_eq!(
+        first_a,
+        std::fs::canonicalize(source.join("review")).unwrap()
+    );
 
     write_skill(&source, "second revision");
-    update_catalog_source(&source_id);
+    assert_eq!(std::fs::read_link(&link_a).unwrap(), first_a);
+    assert_eq!(std::fs::read_link(&link_b).unwrap(), first_b);
+    assert!(std::fs::read_to_string(link_a.join("SKILL.md"))
+        .unwrap()
+        .contains("second revision"));
+    assert!(std::fs::read_to_string(link_b.join("SKILL.md"))
+        .unwrap()
+        .contains("second revision"));
+
+    let source_update = update_catalog_source(&source_id);
+    let source_receipt = source_update.receipt.unwrap();
+    assert_eq!(source_receipt.affected_resources.len(), 2);
+    assert_eq!(source_receipt.affected_workspaces.len(), 2);
     let inventory_a = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
     let inventory_b = inspect_project_workspace_inventory(&installation_id, &project_b).unwrap();
     assert_eq!(
@@ -266,28 +284,14 @@ fn catalog_skill_actions_keep_project_revisions_isolated() {
         resource_source(skill(&inventory_a, "review")).location,
         source.to_string_lossy()
     );
-    assert!(action_is_available(
+    assert!(!action_is_available(
         skill(&inventory_a, "review"),
         ResourceAction::Update
     ));
-    assert!(action_is_available(
+    assert!(!action_is_available(
         skill(&inventory_b, "review"),
         ResourceAction::Update
     ));
-
-    apply_action(
-        &installation_id,
-        &project_a,
-        &inventory_a,
-        skill(&inventory_a, "review"),
-        ResourceAction::Update,
-        &plans,
-    );
-    let second_a = std::fs::read_link(&link_a).unwrap();
-    assert_ne!(second_a, first_a);
-    assert_eq!(std::fs::read_link(&link_b).unwrap(), first_b);
-    assert!(second_a.join("SKILL.md").is_file());
-    assert!(first_b.join("SKILL.md").is_file());
 
     let inventory_a = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
     apply_action(
@@ -306,9 +310,216 @@ fn catalog_skill_actions_keep_project_revisions_isolated() {
         skill(&inventory_a, "review").effective_state,
         EffectiveResourceState::Unconfigured
     );
-    assert!(action_is_available(
+    assert_eq!(std::fs::read_link(&link_b).unwrap(), first_b);
+    assert_eq!(
+        resource_source(skill(&inventory_b, "review")).kind,
+        ResourceSourceKind::CatalogLocal
+    );
+
+    let source_plans = SkillCatalogPlanStore::default();
+    let blocked_remove = source_plans.preview_remove(&source_id).unwrap();
+    assert_eq!(
+        blocked_remove.applicability,
+        SkillCatalogPlanApplicability::Blocked
+    );
+    assert_eq!(blocked_remove.affected_workspaces.len(), 1);
+    assert!(apply_skill_catalog_plan(
+        &source_plans,
+        &SkillCatalogPlanClaim {
+            plan_id: blocked_remove.id,
+            risk_fingerprint: blocked_remove.risk_fingerprint,
+            confirmed: true,
+        },
+    )
+    .is_err());
+
+    std::fs::remove_file(&link_b).unwrap();
+    std::os::unix::fs::symlink(source.join("review/scripts"), &link_b).unwrap();
+    let tampered = inspect_project_workspace_inventory(&installation_id, &project_b).unwrap();
+    assert!(!action_is_available(
+        skill(&tampered, "review"),
+        ResourceAction::Remove
+    ));
+    std::fs::remove_file(&link_b).unwrap();
+    std::os::unix::fs::symlink(&first_b, &link_b).unwrap();
+
+    let inventory_b = inspect_project_workspace_inventory(&installation_id, &project_b).unwrap();
+    apply_action(
+        &installation_id,
+        &project_b,
+        &inventory_b,
         skill(&inventory_b, "review"),
-        ResourceAction::Update
+        ResourceAction::Remove,
+        &plans,
+    );
+    let removable = source_plans.preview_remove(&source_id).unwrap();
+    assert_eq!(
+        removable.applicability,
+        SkillCatalogPlanApplicability::Applicable
+    );
+    apply_skill_catalog_plan(
+        &source_plans,
+        &SkillCatalogPlanClaim {
+            plan_id: removable.id,
+            risk_fingerprint: removable.risk_fingerprint,
+            confirmed: true,
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+#[serial(home_env)]
+fn legacy_artifact_link_relinks_explicitly_and_rolls_back_exactly() {
+    let (_home, _guard, source, project_a, _project_b) = setup();
+    let source_id = format!("skill-source:{}", uuid::Uuid::new_v4());
+    let acquisition = SkillSource {
+        id: source_id.clone(),
+        source_type: SkillSourceType::Local,
+        url: source.to_string_lossy().into_owned(),
+        branch: None,
+        subdirectory: None,
+        auto_update: false,
+        added_at: Utc::now(),
+    };
+    let artifact =
+        publish_staged_skill_artifact(stage_skill_source(&acquisition).unwrap()).unwrap();
+    let artifact_skill = verify_skill_artifact(&artifact).unwrap().join("review");
+    let catalog = serde_json::to_vec_pretty(&serde_json::json!({
+        "schemaVersion": 1,
+        "entries": [{
+            "sourceId": source_id,
+            "displayName": "Review Skills",
+            "sourceType": "local",
+            "location": source.to_string_lossy(),
+            "autoUpdate": false,
+            "currentArtifact": artifact,
+            "addedAt": Utc::now(),
+            "updatedAt": Utc::now(),
+        }],
+    }))
+    .unwrap();
+    let state = ExecutionState::open().unwrap();
+    state
+        .state()
+        .write_atomic("skill_catalog.json", &catalog)
+        .unwrap();
+    let installation_id = claude_installation();
+    let plans = PlanStore::default();
+    let inventory = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    apply_action(
+        &installation_id,
+        &project_a,
+        &inventory,
+        skill(&inventory, "review"),
+        ResourceAction::Install,
+        &plans,
+    );
+    let installed = project_a.join(".claude/skills/review");
+    assert_eq!(std::fs::read_link(&installed).unwrap(), artifact_skill);
+
+    let source_update = update_catalog_source(&acquisition.id);
+    assert_eq!(source_update.receipt.unwrap().affected_workspaces.len(), 1);
+    let inventory = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    let legacy = skill(&inventory, "review");
+    let update = legacy
+        .management
+        .actions
+        .iter()
+        .find(|action| action.action == ResourceAction::Update)
+        .unwrap();
+    assert_eq!(update.intent, ResourceActionIntent::Relink);
+    let relink = apply_action(
+        &installation_id,
+        &project_a,
+        &inventory,
+        legacy,
+        ResourceAction::Update,
+        &plans,
+    );
+    let relink_receipt = relink.receipt.unwrap();
+    assert_eq!(
+        std::fs::read_link(&installed).unwrap(),
+        std::fs::canonicalize(source.join("review")).unwrap()
+    );
+
+    let rollback_plans = PlanStore::default();
+    let rollback = ExecutionEngine
+        .preview_rollback_bound(
+            &relink_receipt.id,
+            &relink_receipt.context.clone().unwrap(),
+            &rollback_plans,
+        )
+        .unwrap();
+    ExecutionEngine
+        .apply_acknowledged_bound(
+            &rollback.id,
+            &rollback.context,
+            &rollback.risk_fingerprint,
+            &rollback_plans,
+            &[PlanAcknowledgement {
+                code: PlanAcknowledgementCode::RollbackApply,
+                accepted: true,
+            }],
+        )
+        .unwrap();
+
+    assert_eq!(std::fs::read_link(&installed).unwrap(), artifact_skill);
+    let restored = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    assert_eq!(
+        skill(&restored, "review")
+            .management
+            .actions
+            .iter()
+            .find(|action| action.action == ResourceAction::Update)
+            .unwrap()
+            .intent,
+        ResourceActionIntent::Relink
+    );
+}
+
+#[test]
+#[serial(home_env)]
+fn source_update_rejects_ownership_changes_after_preview() {
+    let (_home, _guard, source, project_a, project_b) = setup();
+    let source_id = add_catalog_source(&source);
+    let installation_id = claude_installation();
+    let action_plans = PlanStore::default();
+    let inventory_a = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    apply_action(
+        &installation_id,
+        &project_a,
+        &inventory_a,
+        skill(&inventory_a, "review"),
+        ResourceAction::Install,
+        &action_plans,
+    );
+    let source_plans = SkillCatalogPlanStore::default();
+    let source_update = source_plans.preview_update(&source_id).unwrap();
+    assert_eq!(source_update.affected_workspaces.len(), 1);
+
+    let inventory_b = inspect_project_workspace_inventory(&installation_id, &project_b).unwrap();
+    apply_action(
+        &installation_id,
+        &project_b,
+        &inventory_b,
+        skill(&inventory_b, "review"),
+        ResourceAction::Install,
+        &action_plans,
+    );
+    let error = apply_skill_catalog_plan(
+        &source_plans,
+        &SkillCatalogPlanClaim {
+            plan_id: source_update.id,
+            risk_fingerprint: source_update.risk_fingerprint,
+            confirmed: true,
+        },
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        SkillCatalogExecutionError::Plan(SkillCatalogPlanError::RiskChanged)
     ));
 }
 

@@ -126,7 +126,7 @@ function inventory(model = 'current', key = 'workspace:sha256:project') {
           health: { status: 'healthy' },
           management: {
             status: 'read_only',
-            actions: [{ action: 'inspect', availability: 'available' }],
+            actions: [{ action: 'inspect', intent: 'standard', availability: 'available' }],
           },
         },
       ],
@@ -196,10 +196,11 @@ function actionableInventory() {
   resource.management = {
     status: 'managed',
     actions: [
-      { action: 'inspect', availability: 'available' },
-      { action: 'install', availability: 'confirmation_required' },
+      { action: 'inspect', intent: 'standard', availability: 'available' },
+      { action: 'install', intent: 'standard', availability: 'confirmation_required' },
       {
         action: 'remove',
+        intent: 'standard',
         availability: 'unavailable',
         limitation: {
           code: 'skill_not_installed',
@@ -230,7 +231,7 @@ function conflictingSkillInventory() {
   delete personal.provenance.winner;
   personal.management = {
     status: 'read_only',
-    actions: [{ action: 'inspect', availability: 'available' }],
+    actions: [{ action: 'inspect', intent: 'standard', availability: 'available' }],
   };
   const team = structuredClone(personal);
   team.key = ResourceKeySchema.parse('resource:sha256:html-artifact-team');
@@ -463,6 +464,29 @@ describe('AgentCollectionPanel', () => {
       'risk:sha256:install-review',
     );
     expect(await screen.findByText('Applied')).toBeInTheDocument();
+  });
+
+  it('renders backend-owned relink and repair action intent', async () => {
+    const relink = actionableInventory();
+    const relinkResource = relink.skills.resources[0]!;
+    relinkResource.management.actions = [
+      { action: 'update', intent: 'relink', availability: 'confirmation_required' },
+    ];
+    inspectProjectAgentWorkspace.mockResolvedValueOnce(relink);
+    const first = render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+
+    expect(await screen.findByRole('button', { name: 'Relink: Review available' })).toBeEnabled();
+    first.unmount();
+
+    const repair = actionableInventory();
+    const repairResource = repair.skills.resources[0]!;
+    repairResource.management.actions = [
+      { action: 'update', intent: 'repair', availability: 'confirmation_required' },
+    ];
+    inspectProjectAgentWorkspace.mockResolvedValueOnce(repair);
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+
+    expect(await screen.findByRole('button', { name: 'Repair: Review available' })).toBeEnabled();
   });
 
   it('returns focus on cancel and supports keyboard dismissal', async () => {

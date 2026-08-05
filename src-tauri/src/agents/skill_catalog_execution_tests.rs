@@ -2,6 +2,40 @@ use chrono::Utc;
 use serial_test::serial;
 
 use super::*;
+use crate::agents::{load_skill_catalog_snapshot, SkillSourceRequest};
+use crate::models::{SkillSource, SkillSourceType};
+
+fn git_source() -> SkillSource {
+    SkillSource {
+        id: format!("skill-source:{}", uuid::Uuid::new_v4()),
+        source_type: SkillSourceType::Git,
+        url: "https://example.com/team/skills.git".into(),
+        branch: None,
+        subdirectory: None,
+        auto_update: false,
+        added_at: Utc::now(),
+    }
+}
+
+fn staged_git_checkout(
+    source: &SkillSource,
+    body: &str,
+    revision: &str,
+) -> super::super::StagedGitSkillSourceBinding {
+    let operation = crate::fs::paths::skill_acquisition_staging_dir()
+        .unwrap()
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(operation.join("source/review")).unwrap();
+    std::fs::write(
+        operation.join("source/review/SKILL.md"),
+        format!("---\nname: review\n---\n{body}"),
+    )
+    .unwrap();
+    super::super::skill_source_bindings::stage_existing_git_checkout_for_test(
+        source, operation, revision,
+    )
+    .unwrap()
+}
 
 fn receipt(before: ContentDigest, after: ContentDigest) -> SkillCatalogReceipt {
     SkillCatalogReceipt {
@@ -13,6 +47,11 @@ fn receipt(before: ContentDigest, after: ContentDigest) -> SkillCatalogReceipt {
         before_catalog_revision: before,
         after_catalog_revision: after,
         artifact: None,
+        binding: None,
+        previous_binding: None,
+        rollback_of: None,
+        affected_resources: Vec::new(),
+        affected_workspaces: Vec::new(),
         backup_id: None,
         status: SkillCatalogReceiptStatus::Complete,
         created_at: Utc::now(),
@@ -103,4 +142,98 @@ fn corrupt_recovery_input_blocks_catalog_mutation() {
         ensure_recovery_writable(&state),
         Err(SkillCatalogExecutionError::RepairRequired)
     ));
+}
+
+#[test]
+#[serial(home_env)]
+fn receipt_rollback_switches_catalog_and_shared_git_current() {
+    let home = tempfile::tempdir().unwrap();
+    std::env::set_var("AD_HOME", home.path());
+    let source = git_source();
+    let first_staged = staged_git_checkout(&source, "first", &"a".repeat(40));
+    let (first, first_publication) =
+        publish_staged_git_skill_source_binding(first_staged, None).unwrap();
+    first_publication.commit();
+    let second_staged = staged_git_checkout(&source, "second", &"b".repeat(40));
+    let (second, second_publication) =
+        publish_staged_git_skill_source_binding(second_staged, Some(&first)).unwrap();
+    second_publication.commit();
+
+    let request = SkillSourceRequest {
+        display_name: "Team skills".into(),
+        source_type: SkillSourceType::Git,
+        location: source.url.clone(),
+        branch: None,
+        subdirectory: None,
+        auto_update: false,
+    };
+    let mut document = super::super::skill_catalog::SkillCatalogDocument::empty();
+    document
+        .add_binding(source.id.clone(), &request, first.clone(), Utc::now())
+        .unwrap();
+    let before_catalog_revision = document.revision().unwrap();
+    document
+        .update_binding(&source.id, second.clone(), Utc::now())
+        .unwrap();
+    let after_bytes = document.render().unwrap();
+    let after_catalog_revision = ContentDigest::sha256(&after_bytes);
+    let state = ExecutionState::open().unwrap();
+    state
+        .state()
+        .write_atomic("skill_catalog.json", &after_bytes)
+        .unwrap();
+    let original_receipt = SkillCatalogReceipt {
+        schema_version: RECEIPT_SCHEMA_VERSION,
+        id: ReceiptId::from(format!("skill-catalog-receipt:{}", uuid::Uuid::new_v4())),
+        plan_id: PlanId::from(format!("skill-catalog-plan:{}", uuid::Uuid::new_v4())),
+        action: SkillCatalogAction::Update,
+        source_id: source.id.clone(),
+        before_catalog_revision,
+        after_catalog_revision,
+        artifact: None,
+        binding: Some(second.clone()),
+        previous_binding: Some(first.clone()),
+        rollback_of: None,
+        affected_resources: Vec::new(),
+        affected_workspaces: Vec::new(),
+        backup_id: None,
+        status: SkillCatalogReceiptStatus::Complete,
+        created_at: Utc::now(),
+    };
+    persist_receipt(&state, &original_receipt).unwrap();
+    let plans = SkillCatalogPlanStore::default();
+
+    let preview = preview_rollback_skill_catalog_source(&original_receipt.id, &plans).unwrap();
+    assert_eq!(preview.rollback_of.as_ref(), Some(&original_receipt.id));
+    assert_eq!(preview.binding.as_ref(), Some(&first));
+    assert_eq!(preview.current_binding.as_ref(), Some(&second));
+    let report = apply_skill_catalog_plan(
+        &plans,
+        &SkillCatalogPlanClaim {
+            plan_id: preview.id,
+            risk_fingerprint: preview.risk_fingerprint,
+            confirmed: true,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(report.outcome, SkillCatalogOperationOutcome::Changed);
+    let rollback_receipt = report.receipt.unwrap();
+    assert_eq!(
+        rollback_receipt.rollback_of.as_ref(),
+        Some(&original_receipt.id)
+    );
+    assert_eq!(rollback_receipt.binding.as_ref(), Some(&first));
+    assert_eq!(rollback_receipt.previous_binding.as_ref(), Some(&second));
+    assert!(std::fs::read_to_string(
+        std::path::Path::new(&first.stable_root).join("review/SKILL.md")
+    )
+    .unwrap()
+    .contains("first"));
+    assert_eq!(
+        load_skill_catalog_snapshot().unwrap().entries[0]
+            .current_binding
+            .as_ref(),
+        Some(&first)
+    );
 }

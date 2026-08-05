@@ -399,6 +399,12 @@ export const tauri = {
     SkillCatalogPlanViewSchema.parse(
       await invoke('preview_remove_skill_catalog_source', { sourceId }),
     ),
+  previewRollbackSkillCatalogSourceUpdate: async (
+    receiptId: string,
+  ): Promise<SkillCatalogPlanView> =>
+    SkillCatalogPlanViewSchema.parse(
+      await invoke('preview_rollback_skill_catalog_source_update', { receiptId }),
+    ),
   applySkillCatalogSourcePlan: async (
     plan: SkillCatalogPlanView,
   ): Promise<SkillCatalogOperationReport> =>

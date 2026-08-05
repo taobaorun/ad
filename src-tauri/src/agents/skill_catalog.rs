@@ -5,10 +5,11 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use super::execution_state::{ExecutionState, StateDirectory};
-use super::{ContentDigest, SkillArtifactRef};
+use super::{ContentDigest, SkillArtifactRef, SkillSourceBinding};
 use crate::models::{SkillSource, SkillSourceType};
 
-const SKILL_CATALOG_SCHEMA_VERSION: u32 = 1;
+const LEGACY_SKILL_CATALOG_SCHEMA_VERSION: u32 = 1;
+const SKILL_CATALOG_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -37,7 +38,10 @@ pub struct SkillCatalogEntry {
     pub subdirectory: Option<String>,
     #[serde(default)]
     pub auto_update: bool,
-    pub current_artifact: SkillArtifactRef,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_artifact: Option<SkillArtifactRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_binding: Option<SkillSourceBinding>,
     pub added_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -133,7 +137,7 @@ pub(super) fn load_skill_catalog_state_from(
 impl SkillCatalogState {
     pub(crate) fn snapshot(&self) -> SkillCatalogSnapshot {
         SkillCatalogSnapshot {
-            schema_version: SKILL_CATALOG_SCHEMA_VERSION,
+            schema_version: self.document.schema_version,
             revision: self.revision.clone(),
             entries: self.document.entries.clone(),
         }
@@ -183,6 +187,40 @@ impl SkillCatalogDocument {
             ));
         }
         validate_source_id(&source_id)?;
+        self.add_payload(source_id, request, Some(artifact), None, now)
+    }
+
+    pub(crate) fn add_binding(
+        &mut self,
+        source_id: String,
+        request: &SkillSourceRequest,
+        binding: SkillSourceBinding,
+        now: DateTime<Utc>,
+    ) -> Result<SkillCatalogEntry, SkillCatalogError> {
+        self.add_payload(source_id, request, None, Some(binding), now)
+    }
+
+    fn add_payload(
+        &mut self,
+        source_id: String,
+        request: &SkillSourceRequest,
+        current_artifact: Option<SkillArtifactRef>,
+        current_binding: Option<SkillSourceBinding>,
+        now: DateTime<Utc>,
+    ) -> Result<SkillCatalogEntry, SkillCatalogError> {
+        validate_request(request)?;
+        if self.entries.iter().any(|entry| {
+            entry
+                .display_name
+                .eq_ignore_ascii_case(&request.display_name)
+                || same_source_location(entry, request)
+        }) {
+            return Err(SkillCatalogError::InvalidRequest(
+                "a source with the same name or location already exists".into(),
+            ));
+        }
+        validate_source_id(&source_id)?;
+        self.promote_v2();
         let entry = SkillCatalogEntry {
             source_id,
             display_name: request.display_name.trim().to_owned(),
@@ -191,7 +229,8 @@ impl SkillCatalogDocument {
             branch: request.branch.clone(),
             subdirectory: request.subdirectory.clone(),
             auto_update: request.auto_update,
-            current_artifact: artifact,
+            current_artifact,
+            current_binding,
             added_at: now,
             updated_at: now,
         };
@@ -207,12 +246,34 @@ impl SkillCatalogDocument {
         artifact: SkillArtifactRef,
         now: DateTime<Utc>,
     ) -> Result<SkillCatalogEntry, SkillCatalogError> {
+        self.promote_v2();
         let entry = self
             .entries
             .iter_mut()
             .find(|entry| entry.source_id == source_id)
             .ok_or_else(|| SkillCatalogError::NotFound(source_id.to_owned()))?;
-        entry.current_artifact = artifact;
+        entry.current_artifact = Some(artifact);
+        entry.current_binding = None;
+        entry.updated_at = now;
+        let updated = entry.clone();
+        self.validate()?;
+        Ok(updated)
+    }
+
+    pub(crate) fn update_binding(
+        &mut self,
+        source_id: &str,
+        binding: SkillSourceBinding,
+        now: DateTime<Utc>,
+    ) -> Result<SkillCatalogEntry, SkillCatalogError> {
+        self.promote_v2();
+        let entry = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.source_id == source_id)
+            .ok_or_else(|| SkillCatalogError::NotFound(source_id.to_owned()))?;
+        entry.current_artifact = None;
+        entry.current_binding = Some(binding);
         entry.updated_at = now;
         let updated = entry.clone();
         self.validate()?;
@@ -228,11 +289,16 @@ impl SkillCatalogDocument {
             .iter()
             .position(|entry| entry.source_id == source_id)
             .ok_or_else(|| SkillCatalogError::NotFound(source_id.to_owned()))?;
-        Ok(self.entries.remove(index))
+        let removed = self.entries.remove(index);
+        self.promote_v2();
+        Ok(removed)
     }
 
     fn validate(&self) -> Result<(), SkillCatalogError> {
-        if self.schema_version != SKILL_CATALOG_SCHEMA_VERSION {
+        if !matches!(
+            self.schema_version,
+            LEGACY_SKILL_CATALOG_SCHEMA_VERSION | SKILL_CATALOG_SCHEMA_VERSION
+        ) {
             return Err(SkillCatalogError::Corrupt(format!(
                 "unsupported schema version {}",
                 self.schema_version
@@ -252,9 +318,36 @@ impl SkillCatalogDocument {
                     "catalog contains duplicate source identity".into(),
                 ));
             }
-            if entry.current_artifact.source_id != entry.source_id {
+            let payload_count = usize::from(entry.current_artifact.is_some())
+                + usize::from(entry.current_binding.is_some());
+            if payload_count != 1 {
+                return Err(SkillCatalogError::Corrupt(
+                    "catalog entry must contain exactly one source payload".into(),
+                ));
+            }
+            if self.schema_version == LEGACY_SKILL_CATALOG_SCHEMA_VERSION
+                && entry.current_binding.is_some()
+            {
+                return Err(SkillCatalogError::Corrupt(
+                    "legacy catalog cannot contain a source binding".into(),
+                ));
+            }
+            if entry
+                .current_artifact
+                .as_ref()
+                .is_some_and(|artifact| artifact.source_id != entry.source_id)
+            {
                 return Err(SkillCatalogError::Corrupt(
                     "artifact provenance does not match its catalog source".into(),
+                ));
+            }
+            if entry
+                .current_binding
+                .as_ref()
+                .is_some_and(|binding| binding.source_id != entry.source_id)
+            {
+                return Err(SkillCatalogError::Corrupt(
+                    "binding provenance does not match its catalog source".into(),
                 ));
             }
         }
@@ -269,9 +362,37 @@ impl SkillCatalogDocument {
                 .then_with(|| left.source_id.cmp(&right.source_id))
         });
     }
+
+    fn promote_v2(&mut self) {
+        self.schema_version = SKILL_CATALOG_SCHEMA_VERSION;
+    }
 }
 
 impl SkillCatalogEntry {
+    pub fn skills(&self) -> &[super::SkillArtifactItem] {
+        if let Some(binding) = &self.current_binding {
+            &binding.skills
+        } else {
+            &self
+                .current_artifact
+                .as_ref()
+                .expect("validated catalog entry has a payload")
+                .skills
+        }
+    }
+
+    pub fn activation_impact(&self) -> &super::SkillActivationImpact {
+        if let Some(binding) = &self.current_binding {
+            &binding.activation_impact
+        } else {
+            &self
+                .current_artifact
+                .as_ref()
+                .expect("validated catalog entry has a payload")
+                .activation_impact
+        }
+    }
+
     pub(crate) fn request(&self) -> SkillSourceRequest {
         SkillSourceRequest {
             display_name: self.display_name.clone(),
@@ -509,10 +630,48 @@ mod tests {
         let removed = catalog.remove(&source_id).unwrap();
 
         assert_eq!(
-            removed.current_artifact.artifact_id,
+            removed.current_artifact.unwrap().artifact_id,
             "skill-artifact:sha256:abc"
         );
         assert!(catalog.entries.is_empty());
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn legacy_v1_catalog_load_is_byte_preserving() {
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("AD_HOME", home.path());
+        let source_id = new_source_id();
+        let request = SkillSourceRequest {
+            display_name: "Review".into(),
+            source_type: SkillSourceType::Local,
+            location: "/tmp/review".into(),
+            branch: None,
+            subdirectory: None,
+            auto_update: false,
+        };
+        let mut document = SkillCatalogDocument::empty();
+        document
+            .add(
+                source_id.clone(),
+                &request,
+                artifact(&source_id),
+                Utc::now(),
+            )
+            .unwrap();
+        document.schema_version = LEGACY_SKILL_CATALOG_SCHEMA_VERSION;
+        let bytes = document.render().unwrap();
+        let state = super::super::execution_state::ExecutionState::open().unwrap();
+        state
+            .state()
+            .write_atomic("skill_catalog.json", &bytes)
+            .unwrap();
+
+        let snapshot = load_skill_catalog_snapshot().unwrap();
+
+        assert_eq!(snapshot.schema_version, LEGACY_SKILL_CATALOG_SCHEMA_VERSION);
+        assert_eq!(snapshot.entries[0].source_id, source_id);
+        assert_eq!(state.state().read("skill_catalog.json").unwrap(), bytes,);
     }
 
     #[test]

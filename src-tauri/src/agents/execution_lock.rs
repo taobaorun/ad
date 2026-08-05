@@ -32,19 +32,6 @@ pub struct TargetLockSet {
 }
 
 impl TargetLockSet {
-    pub(super) fn acquire_for_ad_state(
-        target: &Path,
-        operation_id: &str,
-        state: &ExecutionState,
-    ) -> Result<Self, std::io::Error> {
-        Self::acquire_in(
-            state.locks(),
-            &[target.to_path_buf()],
-            execution_instance_id(),
-            operation_id,
-        )
-    }
-
     pub(super) fn acquire_for_ad_states(
         targets: &[PathBuf],
         operation_id: &str,
@@ -64,7 +51,8 @@ impl TargetLockSet {
         registry: &AdapterRegistry,
         state: &ExecutionState,
     ) -> Result<Self, AgentError> {
-        let mut targets = Vec::with_capacity(resources.len());
+        let mut targets = Vec::with_capacity(resources.len() + 1);
+        targets.push(state.ownership().display_path().to_path_buf());
         for resource in resources {
             let context = AgentContext {
                 installation_id: resource.installation_id.clone(),
