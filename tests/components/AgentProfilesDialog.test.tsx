@@ -194,7 +194,9 @@ describe('AgentProfilesButton', () => {
     const view = render(<AgentProfilesDialog open onOpenChange={onOpenChange} />);
 
     await screen.findByRole('button', { name: 'Codex Default' });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview profile apply' }));
+    const previewApply = screen.getByRole('button', { name: 'Preview profile apply' });
+    await waitFor(() => expect(previewApply).toBeEnabled());
+    fireEvent.click(previewApply);
     fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
     await screen.findByRole('button', { name: 'Rollback profile apply' });
     previewAgentRollback.mockReturnValueOnce(pendingRollback.promise);
