@@ -11,16 +11,16 @@ use super::execution_recovery::{mark_repaired, MutationRecoveryLease};
 use super::execution_state::{ExecutionState, StateDirectory};
 use super::{
     apply_ownership_changes, builtin_registry, decode_operation_receipt, execution_instance_id,
-    load_ownership_record, ownership_managed, ownership_record_id, ownership_workspace_key,
-    validate_ownership_artifact, validate_ownership_record, validate_ownership_record_identity,
-    workspace_key_for_context, AgentContext, AgentError, AgentErrorCode, AppliedResourceState,
-    ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan, MutationPlanView,
-    OperationJournalHandle, OperationJournalState, OperationKind, OperationReceipt,
-    OperationStatus, OwnershipArtifact, OwnershipRestore, PhysicalTargetId, PlanAcknowledgement,
-    PlanClaimBinding, PlanExecutionIntent, PlanId, PlanStore, PlannedMutation, ReceiptId,
-    ResourceKind, ResourceOwnershipChange, ResourceOwnershipChangeKind, ResourceOwnershipRecord,
-    ResourceRef, ResourceScope, ResourceStateKind, ResourceStorage, RiskFingerprint,
-    RollbackEligibility, RollbackUnavailableReason, TargetLockSet, WritePolicy,
+    load_ownership_record, ownership_managed, ownership_record_id, ownership_source_binding,
+    ownership_workspace_key, validate_ownership_artifact, validate_ownership_record,
+    validate_ownership_record_identity, workspace_key_for_context, AgentContext, AgentError,
+    AgentErrorCode, AppliedResourceState, ContentDigest, ManagedResourceTarget, MutationKind,
+    MutationPlan, MutationPlanView, OperationJournalHandle, OperationJournalState, OperationKind,
+    OperationReceipt, OperationStatus, OwnershipArtifact, OwnershipRestore, PhysicalTargetId,
+    PlanAcknowledgement, PlanClaimBinding, PlanExecutionIntent, PlanId, PlanStore, PlannedMutation,
+    ReceiptId, ResourceKind, ResourceOwnershipChange, ResourceOwnershipChangeKind,
+    ResourceOwnershipRecord, ResourceRef, ResourceScope, ResourceStateKind, ResourceStorage,
+    RiskFingerprint, RollbackEligibility, RollbackUnavailableReason, TargetLockSet, WritePolicy,
     OPERATION_RECEIPT_SCHEMA_VERSION, OWNERSHIP_EVIDENCE_VERSION,
     RESOURCE_OWNERSHIP_SCHEMA_VERSION,
 };
@@ -1716,7 +1716,12 @@ fn mutation_ownership_artifact(
     match storage {
         ResourceStorage::Symlink => match parse_symlink_source(plan, mutation)? {
             SymlinkMutationSource::Checked { path, digest } => {
-                Ok(OwnershipArtifact { id: path, digest })
+                let source_binding = ownership_source_binding(&mutation.resource, &path)?;
+                Ok(OwnershipArtifact {
+                    id: path,
+                    digest,
+                    source_binding,
+                })
             }
             SymlinkMutationSource::Legacy(_) => Err(ownership_plan_error(
                 plan,
@@ -1729,6 +1734,7 @@ fn mutation_ownership_artifact(
             Ok(OwnershipArtifact {
                 id: source.path,
                 digest: source.digest,
+                source_binding: None,
             })
         }
         ResourceStorage::File => Err(ownership_plan_error(
@@ -2144,6 +2150,7 @@ fn ownership_change(
                 target_digest,
                 artifact_id: artifact.id.clone(),
                 artifact_digest: artifact.digest.clone(),
+                source_binding: artifact.source_binding.clone(),
                 creating_receipt_id: item
                     .ownership_before
                     .as_ref()

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ResourceRefSchema, WorkspaceKeySchema } from '@/lib/agentTypes';
 
 const contentDigestSchema = z.string().min(1);
 
@@ -36,6 +37,22 @@ export const SkillArtifactRefSchema = z
   })
   .strict();
 
+export const SkillSourceBindingSchema = z
+  .object({
+    schemaVersion: z.literal(2),
+    bindingId: z.string().startsWith('skill-source-binding:'),
+    sourceId: z.string().startsWith('skill-source:'),
+    sourceType: z.enum(['git', 'local']),
+    sourceRevision: z.string().min(1),
+    stableRoot: z.string().min(1),
+    physicalRoot: z.string().min(1),
+    treeDigest: contentDigestSchema,
+    manifestDigest: contentDigestSchema,
+    skills: SkillArtifactRefSchema.shape.skills,
+    activationImpact: SkillActivationImpactSchema,
+  })
+  .strict();
+
 export const SkillCatalogEntrySchema = z
   .object({
     sourceId: z.string().startsWith('skill-source:'),
@@ -45,15 +62,22 @@ export const SkillCatalogEntrySchema = z
     branch: z.string().optional(),
     subdirectory: z.string().optional(),
     autoUpdate: z.boolean(),
-    currentArtifact: SkillArtifactRefSchema,
+    currentArtifact: SkillArtifactRefSchema.optional(),
+    currentBinding: SkillSourceBindingSchema.optional(),
     addedAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (entry) =>
+      Number(entry.currentArtifact !== undefined) + Number(entry.currentBinding !== undefined) ===
+      1,
+    'catalog entry must contain exactly one source payload',
+  );
 
 export const SkillCatalogSnapshotSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.union([z.literal(1), z.literal(2)]),
     revision: contentDigestSchema,
     entries: z.array(SkillCatalogEntrySchema),
   })
@@ -68,7 +92,24 @@ export const SkillCatalogPlanViewSchema = z
     sourceId: z.string().startsWith('skill-source:'),
     displayName: z.string().min(1),
     artifact: SkillArtifactRefSchema.optional(),
+    binding: SkillSourceBindingSchema.optional(),
     currentArtifact: SkillArtifactRefSchema.optional(),
+    currentBinding: SkillSourceBindingSchema.optional(),
+    rollbackOf: z.string().optional(),
+    applicability: z.enum(['applicable', 'blocked']),
+    blockingIssues: z
+      .array(
+        z
+          .object({
+            code: z.string().min(1),
+            message: z.string().min(1),
+            resource: ResourceRefSchema.optional(),
+          })
+          .strict(),
+      )
+      .default([]),
+    affectedResources: z.array(ResourceRefSchema).default([]),
+    affectedWorkspaces: z.array(WorkspaceKeySchema).default([]),
     confirmationRequired: z.boolean(),
     riskFingerprint: z.string().min(1),
     expiresAt: z.string().datetime(),
@@ -77,7 +118,7 @@ export const SkillCatalogPlanViewSchema = z
 
 export const SkillCatalogReceiptSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.union([z.literal(1), z.literal(2)]),
     id: z.string().min(1),
     planId: z.string().min(1),
     action: z.enum(['add', 'update', 'remove']),
@@ -85,6 +126,11 @@ export const SkillCatalogReceiptSchema = z
     beforeCatalogRevision: contentDigestSchema,
     afterCatalogRevision: contentDigestSchema,
     artifact: SkillArtifactRefSchema.optional(),
+    binding: SkillSourceBindingSchema.optional(),
+    previousBinding: SkillSourceBindingSchema.optional(),
+    rollbackOf: z.string().optional(),
+    affectedResources: z.array(ResourceRefSchema).default([]),
+    affectedWorkspaces: z.array(WorkspaceKeySchema).default([]),
     backupId: z.string().optional(),
     status: z.enum(['complete', 'compensated', 'recovered']),
     createdAt: z.string().datetime(),

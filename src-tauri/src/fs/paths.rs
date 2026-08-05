@@ -133,6 +133,19 @@ pub fn skill_library_dir() -> Result<PathBuf, FsError> {
     Ok(ad_home()?.join("skill-library"))
 }
 
+pub fn managed_skill_source_dir(source_key: &str) -> Result<PathBuf, FsError> {
+    if source_key.len() != 64 || !source_key.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(FsError::InvalidPath(
+            "managed Skill source key must be a SHA-256 hex digest".into(),
+        ));
+    }
+    Ok(skill_library_dir()?.join(source_key))
+}
+
+pub fn managed_skill_source_generations_dir(source_key: &str) -> Result<PathBuf, FsError> {
+    Ok(managed_skill_source_dir(source_key)?.join("generations"))
+}
+
 pub fn skill_sources_path() -> Result<PathBuf, FsError> {
     Ok(state_dir()?.join("skill_sources.json"))
 }

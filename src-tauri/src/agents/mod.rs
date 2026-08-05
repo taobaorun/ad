@@ -64,6 +64,9 @@ mod skill_catalog_plans;
 mod skill_legacy_discovery;
 mod skill_legacy_inventory;
 mod skill_legacy_migration;
+mod skill_source_bindings;
+#[cfg(test)]
+mod skill_source_bindings_tests;
 mod types;
 mod workspace_contracts;
 
@@ -105,6 +108,7 @@ pub use skill_catalog_execution::*;
 pub use skill_catalog_plans::*;
 pub use skill_legacy_inventory::*;
 pub use skill_legacy_migration::*;
+pub use skill_source_bindings::*;
 pub use types::*;
 pub use workspace_contracts::*;
 

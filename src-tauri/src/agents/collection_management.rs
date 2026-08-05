@@ -1,7 +1,7 @@
 use super::{
     CapabilityLimitation, EffectiveResourceState, ResourceAction, ResourceActionAvailability,
-    ResourceActionView, ResourceKind, ResourceManagementStatus, ResourceManagementView,
-    ResourceOwnershipKind, WorkspaceDescriptor,
+    ResourceActionIntent, ResourceActionView, ResourceKind, ResourceManagementStatus,
+    ResourceManagementView, ResourceOwnershipKind, WorkspaceDescriptor,
 };
 
 pub(super) struct CollectionManagementInput<'a> {
@@ -11,6 +11,7 @@ pub(super) struct CollectionManagementInput<'a> {
     pub ownership: ResourceOwnershipKind,
     pub has_health_error: bool,
     pub owned_artifact: Option<&'a str>,
+    pub owned_source_binding: bool,
     pub available_artifact: Option<&'a str>,
     pub has_resettable_declaration: bool,
 }
@@ -21,9 +22,22 @@ pub(super) fn resource_management(input: CollectionManagementInput<'_>) -> Resou
         ResourceActionAvailability::Available,
     );
     if input.has_health_error || input.state == EffectiveResourceState::Conflict {
+        let mut actions = vec![inspect];
+        if input.has_health_error
+            && input.kind == ResourceKind::Skills
+            && input.owned_source_binding
+        {
+            actions.push(limited_action_with_intent(
+                ResourceAction::Update,
+                ResourceActionIntent::Repair,
+                ResourceActionAvailability::Unavailable,
+                "skill_source_unavailable",
+                "agents.resources.skillSourceUnavailable",
+            ));
+        }
         return ResourceManagementView {
             status: ResourceManagementStatus::ReadOnly,
-            actions: vec![inspect],
+            actions,
         };
     }
     if input.ownership == ResourceOwnershipKind::External {
@@ -63,7 +77,14 @@ pub(super) fn resource_management(input: CollectionManagementInput<'_>) -> Resou
         ResourceKind::Skills if input.owned_artifact.is_some() => {
             let update = match input.available_artifact {
                 Some(artifact) if Some(artifact) != input.owned_artifact => {
-                    confirmation_action(ResourceAction::Update)
+                    confirmation_action_with_intent(
+                        ResourceAction::Update,
+                        if input.owned_source_binding {
+                            ResourceActionIntent::Standard
+                        } else {
+                            ResourceActionIntent::Relink
+                        },
+                    )
                 }
                 Some(_) => unavailable_action(
                     ResourceAction::Update,
@@ -191,6 +212,18 @@ fn confirmation_action(action: ResourceAction) -> ResourceActionView {
     self::action(action, ResourceActionAvailability::ConfirmationRequired)
 }
 
+fn confirmation_action_with_intent(
+    action: ResourceAction,
+    intent: ResourceActionIntent,
+) -> ResourceActionView {
+    ResourceActionView {
+        action,
+        intent,
+        availability: ResourceActionAvailability::ConfirmationRequired,
+        limitation: None,
+    }
+}
+
 fn unavailable_action(action: ResourceAction, code: &str, message_key: &str) -> ResourceActionView {
     limited_action(
         action,
@@ -203,6 +236,7 @@ fn unavailable_action(action: ResourceAction, code: &str, message_key: &str) -> 
 fn action(action: ResourceAction, availability: ResourceActionAvailability) -> ResourceActionView {
     ResourceActionView {
         action,
+        intent: ResourceActionIntent::Standard,
         availability,
         limitation: None,
     }
@@ -214,8 +248,25 @@ fn limited_action(
     code: &str,
     message_key: &str,
 ) -> ResourceActionView {
+    limited_action_with_intent(
+        action,
+        ResourceActionIntent::Standard,
+        availability,
+        code,
+        message_key,
+    )
+}
+
+fn limited_action_with_intent(
+    action: ResourceAction,
+    intent: ResourceActionIntent,
+    availability: ResourceActionAvailability,
+    code: &str,
+    message_key: &str,
+) -> ResourceActionView {
     ResourceActionView {
         action,
+        intent,
         availability,
         limitation: Some(CapabilityLimitation {
             code: code.into(),
@@ -242,6 +293,7 @@ mod tests {
             ownership: ResourceOwnershipKind::AgentManaged,
             has_health_error: false,
             owned_artifact: None,
+            owned_source_binding: false,
             available_artifact: None,
             has_resettable_declaration: true,
         });
@@ -254,6 +306,58 @@ mod tests {
                     .limitation
                     .as_ref()
                     .is_some_and(|limitation| limitation.code == "codex_runtime_not_prepared")
+        }));
+    }
+
+    #[test]
+    fn legacy_skill_update_is_exposed_as_relink() {
+        let installation =
+            AgentInstallation::with_id("claude:test", "claude-code", "/Users/test/.claude");
+        let workspace =
+            WorkspaceDescriptor::for_installation("/Users/test/project", &installation, None);
+
+        let management = resource_management(CollectionManagementInput {
+            workspace: &workspace,
+            kind: ResourceKind::Skills,
+            state: EffectiveResourceState::Enabled,
+            ownership: ResourceOwnershipKind::AdManaged,
+            has_health_error: false,
+            owned_artifact: Some("/Users/test/.ad/artifacts/skills/old/tree/review"),
+            owned_source_binding: false,
+            available_artifact: Some("/Users/test/source/review"),
+            has_resettable_declaration: false,
+        });
+
+        assert!(management.actions.iter().any(|action| {
+            action.action == ResourceAction::Update
+                && action.intent == ResourceActionIntent::Relink
+                && action.availability == ResourceActionAvailability::ConfirmationRequired
+        }));
+    }
+
+    #[test]
+    fn broken_live_skill_binding_exposes_unavailable_repair() {
+        let installation =
+            AgentInstallation::with_id("claude:test", "claude-code", "/Users/test/.claude");
+        let workspace =
+            WorkspaceDescriptor::for_installation("/Users/test/project", &installation, None);
+
+        let management = resource_management(CollectionManagementInput {
+            workspace: &workspace,
+            kind: ResourceKind::Skills,
+            state: EffectiveResourceState::Enabled,
+            ownership: ResourceOwnershipKind::AdManaged,
+            has_health_error: true,
+            owned_artifact: Some("/Users/test/source/review"),
+            owned_source_binding: true,
+            available_artifact: None,
+            has_resettable_declaration: false,
+        });
+
+        assert!(management.actions.iter().any(|action| {
+            action.action == ResourceAction::Update
+                && action.intent == ResourceActionIntent::Repair
+                && action.availability == ResourceActionAvailability::Unavailable
         }));
     }
 }

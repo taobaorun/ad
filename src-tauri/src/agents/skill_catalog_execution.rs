@@ -10,13 +10,16 @@ use super::skill_catalog_plans::{
 };
 use super::{
     cleanup_unpublished_skill_staging, observe_skill_source_revision,
-    publish_staged_skill_artifact, ContentDigest, PlanId, ReceiptId, SkillArtifactError,
-    SkillArtifactRef, SkillCatalogEntry, SkillCatalogPlanClaim, SkillCatalogPlanStore,
+    publish_staged_git_skill_source_binding, reconcile_git_skill_source_current,
+    skill_catalog_plan_references_are_current, switch_git_skill_source_binding, ContentDigest,
+    PlanId, ReceiptId, ResourceRef, SkillArtifactError, SkillArtifactRef, SkillCatalogEntry,
+    SkillCatalogPlanClaim, SkillCatalogPlanStore, SkillCatalogPlanView, SkillSourceBinding,
+    SkillSourceType, WorkspaceKey,
 };
 use crate::fs::paths::skill_catalog_path;
 
 const JOURNAL_SCHEMA_VERSION: u32 = 1;
-const RECEIPT_SCHEMA_VERSION: u32 = 1;
+const RECEIPT_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -47,6 +50,16 @@ pub struct SkillCatalogReceipt {
     pub after_catalog_revision: ContentDigest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifact: Option<SkillArtifactRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding: Option<SkillSourceBinding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_binding: Option<SkillSourceBinding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rollback_of: Option<ReceiptId>,
+    #[serde(default)]
+    pub affected_resources: Vec<ResourceRef>,
+    #[serde(default)]
+    pub affected_workspaces: Vec<WorkspaceKey>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_id: Option<String>,
     pub status: SkillCatalogReceiptStatus,
@@ -99,6 +112,8 @@ pub enum SkillCatalogExecutionError {
     Locked,
     #[error("Skill catalog recovery requires manual repair")]
     RepairRequired,
+    #[error("Skill catalog receipt cannot be rolled back")]
+    InvalidReceipt,
     #[error("Skill catalog transaction I/O failed: {0}")]
     Io(#[from] std::io::Error),
     #[error("Skill catalog changed but its receipt could not be persisted: {0}")]
@@ -136,16 +151,37 @@ pub fn apply_skill_catalog_plan(
     let catalog_path =
         skill_catalog_path().map_err(|error| SkillCatalogError::Corrupt(error.to_string()))?;
     let operation_id = uuid::Uuid::new_v4().to_string();
-    let _lock = TargetLockSet::acquire_for_ad_state(&catalog_path, &operation_id, &state)
-        .map_err(lock_error)?;
+    let _lock = TargetLockSet::acquire_for_ad_states(
+        &[catalog_path, state.ownership().display_path().to_path_buf()],
+        &operation_id,
+        &state,
+    )
+    .map_err(lock_error)?;
     let current = load_skill_catalog_state_from(state.state())?;
     if current.revision != binding.view.expected_catalog_revision {
         return Err(SkillCatalogExecutionError::CatalogChanged);
     }
-    if let (Some(source), Some(artifact)) = (&binding.source, &binding.view.artifact) {
-        if observe_skill_source_revision(source)? != artifact.source_revision {
-            return Err(SkillCatalogExecutionError::SourceChanged);
+    if let Some(source) = &binding.source {
+        let expected_revision = binding
+            .view
+            .binding
+            .as_ref()
+            .map(|value| value.source_revision.as_str())
+            .or_else(|| {
+                binding
+                    .view
+                    .artifact
+                    .as_ref()
+                    .map(|value| value.source_revision.as_str())
+            });
+        if let Some(expected) = expected_revision {
+            if observe_skill_source_revision(source)? != expected {
+                return Err(SkillCatalogExecutionError::SourceChanged);
+            }
         }
+    }
+    if !skill_catalog_plan_references_are_current(&binding.view)? {
+        return Err(SkillCatalogPlanError::RiskChanged.into());
     }
     let claimed = store.claim(claim, now)?;
     if is_no_change(&claimed) {
@@ -159,6 +195,52 @@ pub fn apply_skill_catalog_plan(
     apply_claimed_plan(claimed, current, operation_id, &state)
 }
 
+pub fn preview_rollback_skill_catalog_source(
+    receipt_id: &ReceiptId,
+    store: &SkillCatalogPlanStore,
+) -> Result<SkillCatalogPlanView, SkillCatalogExecutionError> {
+    let state = ExecutionState::open()?;
+    ensure_recovery_writable(&state)?;
+    let receipt = load_receipt(&state, receipt_id)?;
+    if receipt.schema_version != RECEIPT_SCHEMA_VERSION
+        || receipt.id != *receipt_id
+        || receipt.action != SkillCatalogAction::Update
+        || !matches!(
+            receipt.status,
+            SkillCatalogReceiptStatus::Complete | SkillCatalogReceiptStatus::Recovered
+        )
+    {
+        return Err(SkillCatalogExecutionError::InvalidReceipt);
+    }
+    let current_binding = receipt
+        .binding
+        .as_ref()
+        .filter(|binding| binding.source_type == SkillSourceType::Git)
+        .ok_or(SkillCatalogExecutionError::InvalidReceipt)?;
+    let target = receipt
+        .previous_binding
+        .clone()
+        .filter(|binding| {
+            binding.source_type == SkillSourceType::Git
+                && binding.source_id == current_binding.source_id
+                && binding.binding_id == current_binding.binding_id
+                && binding.stable_root == current_binding.stable_root
+        })
+        .ok_or(SkillCatalogExecutionError::InvalidReceipt)?;
+    let catalog = load_skill_catalog_state_from(state.state())?;
+    if catalog.revision != receipt.after_catalog_revision {
+        return Err(SkillCatalogExecutionError::CatalogChanged);
+    }
+    store
+        .preview_rollback(
+            receipt.id.clone(),
+            &receipt.source_id,
+            current_binding,
+            target,
+        )
+        .map_err(Into::into)
+}
+
 fn apply_claimed_plan(
     mut plan: ClaimedSkillCatalogPlan,
     current: super::skill_catalog::SkillCatalogState,
@@ -168,6 +250,7 @@ fn apply_claimed_plan(
     let now = Utc::now();
     let mut document = current.document.clone();
     let artifact = plan.view.artifact.clone();
+    let binding = plan.view.binding.clone();
     let source = mutate_document(&mut document, &plan, now)?;
     let after_bytes = document.render()?;
     let after_revision = ContentDigest::sha256(&after_bytes);
@@ -182,6 +265,11 @@ fn apply_claimed_plan(
         before_catalog_revision: current.revision,
         after_catalog_revision: after_revision,
         artifact,
+        binding,
+        previous_binding: plan.view.current_binding.clone(),
+        rollback_of: plan.rollback_of.clone(),
+        affected_resources: plan.view.affected_resources.clone(),
+        affected_workspaces: plan.view.affected_workspaces.clone(),
         backup_id,
         status: SkillCatalogReceiptStatus::Complete,
         created_at: now,
@@ -197,25 +285,65 @@ fn apply_claimed_plan(
     persist_journal(state, &journal_name, &journal, false)?;
     journal.state = CatalogJournalState::Applying;
     persist_journal(state, &journal_name, &journal, true)?;
-    if let Some(staged) = plan.staged.take() {
-        if let Err(error) = publish_staged_skill_artifact(staged) {
-            journal.state = CatalogJournalState::Compensated;
-            persist_journal(state, &journal_name, &journal, true)?;
-            let mut receipt = journal.receipt.clone();
-            receipt.status = SkillCatalogReceiptStatus::Compensated;
-            persist_receipt(state, &receipt)?;
-            return Ok(SkillCatalogOperationReport {
-                outcome: SkillCatalogOperationOutcome::Compensated,
-                source: None,
-                receipt: Some(receipt),
-                issues: vec![error.to_string()],
+    let mut git_publication = None;
+    if let Some(staged) = plan.staged_git.take() {
+        match publish_staged_git_skill_source_binding(staged, plan.view.current_binding.as_ref()) {
+            Ok((published, publication)) if plan.view.binding.as_ref() == Some(&published) => {
+                git_publication = Some(publication);
+            }
+            Ok(_) => {
+                return Err(SkillCatalogExecutionError::SourceChanged);
+            }
+            Err(error) => {
+                journal.state = CatalogJournalState::Compensated;
+                persist_journal(state, &journal_name, &journal, true)?;
+                let mut receipt = journal.receipt.clone();
+                receipt.status = SkillCatalogReceiptStatus::Compensated;
+                persist_receipt(state, &receipt)?;
+                return Ok(SkillCatalogOperationReport {
+                    outcome: SkillCatalogOperationOutcome::Compensated,
+                    source: None,
+                    receipt: Some(receipt),
+                    issues: vec![error.to_string()],
+                });
+            }
+        }
+    }
+    if plan.rollback_of.is_some() {
+        let rollback_result = plan
+            .view
+            .binding
+            .as_ref()
+            .zip(plan.view.current_binding.as_ref())
+            .ok_or(SkillCatalogExecutionError::InvalidReceipt)
+            .and_then(|(target, current)| {
+                switch_git_skill_source_binding(target, current).map_err(Into::into)
             });
+        match rollback_result {
+            Ok(publication) => git_publication = Some(publication),
+            Err(error) => {
+                journal.state = CatalogJournalState::Compensated;
+                persist_journal(state, &journal_name, &journal, true)?;
+                let mut receipt = journal.receipt.clone();
+                receipt.status = SkillCatalogReceiptStatus::Compensated;
+                persist_receipt(state, &receipt)?;
+                return Ok(SkillCatalogOperationReport {
+                    outcome: SkillCatalogOperationOutcome::Compensated,
+                    source: None,
+                    receipt: Some(receipt),
+                    issues: vec![error.to_string()],
+                });
+            }
         }
     }
     if let Err(error) = state
         .state()
         .write_atomic("skill_catalog.json", &after_bytes)
     {
+        let compensation_issue = git_publication
+            .take()
+            .and_then(|publication| publication.compensate().err())
+            .map(|error| error.to_string());
         journal.state = CatalogJournalState::Compensated;
         persist_journal(state, &journal_name, &journal, true)?;
         let mut receipt = journal.receipt.clone();
@@ -225,8 +353,13 @@ fn apply_claimed_plan(
             outcome: SkillCatalogOperationOutcome::Compensated,
             source: None,
             receipt: Some(receipt),
-            issues: vec![error.to_string()],
+            issues: std::iter::once(error.to_string())
+                .chain(compensation_issue)
+                .collect(),
         });
+    }
+    if let Some(publication) = git_publication.take() {
+        publication.commit();
     }
     if let Err(error) = persist_receipt(state, &journal.receipt) {
         return Err(SkillCatalogExecutionError::ReceiptPending(
@@ -254,26 +387,40 @@ fn mutate_document(
                 .request
                 .as_ref()
                 .ok_or(SkillCatalogPlanError::InvalidPlan)?;
-            let artifact = plan
-                .view
-                .artifact
-                .clone()
-                .ok_or(SkillCatalogPlanError::InvalidPlan)?;
-            document
-                .add(plan.view.source_id.clone(), request, artifact, now)
-                .map(Some)
-                .map_err(Into::into)
+            if let Some(binding) = plan.view.binding.clone() {
+                document
+                    .add_binding(plan.view.source_id.clone(), request, binding, now)
+                    .map(Some)
+                    .map_err(Into::into)
+            } else {
+                let artifact = plan
+                    .view
+                    .artifact
+                    .clone()
+                    .ok_or(SkillCatalogPlanError::InvalidPlan)?;
+                document
+                    .add(plan.view.source_id.clone(), request, artifact, now)
+                    .map(Some)
+                    .map_err(Into::into)
+            }
         }
         SkillCatalogAction::Update => {
-            let artifact = plan
-                .view
-                .artifact
-                .clone()
-                .ok_or(SkillCatalogPlanError::InvalidPlan)?;
-            document
-                .update_artifact(&plan.view.source_id, artifact, now)
-                .map(Some)
-                .map_err(Into::into)
+            if let Some(binding) = plan.view.binding.clone() {
+                document
+                    .update_binding(&plan.view.source_id, binding, now)
+                    .map(Some)
+                    .map_err(Into::into)
+            } else {
+                let artifact = plan
+                    .view
+                    .artifact
+                    .clone()
+                    .ok_or(SkillCatalogPlanError::InvalidPlan)?;
+                document
+                    .update_artifact(&plan.view.source_id, artifact, now)
+                    .map(Some)
+                    .map_err(Into::into)
+            }
         }
         SkillCatalogAction::Remove => document
             .remove(&plan.view.source_id)
@@ -284,7 +431,8 @@ fn mutate_document(
 
 fn is_no_change(plan: &ClaimedSkillCatalogPlan) -> bool {
     plan.view.action == SkillCatalogAction::Update
-        && plan.view.artifact == plan.view.current_artifact
+        && ((plan.view.binding.is_some() && plan.view.binding == plan.view.current_binding)
+            || (plan.view.artifact.is_some() && plan.view.artifact == plan.view.current_artifact))
 }
 
 fn persist_backup(
@@ -341,6 +489,15 @@ fn persist_receipt(
     }
 }
 
+fn load_receipt(
+    state: &ExecutionState,
+    receipt_id: &ReceiptId,
+) -> Result<SkillCatalogReceipt, SkillCatalogExecutionError> {
+    let name = format!("{}.json", opaque_name(receipt_id.as_str()));
+    let bytes = state.skill_catalog_history().read(&name)?;
+    serde_json::from_slice(&bytes).map_err(|_| SkillCatalogExecutionError::InvalidReceipt)
+}
+
 fn journal_name(plan_id: &PlanId) -> String {
     format!("{}.json", opaque_name(plan_id.as_str()))
 }
@@ -363,8 +520,12 @@ pub fn recover_skill_catalog_state(
     let catalog_path =
         skill_catalog_path().map_err(|error| SkillCatalogError::Corrupt(error.to_string()))?;
     let recovery_id = format!("skill-catalog-recovery:{}", uuid::Uuid::new_v4());
-    let _lock = TargetLockSet::acquire_for_ad_state(&catalog_path, &recovery_id, &state)
-        .map_err(lock_error)?;
+    let _lock = TargetLockSet::acquire_for_ad_states(
+        &[catalog_path, state.ownership().display_path().to_path_buf()],
+        &recovery_id,
+        &state,
+    )
+    .map_err(lock_error)?;
     let mut report = SkillCatalogRecoveryReport {
         inspected: 0,
         recovered: 0,
@@ -418,6 +579,21 @@ pub fn recover_skill_catalog_state(
         }
         let current = load_skill_catalog_state_from(state.state())?;
         if current.revision == journal.receipt.after_catalog_revision {
+            if let Some(binding) = &journal.receipt.binding {
+                if let Err(error) = reconcile_git_skill_source_current(
+                    binding,
+                    journal.receipt.previous_binding.as_ref(),
+                    true,
+                ) {
+                    journal.state = CatalogJournalState::RepairRequired;
+                    persist_journal(&state, name, &journal, true)?;
+                    report.repair_required += 1;
+                    report.diagnostics.push(format!(
+                        "catalog current differs from committed journal {name}: {error}"
+                    ));
+                    continue;
+                }
+            }
             let mut receipt = journal.receipt.clone();
             receipt.status = SkillCatalogReceiptStatus::Recovered;
             persist_receipt(&state, &receipt)?;
@@ -426,6 +602,21 @@ pub fn recover_skill_catalog_state(
             persist_journal(&state, name, &journal, true)?;
             report.recovered += 1;
         } else if current.revision == journal.receipt.before_catalog_revision {
+            if let Some(binding) = &journal.receipt.binding {
+                if let Err(error) = reconcile_git_skill_source_current(
+                    binding,
+                    journal.receipt.previous_binding.as_ref(),
+                    false,
+                ) {
+                    journal.state = CatalogJournalState::RepairRequired;
+                    persist_journal(&state, name, &journal, true)?;
+                    report.repair_required += 1;
+                    report.diagnostics.push(format!(
+                        "catalog current cannot be compensated for journal {name}: {error}"
+                    ));
+                    continue;
+                }
+            }
             let mut receipt = journal.receipt.clone();
             receipt.status = SkillCatalogReceiptStatus::Compensated;
             persist_receipt(&state, &receipt)?;

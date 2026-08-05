@@ -4,9 +4,10 @@ use crate::agents::{
     apply_legacy_project_skill_migration, apply_skill_catalog_plan, inspect_legacy_skill_inventory,
     load_skill_catalog_snapshot,
     preview_legacy_project_skill_migration as preview_legacy_project_skill_migration_backend,
-    rollback_legacy_project_skill_migration, LegacySkillInventory, LegacySkillMigrationPlanClaim,
-    LegacySkillMigrationPlanStore, LegacySkillMigrationPlanView, LegacySkillMigrationReport,
-    PlanId, ReceiptId, SkillCatalogOperationReport, SkillCatalogPlanClaim, SkillCatalogPlanStore,
+    preview_rollback_skill_catalog_source, rollback_legacy_project_skill_migration,
+    LegacySkillInventory, LegacySkillMigrationPlanClaim, LegacySkillMigrationPlanStore,
+    LegacySkillMigrationPlanView, LegacySkillMigrationReport, PlanId, ReceiptId,
+    SkillCatalogOperationReport, SkillCatalogPlanClaim, SkillCatalogPlanStore,
     SkillCatalogPlanView, SkillCatalogSnapshot, SkillSourceRequest,
 };
 
@@ -39,6 +40,14 @@ pub fn preview_remove_skill_catalog_source(
     plans: State<'_, SkillCatalogPlanStore>,
 ) -> CmdResult<SkillCatalogPlanView> {
     plans.preview_remove(&source_id).map_err(command_error)
+}
+
+#[tauri::command]
+pub fn preview_rollback_skill_catalog_source_update(
+    receipt_id: ReceiptId,
+    plans: State<'_, SkillCatalogPlanStore>,
+) -> CmdResult<SkillCatalogPlanView> {
+    preview_rollback_skill_catalog_source(&receipt_id, &plans).map_err(command_error)
 }
 
 #[tauri::command]

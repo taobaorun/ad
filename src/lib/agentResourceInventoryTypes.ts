@@ -106,9 +106,11 @@ export const ResourceActionAvailabilitySchema = z.enum([
   'unavailable',
   'external',
 ]);
+export const ResourceActionIntentSchema = z.enum(['standard', 'relink', 'repair']);
 export const ResourceActionViewSchema = z
   .object({
     action: ResourceActionSchema,
+    intent: ResourceActionIntentSchema,
     availability: ResourceActionAvailabilitySchema,
     limitation: CapabilityLimitationSchema.optional(),
   })
@@ -254,6 +256,7 @@ export type ResourceHealthStatus = z.infer<typeof ResourceHealthStatusSchema>;
 export type ResourceHealthView = z.infer<typeof ResourceHealthViewSchema>;
 export type ResourceAction = z.infer<typeof ResourceActionSchema>;
 export type ResourceActionAvailability = z.infer<typeof ResourceActionAvailabilitySchema>;
+export type ResourceActionIntent = z.infer<typeof ResourceActionIntentSchema>;
 export type ResourceActionView = z.infer<typeof ResourceActionViewSchema>;
 export type ResourceManagementStatus = z.infer<typeof ResourceManagementStatusSchema>;
 export type ResourceManagementView = z.infer<typeof ResourceManagementViewSchema>;

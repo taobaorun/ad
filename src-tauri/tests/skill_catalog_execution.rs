@@ -2,9 +2,8 @@ use std::path::Path;
 
 use ad_lib::agents::{
     apply_skill_catalog_plan, load_skill_catalog_snapshot, recover_skill_catalog_state,
-    verify_skill_artifact, RiskFingerprint, SkillCatalogExecutionError,
-    SkillCatalogOperationOutcome, SkillCatalogPlanClaim, SkillCatalogPlanStore, SkillSourceRequest,
-    SkillSourceType,
+    RiskFingerprint, SkillCatalogExecutionError, SkillCatalogOperationOutcome,
+    SkillCatalogPlanClaim, SkillCatalogPlanStore, SkillSourceRequest, SkillSourceType,
 };
 use serial_test::serial;
 
@@ -51,7 +50,8 @@ fn preview_is_non_publishing_and_source_drift_fails_closed() {
     assert!(!home.path().join(".ad/state/skill_catalog.json").exists());
     assert!(!home.path().join(".ad/artifacts/skills").exists());
     assert!(plan.source_id.starts_with("skill-source:"));
-    assert!(plan.artifact.is_some());
+    assert!(plan.artifact.is_none());
+    assert!(plan.binding.is_some());
     let unconfirmed = SkillCatalogPlanClaim {
         confirmed: false,
         ..claim(&plan)
@@ -77,7 +77,7 @@ fn preview_is_non_publishing_and_source_drift_fails_closed() {
 
 #[test]
 #[serial(home_env)]
-fn catalog_refresh_keeps_old_artifact_pins_and_remove_deletes_no_content() {
+fn catalog_refresh_tracks_the_live_local_binding_and_remove_deletes_no_content() {
     let home = tempfile::tempdir().unwrap();
     let source = tempfile::tempdir().unwrap();
     std::env::set_var("AD_HOME", home.path());
@@ -86,10 +86,16 @@ fn catalog_refresh_keeps_old_artifact_pins_and_remove_deletes_no_content() {
     let add = store.preview_add(request(source.path())).unwrap();
     apply_skill_catalog_plan(&store, &claim(&add)).unwrap();
     let first = load_skill_catalog_snapshot().unwrap().entries[0]
-        .current_artifact
-        .clone();
-    let first_tree = verify_skill_artifact(&first).unwrap();
-    let first_bytes = std::fs::read(first_tree.join("review/SKILL.md")).unwrap();
+        .current_binding
+        .clone()
+        .unwrap();
+    assert_eq!(
+        first.stable_root,
+        std::fs::canonicalize(source.path())
+            .unwrap()
+            .to_string_lossy()
+    );
+    assert!(!home.path().join(".ad/artifacts/skills").exists());
     let no_change = store.preview_update(&add.source_id).unwrap();
     let no_change_report = apply_skill_catalog_plan(&store, &claim(&no_change)).unwrap();
     assert_eq!(
@@ -102,27 +108,24 @@ fn catalog_refresh_keeps_old_artifact_pins_and_remove_deletes_no_content() {
     let update = store.preview_update(&add.source_id).unwrap();
     apply_skill_catalog_plan(&store, &claim(&update)).unwrap();
     let second = load_skill_catalog_snapshot().unwrap().entries[0]
-        .current_artifact
-        .clone();
+        .current_binding
+        .clone()
+        .unwrap();
 
-    assert_ne!(first.artifact_id, second.artifact_id);
-    assert_eq!(
-        std::fs::read(
-            verify_skill_artifact(&first)
-                .unwrap()
-                .join("review/SKILL.md")
-        )
-        .unwrap(),
-        first_bytes
+    assert_eq!(first.binding_id, second.binding_id);
+    assert_ne!(first.tree_digest, second.tree_digest);
+    assert!(
+        std::fs::read_to_string(source.path().join("review/SKILL.md"))
+            .unwrap()
+            .contains("second")
     );
-    assert!(verify_skill_artifact(&second).is_ok());
+    assert!(!home.path().join(".ad/artifacts/skills").exists());
 
     let remove = store.preview_remove(&add.source_id).unwrap();
     apply_skill_catalog_plan(&store, &claim(&remove)).unwrap();
 
     assert!(load_skill_catalog_snapshot().unwrap().entries.is_empty());
-    assert!(verify_skill_artifact(&first).is_ok());
-    assert!(verify_skill_artifact(&second).is_ok());
+    assert!(source.path().join("review/SKILL.md").is_file());
     let recovery = recover_skill_catalog_state().unwrap();
     assert!(recovery.writable());
 }

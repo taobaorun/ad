@@ -39,7 +39,7 @@ Capability 由 `SettingsPort`、`SkillsPort`、`PluginsPort`、`ProcessPort` 和
 
 `ProjectDetail` 是唯一项目工作区。它按当前 `AgentContext` 聚合 effective Settings、Skill/Plugin inventory、ownership、coverage、Project Codex Runtime、conversion 与 scoped operation History；旧项目入口不能直接写 Skill、Plugin 或 ProjectState。
 
-Skill source acquisition 先进入受限 staging，再发布由 source identity、revision 和 normalized tree digest 标识的不可变 artifact。项目只 pin artifact revision，source refresh 不会隐式升级其他项目；AD-owned resource 才能执行生命周期动作，external/unowned resource 可见但只读。Plugin capability 同样由真实 operation 推导，User acquisition 或未验证 component 保持 degraded/external。
+Skill catalog 使用版本化 source binding。Local binding 的 stable/physical root 是原始规范目录，不复制到 artifact store；Git acquisition 在受限 staging 中验证后发布到 `~/.ad/skill-library/<opaque-source-key>/generations/`，并原子切换一个稳定的 `current` symlink。项目 Agent 目录只保存指向 `stable-root/<skill-subpath>` 的 symlink，因此 Local 编辑与显式 Git source update会按共享source合同影响所有关联项目，而项目 Install/Remove/Relink 仍保持workspace隔离。Ownership绑定workspace、物理target、source ID、stable root与Skill subpath，不把可变content digest当作删除权限。external/unowned resource仍可见但只读。
 
 Project workspace 保证配置身份、落点、ownership、plan、receipt 和 rollback 的隔离，不保证第三方扩展代码的执行沙箱。当前产品实现 managed-Agent configuration parity；没有公共 CLI、MCP、deep-link 或远程 approval API，所有风险确认只能由第一方桌面 UI 完成。
 
@@ -98,6 +98,7 @@ adapter 必须显式 allowlist 可管理资源。auth、token、credentials、se
 | operation history / receipt | `~/.ad/history/operations/<receiptId>.json` |
 | legacy backups / history | `~/.ad/backups/`、`~/.ad/history/` |
 | 项目注册 / 扫描根 | `~/.ad/state/projects.json`、`~/.ad/state/scan_roots.json` |
+| Git Skill source generations / stable view | `~/.ad/skill-library/<source-key>/generations/`、`current` |
 | Skill library / sources | `~/.ad/skill-library/`、`~/.ad/state/skill-sources.json` |
 | Project Codex homes | `~/.ad/codex-homes/<project-name>/` |
 | Project Codex applied manifest | `~/.ad/codex-homes/<project-name>/.ad/runtime-manifest.json` |

@@ -1,6 +1,6 @@
 # Project Agent Workspace 产品规格与证据
 
-> 状态：已实现并通过 M7 发布验证（2026-08-01）
+> 状态：M7 已通过发布验证；Skill source binding 生命周期于 2026-08-05 更新并通过自动化验证
 >
 > 范围：Claude Code、Codex；macOS 桌面第一方 UI
 >
@@ -28,9 +28,10 @@ AD 以项目为中心管理本地 Coding Agent 配置。用户选择项目和 Ag
 
 ### 2. 管理全部 Skill
 
-- Settings 中管理 Skill source catalog；local/Git source 先进入受限 staging，再发布不可变 artifact；
-- source 更新不会自动升级任何项目；项目通过 artifact revision 独立 pin；
-- 项目资源支持真实存在的 install、enable、disable、update 和 remove；
+- Settings 中管理 Skill source catalog；Local source 绑定原始规范目录，Git source 从受限 staging 发布到受管 generation，并通过稳定 `current` link 暴露；
+- 项目安装始终写 Agent 原生 Skill symlink：Local 直接指向原始 Skill 目录，Git 指向 `~/.ad/skill-library/<source-key>/current/<skill-subpath>`；
+- Local 编辑立即对所有关联项目可见；Git source update 原子切换共享 `current`，Preview 明确列出受影响 workspace，缺失已安装 Skill 时阻止切换；
+- 项目资源支持真实存在的 install、enable、disable、Relink/Repair 和 remove；source 仍被 AD-owned link 引用时不能移除；
 - external/unowned Skill 可见但只读，AD 不把目录存在误判为所有权；
 - legacy source、project state 和 link 通过显式 reconciliation 迁移，成功留 receipt 后才归档旧状态。
 
@@ -57,7 +58,7 @@ AD 以项目为中心管理本地 Coding Agent 配置。用户选择项目和 Ag
 |---|---|---|
 | Agent installation | canonical config home | 同 Agent 不同 home 不串写；重复发现去重 |
 | Project workspace | installation + canonical project path | inventory、plan、receipt、history 和 ownership 绑定同一 workspace |
-| Skill artifact | source + revision + normalized tree digest | source refresh 不改变已安装项目 revision |
+| Skill source binding | backend source ID + stable root + Skill subpath | Local/Git link target identity稳定；内容更新不撤销ownership，人工retarget会 fail closed |
 | Codex runtime | canonical project + base installation relation | Project Plugin/config 不写默认 `~/.codex`；同名项目碰撞 fail closed |
 | Operation | plan id + context + risk fingerprint + expiry | stale/replayed/ack mismatch 拒绝写入 |
 
@@ -67,7 +68,7 @@ AD 以项目为中心管理本地 Coding Agent 配置。用户选择项目和 Ag
 
 | 资源状态 | Inspect | Install/Add | Enable/Disable | Update | Remove/Reset | Rollback |
 |---|---:|---:|---:|---:|---:|---:|
-| AD-owned project resource | 是 | 按 capability | 是 | 有新 artifact/source 时 | 是 | receipt eligible 时 |
+| AD-owned project resource | 是 | 按 capability | 是 | legacy link 可 Relink；broken binding 可 Repair | 是 | receipt eligible 时 |
 | inherited user/shared | 是 | 不适用 | 仅真实 project override | 否 | 仅 reset override | project receipt eligible 时 |
 | external/unowned | 是 | capability 明确允许时 | 否 | 否 | 否 | 否 |
 | degraded/unsupported | 是 | 否 | 否 | 否 | 否 | 否 |
@@ -80,7 +81,7 @@ AD 以项目为中心管理本地 Coding Agent 配置。用户选择项目和 Ag
 | 用户任务 | Declared | Reachable | Automated | Workflow | Release |
 |---|---|---|---|---|---|
 | Project effective Settings | 本规格 §1 | Project → 配置 | effective/provenance/sensitive/stale suites | `.app` 编辑 Project A local → Preview → Apply → receipt → rollback | 已通过 production bundle gate |
-| Skill source 与 immutable artifact | 本规格 §2 | Settings → Skill Sources | acquisition budget、digest、pin、A/B isolation、migration suites | `.app` 验证 external Skill 只读且操作禁用；source publish 未单独真机执行 | 自动化与 bundle gate，不上推完整 Workflow |
+| Skill source binding | 本规格 §2 | Settings → Skill Sources | Local direct link、Git generation/current switch、shared A/B update、ownership、remove blocker suites | `.app` 验证 external Skill 只读且操作禁用；新 shared-source lifecycle 未单独真机执行 | 自动化已通过；沿用既有 bundle gate，不上推新 Workflow |
 | Project Skill 生命周期 | 本规格 §2 | Project → Skills 与 Plugins | install/enable/disable/update/remove、ownership、rollback suites | external Skill 边界已真机观察；managed lifecycle 由自动化证明 | 自动化与 bundle gate |
 | Project Plugin 生命周期 | 本规格 §3 | Project → Skills 与 Plugins | Claude override、Codex runtime install、compensation、rollback suites | `.app` 对 Claude Project Plugin 执行 Enable → Apply → History → rollback | 已通过 production bundle gate |
 | Claude → Codex Project conversion | 本规格 §4 | Runtime card / 转换配置 | inventory、resolver、safe subset、stale、source unchanged、rollback suites | `.app` 验证 Keychain-only 阻塞，以及 derived runtime 的 safe subset Apply → receipt → rollback | 已通过 production bundle gate |

@@ -7,7 +7,7 @@ AD 是一个 macOS 桌面应用，用于按项目管理本地 Coding Agent 配�
 ## 当前能力
 
 - Claude Code / Codex 的 user 与 project 配置盘点、编辑、历史和恢复；
-- Skill source catalog、不可变 artifact、项目安装/启停/更新/移除；
+- Skill source catalog、Local 原始目录链接、Git 共享受管 checkout，以及项目安装/启停/Relink/移除；
 - Project Plugin 覆盖管理，以及隔离 Codex Runtime 中的 Plugin 安装；
 - Claude Code 有效项目环境到 Codex 的 Settings、Skills、Plugins 多载体转换；
 - 项目 A/B、Agent installation、operation receipt 与 history 的项目级隔离；
@@ -45,7 +45,7 @@ pnpm release:mac
 
 ## 数据边界
 
-- AD 状态、artifact、backup 和 receipt 位于 `~/.ad/`；
+- AD 状态、Git Skill generations、legacy artifact、backup 和 receipt 位于 `~/.ad/`；
 - Agent 自有配置仍位于 `~/.claude/`、`~/.codex/` 或项目原生目录；
 - Project Codex Runtime 位于 `~/.ad/codex-homes/<project-name>/`，仅由 AD scoped launch 使用；
 - auth、token、session、chat/prompt history、logs、SQLite 和索引不进入配置快照、diff、backup 或日志；

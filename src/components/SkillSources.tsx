@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, RotateCcw, ShieldAlert, Trash2 } from 'lucide-react';
 import { useSkills } from '@/store/skills';
 import type { SkillCatalogPlanView, SkillSourceRequest } from '@/lib/skillCatalogTypes';
 import { Button } from './ui/button';
@@ -13,6 +13,7 @@ export function SkillSourcesSection() {
   const loadSources = useSkills((state) => state.loadSources);
   const previewAddSource = useSkills((state) => state.previewAddSource);
   const previewUpdateSource = useSkills((state) => state.previewUpdateSource);
+  const previewRollbackSourceUpdate = useSkills((state) => state.previewRollbackSourceUpdate);
   const previewRemoveSource = useSkills((state) => state.previewRemoveSource);
   const applySourcePlan = useSkills((state) => state.applySourcePlan);
   const cancelSourcePlan = useSkills((state) => state.cancelSourcePlan);
@@ -22,6 +23,10 @@ export function SkillSourcesSection() {
   const [applying, setApplying] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [rollbackCandidate, setRollbackCandidate] = useState<{
+    receiptId: string;
+    sourceId: string;
+  } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -67,6 +72,18 @@ export function SkillSourcesSection() {
     if (current) await cancelSourcePlan(current.id).catch(() => undefined);
   }
 
+  async function previewRollback(receiptId: string) {
+    setError(null);
+    setPreviewing(`rollback:${receiptId}`);
+    try {
+      setPlan(await previewRollbackSourceUpdate(receiptId));
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setPreviewing(null);
+    }
+  }
+
   async function applyPlan() {
     if (!plan) return;
     setApplying(true);
@@ -74,6 +91,16 @@ export function SkillSourcesSection() {
     try {
       const report = await applySourcePlan(plan);
       setPlan(null);
+      const receipt = report.receipt;
+      if (
+        report.outcome === 'changed' &&
+        receipt?.binding?.sourceType === 'git' &&
+        receipt.previousBinding?.sourceType === 'git'
+      ) {
+        setRollbackCandidate({ receiptId: receipt.id, sourceId: receipt.sourceId });
+      } else if (receipt && rollbackCandidate?.sourceId === receipt.sourceId) {
+        setRollbackCandidate(null);
+      }
       if (report.outcome === 'compensated' || report.outcome === 'partial_failure') {
         setError(report.issues.join('\n') || t('settings.skills.operationFailed'));
       }
@@ -125,7 +152,9 @@ export function SkillSourcesSection() {
 
       <div className="space-y-2">
         {sources.map((source) => {
-          const impact = source.currentArtifact.activationImpact;
+          const payload = source.currentBinding ?? source.currentArtifact;
+          if (!payload) return null;
+          const impact = payload.activationImpact;
           const executableCount =
             impact.hooks.length +
             impact.mcp.length +
@@ -134,6 +163,9 @@ export function SkillSourcesSection() {
             impact.binaries.length;
           const updating = previewing === `update:${source.sourceId}`;
           const removing = previewing === `remove:${source.sourceId}`;
+          const rollingBack =
+            rollbackCandidate?.sourceId === source.sourceId &&
+            previewing === `rollback:${rollbackCandidate.receiptId}`;
           return (
             <article key={source.sourceId} className="rounded-lg border border-border p-3">
               <div className="flex items-start justify-between gap-3">
@@ -149,10 +181,15 @@ export function SkillSourcesSection() {
                   </div>
                   <div className="mt-1 text-[11px] text-muted-foreground">
                     {t('settings.skills.artifactSummary', {
-                      count: source.currentArtifact.skills.length,
-                      revision: shortRevision(source.currentArtifact.sourceRevision),
+                      count: payload.skills.length,
+                      revision: shortRevision(payload.sourceRevision),
                     })}
                   </div>
+                  {source.currentBinding && (
+                    <div className="mt-1 break-all font-mono text-[10px] text-muted-foreground">
+                      {source.currentBinding.stableRoot}
+                    </div>
+                  )}
                   {executableCount > 0 && (
                     <div className="text-warning-foreground mt-2 inline-flex items-center gap-1.5 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[11px]">
                       <ShieldAlert className="h-3 w-3" />
@@ -161,6 +198,20 @@ export function SkillSourcesSection() {
                   )}
                 </div>
                 <div className="flex shrink-0 gap-1.5">
+                  {rollbackCandidate?.sourceId === source.sourceId && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={previewing !== null}
+                      onClick={() => void previewRollback(rollbackCandidate.receiptId)}
+                    >
+                      <RotateCcw className={`h-3 w-3 ${rollingBack ? 'animate-spin' : ''}`} />
+                      {rollingBack
+                        ? t('settings.skills.previewing')
+                        : t('settings.skills.rollback')}
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     size="sm"

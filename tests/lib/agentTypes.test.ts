@@ -235,9 +235,10 @@ describe('Agent schemas', () => {
       management: {
         status: 'managed',
         actions: [
-          { action: 'disable', availability: 'available' },
+          { action: 'disable', intent: 'standard', availability: 'available' },
           {
             action: 'remove',
+            intent: 'standard',
             availability: 'unavailable',
             limitation: { code: 'inherited', messageKey: 'agents.resources.inherited' },
           },

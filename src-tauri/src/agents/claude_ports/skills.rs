@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::io::ErrorKind;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use chrono::{Duration, Utc};
 
@@ -234,7 +234,8 @@ fn install_source(
                 "Claude local skill install requires source.path",
             )
         })?;
-    let source = std::fs::canonicalize(source_path).map_err(|error| {
+    let requested_source = PathBuf::from(source_path);
+    let lexical_source = direct_skill_source(&requested_source).map_err(|error| {
         agent_error(
             AgentErrorCode::InvalidPlan,
             context,
@@ -242,7 +243,15 @@ fn install_source(
             format!("Invalid skill source path {source_path}: {error}"),
         )
     })?;
-    if !source.is_dir() || !source.join("SKILL.md").is_file() {
+    let physical_source = std::fs::canonicalize(&lexical_source).map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            format!("Invalid skill source path {source_path}: {error}"),
+        )
+    })?;
+    if !physical_source.is_dir() || !physical_source.join("SKILL.md").is_file() {
         return Err(agent_error(
             AgentErrorCode::InvalidPlan,
             context,
@@ -250,7 +259,23 @@ fn install_source(
             "Claude skill source must be a directory containing SKILL.md",
         ));
     }
-    Ok(source)
+    Ok(lexical_source)
+}
+
+fn direct_skill_source(source: &Path) -> std::io::Result<PathBuf> {
+    let metadata = std::fs::symlink_metadata(source)?;
+    if !metadata.file_type().is_symlink() {
+        return Ok(source.to_path_buf());
+    }
+    let target = std::fs::read_link(source)?;
+    if target.is_absolute() {
+        Ok(target)
+    } else {
+        Ok(source
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(target))
+    }
 }
 
 fn skill_snapshot(

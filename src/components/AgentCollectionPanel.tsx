@@ -696,6 +696,12 @@ function actionLabel(
   action: ResourceActionView,
   t: ReturnType<typeof useTranslation>['t'],
 ): string {
+  if (action.intent === 'relink') {
+    return t('agentCollections.action.relink');
+  }
+  if (action.intent === 'repair') {
+    return t('agentCollections.action.repair');
+  }
   if (resource.kind === 'plugins' && action.action === 'remove') {
     return t('agentCollections.action.resetPluginOverride');
   }

@@ -18,8 +18,9 @@ export function SkillCatalogPlanDialog({
   onConfirm,
 }: SkillCatalogPlanDialogProps) {
   const { t } = useTranslation();
-  const artifact = plan?.artifact ?? plan?.currentArtifact;
-  const impact = artifact?.activationImpact;
+  const planKind = plan?.rollbackOf ? 'rollback' : plan?.action;
+  const payload = plan?.binding ?? plan?.artifact ?? plan?.currentBinding ?? plan?.currentArtifact;
+  const impact = payload?.activationImpact;
   const executableCount = impact
     ? impact.hooks.length +
       impact.mcp.length +
@@ -32,8 +33,8 @@ export function SkillCatalogPlanDialog({
       open={plan !== null}
       onOpenChange={(open) => !open && !busy && onCancel()}
       closeDisabled={busy}
-      title={plan ? t(`settings.skills.plan.${plan.action}.title`) : undefined}
-      description={plan ? t(`settings.skills.plan.${plan.action}.description`) : undefined}
+      title={planKind ? t(`settings.skills.plan.${planKind}.title`) : undefined}
+      description={planKind ? t(`settings.skills.plan.${planKind}.description`) : undefined}
       footer={
         <div className="flex justify-end gap-2">
           <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onCancel}>
@@ -43,7 +44,7 @@ export function SkillCatalogPlanDialog({
             type="button"
             size="sm"
             variant={plan?.action === 'remove' ? 'destructive' : 'default'}
-            disabled={busy || !plan}
+            disabled={busy || !plan || plan.applicability === 'blocked'}
             onClick={onConfirm}
           >
             {busy ? t('settings.skills.plan.applying') : t('settings.skills.plan.confirm')}
@@ -59,15 +60,30 @@ export function SkillCatalogPlanDialog({
               {plan.sourceId}
             </div>
           </div>
-          {artifact && (
+          {payload && (
             <div>
-              <div className="font-medium">{t('settings.skills.plan.artifact')}</div>
+              <div className="font-medium">{t('settings.skills.plan.sourceBinding')}</div>
               <div className="mt-1 font-mono text-[10px] text-muted-foreground">
-                {artifact.artifactId}
+                {'stableRoot' in payload ? payload.stableRoot : payload.artifactId}
               </div>
               <div className="mt-1 text-muted-foreground">
-                {t('settings.skills.plan.skills', { count: artifact.skills.length })}
+                {t('settings.skills.plan.skills', { count: payload.skills.length })}
               </div>
+            </div>
+          )}
+          {plan.affectedWorkspaces.length > 0 && (
+            <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-muted-foreground">
+              {t('settings.skills.plan.sharedImpact', { count: plan.affectedWorkspaces.length })}
+            </div>
+          )}
+          {plan.blockingIssues.length > 0 && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3">
+              <div className="font-medium">{t('settings.skills.plan.blocked')}</div>
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-muted-foreground">
+                {plan.blockingIssues.map((issue, index) => (
+                  <li key={`${issue.code}:${index}`}>{issue.message}</li>
+                ))}
+              </ul>
             </div>
           )}
           {executableCount > 0 && (
@@ -83,8 +99,8 @@ export function SkillCatalogPlanDialog({
           )}
           <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-muted-foreground">
             {plan.action === 'remove'
-              ? t('settings.skills.plan.removeIsolation')
-              : t('settings.skills.plan.revisionIsolation')}
+              ? t('settings.skills.plan.removeReferences')
+              : t('settings.skills.plan.sharedSource')}
           </div>
         </div>
       )}

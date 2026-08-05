@@ -312,7 +312,7 @@
       "nav": "Skills",
       "desc": "Manage skill repositories and control which skills are globally available.",
       "sourcesHeading": "Sources",
-      "catalogIsolation": "Sources acquire immutable revisions; refreshing one never changes a project automatically.",
+      "catalogIsolation": "Installed Skills link directly to Local sources or a shared managed Git checkout.",
       "addSource": "Add Source",
       "noSources": "No skill sources configured. Add a git repository or local directory.",
       "loading": "Loading Skill sources…",
@@ -323,6 +323,7 @@
       "autoUpdateOn": "Auto-update: on",
       "updating": "Updating...",
       "update": "Update",
+      "rollback": "Rollback",
       "previewing": "Inspecting…",
       "removeSource": "Remove source: {{name}}",
       "artifactSummary": "{{count}} Skills · revision {{revision}}",
@@ -361,22 +362,28 @@
       "plan": {
         "add": {
           "title": "Confirm Skill source addition",
-          "description": "Publish the inspected immutable artifact and register it as the current source revision."
+          "description": "Register the inspected Local source or publish a managed Git checkout."
         },
         "update": {
           "title": "Confirm Skill source update",
-          "description": "Publish a new artifact and move the catalog pointer; projects stay pinned to their prior revision."
+          "description": "Refresh the shared source binding. Linked projects observe the updated source together."
+        },
+        "rollback": {
+          "title": "Confirm Skill source rollback",
+          "description": "Switch the shared Git source back to its previous managed checkout. Every linked project observes the rollback together."
         },
         "remove": {
           "title": "Confirm Skill source removal",
-          "description": "Remove only the catalog entry, without deleting published artifacts or project references."
+          "description": "Remove the catalog entry only after all installed references are removed."
         },
-        "artifact": "Immutable artifact",
+        "sourceBinding": "Source binding",
         "skills": "Contains {{count}} Skills",
         "executionTitle": "Includes execution capabilities",
         "executionDescription": "Detected {{count}} hook, MCP, command, script, or binary entry points. Verify that you trust the source before activation.",
-        "revisionIsolation": "Refreshing a source never upgrades a project automatically; project revisions require a separate preview and confirmation.",
-        "removeIsolation": "This does not delete old artifacts, legacy checkouts, or revisions pinned by projects.",
+        "sharedImpact": "This source is linked from {{count}} project workspaces.",
+        "blocked": "This operation is blocked",
+        "sharedSource": "Local edits are visible immediately. Git updates atomically switch the shared managed checkout for every linked project.",
+        "removeReferences": "Source removal is allowed only when no AD-owned project links reference it.",
         "applying": "Applying…",
         "confirm": "Confirm & Apply"
       }
@@ -698,6 +705,8 @@
     "action": {
       "install": "Install",
       "update": "Update",
+      "relink": "Relink",
+      "repair": "Repair",
       "remove": "Remove",
       "enable": "Enable",
       "disable": "Disable",
