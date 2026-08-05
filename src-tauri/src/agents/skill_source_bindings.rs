@@ -333,33 +333,57 @@ pub fn publish_staged_git_skill_source_binding(
     ensure_managed_git_source_directories(&source_key)?;
     let current_path = source_root.join("current");
     let previous_target = validate_current_before_switch(&current_path, previous)?;
+    let staged_selected = staged
+        .selected_subdirectory
+        .as_ref()
+        .map(|subdirectory| staged.operation_root.join("source").join(subdirectory))
+        .unwrap_or_else(|| staged.operation_root.join("source"));
+    let staged_manifest = inspect_tree(&staged_selected, ArtifactLimits::default())?;
+    let staged_manifest_bytes = serde_json::to_vec(&staged_manifest)
+        .map_err(|error| SkillArtifactError::Corrupt(error.to_string()))?;
+    if staged_manifest.digest()? != staged.binding.tree_digest
+        || ContentDigest::sha256(&staged_manifest_bytes) != staged.binding.manifest_digest
+    {
+        return Err(SkillArtifactError::Corrupt(
+            "staged Git source changed after preview".into(),
+        ));
+    }
     let generation_root = generations.join(&staged.generation_name);
-    if generation_root.exists() || generation_root.is_symlink() {
-        let selected = staged
-            .selected_subdirectory
-            .as_ref()
-            .map(|subdirectory| generation_root.join(subdirectory))
-            .unwrap_or_else(|| generation_root.clone());
-        let manifest = inspect_tree(&selected, ArtifactLimits::default())?;
-        if manifest.digest()? != staged.binding.tree_digest {
+    match std::fs::symlink_metadata(&generation_root) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+            let selected = staged
+                .selected_subdirectory
+                .as_ref()
+                .map(|subdirectory| generation_root.join(subdirectory))
+                .unwrap_or_else(|| generation_root.clone());
+            let manifest = inspect_tree(&selected, ArtifactLimits::default())?;
+            if manifest.digest()? != staged.binding.tree_digest {
+                return Err(SkillArtifactError::Corrupt(
+                    "existing Git source generation differs from staged content".into(),
+                ));
+            }
+        }
+        Ok(_) => {
             return Err(SkillArtifactError::Corrupt(
-                "existing Git source generation differs from staged content".into(),
+                "existing Git source generation is not a physical directory".into(),
             ));
         }
-    } else {
-        let operation = open(&staged.operation_root, DIRECTORY_FLAGS, Mode::empty())
-            .map_err(|error| io_error(&staged.operation_root, error.into()))?;
-        let generation_parent = open(&generations, DIRECTORY_FLAGS, Mode::empty())
-            .map_err(|error| io_error(&generations, error.into()))?;
-        renameat_with(
-            &operation,
-            "source",
-            &generation_parent,
-            staged.generation_name.as_str(),
-            RenameFlags::NOREPLACE,
-        )
-        .map_err(|error| io_error(&generation_root, error.into()))?;
-        fsync(&generation_parent).map_err(|error| io_error(&generations, error.into()))?;
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let operation = open(&staged.operation_root, DIRECTORY_FLAGS, Mode::empty())
+                .map_err(|error| io_error(&staged.operation_root, error.into()))?;
+            let generation_parent = open(&generations, DIRECTORY_FLAGS, Mode::empty())
+                .map_err(|error| io_error(&generations, error.into()))?;
+            renameat_with(
+                &operation,
+                "source",
+                &generation_parent,
+                staged.generation_name.as_str(),
+                RenameFlags::NOREPLACE,
+            )
+            .map_err(|error| io_error(&generation_root, error.into()))?;
+            fsync(&generation_parent).map_err(|error| io_error(&generations, error.into()))?;
+        }
+        Err(error) => return Err(io_error(&generation_root, error)),
     }
     let mut installed_target = PathBuf::from("generations").join(&staged.generation_name);
     if let Some(subdirectory) = &staged.selected_subdirectory {
