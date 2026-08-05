@@ -8,7 +8,9 @@ use super::skill_source_bindings::{
     reconcile_git_skill_source_current, skill_source_key, stage_existing_git_checkout_for_test,
     switch_git_skill_source_binding,
 };
-use crate::fs::paths::{skill_acquisition_staging_dir, skill_artifacts_dir};
+use crate::fs::paths::{
+    managed_skill_source_generations_dir, skill_acquisition_staging_dir, skill_artifacts_dir,
+};
 use crate::models::{SkillSource, SkillSourceType};
 
 fn local_source(root: &Path) -> SkillSource {
@@ -212,4 +214,56 @@ fn git_binding_rejects_a_receipt_root_not_derived_from_its_source_id() {
     let error = switch_git_skill_source_binding(&tampered, &tampered).unwrap_err();
 
     assert!(matches!(error, super::SkillArtifactError::Corrupt(_)));
+}
+
+#[test]
+#[serial(home_env)]
+fn git_binding_revalidates_staged_content_before_publication() {
+    let home = tempfile::tempdir().unwrap();
+    std::env::set_var("AD_HOME", home.path());
+    let operation = skill_acquisition_staging_dir()
+        .unwrap()
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(operation.join("source/review")).unwrap();
+    let skill = operation.join("source/review/SKILL.md");
+    std::fs::write(&skill, "---\nname: review\n---\nfirst").unwrap();
+    let staged =
+        stage_existing_git_checkout_for_test(&git_source(), operation, &"a".repeat(40)).unwrap();
+    std::fs::write(&skill, "---\nname: review\n---\nchanged after preview").unwrap();
+
+    let error = publish_staged_git_skill_source_binding(staged, None).unwrap_err();
+
+    assert!(matches!(error, super::SkillArtifactError::Corrupt(_)));
+}
+
+#[test]
+#[serial(home_env)]
+fn git_binding_rejects_a_symlinked_existing_generation_with_a_matching_subtree() {
+    let home = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::env::set_var("AD_HOME", home.path());
+    let mut source = git_source();
+    source.subdirectory = Some("selected".into());
+    let operation = skill_acquisition_staging_dir()
+        .unwrap()
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(operation.join("source/selected/review")).unwrap();
+    let body = "---\nname: review\n---\nmatching content";
+    std::fs::write(operation.join("source/selected/review/SKILL.md"), body).unwrap();
+    let staged = stage_existing_git_checkout_for_test(&source, operation, &"a".repeat(40)).unwrap();
+    let binding = staged.binding().clone();
+    std::fs::create_dir_all(outside.path().join("selected/review")).unwrap();
+    std::fs::write(outside.path().join("selected/review/SKILL.md"), body).unwrap();
+    let generations = managed_skill_source_generations_dir(&skill_source_key(&source.id)).unwrap();
+    std::fs::create_dir_all(&generations).unwrap();
+    let generation_root = Path::new(&binding.physical_root)
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    std::os::unix::fs::symlink(outside.path(), &generation_root).unwrap();
+
+    let error = publish_staged_git_skill_source_binding(staged, None).unwrap_err();
+
+    assert!(matches!(error, super::SkillArtifactError::Corrupt(_)));
+    assert!(!Path::new(&binding.stable_root).exists());
 }

@@ -206,14 +206,18 @@ fn install_source(
             )
         })?;
     let requested_source = PathBuf::from(source_path);
-    let lexical_source = direct_skill_source(&requested_source).map_err(|error| {
-        agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            format!("Invalid skill source path {source_path}: {error}"),
-        )
-    })?;
+    let lexical_source = if request.source.get("catalog").is_some() {
+        requested_source
+    } else {
+        direct_skill_source(&requested_source).map_err(|error| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                None,
+                format!("Invalid skill source path {source_path}: {error}"),
+            )
+        })?
+    };
     let physical_source = std::fs::canonicalize(&lexical_source).map_err(|error| {
         agent_error(
             AgentErrorCode::InvalidPlan,
@@ -454,4 +458,34 @@ fn skill_name<'a>(context: &AgentContext, logical_id: &'a str) -> Result<&'a str
         ));
     }
     Ok(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn catalog_root_skill_keeps_the_stable_lexical_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let generation = temp.path().join("generations/one");
+        std::fs::create_dir_all(&generation).unwrap();
+        std::fs::write(generation.join("SKILL.md"), "---\nname: root\n---\n").unwrap();
+        let current = temp.path().join("current");
+        std::os::unix::fs::symlink("generations/one", &current).unwrap();
+        let context = AgentContext {
+            installation_id: "codex:test".into(),
+            project_path: None,
+        };
+        let request = CollectionInstallRequest {
+            logical_id: "root".into(),
+            source: serde_json::json!({
+                "path": current,
+                "catalog": {"bindingId": "skill-source-binding:test"},
+            }),
+        };
+
+        let source = install_source(&context, &request).unwrap();
+
+        assert_eq!(source, current);
+    }
 }
