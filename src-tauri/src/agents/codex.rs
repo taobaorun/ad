@@ -612,13 +612,37 @@ mod tests {
         let source = temp.path().join("source/install-demo");
         std::fs::create_dir_all(&source).unwrap();
         std::fs::write(source.join("SKILL.md"), "---\nname: install-demo\n---\n").unwrap();
+        let source_plans = crate::agents::SkillCatalogPlanStore::default();
+        let source_plan = source_plans
+            .preview_add(crate::agents::SkillSourceRequest {
+                display_name: "Install Demo".into(),
+                source_type: crate::models::SkillSourceType::Local,
+                location: source.parent().unwrap().to_string_lossy().into_owned(),
+                branch: None,
+                subdirectory: None,
+                auto_update: false,
+            })
+            .unwrap();
+        crate::agents::apply_skill_catalog_plan(
+            &source_plans,
+            &crate::agents::SkillCatalogPlanClaim {
+                plan_id: source_plan.id,
+                risk_fingerprint: source_plan.risk_fingerprint,
+                confirmed: true,
+            },
+        )
+        .unwrap();
+        let resource_id = crate::agents::load_resource_catalog_snapshot()
+            .unwrap()
+            .resources
+            .into_values()
+            .find(|resource| resource.install_id == "install-demo")
+            .unwrap()
+            .id;
         let install = port
             .plan_install(
                 &context,
-                crate::agents::CollectionInstallRequest {
-                    logical_id: "install-demo".into(),
-                    source: serde_json::json!({"path": source}),
-                },
+                crate::agents::CollectionInstallRequest::catalog(resource_id),
             )
             .unwrap();
         let install_id = install.id.clone();

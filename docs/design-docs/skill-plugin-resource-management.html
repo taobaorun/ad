@@ -1,0 +1,1693 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>Skill / Plugin 资源中心与项目安装 · 技术设计</title>
+    <style>
+      :root {
+        --ivory: #faf9f5;
+        --paper: #ffffff;
+        --slate: #141413;
+        --clay: #d97757;
+        --clay-soft: #f7e7df;
+        --oat: #e3dacc;
+        --olive: #788c5d;
+        --olive-soft: #e8ecdf;
+        --rust: #b04a3f;
+        --rust-soft: #f4dfdb;
+        --blue: #5f7896;
+        --blue-soft: #e5eaf0;
+        --gray-100: #f7f5ef;
+        --gray-150: #f0eee6;
+        --gray-300: #d1cfc5;
+        --gray-500: #87867f;
+        --gray-700: #3d3d3a;
+        --serif: ui-serif, Georgia, "Times New Roman", serif;
+        --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --mono: ui-monospace, "SF Mono", Menlo, Monaco, monospace;
+        --shadow: 0 18px 50px rgba(34, 29, 22, 0.07);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 8% -2%, rgba(217, 119, 87, 0.1), transparent 29rem),
+          var(--ivory);
+        color: var(--gray-700);
+        font-family: var(--sans);
+        font-size: 15px;
+        line-height: 1.65;
+      }
+
+      button,
+      a {
+        font: inherit;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      code,
+      .mono {
+        font-family: var(--mono);
+      }
+
+      code {
+        border-radius: 4px;
+        background: var(--gray-150);
+        padding: 0.08em 0.32em;
+        color: var(--slate);
+        font-size: 0.88em;
+      }
+
+      .topbar {
+        position: sticky;
+        z-index: 20;
+        top: 0;
+        border-bottom: 1px solid rgba(209, 207, 197, 0.82);
+        background: rgba(250, 249, 245, 0.9);
+        backdrop-filter: blur(18px);
+      }
+
+      .topbar-inner {
+        display: flex;
+        max-width: 1160px;
+        min-height: 52px;
+        margin: 0 auto;
+        align-items: center;
+        gap: 20px;
+        padding: 0 28px;
+      }
+
+      .brand {
+        color: var(--slate);
+        font-family: var(--serif);
+        font-size: 17px;
+        white-space: nowrap;
+      }
+
+      nav {
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        gap: 18px;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      nav::-webkit-scrollbar {
+        display: none;
+      }
+
+      nav a {
+        border-bottom: 2px solid transparent;
+        color: var(--gray-500);
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+
+      nav a:hover,
+      nav a:focus-visible {
+        border-color: var(--clay);
+        color: var(--slate);
+        outline: none;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .action {
+        cursor: pointer;
+        border: 1px solid var(--gray-300);
+        border-radius: 8px;
+        background: var(--paper);
+        padding: 6px 10px;
+        color: var(--gray-700);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .action:hover,
+      .action:focus-visible {
+        border-color: var(--clay);
+        outline: none;
+      }
+
+      .page {
+        width: min(1120px, calc(100% - 48px));
+        margin: 0 auto;
+        padding: 70px 0 96px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 280px;
+        gap: 56px;
+        align-items: end;
+        padding-bottom: 46px;
+      }
+
+      .eyebrow,
+      .section-kicker {
+        color: var(--clay);
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        color: var(--slate);
+      }
+
+      h1 {
+        max-width: 780px;
+        margin: 12px 0 18px;
+        font-family: var(--serif);
+        font-size: clamp(40px, 6vw, 64px);
+        font-weight: 500;
+        letter-spacing: -0.035em;
+        line-height: 1.03;
+      }
+
+      h2 {
+        margin: 8px 0 10px;
+        font-family: var(--serif);
+        font-size: clamp(28px, 4vw, 40px);
+        font-weight: 500;
+        letter-spacing: -0.02em;
+        line-height: 1.15;
+      }
+
+      h3 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        line-height: 1.35;
+      }
+
+      p {
+        margin: 0 0 12px;
+      }
+
+      .lede {
+        max-width: 760px;
+        color: var(--gray-700);
+        font-size: 17px;
+        line-height: 1.7;
+      }
+
+      .meta-card {
+        border: 1.5px solid var(--gray-300);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.76);
+        padding: 20px;
+        box-shadow: var(--shadow);
+      }
+
+      .meta-row + .meta-row {
+        margin-top: 14px;
+        border-top: 1px solid var(--gray-150);
+        padding-top: 14px;
+      }
+
+      .meta-label {
+        margin-bottom: 3px;
+        color: var(--gray-500);
+        font-family: var(--mono);
+        font-size: 10px;
+        text-transform: uppercase;
+      }
+
+      .meta-value {
+        color: var(--slate);
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        overflow: hidden;
+        border: 1.5px solid var(--gray-300);
+        border-radius: 14px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .summary-item {
+        min-height: 132px;
+        padding: 22px;
+      }
+
+      .summary-item + .summary-item {
+        border-left: 1px solid var(--gray-300);
+      }
+
+      .summary-number {
+        margin-bottom: 8px;
+        color: var(--clay);
+        font-family: var(--serif);
+        font-size: 30px;
+        line-height: 1;
+      }
+
+      .summary-title {
+        color: var(--slate);
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .summary-copy {
+        margin-top: 5px;
+        color: var(--gray-500);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      section {
+        scroll-margin-top: 72px;
+        padding-top: 82px;
+      }
+
+      .section-head {
+        display: grid;
+        grid-template-columns: 1fr minmax(260px, 420px);
+        gap: 48px;
+        align-items: end;
+        margin-bottom: 24px;
+      }
+
+      .section-intro {
+        color: var(--gray-500);
+        font-size: 14px;
+      }
+
+      .panel {
+        border: 1.5px solid var(--gray-300);
+        border-radius: 14px;
+        background: var(--paper);
+        padding: 24px;
+        box-shadow: 0 10px 30px rgba(34, 29, 22, 0.035);
+      }
+
+      .diagram {
+        overflow-x: auto;
+        padding: 18px;
+      }
+
+      .diagram svg {
+        display: block;
+        min-width: 850px;
+        width: 100%;
+      }
+
+      .caption {
+        margin-top: 10px;
+        color: var(--gray-500);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .decision-grid,
+      .entity-grid,
+      .ux-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .decision-card,
+      .entity,
+      .ux-card {
+        position: relative;
+        overflow: hidden;
+        border: 1.5px solid var(--gray-300);
+        border-radius: 12px;
+        background: var(--paper);
+        padding: 20px;
+      }
+
+      .decision-card::before {
+        position: absolute;
+        top: 0;
+        right: 0;
+        left: 0;
+        height: 3px;
+        background: var(--clay);
+        content: "";
+      }
+
+      .decision-id,
+      .entity-kind {
+        margin-bottom: 9px;
+        color: var(--gray-500);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .decision-card p,
+      .entity p,
+      .ux-card p {
+        color: var(--gray-500);
+        font-size: 13px;
+      }
+
+      .entity-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .entity:nth-child(1) {
+        border-top: 4px solid var(--blue);
+      }
+
+      .entity:nth-child(2) {
+        border-top: 4px solid var(--clay);
+      }
+
+      .entity:nth-child(3) {
+        border-top: 4px solid var(--olive);
+      }
+
+      .entity:nth-child(4) {
+        border-top: 4px solid var(--rust);
+      }
+
+      .entity ul,
+      .compact-list,
+      .risk-list {
+        margin: 12px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .entity li,
+      .compact-list li,
+      .risk-list li {
+        position: relative;
+        margin-top: 7px;
+        padding-left: 14px;
+        font-size: 12.5px;
+      }
+
+      .entity li::before,
+      .compact-list li::before,
+      .risk-list li::before {
+        position: absolute;
+        top: 0.72em;
+        left: 0;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--clay);
+        content: "";
+      }
+
+      .matrix {
+        overflow: hidden;
+        border: 1.5px solid var(--gray-300);
+        border-radius: 12px;
+        background: var(--paper);
+      }
+
+      .matrix-row {
+        display: grid;
+        grid-template-columns: 1.25fr 1fr 1fr 2.1fr;
+      }
+
+      .matrix-row + .matrix-row {
+        border-top: 1px solid var(--gray-300);
+      }
+
+      .matrix-cell {
+        padding: 14px 16px;
+        font-size: 13px;
+      }
+
+      .matrix-cell + .matrix-cell {
+        border-left: 1px solid var(--gray-300);
+      }
+
+      .matrix-head {
+        background: var(--gray-150);
+        color: var(--slate);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .status::before {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        content: "";
+      }
+
+      .status.supported {
+        background: var(--olive-soft);
+        color: #50613d;
+      }
+
+      .status.supported::before {
+        background: var(--olive);
+      }
+
+      .status.blocked {
+        background: var(--rust-soft);
+        color: #7d3730;
+      }
+
+      .status.blocked::before {
+        background: var(--rust);
+      }
+
+      .notice {
+        display: grid;
+        grid-template-columns: 5px 1fr;
+        overflow: hidden;
+        border: 1.5px solid var(--oat);
+        border-radius: 12px;
+        background: #fffdf8;
+      }
+
+      .notice-bar {
+        background: var(--clay);
+      }
+
+      .notice-body {
+        padding: 18px 20px;
+      }
+
+      .notice strong {
+        display: block;
+        margin-bottom: 3px;
+        color: var(--slate);
+      }
+
+      .notice p {
+        margin: 0;
+        color: var(--gray-500);
+        font-size: 13px;
+      }
+
+      .flow-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+
+      .flow-card {
+        border: 1.5px solid var(--gray-300);
+        border-radius: 12px;
+        background: var(--paper);
+        padding: 22px;
+      }
+
+      .flow-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+
+      .flow-number {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--clay-soft);
+        color: var(--clay);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .flow-steps {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .flow-steps li {
+        position: relative;
+        margin-left: 8px;
+        border-left: 1.5px solid var(--gray-300);
+        padding: 0 0 18px 20px;
+        color: var(--gray-500);
+        font-size: 13px;
+      }
+
+      .flow-steps li:last-child {
+        border-left-color: transparent;
+        padding-bottom: 0;
+      }
+
+      .flow-steps li::before {
+        position: absolute;
+        top: 0.42em;
+        left: -5px;
+        width: 8px;
+        height: 8px;
+        border: 2px solid var(--paper);
+        border-radius: 50%;
+        background: var(--clay);
+        content: "";
+        box-shadow: 0 0 0 1px var(--clay);
+      }
+
+      .flow-steps strong {
+        color: var(--slate);
+      }
+
+      .state-machine {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 34px;
+        align-items: stretch;
+      }
+
+      .state {
+        position: relative;
+        display: flex;
+        min-height: 124px;
+        flex-direction: column;
+        justify-content: center;
+        border: 1.5px solid var(--gray-300);
+        border-radius: 12px;
+        background: var(--paper);
+        padding: 18px;
+        text-align: center;
+      }
+
+      .state:not(:last-child)::after {
+        position: absolute;
+        top: 50%;
+        left: calc(100% + 8px);
+        width: 18px;
+        border-top: 1.5px solid var(--gray-500);
+        content: "";
+      }
+
+      .state:not(:last-child)::before {
+        position: absolute;
+        z-index: 2;
+        top: calc(50% - 4px);
+        left: calc(100% + 24px);
+        border-top: 4px solid transparent;
+        border-bottom: 4px solid transparent;
+        border-left: 6px solid var(--gray-500);
+        content: "";
+      }
+
+      .state-name {
+        color: var(--slate);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .state p {
+        margin: 7px 0 0;
+        color: var(--gray-500);
+        font-size: 11.5px;
+        line-height: 1.45;
+      }
+
+      .state.partial {
+        border-color: var(--rust);
+        background: var(--rust-soft);
+      }
+
+      .state.complete {
+        border-color: var(--olive);
+        background: var(--olive-soft);
+      }
+
+      .loop-note {
+        margin-top: 14px;
+        border-radius: 9px;
+        background: var(--gray-150);
+        padding: 10px 14px;
+        color: var(--gray-500);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .contract-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+
+      details {
+        border: 1.5px solid var(--gray-300);
+        border-radius: 12px;
+        background: var(--paper);
+      }
+
+      details + details {
+        margin-top: 12px;
+      }
+
+      summary {
+        cursor: pointer;
+        list-style: none;
+        padding: 16px 18px;
+        color: var(--slate);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      summary::-webkit-details-marker {
+        display: none;
+      }
+
+      summary::before {
+        display: inline-block;
+        margin-right: 9px;
+        color: var(--clay);
+        content: "+";
+        font-family: var(--mono);
+      }
+
+      details[open] summary::before {
+        content: "−";
+      }
+
+      .details-body {
+        border-top: 1px solid var(--gray-150);
+        padding: 0 18px 18px;
+      }
+
+      pre {
+        overflow-x: auto;
+        margin: 16px 0 0;
+        border-radius: 10px;
+        background: var(--slate);
+        padding: 18px;
+        color: #e8e6dc;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        line-height: 1.65;
+        white-space: pre;
+      }
+
+      .ux-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .mini-window {
+        overflow: hidden;
+        margin-top: 14px;
+        border: 1px solid var(--gray-300);
+        border-radius: 9px;
+        background: var(--gray-100);
+      }
+
+      .mini-titlebar {
+        display: flex;
+        height: 28px;
+        align-items: center;
+        gap: 5px;
+        border-bottom: 1px solid var(--gray-300);
+        padding: 0 10px;
+      }
+
+      .mini-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--gray-300);
+      }
+
+      .mini-body {
+        display: grid;
+        min-height: 170px;
+        grid-template-columns: 90px 1fr;
+      }
+
+      .mini-nav {
+        border-right: 1px solid var(--gray-300);
+        padding: 12px 9px;
+      }
+
+      .mini-nav-item {
+        margin-bottom: 7px;
+        border-radius: 5px;
+        padding: 5px 7px;
+        color: var(--gray-500);
+        font-size: 8px;
+      }
+
+      .mini-nav-item.active {
+        background: var(--clay-soft);
+        color: var(--clay);
+        font-weight: 700;
+      }
+
+      .mini-content {
+        padding: 14px;
+      }
+
+      .mini-heading {
+        margin-bottom: 12px;
+        color: var(--slate);
+        font-family: var(--serif);
+        font-size: 14px;
+      }
+
+      .mini-card {
+        margin-bottom: 8px;
+        border: 1px solid var(--gray-300);
+        border-radius: 6px;
+        background: var(--paper);
+        padding: 8px;
+      }
+
+      .mini-card-title {
+        color: var(--slate);
+        font-size: 8px;
+        font-weight: 700;
+      }
+
+      .mini-card-sub {
+        margin-top: 3px;
+        color: var(--gray-500);
+        font-size: 7px;
+      }
+
+      .risk-table {
+        overflow: hidden;
+        border: 1.5px solid var(--gray-300);
+        border-radius: 12px;
+        background: var(--paper);
+      }
+
+      .risk-row {
+        display: grid;
+        grid-template-columns: 1.2fr 1.7fr 1.25fr;
+      }
+
+      .risk-row + .risk-row {
+        border-top: 1px solid var(--gray-300);
+      }
+
+      .risk-cell {
+        padding: 14px 16px;
+        font-size: 12.5px;
+      }
+
+      .risk-cell + .risk-cell {
+        border-left: 1px solid var(--gray-300);
+      }
+
+      .risk-head {
+        background: var(--gray-150);
+        color: var(--slate);
+        font-size: 10px;
+        font-weight: 750;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .closing {
+        margin-top: 82px;
+        border: 1.5px solid var(--slate);
+        border-radius: 14px;
+        background: var(--slate);
+        padding: 30px;
+        color: #e8e6dc;
+      }
+
+      .closing h2 {
+        margin-top: 0;
+        color: var(--ivory);
+      }
+
+      .closing p {
+        max-width: 820px;
+        color: #c9c6bb;
+      }
+
+      .source-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .source-link {
+        border: 1px solid #4f4f4b;
+        border-radius: 8px;
+        padding: 7px 10px;
+        color: #e8e6dc;
+        font-family: var(--mono);
+        font-size: 10px;
+        text-decoration: none;
+      }
+
+      .source-link:hover,
+      .source-link:focus-visible {
+        border-color: var(--clay);
+        outline: none;
+      }
+
+      .toast {
+        position: fixed;
+        z-index: 50;
+        right: 24px;
+        bottom: 24px;
+        transform: translateY(16px);
+        border-radius: 9px;
+        background: var(--slate);
+        padding: 10px 14px;
+        color: var(--ivory);
+        font-size: 12px;
+        opacity: 0;
+        pointer-events: none;
+        transition: 180ms ease;
+      }
+
+      .toast.show {
+        transform: translateY(0);
+        opacity: 1;
+      }
+
+      @media (max-width: 920px) {
+        .hero,
+        .section-head {
+          grid-template-columns: 1fr;
+          gap: 24px;
+        }
+
+        .summary-grid,
+        .entity-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .summary-item:nth-child(3),
+        .entity:nth-child(3) {
+          border-left: 0;
+        }
+
+        .summary-item:nth-child(n + 3) {
+          border-top: 1px solid var(--gray-300);
+        }
+
+        .decision-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .state-machine {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .state::before,
+        .state::after {
+          display: none;
+        }
+      }
+
+      @media (max-width: 680px) {
+        .topbar-inner {
+          padding: 0 14px;
+        }
+
+        nav {
+          display: none;
+        }
+
+        .page {
+          width: min(100% - 28px, 1120px);
+          padding-top: 46px;
+        }
+
+        .hero {
+          padding-bottom: 32px;
+        }
+
+        .summary-grid,
+        .decision-grid,
+        .entity-grid,
+        .flow-grid,
+        .contract-grid,
+        .ux-grid,
+        .state-machine {
+          grid-template-columns: 1fr;
+        }
+
+        .summary-item + .summary-item {
+          border-top: 1px solid var(--gray-300);
+          border-left: 0;
+        }
+
+        .matrix-row,
+        .risk-row {
+          grid-template-columns: 1fr;
+        }
+
+        .matrix-cell + .matrix-cell,
+        .risk-cell + .risk-cell {
+          border-top: 1px dashed var(--gray-300);
+          border-left: 0;
+        }
+
+        .matrix-head {
+          display: none;
+        }
+
+        .actions .action:first-child {
+          display: none;
+        }
+      }
+
+      @media print {
+        .topbar,
+        .toast {
+          display: none;
+        }
+
+        body {
+          background: #fff;
+        }
+
+        .page {
+          width: 100%;
+          padding: 20px;
+        }
+
+        section {
+          padding-top: 42px;
+        }
+
+        .panel,
+        .decision-card,
+        .entity,
+        .flow-card,
+        .ux-card,
+        details {
+          break-inside: avoid;
+          box-shadow: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">AD Technical Design</div>
+        <nav aria-label="文档导航">
+          <a href="#architecture">架构</a>
+          <a href="#model">数据模型</a>
+          <a href="#agents">Agent 适配</a>
+          <a href="#flows">关键流程</a>
+          <a href="#migration">迁移与安全</a>
+          <a href="#experience">产品体验</a>
+          <a href="#risks">风险</a>
+        </nav>
+        <div class="actions">
+          <button class="action" id="copySummary" type="button">复制摘要</button>
+          <button class="action" type="button" onclick="window.print()">导出 / 打印</button>
+        </div>
+      </div>
+    </div>
+
+    <main class="page">
+      <header class="hero">
+        <div>
+          <div class="eyebrow">TD-skill-plugin-resource-management / v1</div>
+          <h1>Skill / Plugin<br />资源中心与项目安装</h1>
+          <p class="lede">
+            AD 统一管理资源的身份、来源、兼容性和生命周期，但绝不统一或转换资源内容。所有安装都从资源中心进入，并在明确的项目与 Agent
+            作用域内，以软链接读取原始或受管 source checkout。
+          </p>
+        </div>
+        <aside class="meta-card" aria-label="设计元数据">
+          <div class="meta-row">
+            <div class="meta-label">Decision state</div>
+            <div class="meta-value">Accepted</div>
+          </div>
+          <div class="meta-row">
+            <div class="meta-label">Requirements</div>
+            <div class="meta-value">R1–R12</div>
+          </div>
+          <div class="meta-row">
+            <div class="meta-label">Product authority</div>
+            <div class="meta-value">2026-08-13 用户确认</div>
+          </div>
+          <div class="meta-row">
+            <div class="meta-label">Canonical source</div>
+            <div class="meta-value mono">skill-plugin-resource-management.md</div>
+          </div>
+        </aside>
+      </header>
+
+      <div class="summary-grid" aria-label="设计原则摘要">
+        <div class="summary-item">
+          <div class="summary-number">01</div>
+          <div class="summary-title">资源中心是唯一入口</div>
+          <div class="summary-copy">项目安装不能临时引入路径，也不能从 Agent 配置反推来源。</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-number">02</div>
+          <div class="summary-title">内容零转换</div>
+          <div class="summary-copy">不复制、不改写、不裁剪、不生成 manifest，不拆分 Plugin 内容。</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-number">03</div>
+          <div class="summary-title">项目 × Agent 隔离</div>
+          <div class="summary-copy">安装、启用、禁用、卸载只改变当前项目与选择的 Agent。</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-number">04</div>
+          <div class="summary-title">能力不对等就如实阻塞</div>
+          <div class="summary-copy">统一的是用户语义，不伪造 Agent 原本不存在的能力。</div>
+        </div>
+      </div>
+
+      <section id="architecture">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker">01 · Architecture</div>
+            <h2>统一 lifecycle，不统一内容</h2>
+          </div>
+          <p class="section-intro">
+            核心层只持有资源身份、source binding、兼容性结果和安装账本；原始 Skill / Plugin 目录始终交给对应 Agent adapter 原样读取。
+          </p>
+        </div>
+
+        <div class="panel diagram">
+          <svg viewBox="0 0 1000 390" role="img" aria-labelledby="architectureTitle architectureDesc">
+            <title id="architectureTitle">资源中心到项目 Agent 安装的架构流</title>
+            <desc id="architectureDesc">
+              Git 或本地 source 经扫描进入 Resource Catalog，用户在项目选择 Agent 后由 adapter 判断兼容性并生成受保护安装计划，最后写入项目级软链接与安装账本。外部安装只被观察，不进入资源中心。
+            </desc>
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="#87867f"></path>
+              </marker>
+              <marker id="arrowClay" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="#d97757"></path>
+              </marker>
+            </defs>
+
+            <g font-family="system-ui, sans-serif" fill="#141413">
+              <rect x="26" y="54" width="145" height="62" rx="11" fill="#e5eaf0" stroke="#5f7896" stroke-width="1.5"></rect>
+              <text x="98" y="80" text-anchor="middle" font-size="13" font-weight="700">Git source</text>
+              <text x="98" y="98" text-anchor="middle" font-size="10" fill="#5f7896">managed checkout</text>
+
+              <rect x="26" y="148" width="145" height="62" rx="11" fill="#ffffff" stroke="#5f7896" stroke-width="1.5"></rect>
+              <text x="98" y="174" text-anchor="middle" font-size="13" font-weight="700">Local source</text>
+              <text x="98" y="192" text-anchor="middle" font-size="10" fill="#5f7896">original directory</text>
+
+              <rect x="238" y="84" width="172" height="96" rx="13" fill="#ffffff" stroke="#d97757" stroke-width="2"></rect>
+              <text x="324" y="112" text-anchor="middle" font-size="14" font-weight="700">Resource Catalog</text>
+              <text x="324" y="133" text-anchor="middle" font-size="10" fill="#87867f">identity · source · lifecycle</text>
+              <text x="324" y="151" text-anchor="middle" font-size="10" fill="#87867f">managed / suppressed</text>
+
+              <rect x="478" y="84" width="160" height="96" rx="13" fill="#f7e7df" stroke="#d97757" stroke-width="1.5"></rect>
+              <text x="558" y="112" text-anchor="middle" font-size="14" font-weight="700">Project choice</text>
+              <text x="558" y="133" text-anchor="middle" font-size="10" fill="#87867f">resource + Agent</text>
+              <text x="558" y="151" text-anchor="middle" font-size="10" fill="#87867f">current workspace only</text>
+
+              <rect x="705" y="42" width="172" height="74" rx="13" fill="#ffffff" stroke="#788c5d" stroke-width="1.5"></rect>
+              <text x="791" y="70" text-anchor="middle" font-size="13" font-weight="700">Claude adapter</text>
+              <text x="791" y="89" text-anchor="middle" font-size="10" fill="#788c5d">Skill + native Plugin</text>
+
+              <rect x="705" y="148" width="172" height="74" rx="13" fill="#ffffff" stroke="#788c5d" stroke-width="1.5"></rect>
+              <text x="791" y="176" text-anchor="middle" font-size="13" font-weight="700">Codex adapter</text>
+              <text x="791" y="195" text-anchor="middle" font-size="10" fill="#788c5d">Skill · Plugin blocked</text>
+
+              <rect x="705" y="282" width="172" height="74" rx="13" fill="#e8ecdf" stroke="#788c5d" stroke-width="1.5"></rect>
+              <text x="791" y="310" text-anchor="middle" font-size="13" font-weight="700">Project installation</text>
+              <text x="791" y="329" text-anchor="middle" font-size="10" fill="#50613d">symlink + Agent state</text>
+
+              <rect x="478" y="282" width="160" height="74" rx="13" fill="#ffffff" stroke="#788c5d" stroke-width="1.5"></rect>
+              <text x="558" y="310" text-anchor="middle" font-size="13" font-weight="700">Installation Ledger</text>
+              <text x="558" y="329" text-anchor="middle" font-size="10" fill="#87867f">workspace · Agent · ownership</text>
+
+              <rect x="238" y="282" width="172" height="74" rx="13" fill="#f4dfdb" stroke="#b04a3f" stroke-width="1.5"></rect>
+              <text x="324" y="310" text-anchor="middle" font-size="13" font-weight="700">External observation</text>
+              <text x="324" y="329" text-anchor="middle" font-size="10" fill="#7d3730">非 AD 托管 · read only</text>
+            </g>
+
+            <g fill="none" stroke="#87867f" stroke-width="1.5" marker-end="url(#arrow)">
+              <path d="M171 85 L238 114"></path>
+              <path d="M171 179 L238 151"></path>
+              <path d="M410 132 L478 132"></path>
+              <path d="M638 116 C672 101 676 80 705 80"></path>
+              <path d="M638 148 C672 162 676 184 705 184"></path>
+              <path d="M791 116 L791 282"></path>
+              <path d="M791 222 L791 282"></path>
+              <path d="M705 319 L638 319"></path>
+            </g>
+            <g fill="none" stroke="#b04a3f" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrowClay)">
+              <path d="M324 210 L324 282"></path>
+            </g>
+            <g font-family="ui-monospace, monospace" font-size="9.5" fill="#87867f">
+              <text x="444" y="122" text-anchor="middle">managed only</text>
+              <text x="659" y="93" text-anchor="middle">compatibility</text>
+              <text x="675" y="310" text-anchor="middle">receipt</text>
+              <text x="337" y="252" fill="#b04a3f">observe, never adopt</text>
+            </g>
+          </svg>
+          <div class="caption">实线是 AD 受管控制流；虚线是外部观察边界。外部项不会反向进入 Resource Catalog。</div>
+        </div>
+
+        <div class="decision-grid" style="margin-top: 18px">
+          <article class="decision-card">
+            <div class="decision-id">D1 · Source binding</div>
+            <h3>只抽象资源身份</h3>
+            <p>复用 stable / physical root 和 validated manifest；不定义跨 Agent 的 Plugin component model。</p>
+          </article>
+          <article class="decision-card">
+            <div class="decision-id">D2 · Durable state</div>
+            <h3>Catalog + Ledger 双层权威</h3>
+            <p>Catalog 决定什么可安装；Ledger 决定哪些项目/Agent 安装由 AD 管理。</p>
+          </article>
+          <article class="decision-card">
+            <div class="decision-id">D3 · Adapter seam</div>
+            <h3>兼容性与计划由 Agent 签发</h3>
+            <p>frontend 不产生路径、目标或适配策略，只消费 sealed plan 和 limitation code。</p>
+          </article>
+          <article class="decision-card">
+            <div class="decision-id">D4 · Plugin</div>
+            <h3>Claude direct-reference</h3>
+            <p>Claude 通过项目级软链接与 LaunchRecipe 加载；当前 Codex Plugin 如实阻塞。</p>
+          </article>
+          <article class="decision-card">
+            <div class="decision-id">D5 · Removal</div>
+            <h3>复用标准卸载</h3>
+            <p>中心移除逐项目执行相同 uninstall；部分失败不回滚成功项，资源保持可管理。</p>
+          </article>
+          <article class="decision-card">
+            <div class="decision-id">D6 · Product surface</div>
+            <h3>资源库与项目状态分开</h3>
+            <p>顶级资源中心负责管理；项目页只聚焦 Installed、Available 与下一步操作。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="model">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker">02 · Durable model</div>
+            <h2>四类状态，各有唯一职责</h2>
+          </div>
+          <p class="section-intro">不依靠目录名或同名关系猜测。资源、安装、物理 ownership 与长操作被明确拆开，并由 receipt 串起。</p>
+        </div>
+
+        <div class="entity-grid">
+          <article class="entity">
+            <div class="entity-kind">CatalogSource</div>
+            <h3>来源与稳定视图</h3>
+            <p>Git 或 Local source，以及当前受验证的 stable / physical root。</p>
+            <ul>
+              <li><code>source_id</code></li>
+              <li><code>source_type</code></li>
+              <li><code>SourceBinding</code></li>
+              <li>health / revision</li>
+            </ul>
+          </article>
+          <article class="entity">
+            <div class="entity-kind">CatalogResource</div>
+            <h3>可安装资源</h3>
+            <p>source-scoped 的 Skill / Plugin 身份及生命周期。</p>
+            <ul>
+              <li><code>resource_id</code></li>
+              <li><code>kind + install_id</code></li>
+              <li><code>subpath</code></li>
+              <li>managed / suppressed</li>
+            </ul>
+          </article>
+          <article class="entity">
+            <div class="entity-kind">InstallationRecord</div>
+            <h3>项目 × Agent 安装</h3>
+            <p>资源落到具体 workspace 与 Agent 后的高层权威。</p>
+            <ul>
+              <li><code>workspace_key</code></li>
+              <li><code>agent_id</code></li>
+              <li><code>target_claim_id</code></li>
+              <li>ownership record IDs</li>
+            </ul>
+          </article>
+          <article class="entity">
+            <div class="entity-kind">LifecycleOperation</div>
+            <h3>跨项目移除进度</h3>
+            <p>记录每个卸载目标的 durable state，支持断连、崩溃与重试。</p>
+            <ul>
+              <li><code>operation_id</code></li>
+              <li>sequence / phase</li>
+              <li>per-item result</li>
+              <li>partial failure</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="notice" style="margin-top: 18px">
+          <div class="notice-bar"></div>
+          <div class="notice-body">
+            <strong>关键唯一性约束</strong>
+            <p>
+              同一 source 内 <code>(ResourceKind, install_id)</code> 必须唯一；不同 source 的同名资源拥有不同 ResourceId，可以共存。真正的安装冲突由
+              <code>(workspace, Agent, target_claim)</code> 判断。
+            </p>
+          </div>
+        </div>
+
+        <div class="contract-grid" style="margin-top: 18px">
+          <div>
+            <details>
+              <summary>ResourceCatalog 核心 schema</summary>
+              <div class="details-body">
+                <pre>struct ResourceCatalogDocumentV1 {
+  schema_version: u32,
+  revision: u64,
+  sources: BTreeMap&lt;SourceId, CatalogSource&gt;,
+  resources: BTreeMap&lt;ResourceId, CatalogResource&gt;,
+}
+
+struct CatalogResource {
+  id: ResourceId,
+  source_id: SourceId,
+  kind: ResourceKind,
+  install_id: String,
+  subpath: String,
+  descriptor_digest: ContentDigest,
+  compatible_agents: BTreeSet&lt;AgentId&gt;,
+  present: bool,
+  lifecycle: managed | suppressed,
+}</pre>
+              </div>
+            </details>
+          </div>
+          <div>
+            <details>
+              <summary>InstallationLedger 核心 schema</summary>
+              <div class="details-body">
+                <pre>struct ResourceInstallationRecordV1 {
+  id: ResourceInstallationId,
+  resource_id: ResourceId,
+  workspace_key: WorkspaceKey,
+  agent_id: AgentId,
+  effective_installation_id: InstallationId,
+  adapter_contract: AdapterContractRef,
+  target_claim_id: PhysicalTargetId,
+  state: enabled | disabled,
+  ownership_record_ids: Vec&lt;OwnershipRecordId&gt;,
+}</pre>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <section id="agents">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker">03 · Agent compatibility</div>
+            <h2>产品语义统一，能力差异保留</h2>
+          </div>
+          <p class="section-intro">adapter 负责判断当前 Agent installation 是否能在“不改变内容、保持软链接、限定项目”的前提下加载资源。</p>
+        </div>
+
+        <div class="matrix" role="table" aria-label="Agent 能力矩阵">
+          <div class="matrix-row matrix-head" role="row">
+            <div class="matrix-cell" role="columnheader">Resource</div>
+            <div class="matrix-cell" role="columnheader">Claude Code</div>
+            <div class="matrix-cell" role="columnheader">Codex</div>
+            <div class="matrix-cell" role="columnheader">Contract</div>
+          </div>
+          <div class="matrix-row" role="row">
+            <div class="matrix-cell" role="cell"><strong>Standalone Skill</strong></div>
+            <div class="matrix-cell" role="cell"><span class="status supported">Supported</span></div>
+            <div class="matrix-cell" role="cell"><span class="status supported">Supported</span></div>
+            <div class="matrix-cell" role="cell">Agent Skill 目录中的 project-scoped symlink 指向 catalog stable path。</div>
+          </div>
+          <div class="matrix-row" role="row">
+            <div class="matrix-cell" role="cell"><strong>Native Plugin</strong></div>
+            <div class="matrix-cell" role="cell"><span class="status supported">Supported</span></div>
+            <div class="matrix-cell" role="cell"><span class="status blocked">Unsupported</span></div>
+            <div class="matrix-cell" role="cell">Claude 使用 workspace link + <code>--plugin-dir</code>；当前 Codex loader 要求自己的已安装 cache。</div>
+          </div>
+          <div class="matrix-row" role="row">
+            <div class="matrix-cell" role="cell"><strong>Plugin 内嵌 Skill</strong></div>
+            <div class="matrix-cell" role="cell">随 Plugin 加载</div>
+            <div class="matrix-cell" role="cell">不单独安装</div>
+            <div class="matrix-cell" role="cell">不能把 Plugin 的一部分拆成 standalone Skill；那会构成裁剪与语义改变。</div>
+          </div>
+          <div class="matrix-row" role="row">
+            <div class="matrix-cell" role="cell"><strong>External install</strong></div>
+            <div class="matrix-cell" role="cell">只观察</div>
+            <div class="matrix-cell" role="cell">只观察</div>
+            <div class="matrix-cell" role="cell">显示“非 AD 托管”；不推断 source，不备份、不卸载、不接管。</div>
+          </div>
+        </div>
+
+        <div class="flow-grid" style="margin-top: 18px">
+          <article class="flow-card">
+            <div class="flow-title">
+              <div class="flow-number">C</div>
+              <h3>Claude Plugin 安装</h3>
+            </div>
+            <ol class="flow-steps">
+              <li><strong>Validate</strong> — 读取原生 Plugin root 并校验本期 adapter contract。</li>
+              <li><strong>Link</strong> — 在 AD workspace runtime 创建指向 catalog 的单一软链接。</li>
+              <li><strong>Record</strong> — 写 InstallationRecord、ownership 与 enabled state。</li>
+              <li><strong>Launch</strong> — AD LaunchRecipe 追加 <code>--plugin-dir &lt;managed-link&gt;</code>。</li>
+            </ol>
+          </article>
+          <article class="flow-card">
+            <div class="flow-title">
+              <div class="flow-number">X</div>
+              <h3>Codex Plugin 阻塞</h3>
+            </div>
+            <ol class="flow-steps">
+              <li><strong>Inspect</strong> — 当前 loader 只认 PluginStore 的 active installation。</li>
+              <li><strong>Reject copy</strong> — 原生 install 会复制 source tree，不符合中心更新传播。</li>
+              <li><strong>Reject scaffold</strong> — “真实目录 + 子项链接”无法保证任意结构更新完整传播。</li>
+              <li><strong>Report</strong> — 返回 <code>unsupported_agent_capability</code>，等待未来原生 direct-reference。</li>
+            </ol>
+          </article>
+        </div>
+      </section>
+
+      <section id="flows">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker">04 · Control flows</div>
+            <h2>安装与移除都从 backend 权威开始</h2>
+          </div>
+          <p class="section-intro">frontend 提交 ResourceKey、workspace revision、action 与 Agent selection；不提交 source path、marketplace stage 或 Agent target。</p>
+        </div>
+
+        <div class="flow-grid">
+          <article class="flow-card">
+            <div class="flow-title">
+              <div class="flow-number">1</div>
+              <h3>Project install</h3>
+            </div>
+            <ol class="flow-steps">
+              <li><strong>Resolve</strong> — ResourceKey 反查 managed CatalogResource。</li>
+              <li><strong>Choose</strong> — 用户明确选择当前项目与 Agent。</li>
+              <li><strong>Inspect</strong> — adapter 返回 compatibility 与 target claim。</li>
+              <li><strong>Block or plan</strong> — unsupported / managed conflict / external conflict / sealed preview。</li>
+              <li><strong>Apply</strong> — ExecutionEngine 同一 journal 写 link、Agent state、ownership 与 ledger。</li>
+            </ol>
+          </article>
+          <article class="flow-card">
+            <div class="flow-title">
+              <div class="flow-number">2</div>
+              <h3>Git source update</h3>
+            </div>
+            <ol class="flow-steps">
+              <li><strong>Stage</strong> — 获取新 generation，不改变当前消费者。</li>
+              <li><strong>Scan</strong> — 拦截重复 ID、非标资源与路径逃逸。</li>
+              <li><strong>Join</strong> — 对所有 active installation 重验 subpath 与 adapter compatibility。</li>
+              <li><strong>Switch</strong> — 全部安全后原子切换 <code>current</code>。</li>
+              <li><strong>Propagate</strong> — 项目 link bytes 不变，自动读取新内容。</li>
+            </ol>
+          </article>
+        </div>
+
+        <h3 style="margin: 34px 0 14px; font-family: var(--serif); font-size: 24px; font-weight: 500">中心资源移除状态机</h3>
+        <div class="panel">
+          <div class="state-machine" aria-label="资源移除状态机">
+            <div class="state">
+              <div class="state-name">managed</div>
+              <p>正常可安装、可管理；preview 只读取影响范围。</p>
+            </div>
+            <div class="state">
+              <div class="state-name">running</div>
+              <p>确认后持有 resource lease，逐项执行 standard uninstall。</p>
+            </div>
+            <div class="state partial">
+              <div class="state-name">partial_failure</div>
+              <p>成功项不回滚，失败项保留诊断；resource 仍 managed。</p>
+            </div>
+            <div class="state complete">
+              <div class="state-name">suppressed</div>
+              <p>零 active installation 后 CAS 提交；刷新与重启不自动恢复。</p>
+            </div>
+          </div>
+          <div class="loop-note">partial_failure → 用户显式 retry → 重新枚举真实 ledger → running；startup 只 reconcile，不自动继续破坏性写入。</div>
+        </div>
+
+        <div class="flow-card" style="margin-top: 18px">
+          <div class="flow-title">
+            <div class="flow-number">S</div>
+            <h3>Source removal 复用同一生命周期</h3>
+          </div>
+          <ol class="flow-steps">
+            <li><strong>Preview</strong> — 汇总 source 下所有 managed Skill / Plugin 以及受影响的项目与 Agent。</li>
+            <li><strong>Confirm</strong> — 明确告知删除会使所有现有安装失效；取消不产生任何写入。</li>
+            <li><strong>Uninstall</strong> — 按资源、项目和 Agent 逐项调用标准卸载，并展示真实进度与失败项。</li>
+            <li><strong>Commit</strong> — 只有全部资源没有 active installation 后才移除 source catalog entry。</li>
+            <li><strong>Preserve</strong> — Local 原始目录与 Git checkout 内容都不删除；失败时 source 保持可管理并允许重试。</li>
+          </ol>
+        </div>
+
+        <div class="notice" style="margin-top: 18px">
+          <div class="notice-bar" style="background: var(--rust)"></div>
+          <div class="notice-body">
+            <strong>冲突没有“一键切换”</strong>
+            <p>目标被另一份 AD 安装占用时，先展示其 source 并提供标准卸载；卸载完成后，用户再单独发起新来源安装。external 占位只允许重新检查。</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="migration">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker">05 · Migration &amp; safety</div>
+            <h2>兼容读取，显式写入，失败关闭</h2>
+          </div>
+          <p class="section-intro">升级不在启动或 inventory 中静默搬移、重新链接或删除任何旧状态。所有迁移都绑定显式 mutation receipt。</p>
+        </div>
+
+        <div class="flow-grid">
+          <article class="flow-card">
+            <div class="flow-title"><div class="flow-number">M</div><h3>Migration sequence</h3></div>
+            <ol class="flow-steps">
+              <li><strong>Dual read</strong> — 将 <code>skill_catalog.json</code> v2 投影为新的 resource view。</li>
+              <li><strong>Reuse roots</strong> — 既有 Git <code>skill-library</code> binding 不移动、不复制。</li>
+              <li><strong>Explicit write</strong> — 第一次 catalog mutation 才 journaled 写入新 document。</li>
+              <li><strong>Lazy backfill</strong> — legacy Skill ownership在显式 install-state mutation 中写 ledger。</li>
+              <li><strong>Legacy Plugin</strong> — 旧 Codex copy 不改写；证据完整时只保留 uninstall。</li>
+            </ol>
+          </article>
+          <article class="flow-card">
+            <div class="flow-title"><div class="flow-number">S</div><h3>Security authority</h3></div>
+            <ol class="flow-steps">
+              <li><strong>No path IPC</strong> — project install caller不能提交任意路径。</li>
+              <li><strong>No execution on scan</strong> — 不运行 hook、script、package manager 或 Agent validator。</li>
+              <li><strong>Confinement</strong> — normalized relative path、no-follow 与 canonical root校验。</li>
+              <li><strong>Dual evidence</strong> — ledger + ownership同时有效才授予删除权。</li>
+              <li><strong>Stale rejection</strong> — preview revision、source identity、target digest 与 compatibility在apply重验。</li>
+            </ol>
+          </article>
+        </div>
+
+        <details style="margin-top: 18px">
+          <summary>持久操作与并发边界</summary>
+          <div class="details-body">
+            <ul class="compact-list">
+              <li>Catalog write 使用 process-wide writer lock 与 monotonic revision CAS。</li>
+              <li>Source operation 同时锁定 source root；resource removal 持有 resource lifecycle lease。</li>
+              <li>Project install/uninstall 使用 workspace + Agent target locks，同一 physical target 不并发修改。</li>
+              <li>Git generation publish、<code>current</code> switch、catalog write 与 receipt 延续现有 finish-or-compensate journal。</li>
+              <li>跨项目移除不追求全局原子；每项原子、整体 truthful，并能从 durable snapshot 恢复。</li>
+            </ul>
+          </div>
+        </details>
+      </section>
+
+      <section id="experience">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker">06 · Product experience</div>
+            <h2>把机制藏在产品结构后面</h2>
+          </div>
+          <p class="section-intro">资源中心以资源为主体；source 是二级管理对象。项目页只回答“当前 Agent 已安装什么、还能安装什么、下一步是什么”。</p>
+        </div>
+
+        <div class="ux-grid">
+          <article class="ux-card">
+            <h3>顶级资源中心</h3>
+            <p>默认展示纳管的 Skill / Plugin；source type、source label 和 compatibility 是次级信息。</p>
+            <div class="mini-window" aria-label="资源中心线框图">
+              <div class="mini-titlebar"><span class="mini-dot"></span><span class="mini-dot"></span><span class="mini-dot"></span></div>
+              <div class="mini-body">
+                <div class="mini-nav">
+                  <div class="mini-nav-item">项目</div>
+                  <div class="mini-nav-item active">资源</div>
+                  <div class="mini-nav-item">设置</div>
+                </div>
+                <div class="mini-content">
+                  <div class="mini-heading">资源库</div>
+                  <div class="mini-card"><div class="mini-card-title">code-review</div><div class="mini-card-sub">Skill · Git · Claude / Codex</div></div>
+                  <div class="mini-card"><div class="mini-card-title">deployment-tools</div><div class="mini-card-sub">Plugin · Local · Claude</div></div>
+                  <div class="mini-card"><div class="mini-card-title">code-review</div><div class="mini-card-sub">Skill · Local · Claude / Codex</div></div>
+                </div>
+              </div>
+            </div>
+          </article>
+          <article class="ux-card">
+            <h3>项目资源面板</h3>
+            <p>在当前 Agent context 下分为 Installed / Available；external 只标记“非 AD 托管”。</p>
+            <div class="mini-window" aria-label="项目资源面板线框图">
+              <div class="mini-titlebar"><span class="mini-dot"></span><span class="mini-dot"></span><span class="mini-dot"></span></div>
+              <div class="mini-body">
+                <div class="mini-nav">
+                  <div class="mini-nav-item active">Project A</div>
+                  <div class="mini-nav-item">Project B</div>
+                </div>
+                <div class="mini-content">
+                  <div class="mini-heading">Claude Code · 资源</div>
+                  <div class="mini-card"><div class="mini-card-title">已安装 · code-review</div><div class="mini-card-sub">Git source · 卸载</div></div>
+                  <div class="mini-card"><div class="mini-card-title">可安装 · deployment-tools</div><div class="mini-card-sub">Local source · 安装</div></div>
+                  <div class="mini-card"><div class="mini-card-title">custom-skill</div><div class="mini-card-sub">非 AD 托管 · 重新检查</div></div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="decision-grid" style="margin-top: 18px">
+          <article class="decision-card">
+            <div class="decision-id">Normal</div>
+            <h3>一个主操作</h3>
+            <p>导入 source、安装、卸载或重试之一，不把所有能力平铺在同一层。</p>
+          </article>
+          <article class="decision-card">
+            <div class="decision-id">Blocked</div>
+            <h3>一个原因，一个下一步</h3>
+            <p>例如“不支持 Codex”或“先卸载现有来源”，不解释 adapter 与目标路径。</p>
+          </article>
+          <article class="decision-card">
+            <div class="decision-id">Diagnostics</div>
+            <h3>按需展开</h3>
+            <p>完整路径、source revision、ownership 诊断与历史只在用户需要排障时出现。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="risks">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker">07 · Risks &amp; proof</div>
+            <h2>风险由最高保真的边界证明</h2>
+          </div>
+          <p class="section-intro">关键风险不是“页面能点”，而是更新传播、删除权限、跨项目部分失败、Agent 升级与 legacy migration。</p>
+        </div>
+
+        <div class="risk-table">
+          <div class="risk-row risk-head">
+            <div class="risk-cell">Risk</div><div class="risk-cell">Design mitigation</div><div class="risk-cell">Required proof</div>
+          </div>
+          <div class="risk-row">
+            <div class="risk-cell"><strong>Git 更新破坏已安装资源</strong></div>
+            <div class="risk-cell">切换前 join 全部 InstallationRecord，并重跑 adapter compatibility。</div>
+            <div class="risk-cell">缺失、改名、不支持均在 <code>current</code> switch 前阻塞。</div>
+          </div>
+          <div class="risk-row">
+            <div class="risk-cell"><strong>external 被错误接管</strong></div>
+            <div class="risk-cell">只有 InstallationRecord + ownership 双证据授予 mutation authority。</div>
+            <div class="risk-cell">file / dir / symlink / Agent declaration fixture 全程零写入。</div>
+          </div>
+          <div class="risk-row">
+            <div class="risk-cell"><strong>中心移除中途崩溃</strong></div>
+            <div class="risk-cell">durable operation、per-item receipt、startup reconciliation、显式 retry。</div>
+            <div class="risk-cell">每个item boundary故障注入，重启后snapshot与ledger一致。</div>
+          </div>
+          <div class="risk-row">
+            <div class="risk-cell"><strong>Agent 升级改变 contract</strong></div>
+            <div class="risk-cell">兼容性绑定 discovered installation 与 adapter contract，apply 前重验。</div>
+            <div class="risk-cell">pinned fixture + 本机 Claude/Codex contract smoke；unknown fail closed。</div>
+          </div>
+          <div class="risk-row">
+            <div class="risk-cell"><strong>UI 又堆满机制说明</strong></div>
+            <div class="risk-cell">library-first IA、progressive disclosure、one-primary-action。</div>
+            <div class="risk-cell">真实 Tauri desktop 的中英文、亮暗色、代表性窗口任务评审。</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="closing">
+        <div class="section-kicker" style="color: #c9b98a">Final contract</div>
+        <h2>资源是唯一安装来源，项目是唯一操作作用域。</h2>
+        <p>
+          中心决定“什么由 AD 管理”，项目与 Agent 决定“安装到哪里”。软链接让中心更新自然传播；Installation Ledger 和 ownership
+          让卸载、冲突和跨项目影响可证明；adapter 只在 Agent 原生能力允许时提供支持。
+        </p>
+        <div class="source-links">
+          <a class="source-link" href="skill-plugin-resource-management.md">Canonical Markdown</a>
+          <a class="source-link" href="../product-specs/skill-plugin-resource-management.md">Product Contract</a>
+          <a class="source-link" href="../exec-plans/skill-plugin-resource-management.md">Implementation Plan</a>
+          <a class="source-link" href="https://code.claude.com/docs/en/cli-usage">Claude CLI contract</a>
+          <a class="source-link" href="https://github.com/openai/codex/blob/rust-v0.147.0/codex-rs/core-plugins/src/store.rs">Codex PluginStore</a>
+        </div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite">摘要已复制</div>
+    <script>
+      const summary = `Skill / Plugin 资源中心技术设计\n\n- 资源中心是 AD 安装的唯一来源。\n- AD 统一资源 lifecycle，不统一或转换内容。\n- 安装严格限定在当前项目与用户选择的 Agent。\n- Skill 支持 Claude Code / Codex；Claude Plugin 通过 project link + --plugin-dir 支持；当前 Codex Plugin 明确不支持。\n- external 只显示为“非 AD 托管”，不推断、不删除、不接管。\n- 中心资源移除逐项目复用标准卸载，支持逐项进度、部分失败和重试。\n- Catalog 决定可安装资源，Installation Ledger 决定受管项目安装。`;
+      const button = document.getElementById("copySummary");
+      const toast = document.getElementById("toast");
+
+      button.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(summary);
+          toast.textContent = "摘要已复制";
+        } catch {
+          const area = document.createElement("textarea");
+          area.value = summary;
+          area.style.position = "fixed";
+          area.style.opacity = "0";
+          document.body.appendChild(area);
+          area.select();
+          document.execCommand("copy");
+          area.remove();
+          toast.textContent = "摘要已复制";
+        }
+        toast.classList.add("show");
+        window.setTimeout(() => toast.classList.remove("show"), 1600);
+      });
+    </script>
+  </body>
+</html>

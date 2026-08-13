@@ -176,15 +176,21 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
         .mutations
         .iter()
         .all(|mutation| mutation.resource.scope == ResourceScope::Project));
-    assert!(route_plan.plan.mutations.iter().any(|mutation| {
-        mutation.resource.kind == ResourceKind::Skills && mutation.resource.logical_id == "review"
-    }));
+    assert!(!route_plan
+        .plan
+        .mutations
+        .iter()
+        .any(|mutation| mutation.resource.kind == ResourceKind::Skills));
     let inherited_skill = route_plan
         .artifacts
         .iter()
         .find(|artifact| artifact.id == "skill:inherited")
         .unwrap();
     assert_eq!(inherited_skill.source.resource.scope, ResourceScope::User);
+    assert_eq!(
+        inherited_skill.disposition,
+        ad_lib::agents::ArtifactDisposition::Unsupported
+    );
     assert_eq!(
         inherited_skill.target.as_ref().unwrap().resource.scope,
         ResourceScope::Project
@@ -254,8 +260,8 @@ fn project_conversion_only_applies_and_rolls_back_project_scope() {
     assert!(converted.contains("sandbox_mode = \"read-only\""));
     let codex_skill = project.join(".agents/skills/review");
     let inherited_codex_skill = project.join(".agents/skills/inherited");
-    assert!(codex_skill.is_symlink());
-    assert!(inherited_codex_skill.is_symlink());
+    assert!(!codex_skill.exists());
+    assert!(!inherited_codex_skill.exists());
 
     let repeated = route
         .preview_with_options(

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { ProjectDetail } from './components/ProjectDetail';
+import { ResourceCenter } from './components/ResourceCenter';
 import { GlobalKeymap } from './components/GlobalKeymap';
 import { ActivateToast } from './components/ActivateToast';
 import { AdvancedSettingsButton } from './components/AdvancedSettings';
@@ -53,6 +54,7 @@ function useHasBeenTrue(condition: boolean): boolean {
 export function App() {
   const sidebarCollapsed = useUiState((s) => s.sidebarCollapsed);
   const openPalette = useUiState((s) => s.openPalette);
+  const workspaceMode = useUiState((s) => s.workspaceMode);
   const darkMode = useUiSettings((s) => s.darkMode);
   const setDarkMode = useUiSettings((s) => s.setDarkMode);
   useReloadProfilesOnAgentChange();
@@ -100,7 +102,7 @@ export function App() {
           </aside>
         )}
         <main className="flex min-w-0 flex-1 overflow-hidden">
-          <ProjectDetail />
+          {workspaceMode === 'resources' ? <ResourceCenter /> : <ProjectDetail />}
         </main>
       </div>
 

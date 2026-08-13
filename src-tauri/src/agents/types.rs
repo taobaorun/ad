@@ -79,6 +79,10 @@ string_id!(
     "Opaque identity for an AD resource ownership record."
 );
 string_id!(
+    ResourceInstallationId,
+    "Opaque identity for one AD-managed project resource installation."
+);
+string_id!(
     RiskFingerprint,
     "Opaque fingerprint of the public risk-relevant plan shape."
 );

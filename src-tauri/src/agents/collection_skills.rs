@@ -9,12 +9,13 @@ use super::collection_inventory::{
 use super::execution_state::ExecutionState;
 use super::skill_catalog::format_safe_source_location;
 use super::{
-    builtin_registry, load_ownership_record, load_skill_catalog_snapshot,
-    validate_ownership_artifact, validate_ownership_record, verify_skill_artifact, AgentContext,
-    AgentError, CollectionResourceInventory, ContentDigest, ItemDiagnostic, PhysicalTargetId,
-    ResourceHealthStatus, ResourceHealthView, ResourceKind, ResourceLayer, ResourceOwnershipKind,
-    ResourceOwnershipRecord, ResourceRef, ResourceScope, ResourceSnapshot, ResourceSourceKind,
-    ResourceSourceView, ResourceStateKind, SkillSourceType, WorkspaceDescriptor,
+    builtin_registry, load_ownership_record, load_resource_catalog_snapshot,
+    validate_ownership_artifact, validate_ownership_record, AgentContext, AgentError,
+    CollectionResourceInventory, ContentDigest, ItemDiagnostic, PhysicalTargetId,
+    ResourceHealthStatus, ResourceHealthView, ResourceKind, ResourceLayer, ResourceLifecycle,
+    ResourceOwnershipKind, ResourceOwnershipRecord, ResourceRef, ResourceScope, ResourceSnapshot,
+    ResourceSourceKind, ResourceSourceView, ResourceStateKind, SkillSourceType,
+    WorkspaceDescriptor,
 };
 
 pub(super) fn inspect_skills(
@@ -88,7 +89,7 @@ fn skill_observation(
         .get("enabled")
         .and_then(Value::as_bool)
         .unwrap_or(true);
-    let source = installed_path_source(&logical_id, &snapshot.location.path);
+    let mut source = installed_path_source(&logical_id, &snapshot.location.path);
     let mut ownership_kind = match snapshot.content.get("source").and_then(Value::as_str) {
         Some("external") => ResourceOwnershipKind::External,
         _ => ResourceOwnershipKind::Unknown,
@@ -122,6 +123,9 @@ fn skill_observation(
             }
         }
     }
+    if ownership_kind == ResourceOwnershipKind::External {
+        source = None;
+    }
     Some(CollectionObservation {
         target_id: PhysicalTargetId::for_resource(&snapshot.resource),
         layer: layer_for_scope(snapshot.resource.scope),
@@ -132,6 +136,7 @@ fn skill_observation(
         description,
         enabled,
         ownership: ownership_kind,
+        agent_supported: true,
         artifact_id: ownership_record
             .as_ref()
             .map(|record| record.artifact_id.clone()),
@@ -193,7 +198,9 @@ fn scan_claude_project_skills(
             ownership_record = None;
             ResourceOwnershipKind::External
         };
-        let source = installed_path_source(&logical_id, &path.to_string_lossy());
+        let source = (ownership_kind == ResourceOwnershipKind::AdManaged)
+            .then(|| installed_path_source(&logical_id, &path.to_string_lossy()))
+            .flatten();
         observations.push(CollectionObservation {
             target_id: PhysicalTargetId::for_resource(&resource),
             resource,
@@ -208,6 +215,7 @@ fn scan_claude_project_skills(
             description: None,
             enabled: healthy,
             ownership: ownership_kind,
+            agent_supported: true,
             artifact_id: ownership_record
                 .as_ref()
                 .map(|record| record.artifact_id.clone()),
@@ -231,6 +239,13 @@ fn scan_claude_project_skills(
 pub(super) fn project_ownership_records(
     workspace: &WorkspaceDescriptor,
 ) -> Result<Vec<ResourceOwnershipRecord>, AgentError> {
+    project_ownership_records_for(workspace, ResourceKind::Skills)
+}
+
+pub(super) fn project_ownership_records_for(
+    workspace: &WorkspaceDescriptor,
+    kind: ResourceKind,
+) -> Result<Vec<ResourceOwnershipRecord>, AgentError> {
     let state =
         ExecutionState::open().map_err(|error| inventory_error(workspace, error.to_string()))?;
     let mut records = Vec::new();
@@ -247,9 +262,7 @@ pub(super) fn project_ownership_records(
         let Ok(candidate) = serde_json::from_slice::<ResourceOwnershipRecord>(&bytes) else {
             continue;
         };
-        if candidate.workspace_key != workspace.key
-            || candidate.resource.kind != ResourceKind::Skills
-        {
+        if candidate.workspace_key != workspace.key || candidate.resource.kind != kind {
             continue;
         }
         if let Some(record) = load_ownership_record(&state, &candidate.resource)? {
@@ -291,14 +304,14 @@ fn ownership_diagnostic() -> ItemDiagnostic {
 fn catalog_skill_observations(
     workspace: &WorkspaceDescriptor,
 ) -> (Vec<CollectionObservation>, Vec<ItemDiagnostic>) {
-    let catalog = match load_skill_catalog_snapshot() {
+    let catalog = match load_resource_catalog_snapshot() {
         Ok(catalog) => catalog,
         Err(_) => {
             return (
                 Vec::new(),
                 vec![ItemDiagnostic {
-                    code: "skill_catalog_unavailable".into(),
-                    message_key: "agents.inventory.skillCatalogUnavailable".into(),
+                    code: "resource_catalog_unavailable".into(),
+                    message_key: "agents.inventory.resourceCatalogUnavailable".into(),
                     retryable: false,
                     resource_key: None,
                 }],
@@ -307,7 +320,20 @@ fn catalog_skill_observations(
     };
     let mut observations = Vec::new();
     let mut diagnostics = Vec::new();
-    for entry in catalog.entries {
+    for candidate in catalog.resources.values().filter(|resource| {
+        resource.kind == ResourceKind::Skills
+            && resource.present
+            && resource.lifecycle == ResourceLifecycle::Managed
+    }) {
+        let Some(entry) = catalog.sources.get(&candidate.source_id) else {
+            diagnostics.push(ItemDiagnostic {
+                code: "resource_catalog_source_missing".into(),
+                message_key: "agents.inventory.resourceCatalogUnavailable".into(),
+                retryable: false,
+                resource_key: None,
+            });
+            continue;
+        };
         let source =
             format_safe_source_location(entry.source_type, &entry.location).map(|location| {
                 ResourceSourceView {
@@ -321,69 +347,46 @@ fn catalog_skill_observations(
                     subdirectory: entry.subdirectory.clone(),
                 }
             });
-        let legacy_tree = match entry.current_artifact.as_ref() {
-            Some(artifact) => match verify_skill_artifact(artifact) {
-                Ok(tree) => Some(tree),
-                Err(_) => {
-                    diagnostics.push(ItemDiagnostic {
-                        code: "skill_artifact_invalid".into(),
-                        message_key: "agents.inventory.skillArtifactInvalid".into(),
-                        retryable: false,
-                        resource_key: None,
-                    });
-                    continue;
-                }
-            },
-            None => None,
+        let resolved = match super::resolve_catalog_resource(&candidate.id) {
+            Ok(resolved) => resolved,
+            Err(_) => {
+                diagnostics.push(ItemDiagnostic {
+                    code: "resource_catalog_binding_invalid".into(),
+                    message_key: "agents.inventory.skillArtifactInvalid".into(),
+                    retryable: false,
+                    resource_key: None,
+                });
+                continue;
+            }
         };
-        for skill in entry.skills() {
-            let install_target = if let Some(binding) = &entry.current_binding {
-                match super::resolve_skill_source_item(binding, skill) {
-                    Ok((stable, _)) => stable,
-                    Err(_) => {
-                        diagnostics.push(ItemDiagnostic {
-                            code: "skill_source_binding_invalid".into(),
-                            message_key: "agents.inventory.skillArtifactInvalid".into(),
-                            retryable: false,
-                            resource_key: None,
-                        });
-                        continue;
-                    }
-                }
-            } else {
-                legacy_tree
-                    .as_ref()
-                    .expect("validated catalog artifact has a verified tree")
-                    .join(&skill.subpath)
-            };
-            let resource = ResourceRef {
-                installation_id: workspace.effective_installation_id.clone(),
-                project_path: Some(workspace.canonical_project_path.clone()),
-                kind: ResourceKind::Skills,
-                scope: ResourceScope::Project,
-                logical_id: format!("{}/{}", entry.source_id, skill.logical_id),
-            };
-            observations.push(CollectionObservation {
-                target_id: PhysicalTargetId::for_resource(&resource),
-                resource,
-                layer: ResourceLayer::Project,
-                source_id: entry.source_id.clone(),
-                logical_id: skill.logical_id.clone(),
-                display_name: skill.logical_id.clone(),
-                description: Some(entry.display_name.clone()),
-                enabled: false,
-                ownership: ResourceOwnershipKind::AdManaged,
-                ownership_record: None,
-                health: ResourceHealthView {
-                    status: ResourceHealthStatus::Healthy,
-                    diagnostic: None,
-                },
-                configured: false,
-                artifact_id: Some(install_target.to_string_lossy().into_owned()),
-                resettable: false,
-                source: source.clone(),
-            });
-        }
+        let resource = ResourceRef {
+            installation_id: workspace.effective_installation_id.clone(),
+            project_path: Some(workspace.canonical_project_path.clone()),
+            kind: ResourceKind::Skills,
+            scope: ResourceScope::Project,
+            logical_id: format!("{}/{}", candidate.source_id, candidate.install_id),
+        };
+        observations.push(CollectionObservation {
+            target_id: PhysicalTargetId::for_resource(&resource),
+            resource,
+            layer: ResourceLayer::Project,
+            source_id: candidate.source_id.clone(),
+            logical_id: candidate.install_id.clone(),
+            display_name: candidate.display_name.clone(),
+            description: candidate.description.clone(),
+            enabled: false,
+            ownership: ResourceOwnershipKind::AdManaged,
+            agent_supported: true,
+            ownership_record: None,
+            health: ResourceHealthView {
+                status: ResourceHealthStatus::Healthy,
+                diagnostic: None,
+            },
+            configured: false,
+            artifact_id: Some(resolved.stable_path.to_string_lossy().into_owned()),
+            resettable: false,
+            source,
+        });
     }
     (observations, diagnostics)
 }

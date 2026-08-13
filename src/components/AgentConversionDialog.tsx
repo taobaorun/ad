@@ -77,7 +77,6 @@ export function AgentConversionDialog({
   const [targetModel, setTargetModel] = useState('');
   const [permissionPreset, setPermissionPreset] = useState<PermissionPreset>('');
   const [profileId, setProfileId] = useState('');
-  const [confirmedSkillIds, setConfirmedSkillIds] = useState<string[]>([]);
   const [safeSubset, setSafeSubset] = useState(false);
   const [preview, setPreview] = useState<ConversionRoutePreview | null>(null);
   const [busyOperation, setBusyOperation] = useState<BusyOperation>(null);
@@ -130,7 +129,6 @@ export function AgentConversionDialog({
     setTargetModel('');
     setPermissionPreset('');
     setProfileId('');
-    setConfirmedSkillIds([]);
     setSafeSubset(false);
     setPreview(null);
     setError(null);
@@ -171,11 +169,10 @@ export function AgentConversionDialog({
     setTargetModel('');
     setPermissionPreset('');
     setProfileId('');
-    setConfirmedSkillIds([]);
     setSafeSubset(false);
   }
 
-  async function runPreview(skillIds = confirmedSkillIds, requestedSafeSubset = safeSubset) {
+  async function runPreview(requestedSafeSubset = safeSubset) {
     if (!source || !target) return;
     const requestId = ++previewRequestRef.current;
     const requestedProjectPath = activeProjectPath;
@@ -198,7 +195,6 @@ export function AgentConversionDialog({
         {
           ...(targetModel ? { targetModel } : {}),
           ...(permissionPreset ? { permissionPreset } : {}),
-          ...(skillIds.length > 0 ? { confirmedSkillIds: skillIds } : {}),
           ...(scope === 'project' && profileId ? { profileId } : {}),
           ...(scope === 'project' ? { inheritBaseConfig } : {}),
           ...(requestedSafeSubset ? { safeSubset: true } : {}),
@@ -302,13 +298,6 @@ export function AgentConversionDialog({
     } finally {
       setBusyOperation(null);
     }
-  }
-
-  function confirmSkill(logicalId: string) {
-    const next = [...new Set([...confirmedSkillIds, logicalId])];
-    setConfirmedSkillIds(next);
-    setSafeSubset(false);
-    void runPreview(next, false);
   }
 
   const showInstallationControls =
@@ -439,14 +428,7 @@ export function AgentConversionDialog({
           </div>
         )}
 
-        {preview && (
-          <AgentConversionArtifacts
-            preview={preview}
-            confirmedSkillIds={confirmedSkillIds}
-            busy={busy}
-            onConfirmSkill={confirmSkill}
-          />
-        )}
+        {preview && <AgentConversionArtifacts preview={preview} />}
 
         {preview &&
           !preview.plan &&
@@ -465,7 +447,7 @@ export function AgentConversionDialog({
                 disabled={busy}
                 onClick={() => {
                   setSafeSubset(true);
-                  void runPreview(confirmedSkillIds, true);
+                  void runPreview(true);
                 }}
               >
                 {t('agentConversion.previewSafeSubset')}

@@ -440,14 +440,7 @@ export const ConversionEndpointSchema = z
   })
   .strict();
 
-export const PluginConversionDetailCodeSchema = z.enum([
-  'source_disabled',
-  'package_copy',
-  'package_transform',
-  'partial',
-  'lsp_unsupported',
-  'unresolved',
-]);
+export const PluginConversionDetailCodeSchema = z.enum(['unsupported_agent_capability']);
 
 export const ConversionArtifactSchema = z
   .object({
@@ -480,7 +473,6 @@ export const ConversionProgressPhaseSchema = z.enum([
   'reading_configuration',
   'inspecting_skills',
   'inspecting_plugins',
-  'preparing_project_plugin',
   'verifying_inherited_plugins',
   'finalizing_plan',
 ]);

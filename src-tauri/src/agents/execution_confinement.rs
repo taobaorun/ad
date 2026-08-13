@@ -156,7 +156,21 @@ impl ConfinedTarget {
         } else {
             trusted_root(resource, target, project_root_identity)?
         };
-        let relative = target.strip_prefix(&root).map_err(|_| {
+        let target_for_root = if target.starts_with(&root) {
+            target.to_path_buf()
+        } else {
+            canonicalize_target_parent(target).ok_or_else(|| {
+                confinement_error(
+                    resource,
+                    format!(
+                        "Mutation target {} cannot be resolved beneath trusted root {}",
+                        target.display(),
+                        root.display()
+                    ),
+                )
+            })?
+        };
+        let relative = target_for_root.strip_prefix(&root).map_err(|_| {
             confinement_error(
                 resource,
                 format!(
@@ -363,6 +377,20 @@ impl ConfinedTarget {
             details: None,
         }
     }
+}
+
+fn canonicalize_target_parent(target: &Path) -> Option<PathBuf> {
+    let mut existing = target.parent()?;
+    let mut suffix = vec![target.file_name()?.to_os_string()];
+    while !existing.exists() {
+        suffix.push(existing.file_name()?.to_os_string());
+        existing = existing.parent()?;
+    }
+    let mut normalized = std::fs::canonicalize(existing).ok()?;
+    for component in suffix.into_iter().rev() {
+        normalized.push(component);
+    }
+    Some(normalized)
 }
 
 fn trusted_root(

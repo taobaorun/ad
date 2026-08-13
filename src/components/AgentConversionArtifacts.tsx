@@ -3,21 +3,11 @@ import { useTranslation } from 'react-i18next';
 
 import type { ConversionArtifact, ConversionRoutePreview } from '@/lib/agentTypes';
 
-import { Button } from './ui/button';
-
 interface AgentConversionArtifactsProps {
   preview: ConversionRoutePreview;
-  confirmedSkillIds: string[];
-  busy: boolean;
-  onConfirmSkill: (logicalId: string) => void;
 }
 
-export function AgentConversionArtifacts({
-  preview,
-  confirmedSkillIds,
-  busy,
-  onConfirmSkill,
-}: AgentConversionArtifactsProps) {
+export function AgentConversionArtifacts({ preview }: AgentConversionArtifactsProps) {
   const { t } = useTranslation();
   const groups = useMemo(() => groupArtifacts(preview.artifacts), [preview.artifacts]);
   const summary = preview.summary;
@@ -46,13 +36,7 @@ export function AgentConversionArtifacts({
             </h4>
             <ul className="divide-y divide-border">
               {artifacts.map((artifact) => (
-                <ArtifactItem
-                  key={artifact.id}
-                  artifact={artifact}
-                  confirmedSkillIds={confirmedSkillIds}
-                  busy={busy}
-                  onConfirmSkill={onConfirmSkill}
-                />
+                <ArtifactItem key={artifact.id} artifact={artifact} />
               ))}
             </ul>
           </section>
@@ -81,17 +65,10 @@ function SummaryItem({ label, value }: { label: string; value: number }) {
 
 interface ArtifactItemProps {
   artifact: ConversionArtifact;
-  confirmedSkillIds: string[];
-  busy: boolean;
-  onConfirmSkill: (logicalId: string) => void;
 }
 
-function ArtifactItem({ artifact, confirmedSkillIds, busy, onConfirmSkill }: ArtifactItemProps) {
+function ArtifactItem({ artifact }: ArtifactItemProps) {
   const { t } = useTranslation();
-  const skillId = artifact.target?.resource.logicalId;
-  const canConfirmSkill =
-    artifact.resolution?.kind === 'confirm_local_skill_source' && skillId !== undefined;
-  const isConfirmed = skillId !== undefined && confirmedSkillIds.includes(skillId);
 
   return (
     <li className="px-3 py-3">
@@ -117,18 +94,6 @@ function ArtifactItem({ artifact, confirmedSkillIds, busy, onConfirmSkill }: Art
           path={artifact.target?.location.path ?? t('agentConversion.manualTarget')}
         />
       </dl>
-      {canConfirmSkill && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="mt-2"
-          disabled={busy || isConfirmed}
-          onClick={() => onConfirmSkill(skillId)}
-        >
-          {isConfirmed ? t('agentConversion.skillConfirmed') : t('agentConversion.confirmSkill')}
-        </Button>
-      )}
     </li>
   );
 }

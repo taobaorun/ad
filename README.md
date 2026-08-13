@@ -2,18 +2,18 @@
 
 AD 是一个 macOS 桌面应用，用于按项目管理本地 Coding Agent 配置。目前内置支持 Claude Code 与 Codex。
 
-选择项目和 Agent installation 后，AD 会把最终生效的 Settings、Skills、Plugins、来源、覆盖关系和管理状态集中到同一个 Project Agent Workspace。受支持的写操作统一经过 Preview → Apply → receipt，并提供受 digest 保护的 rollback；Claude Code → Codex 转换只读源配置，目标写入项目隔离的 Codex Runtime。
+AD 通过顶级资源中心统一纳管 Skill / Plugin 的 Git 或本地来源；项目安装只能从资源中心选择资源，并明确选择当前项目的 Agent。选择项目和 Agent installation 后，AD 会把最终生效的 Settings、Skills、Plugins、来源、覆盖关系和管理状态集中到同一个 Project Agent Workspace。受支持的写操作统一经过 Preview → Apply → receipt，并提供受 digest 保护的 rollback。
 
 ## 当前能力
 
 - Claude Code / Codex 的 user 与 project 配置盘点、编辑、历史和恢复；
-- Skill source catalog、Local 原始目录链接、Git 共享受管 checkout，以及项目安装/启停/Relink/移除；
-- Project Plugin 覆盖管理，以及隔离 Codex Runtime 中的 Plugin 安装；
-- Claude Code 有效项目环境到 Codex 的 Settings、Skills、Plugins 多载体转换；
+- Skill / Plugin 资源中心、Local 原始目录链接、Git 共享受管 checkout，以及项目级安装/启停/卸载；
+- Skill 支持 Claude Code 与 Codex；Plugin 通过项目级 direct reference 支持 Claude Code，当前 Codex 明确显示不支持；
+- Claude Code 有效项目环境到 Codex 的 Settings 转换；外部 Skill / Plugin 只显示为“非 AD 托管”，必须先加入资源中心才能由 AD 安装；
 - 项目 A/B、Agent installation、operation receipt 与 history 的项目级隔离；
 - 对 external、degraded、unsupported、partial 和 conflict 状态如实呈现。
 
-“支持全部资源”只表示 adapter 已验证版本和已知位置中的完整盘点。未知 Agent 版本、未知 schema 或新位置会把 coverage 降为 partial/failed。Codex User Plugin acquisition 等必须走外部产品流程的能力不会被伪装成已完成。
+“支持全部资源”只表示 adapter 已验证版本和已知位置中的完整盘点。未知 Agent 版本、未知 schema 或新位置会把 coverage 降为 partial/failed。Agent 没有原生 direct-reference 能力时，AD 会明确显示不支持，不复制或转换资源内容来模拟支持。
 
 ## Quick start
 
@@ -51,4 +51,4 @@ pnpm release:mac
 - auth、token、session、chat/prompt history、logs、SQLite 和索引不进入配置快照、diff、backup 或日志；
 - 项目级配置隔离不等同于第三方 Skill、Plugin、hook 或 MCP 的运行时沙箱。
 
-架构与产品证据见 [`docs/design-docs/architecture.md`](./docs/design-docs/architecture.md) 和 [`docs/product-specs/project-agent-workspace.md`](./docs/product-specs/project-agent-workspace.md)。
+资源管理的产品契约与技术设计见 [`docs/product-specs/skill-plugin-resource-management.md`](./docs/product-specs/skill-plugin-resource-management.md) 和 [`docs/design-docs/skill-plugin-resource-management.html`](./docs/design-docs/skill-plugin-resource-management.html)；整体架构见 [`docs/design-docs/architecture.md`](./docs/design-docs/architecture.md)。

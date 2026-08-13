@@ -37,9 +37,21 @@ export const SkillArtifactRefSchema = z
   })
   .strict();
 
+const SourceResourceItemSchema = z
+  .object({
+    kind: z.enum(['skills', 'plugins']),
+    installId: z.string().min(1),
+    displayName: z.string().min(1),
+    description: z.string().optional(),
+    subpath: z.string(),
+    descriptorDigest: contentDigestSchema,
+    supportedAgents: z.array(z.enum(['claude-code', 'codex'])).default([]),
+  })
+  .strict();
+
 export const SkillSourceBindingSchema = z
   .object({
-    schemaVersion: z.literal(2),
+    schemaVersion: z.union([z.literal(2), z.literal(3)]),
     bindingId: z.string().startsWith('skill-source-binding:'),
     sourceId: z.string().startsWith('skill-source:'),
     sourceType: z.enum(['git', 'local']),
@@ -49,6 +61,7 @@ export const SkillSourceBindingSchema = z
     treeDigest: contentDigestSchema,
     manifestDigest: contentDigestSchema,
     skills: SkillArtifactRefSchema.shape.skills,
+    resources: z.array(SourceResourceItemSchema).default([]),
     activationImpact: SkillActivationImpactSchema,
   })
   .strict();

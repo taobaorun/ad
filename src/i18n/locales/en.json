@@ -56,7 +56,77 @@
     "noMatch": "No projects match “{{query}}”.",
     "pin": "Pin to top",
     "unpin": "Unpin",
-    "pinnedAria": "Pinned"
+    "pinnedAria": "Pinned",
+    "resources": "Resources"
+  },
+  "resourceCenter": {
+    "eyebrow": "Managed library",
+    "title": "Resource Center",
+    "subtitle": "Manage Skills and Plugins that can be installed into projects.",
+    "addSource": "Add source",
+    "sources": "Sources",
+    "updateSource": "Update source {{name}}",
+    "removeSource": "Remove source {{name}}",
+    "search": "Search resources or sources…",
+    "filterLabel": "Resource type",
+    "filter": { "all": "All", "skills": "Skills", "plugins": "Plugins" },
+    "refresh": "Refresh",
+    "loading": "Loading resources…",
+    "empty": "No matching resources",
+    "emptyHint": "Add a Git repository or local directory to see its standard resources here.",
+    "noManaged": "No managed resources match this view",
+    "removedResources": "Removed resources ({{count}})",
+    "kind": { "skills": "Skill", "plugins": "Plugin" },
+    "agent": { "claude-code": "Claude Code", "codex": "Codex" },
+    "unsupported": "No supported Agent",
+    "suppressed": "Removed",
+    "readd": "Re-add",
+    "readdAria": "Re-add resource {{name}}",
+    "addDialog": {
+      "title": "Add resource source",
+      "description": "Add a Git repository or local directory. AD checks its standard Skills and Plugins first."
+    },
+    "plan": {
+      "resources": "Found {{count}} Skills or Plugins"
+    },
+    "sourceRemove": {
+      "title": "Remove source “{{name}}”",
+      "description": "AD first uninstalls every resource from its projects. It then removes only the source record, never the local directory or original Git content.",
+      "resources": "Source resources",
+      "confirm": "Remove source",
+      "removing": "Removing…",
+      "retry": "Retry remaining items",
+      "retryHint": "Some resources could not be uninstalled. The source is still managed; retry the remaining items.",
+      "phase": {
+        "uninstalling": "Uninstalling resources",
+        "removing_source": "Removing source record",
+        "complete": "Complete",
+        "partial_failure": "Some resource uninstalls failed"
+      }
+    },
+    "remove": {
+      "title": "Remove “{{name}}”",
+      "description": "AD uninstalls this resource from every project before removing it from the library.",
+      "projects": "Affected projects",
+      "agents": "Agent installs",
+      "confirm": "Remove resource",
+      "removing": "Removing…",
+      "retry": "Retry failed installs",
+      "retryHint": "Some project uninstalls failed. Successful items stay uninstalled; retry the remaining items.",
+      "aria": "Remove resource {{name}}",
+      "phase": {
+        "uninstalling": "Uninstalling from projects",
+        "suppressing": "Updating the library",
+        "complete": "Complete",
+        "partial_failure": "Some project uninstalls failed"
+      },
+      "state": {
+        "pending": "Pending",
+        "running": "Running",
+        "succeeded": "Uninstalled",
+        "failed": "Failed"
+      }
+    }
   },
   "detail": {
     "selectPrefix": "Select a project from the sidebar (or press ",
@@ -440,7 +510,7 @@
     "permissionsHint": "Permission semantics cannot be inferred losslessly, so target permissions are preserved by default.",
     "permissionsDangerHint": "Commands can run without approval or sandbox restrictions. Use only when you explicitly need the bypassPermissions equivalent.",
     "sourceUnchanged": "The Claude Code source is read-only. AD only writes target resources after explicit confirmation.",
-    "projectRuntimeHint": "Project conversion automatically creates an isolated CODEX_HOME. Marketplace, Plugin cache, and enabled state apply only when this project is launched from AD. The user login is reused without per-project sign-in.",
+    "projectRuntimeHint": "Project conversion automatically creates an isolated CODEX_HOME. Converted project settings affect only this project. The user login is reused without per-project sign-in.",
     "profileId": "Codex Profile (optional)",
     "profileIdPlaceholder": "For example, project_api",
     "profileIdHint": "Use for project API key, model, or environment differences. Leave blank to reuse the user login and base configuration.",
@@ -453,8 +523,7 @@
         "reading_configuration": "Reading and mapping configuration",
         "inspecting_skills": "Inspecting Skills",
         "inspecting_plugins": "Inspecting Plugins",
-        "preparing_project_plugin": "Preparing Project Plugin",
-        "verifying_inherited_plugins": "Verifying inherited Codex Plugins",
+        "verifying_inherited_plugins": "Preparing the project runtime",
         "finalizing_plan": "Finalizing conversion plan"
       },
       "itemCount": "{{item}} · {{current}} / {{total}}",
@@ -469,7 +538,7 @@
     "artifacts": "Conversion artifacts",
     "sourcePath": "Source path",
     "targetPath": "Target path",
-    "manualTarget": "Complete setup in the Codex plugin marketplace",
+    "manualTarget": "Unsupported by the current Agent",
     "confirmSkill": "Include this Skill",
     "skillConfirmed": "Skill included",
     "noChanges": "The source was read, but no safe automatic target changes are available. {{count}} items require input, conflict, or are unsupported. Adjust the conversion decisions above and preview again.",
@@ -502,12 +571,7 @@
       "dangerous": "Dangerous"
     },
     "pluginDetail": {
-      "source_disabled": "The source Plugin is disabled, so no Codex write is needed.",
-      "package_copy": "The existing Codex-compatible package will be installed automatically into the isolated project runtime.",
-      "package_transform": "AD will transform the Claude package in staging and install it automatically into the isolated project runtime.",
-      "partial": "Some components are portable, but unresolved components remain; this is not reported as a complete conversion.",
-      "lsp_unsupported": "This Plugin contains only a Claude LSP component; Codex currently has no native LSP Plugin carrier.",
-      "unresolved": "AD could not verify the Plugin package, marketplace, or component mapping, so no install change was generated."
+      "unsupported_agent_capability": "Codex cannot load this Plugin by direct reference. Add the original source to the Resource Center and use a supported Agent."
     },
     "kind": {
       "settings": "Settings and permissions",
@@ -539,7 +603,7 @@
       "disposition": {
         "exact": "This value has a direct Codex representation.",
         "mapped": "This item will be converted to the listed Codex target.",
-        "partial": "Portable components will be installed automatically; incompatible components remain explicit residuals.",
+        "partial": "This item is only partially represented and remains an explicit residual.",
         "requires_input": "A conversion decision is required before this item can be included.",
         "unsupported": "No verified automatic Codex equivalent is available; the source remains unchanged.",
         "conflict": "The existing target is preserved because it differs from the converted value.",
@@ -568,9 +632,7 @@
   },
   "agents": {
     "capabilities": {
-      "pluginInstallNotManaged": "Plugin installation is not managed for this Agent; existing Plugins can still be enabled or disabled.",
-      "gitAcquisitionUsesLegacyFlow": "Git acquisition still uses the legacy source flow; local Skill changes use the safe plan engine.",
-      "codexPluginInstallRequiresMarketplace": "AD can install Project Plugins automatically; User installation still uses the Codex Marketplace flow.",
+      "codexPluginInstallRequiresMarketplace": "Managed Plugins from the Resource Center are not supported by Codex.",
       "projectWritePending": "Project writes are not currently available."
     },
     "resources": {
@@ -581,11 +643,12 @@
       "skillOwnershipUnproven": "AD cannot prove ownership of this project Skill, so mutation is blocked.",
       "codexRuntimeNotPrepared": "Prepare the isolated Codex Project Runtime before changing project Plugins.",
       "pluginInheritedOnly": "This Plugin is inherited and has no project override to reset.",
-      "pluginUpdateRequiresConversionSource": "Codex Plugin updates require a verified conversion or marketplace source.",
+      "targetOccupied": "The same target in this project and Agent is occupied by another source. Uninstall the current installation before installing this source.",
       "pluginUpdateExternal": "Plugin package updates remain in the Agent's external plugin flow.",
       "actionCompensated": "The action failed and all changes were restored.",
       "actionPartialFailure": "The action completed only partially; inspect the receipt before continuing.",
-      "actionFailed": "The project resource action failed."
+      "actionFailed": "The project resource action failed.",
+      "unsupportedAgentCapability": "This Plugin is not supported by the current Agent."
     },
     "plan": {
       "impact": {
@@ -669,7 +732,7 @@
       "skills": {
         "title_one": "“{{name}}” has {{count}} conflicting source",
         "title_other": "“{{name}}” has {{count}} conflicting sources",
-        "description": "AD cannot safely choose a source, so write actions are paused. In Settings → Skill Sources, keep one source or rename the duplicate Skill."
+        "description": "Another source already occupies this target. Uninstall the current installation first, then install the source you want as a separate action."
       },
       "plugins": {
         "title_one": "“{{name}}” has {{count}} conflicting declaration",

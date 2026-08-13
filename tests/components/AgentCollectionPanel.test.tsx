@@ -15,12 +15,10 @@ const {
   inspectProjectAgentWorkspace,
   previewProjectCollectionAction,
   applyProjectCollectionAction,
-  openSettingsWindow,
 } = vi.hoisted(() => ({
   inspectProjectAgentWorkspace: vi.fn(),
   previewProjectCollectionAction: vi.fn(),
   applyProjectCollectionAction: vi.fn(),
-  openSettingsWindow: vi.fn(),
 }));
 
 vi.mock('@/lib/tauri', () => ({
@@ -28,7 +26,6 @@ vi.mock('@/lib/tauri', () => ({
     inspectProjectAgentWorkspace,
     previewProjectCollectionAction,
     applyProjectCollectionAction,
-    openSettingsWindow,
   },
 }));
 
@@ -301,7 +298,6 @@ describe('AgentCollectionPanel', () => {
     inspectProjectAgentWorkspace.mockReset().mockResolvedValue(inventory());
     previewProjectCollectionAction.mockReset();
     applyProjectCollectionAction.mockReset();
-    openSettingsWindow.mockReset().mockResolvedValue(undefined);
     resetWorkspaceOperationTracker();
   });
 
@@ -326,30 +322,16 @@ describe('AgentCollectionPanel', () => {
     expect(within(guidance).getByText('Local source')).toBeInTheDocument();
     expect(within(guidance).getByText('/Users/test/team/skill-sources')).toBeInTheDocument();
     expect(
-      within(guidance).getByText(/keep one source or rename the duplicate Skill/i),
+      within(guidance).getByText(/uninstall the current installation first/i),
     ).toBeInTheDocument();
     expect(within(guidance).queryByRole('link')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Manage Skill sources' }));
-    expect(openSettingsWindow).toHaveBeenCalledOnce();
+    expect(
+      within(guidance).queryByRole('button', { name: 'Manage Skill sources' }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
     await act(async () => undefined);
     expect(inspectProjectAgentWorkspace).toHaveBeenCalledTimes(2);
-  });
-
-  it('surfaces a Settings launch failure from conflict recovery', async () => {
-    inspectProjectAgentWorkspace.mockResolvedValue(conflictingSkillInventory());
-    openSettingsWindow.mockRejectedValueOnce(new Error('Settings unavailable'));
-    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
-
-    fireEvent.click(
-      await screen.findByRole('button', {
-        name: 'Manage Skill sources',
-      }),
-    );
-
-    expect(await screen.findByText('Settings unavailable')).toBeInTheDocument();
   });
 
   it('labels an installed Skill location and reports unavailable source provenance', async () => {

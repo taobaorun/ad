@@ -11,16 +11,17 @@ use super::execution_recovery::{mark_repaired, MutationRecoveryLease};
 use super::execution_state::{ExecutionState, StateDirectory};
 use super::{
     apply_ownership_changes, builtin_registry, decode_operation_receipt, execution_instance_id,
-    load_ownership_record, ownership_managed, ownership_record_id, ownership_source_binding,
-    ownership_workspace_key, validate_ownership_artifact, validate_ownership_record,
-    validate_ownership_record_identity, workspace_key_for_context, AgentContext, AgentError,
-    AgentErrorCode, AppliedResourceState, ContentDigest, ManagedResourceTarget, MutationKind,
-    MutationPlan, MutationPlanView, OperationJournalHandle, OperationJournalState, OperationKind,
-    OperationReceipt, OperationStatus, OwnershipArtifact, OwnershipRestore, PhysicalTargetId,
-    PlanAcknowledgement, PlanClaimBinding, PlanExecutionIntent, PlanId, PlanStore, PlannedMutation,
-    ReceiptId, ResourceKind, ResourceOwnershipChange, ResourceOwnershipChangeKind,
-    ResourceOwnershipRecord, ResourceRef, ResourceScope, ResourceStateKind, ResourceStorage,
-    RiskFingerprint, RollbackEligibility, RollbackUnavailableReason, TargetLockSet, WritePolicy,
+    load_ownership_record, ownership_catalog_binding, ownership_managed, ownership_record_id,
+    ownership_source_binding, ownership_workspace_key, reconcile_installations,
+    validate_ownership_artifact, validate_ownership_record, validate_ownership_record_identity,
+    workspace_key_for_context, AgentContext, AgentError, AgentErrorCode, AppliedResourceState,
+    ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan, MutationPlanView,
+    OperationJournalHandle, OperationJournalState, OperationKind, OperationReceipt,
+    OperationStatus, OwnershipArtifact, OwnershipRestore, PhysicalTargetId, PlanAcknowledgement,
+    PlanClaimBinding, PlanExecutionIntent, PlanId, PlanStore, PlannedMutation, ReceiptId,
+    ResourceKind, ResourceOwnershipChange, ResourceOwnershipChangeKind, ResourceOwnershipRecord,
+    ResourceRef, ResourceScope, ResourceStateKind, ResourceStorage, RiskFingerprint,
+    RollbackEligibility, RollbackUnavailableReason, TargetLockSet, WritePolicy,
     OPERATION_RECEIPT_SCHEMA_VERSION, OWNERSHIP_EVIDENCE_VERSION,
     RESOURCE_OWNERSHIP_SCHEMA_VERSION,
 };
@@ -329,6 +330,26 @@ impl ExecutionEngine {
             None => MutationRecoveryLease::acquire(&state)?,
         };
         let registry = builtin_registry();
+        let lifecycle_ids = plans.resource_lifecycle_ids_for_locking(plan_id)?;
+        let lifecycle_targets = lifecycle_ids
+            .iter()
+            .map(|resource_id| super::resource_lifecycle_lock_target(&state, resource_id))
+            .collect::<Vec<_>>();
+        let _lifecycle_locks =
+            TargetLockSet::acquire_for_ad_states(&lifecycle_targets, plan_id.as_str(), &state)
+                .map_err(|error| AgentError {
+                    code: if error.kind() == std::io::ErrorKind::WouldBlock {
+                        AgentErrorCode::ResourceChanged
+                    } else {
+                        AgentErrorCode::Io
+                    },
+                    message: format!("Failed to acquire resource lifecycle locks: {error}"),
+                    agent_id: None,
+                    installation_id: Some(binding.context.installation_id.clone()),
+                    resource: None,
+                    retryable: error.kind() == std::io::ErrorKind::WouldBlock,
+                    details: Some(serde_json::json!({"phase": "resource_lifecycle"})),
+                })?;
         let resources = plans.resources_for_locking(plan_id)?;
         let _target_locks =
             TargetLockSet::acquire_for_resources(&resources, plan_id.as_str(), &registry, &state)?;
@@ -1352,6 +1373,22 @@ fn execute_plan(
             .map_err(|journal_error| io_error(&plan, None, journal_error.to_string()))?;
         return Err(error);
     }
+    if let Err(error) = reconcile_installations(state, &receipt.ownership_changes) {
+        journal
+            .transition(OperationJournalState::RepairRequired, Some(&receipt.id))
+            .map_err(|journal_error| io_error(&plan, None, journal_error.to_string()))?;
+        return Err(AgentError {
+            code: AgentErrorCode::PartialFailure,
+            message: format!(
+                "Operation receipt was persisted but installation reconciliation failed: {error}"
+            ),
+            agent_id: Some(plan.agent_id.clone()),
+            installation_id: Some(plan.context.installation_id.clone()),
+            resource: None,
+            retryable: false,
+            details: Some(serde_json::json!({"phase": "resource_installation"})),
+        });
+    }
     journal
         .transition(OperationJournalState::Committed, Some(&receipt.id))
         .map_err(|error| io_error(&plan, None, error.to_string()))?;
@@ -1692,7 +1729,13 @@ fn prepare_ownership_authority(
                     original.kind(),
                     original.digest().as_ref(),
                 )?;
-                validate_ownership_artifact(record)?;
+                // Deleting a proven AD-owned target must remain possible when
+                // its source content is missing or the catalog resource is
+                // degraded. Source validation grants create/replace authority;
+                // target ownership grants standard uninstall authority.
+                if mutation.kind != MutationKind::Delete {
+                    validate_ownership_artifact(record)?;
+                }
             }
         }
     }
@@ -1717,10 +1760,12 @@ fn mutation_ownership_artifact(
         ResourceStorage::Symlink => match parse_symlink_source(plan, mutation)? {
             SymlinkMutationSource::Checked { path, digest } => {
                 let source_binding = ownership_source_binding(&mutation.resource, &path)?;
+                let catalog_binding = ownership_catalog_binding(&mutation.resource, &path)?;
                 Ok(OwnershipArtifact {
                     id: path,
                     digest,
                     source_binding,
+                    catalog_binding,
                 })
             }
             SymlinkMutationSource::Legacy(_) => Err(ownership_plan_error(
@@ -1735,6 +1780,7 @@ fn mutation_ownership_artifact(
                 id: source.path,
                 digest: source.digest,
                 source_binding: None,
+                catalog_binding: None,
             })
         }
         ResourceStorage::File => Err(ownership_plan_error(
@@ -2151,6 +2197,7 @@ fn ownership_change(
                 artifact_id: artifact.id.clone(),
                 artifact_digest: artifact.digest.clone(),
                 source_binding: artifact.source_binding.clone(),
+                catalog_binding: artifact.catalog_binding.clone(),
                 creating_receipt_id: item
                     .ownership_before
                     .as_ref()

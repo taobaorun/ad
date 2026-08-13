@@ -163,15 +163,6 @@ export function AgentCollectionPanel({
     setActionError(null);
   }, [actionBusy]);
 
-  const openSkillSources = useCallback(async () => {
-    setActionError(null);
-    try {
-      await tauri.openSettingsWindow();
-    } catch (caught) {
-      setActionError(formatAgentError(caught));
-    }
-  }, []);
-
   const query = filter.trim().toLocaleLowerCase();
   const filteredSkills = useMemo(
     () => inventory?.skills.resources.filter((resource) => matches(resource, query)) ?? [],
@@ -319,7 +310,6 @@ export function AgentCollectionPanel({
               queryActive={query.length > 0}
               showEmptyState={hasResources}
               onAction={previewAction}
-              onOpenSkillSources={openSkillSources}
               onReload={load}
             />
             <CollectionSection
@@ -440,6 +430,19 @@ function CollectionSection({
                 {resource.description && (
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
                     {resource.description}
+                  </div>
+                )}
+                {resource.provenance.source && (
+                  <div
+                    className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground"
+                    title={resource.provenance.source.location}
+                  >
+                    <span className="truncate">{resource.provenance.source.displayName}</span>
+                    <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
+                      {t(
+                        `agentCollections.conflictResolution.sourceKind.${resource.provenance.source.kind}`,
+                      )}
+                    </span>
                   </div>
                 )}
                 <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">

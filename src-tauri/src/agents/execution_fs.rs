@@ -107,6 +107,7 @@ pub(super) fn directory_tree_digest_filtered(
     Ok(ContentDigest::sha256(&encoded))
 }
 
+#[cfg(test)]
 pub(super) fn copy_directory_tree(source: &Path, target: &Path) -> Result<(), std::io::Error> {
     let metadata = std::fs::symlink_metadata(source)?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
@@ -126,10 +127,12 @@ pub(super) fn copy_directory_tree(source: &Path, target: &Path) -> Result<(), st
     )
 }
 
+#[cfg(test)]
 pub(super) fn write_directory_atomic(target: &Path, source: &Path) -> Result<(), std::io::Error> {
     write_directory_atomic_with_cleanup(target, source, remove_path)
 }
 
+#[cfg(test)]
 fn write_directory_atomic_with_cleanup<F>(
     target: &Path,
     source: &Path,
@@ -244,6 +247,7 @@ fn digest_directory_entries(
     Ok(())
 }
 
+#[cfg(test)]
 fn copy_directory_entries(
     source_root: &Path,
     target_root: &Path,
@@ -330,6 +334,7 @@ fn append_digest_record(encoded: &mut Vec<u8>, kind: u8, path: &[u8], mode: u32,
     encoded.extend_from_slice(body);
 }
 
+#[cfg(test)]
 fn remove_path(path: &Path) -> Result<(), std::io::Error> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {

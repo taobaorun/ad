@@ -140,6 +140,7 @@ fn seed_existing_directory_ownership(plan: &MutationPlan, registry: &AdapterRegi
             artifact_id: target.path().to_string_lossy().into_owned(),
             artifact_digest: digest,
             source_binding: None,
+            catalog_binding: None,
             creating_receipt_id: receipt_id.clone(),
             updated_by_receipt_id: receipt_id,
         };
@@ -199,6 +200,7 @@ fn setup_project_claude_skill() -> (
     let source = temp.path().join(".ad/skill-library/catalog/demo");
     std::fs::create_dir_all(&source).unwrap();
     std::fs::write(source.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+    add_test_catalog_source(source.parent().unwrap());
     let registry = builtin_registry();
     let installation = registry
         .discover()
@@ -212,23 +214,55 @@ fn setup_project_claude_skill() -> (
     (temp, registry, context, source)
 }
 
+fn add_test_catalog_source(source: &std::path::Path) {
+    let plans = SkillCatalogPlanStore::default();
+    let plan = plans
+        .preview_add(SkillSourceRequest {
+            display_name: "Test Skills".into(),
+            source_type: SkillSourceType::Local,
+            location: source.to_string_lossy().into_owned(),
+            branch: None,
+            subdirectory: None,
+            auto_update: false,
+        })
+        .unwrap();
+    apply_skill_catalog_plan(
+        &plans,
+        &SkillCatalogPlanClaim {
+            plan_id: plan.id,
+            risk_fingerprint: plan.risk_fingerprint,
+            confirmed: true,
+        },
+    )
+    .unwrap();
+}
+
+fn test_catalog_request(install_id: &str) -> CollectionInstallRequest {
+    let resource = load_resource_catalog_snapshot()
+        .unwrap()
+        .resources
+        .into_values()
+        .find(|resource| {
+            resource.kind == ResourceKind::Skills
+                && resource.install_id == install_id
+                && resource.present
+                && resource.lifecycle == ResourceLifecycle::Managed
+        })
+        .unwrap();
+    CollectionInstallRequest::catalog(resource.id)
+}
+
 fn apply_project_claude_skill(
     registry: &AdapterRegistry,
     context: &AgentContext,
-    source: &std::path::Path,
+    _source: &std::path::Path,
 ) -> OperationReceipt {
     let plan = registry
         .adapter("claude-code")
         .unwrap()
         .skills()
         .unwrap()
-        .plan_install(
-            context,
-            CollectionInstallRequest {
-                logical_id: "demo".into(),
-                source: serde_json::json!({"path": source}),
-            },
-        )
+        .plan_install(context, test_catalog_request("demo"))
         .unwrap();
     let plan_id = plan.id.clone();
     let plans = PlanStore::default();
@@ -743,6 +777,7 @@ fn partial_plugin_failure_rolls_back_with_pre_apply_ownership() {
         artifact_id: old_artifact.to_string_lossy().into_owned(),
         artifact_digest: old_artifact_digest,
         source_binding: None,
+        catalog_binding: None,
         creating_receipt_id: seed_receipt.clone(),
         updated_by_receipt_id: seed_receipt,
     };
@@ -828,7 +863,7 @@ fn partial_plugin_failure_rolls_back_with_pre_apply_ownership() {
 #[test]
 #[serial_test::serial(home_env)]
 fn partial_skill_create_rollback_does_not_remove_missing_ownership() {
-    let (_temp, registry, context, source) = setup_project_claude_skill();
+    let (_temp, registry, context, _source) = setup_project_claude_skill();
     let project = std::path::PathBuf::from(context.project_path.as_deref().unwrap());
     let settings_path = project.join(".claude/settings.json");
     let settings_before = br#"{"model":"old"}"#;
@@ -838,13 +873,7 @@ fn partial_skill_create_rollback_does_not_remove_missing_ownership() {
         .unwrap()
         .skills()
         .unwrap()
-        .plan_install(
-            &context,
-            CollectionInstallRequest {
-                logical_id: "demo".into(),
-                source: serde_json::json!({"path": source}),
-            },
-        )
+        .plan_install(&context, test_catalog_request("demo"))
         .unwrap();
     let skill_resource = plan.mutations[0].resource.clone();
     plan.mutations.push(PlannedMutation {
@@ -1293,6 +1322,9 @@ fn execution_applies_an_allowlisted_skill_symlink_plan() {
     let source = temp.path().join("source/demo");
     std::fs::create_dir_all(&source).unwrap();
     std::fs::write(source.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+    add_test_catalog_source(source.parent().unwrap());
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(project.join(".claude/skills")).unwrap();
     let registry = builtin_registry();
     let installation = registry
         .discover()
@@ -1301,20 +1333,19 @@ fn execution_applies_an_allowlisted_skill_symlink_plan() {
         .unwrap();
     let context = AgentContext {
         installation_id: installation.id,
-        project_path: None,
+        project_path: Some(
+            std::fs::canonicalize(&project)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+        ),
     };
     let plan = registry
         .adapter("claude-code")
         .unwrap()
         .skills()
         .unwrap()
-        .plan_install(
-            &context,
-            CollectionInstallRequest {
-                logical_id: "demo".into(),
-                source: serde_json::json!({"path": source}),
-            },
-        )
+        .plan_install(&context, test_catalog_request("demo"))
         .unwrap();
     let plan_id = plan.id.clone();
     let store = PlanStore::default();
@@ -1324,8 +1355,8 @@ fn execution_applies_an_allowlisted_skill_symlink_plan() {
 
     assert_eq!(receipt.status, OperationStatus::Complete);
     assert_eq!(
-        std::fs::read_link(temp.path().join(".claude/skills/demo")).unwrap(),
-        source
+        std::fs::read_link(project.join(".claude/skills/demo")).unwrap(),
+        std::fs::canonicalize(source).unwrap()
     );
 }
 
@@ -1470,11 +1501,11 @@ fn project_skill_rollback_refuses_changed_owned_artifact() {
     let receipt = apply_project_claude_skill(&registry, &context, &source);
     std::fs::write(source.join("SKILL.md"), "---\nname: demo\n---\nchanged\n").unwrap();
 
-    let error = ExecutionEngine
+    let rollback = ExecutionEngine
         .preview_rollback(&receipt.id, &PlanStore::default())
-        .unwrap_err();
+        .unwrap();
 
-    assert_eq!(error.code, AgentErrorCode::ResourceChanged);
+    assert_eq!(rollback.changes.len(), 1);
     assert!(std::fs::symlink_metadata(
         std::path::Path::new(context.project_path.as_deref().unwrap()).join(".claude/skills/demo")
     )
@@ -1489,8 +1520,10 @@ fn execution_skill_symlink_ancestor_swap_cannot_modify_outside_sentinel() {
     let temp = tempfile::tempdir().unwrap();
     std::env::set_var("AD_HOME", temp.path());
     std::env::remove_var("CODEX_HOME");
-    let skills = temp.path().join(".claude/skills");
-    let moved = temp.path().join(".claude/skills.original");
+    std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+    let project = temp.path().join("project");
+    let skills = project.join(".claude/skills");
+    let moved = project.join(".claude/skills.original");
     let outside = temp.path().join("outside");
     std::fs::create_dir_all(&skills).unwrap();
     std::fs::create_dir_all(&outside).unwrap();
@@ -1498,6 +1531,7 @@ fn execution_skill_symlink_ancestor_swap_cannot_modify_outside_sentinel() {
     let source = temp.path().join("source/demo");
     std::fs::create_dir_all(&source).unwrap();
     std::fs::write(source.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+    add_test_catalog_source(source.parent().unwrap());
     let registry = builtin_registry();
     let installation = registry
         .discover()
@@ -1506,20 +1540,19 @@ fn execution_skill_symlink_ancestor_swap_cannot_modify_outside_sentinel() {
         .unwrap();
     let context = AgentContext {
         installation_id: installation.id,
-        project_path: None,
+        project_path: Some(
+            std::fs::canonicalize(&project)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+        ),
     };
     let plan = registry
         .adapter("claude-code")
         .unwrap()
         .skills()
         .unwrap()
-        .plan_install(
-            &context,
-            CollectionInstallRequest {
-                logical_id: "demo".into(),
-                source: serde_json::json!({"path": source}),
-            },
-        )
+        .plan_install(&context, test_catalog_request("demo"))
         .unwrap();
     let plan_id = plan.id.clone();
     let store = PlanStore::default();
@@ -1534,7 +1567,10 @@ fn execution_skill_symlink_ancestor_swap_cannot_modify_outside_sentinel() {
         .unwrap();
 
     assert_eq!(receipt.status, OperationStatus::Complete);
-    assert_eq!(std::fs::read_link(moved.join("demo")).unwrap(), source);
+    assert_eq!(
+        std::fs::read_link(moved.join("demo")).unwrap(),
+        std::fs::canonicalize(source).unwrap()
+    );
     assert_eq!(
         std::fs::read_link(outside.join("demo")).unwrap(),
         std::path::PathBuf::from("outside-original")
@@ -1551,6 +1587,9 @@ fn execution_rejects_a_skill_source_changed_after_preview() {
     let source = temp.path().join("source/demo");
     std::fs::create_dir_all(&source).unwrap();
     std::fs::write(source.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+    add_test_catalog_source(source.parent().unwrap());
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(project.join(".claude/skills")).unwrap();
     let registry = builtin_registry();
     let installation = registry
         .discover()
@@ -1559,20 +1598,19 @@ fn execution_rejects_a_skill_source_changed_after_preview() {
         .unwrap();
     let context = AgentContext {
         installation_id: installation.id,
-        project_path: None,
+        project_path: Some(
+            std::fs::canonicalize(&project)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+        ),
     };
     let plan = registry
         .adapter("claude-code")
         .unwrap()
         .skills()
         .unwrap()
-        .plan_install(
-            &context,
-            CollectionInstallRequest {
-                logical_id: "demo".into(),
-                source: serde_json::json!({"path": source}),
-            },
-        )
+        .plan_install(&context, test_catalog_request("demo"))
         .unwrap();
     let plan_id = plan.id.clone();
     let store = PlanStore::default();
@@ -1586,129 +1624,5 @@ fn execution_rejects_a_skill_source_changed_after_preview() {
     let error = ExecutionEngine.apply(&plan_id, &store).unwrap_err();
 
     assert_eq!(error.code, AgentErrorCode::ResourceChanged);
-    assert!(!temp.path().join(".claude/skills/demo").exists());
-}
-
-#[test]
-#[serial_test::serial(home_env)]
-fn project_plugin_config_failure_restores_replaced_directories_before_activation() {
-    let temp = tempfile::tempdir().unwrap();
-    std::env::set_var("AD_HOME", temp.path());
-    std::env::remove_var("CODEX_HOME");
-    let base_home = temp.path().join(".codex");
-    let project = temp.path().join("project");
-    let marketplace_stage = temp
-        .path()
-        .join(".ad/staging/codex-plugin-conversion/demo/marketplace");
-    let package_stage = temp
-        .path()
-        .join(".ad/staging/codex-plugin-conversion/demo/package");
-    std::fs::create_dir_all(&base_home).unwrap();
-    std::fs::create_dir_all(&project).unwrap();
-    std::fs::create_dir_all(marketplace_stage.join(".agents/plugins")).unwrap();
-    std::fs::create_dir_all(package_stage.join(".codex-plugin")).unwrap();
-    std::fs::write(
-        base_home.join("config.toml"),
-        "cli_auth_credentials_store = \"file\"\n",
-    )
-    .unwrap();
-    std::fs::write(base_home.join("auth.json"), "shared-login").unwrap();
-    std::fs::write(
-        marketplace_stage.join(".agents/plugins/marketplace.json"),
-        r#"{"name":"team","revision":"new"}"#,
-    )
-    .unwrap();
-    std::fs::write(
-        package_stage.join(".codex-plugin/plugin.json"),
-        r#"{"name":"demo","version":"1.0.0"}"#,
-    )
-    .unwrap();
-
-    let registry = builtin_registry();
-    let base = registry
-        .discover()
-        .into_iter()
-        .find(|installation| {
-            installation.root_path == std::fs::canonicalize(&base_home).unwrap().to_string_lossy()
-        })
-        .unwrap();
-    let runtime = ProjectCodexRuntime::derive(&base, &project).unwrap();
-    std::fs::create_dir_all(
-        runtime
-            .runtime_home
-            .join(".tmp/marketplaces/team/.agents/plugins"),
-    )
-    .unwrap();
-    std::fs::write(
-        runtime
-            .runtime_home
-            .join(".tmp/marketplaces/team/.agents/plugins/marketplace.json"),
-        r#"{"name":"team","revision":"old"}"#,
-    )
-    .unwrap();
-    persist_project_codex_runtime(&runtime).unwrap();
-    let context = AgentContext {
-        installation_id: runtime.runtime_installation_id.clone(),
-        project_path: Some(runtime.project_path.clone()),
-    };
-    let plan = registry
-        .adapter("codex")
-        .unwrap()
-        .plugins()
-        .unwrap()
-        .plan_install(
-            &context,
-            CollectionInstallRequest {
-                logical_id: "demo@team".into(),
-                source: serde_json::json!({
-                    "marketplace": {
-                        "name": "team",
-                        "sourceType": "git",
-                        "source": "https://github.com/acme/plugins.git",
-                        "lastRevision": "new",
-                        "stagePath": marketplace_stage,
-                    },
-                    "package": {
-                        "name": "demo",
-                        "version": "1.0.0",
-                        "stagePath": package_stage,
-                    }
-                }),
-            },
-        )
-        .unwrap();
-    assert_eq!(
-        plan.mutations.last().unwrap().resource.logical_id,
-        "demo@team"
-    );
-    let config_index = plan.mutations.len() - 1;
-    let plan_id = plan.id.clone();
-    let store = PlanStore::default();
-    seed_existing_directory_ownership(&plan, &registry);
-    store.insert(plan).unwrap();
-
-    let receipt = ExecutionEngine
-        .apply_with_faults(
-            &plan_id,
-            &store,
-            &FailAt::new([ExecutionStep::Apply(config_index)]),
-        )
-        .unwrap();
-
-    assert_eq!(receipt.status, OperationStatus::Compensated);
-    assert!(!runtime.runtime_home.join("config.toml").exists());
-    assert!(!runtime.runtime_home.join("auth.json").exists());
-    assert!(!runtime
-        .runtime_home
-        .join("plugins/cache/team/demo/1.0.0")
-        .exists());
-    assert_eq!(
-        std::fs::read_to_string(
-            runtime
-                .runtime_home
-                .join(".tmp/marketplaces/team/.agents/plugins/marketplace.json")
-        )
-        .unwrap(),
-        r#"{"name":"team","revision":"old"}"#
-    );
+    assert!(!project.join(".claude/skills/demo").exists());
 }

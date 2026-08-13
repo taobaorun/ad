@@ -7,6 +7,7 @@ import { Dialog } from './ui/dialog';
 interface SkillSourceAddDialogProps {
   open: boolean;
   busy: boolean;
+  resourceMode?: boolean;
   onOpenChange: (open: boolean) => void;
   onPreview: (request: SkillSourceRequest) => Promise<void>;
 }
@@ -14,6 +15,7 @@ interface SkillSourceAddDialogProps {
 export function SkillSourceAddDialog({
   open,
   busy,
+  resourceMode = false,
   onOpenChange,
   onPreview,
 }: SkillSourceAddDialogProps) {
@@ -58,8 +60,12 @@ export function SkillSourceAddDialog({
       open={open}
       onOpenChange={onOpenChange}
       closeDisabled={busy}
-      title={t('settings.skills.addDialog.title')}
-      description={t('settings.skills.addDialog.description')}
+      title={t(resourceMode ? 'resourceCenter.addDialog.title' : 'settings.skills.addDialog.title')}
+      description={t(
+        resourceMode
+          ? 'resourceCenter.addDialog.description'
+          : 'settings.skills.addDialog.description',
+      )}
       footer={
         <div className="flex justify-end gap-2">
           <Button
@@ -135,9 +141,11 @@ export function SkillSourceAddDialog({
           className={inputClass}
         />
       </Field>
-      <p className="text-[11px] text-muted-foreground">
-        {t('settings.skills.addDialog.backendIdHint')}
-      </p>
+      {!resourceMode && (
+        <p className="text-[11px] text-muted-foreground">
+          {t('settings.skills.addDialog.backendIdHint')}
+        </p>
+      )}
       {error && (
         <div role="alert" className="mt-3 text-xs text-destructive">
           {error}

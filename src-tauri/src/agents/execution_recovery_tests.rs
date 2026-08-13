@@ -243,6 +243,7 @@ fn applying_receipt_replays_missing_ownership_before_commit() {
             .into_owned(),
         artifact_digest: digest.clone(),
         source_binding: None,
+        catalog_binding: None,
         creating_receipt_id: receipt_id.clone(),
         updated_by_receipt_id: receipt_id.clone(),
     };
