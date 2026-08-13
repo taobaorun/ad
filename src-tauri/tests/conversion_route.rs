@@ -119,10 +119,11 @@ fn route_reports_artifact_dispositions_and_builds_a_target_only_plan() {
         .iter()
         .find(|artifact| artifact.id == "skill:review")
         .unwrap();
-    assert_eq!(skill.disposition, ArtifactDisposition::Mapped);
+    assert_eq!(skill.disposition, ArtifactDisposition::Unsupported);
     assert_eq!(skill.kind, ResourceKind::Skills);
     assert_eq!(skill.risk, ConversionRiskLevel::Confirmation);
     assert!(skill.resolution.is_none());
+    assert!(skill.message.contains("Resource Center"));
     assert!(skill
         .source
         .location
@@ -169,11 +170,11 @@ fn route_reports_artifact_dispositions_and_builds_a_target_only_plan() {
         .mutations
         .iter()
         .all(|mutation| mutation.resource.installation_id != source.installation_id));
-    assert!(result.plan.mutations.iter().any(|mutation| {
-        mutation.resource.kind == ResourceKind::Skills
-            && mutation.resource.logical_id == "review"
-            && mutation.media_type == "application/vnd.ad.symlink"
-    }));
+    assert!(!result
+        .plan
+        .mutations
+        .iter()
+        .any(|mutation| mutation.resource.kind == ResourceKind::Skills));
 
     let content = result
         .plan

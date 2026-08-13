@@ -9,8 +9,8 @@ use super::execution_journal::{
 };
 use super::execution_state::ExecutionState;
 use super::{
-    apply_ownership_changes, decode_operation_receipt, AgentError, AgentErrorCode, OperationStatus,
-    ReceiptId,
+    apply_ownership_changes, decode_operation_receipt, reconcile_installations, AgentError,
+    AgentErrorCode, OperationStatus, ReceiptId,
 };
 
 const RECOVERY_LOCK_NAME: &str = "recovery.lock";
@@ -183,6 +183,12 @@ fn recover_applying(
             handle.transition(OperationJournalState::RepairRequired, Some(&receipt.id))?;
             return Ok(RecoveryOutcome::RepairRequired(format!(
                 "ownership reconciliation failed: {error}"
+            )));
+        }
+        if let Err(error) = reconcile_installations(state, &receipt.ownership_changes) {
+            handle.transition(OperationJournalState::RepairRequired, Some(&receipt.id))?;
+            return Ok(RecoveryOutcome::RepairRequired(format!(
+                "installation reconciliation failed: {error}"
             )));
         }
     }

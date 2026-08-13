@@ -1,120 +1,37 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use crate::fs::paths::projects_state_path;
 use chrono::{Duration, Utc};
-use semver::Version;
-use serde::Deserialize;
-
-use crate::fs::paths::{ad_home, projects_state_path};
 
 use super::codex::discover_codex_candidates;
 use super::codex_ports::{
     agent_error, project_runtime_for_context, read_optional, resolve_codex_home,
 };
-use super::execution_fs::{
-    directory_tree_digest, directory_tree_digest_filtered, observe_target, TargetState,
-};
+use super::execution_fs::{observe_target, TargetState};
 use super::{
     load_project_codex_runtime_manifest, render_project_codex_runtime_manifest,
-    synthesize_project_codex_config, synthesize_project_codex_config_with_settings, AgentContext,
-    AgentError, AgentErrorCode, AgentId, CapabilityAvailability, CapabilityLimitation,
-    CapabilityOperation, ClaudePluginDescriptor, CollectionInstallRequest, ContentDigest,
-    ManagedResourceTarget, MarketplaceOverlay, MutationKind, MutationPlan, PlanId, PlannedMutation,
-    PluginInstallProgress, PluginInstallProgressReporter, PluginsPort, ProjectCodexRuntimeManifest,
-    ProjectPluginOverlay, ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin,
-    ResourcePort, ResourceRef, ResourceScope, ResourceSnapshot, SettingsEdit, SharedAuthBinding,
-    WritePolicy, PROJECT_CODEX_RUNTIME_MANIFEST_SCHEMA_VERSION,
+    synthesize_project_codex_config_with_settings, AgentContext, AgentError, AgentErrorCode,
+    AgentId, CapabilityAvailability, CapabilityLimitation, CapabilityOperation,
+    CollectionInstallRequest, ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan,
+    PlanId, PlannedMutation, PluginInstallProgressReporter, PluginsPort,
+    ProjectCodexRuntimeManifest, ProjectPluginOverlay, ReadPrecondition, ResourceKind,
+    ResourceLocation, ResourceOrigin, ResourcePort, ResourceRef, ResourceScope, ResourceSnapshot,
+    SettingsEdit, SharedAuthBinding, WritePolicy, PROJECT_CODEX_RUNTIME_MANIFEST_SCHEMA_VERSION,
 };
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ProjectPluginInstallSource {
-    marketplace: ProjectMarketplaceSource,
-    package: ProjectPackageSource,
-    #[serde(default)]
-    refresh_owned_package: bool,
-    #[serde(default = "default_true")]
-    inherit_base_config: bool,
-    #[serde(default)]
-    profile_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ProjectMarketplaceSource {
-    name: String,
-    source_type: String,
-    source: String,
-    #[serde(default)]
-    ref_name: Option<String>,
-    #[serde(default)]
-    last_revision: Option<String>,
-    stage_path: PathBuf,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ProjectPackageSource {
-    name: String,
-    version: String,
-    stage_path: PathBuf,
-}
-
-struct InheritedPluginSnapshot {
-    marketplace: String,
-    plugin: String,
-    version: String,
-    marketplace_source: PathBuf,
-    marketplace_digest: ContentDigest,
-    package_source: PathBuf,
-    package_digest: ContentDigest,
-}
 
 #[derive(Debug, Default)]
 pub(crate) struct CodexPluginsPort;
 
 pub(super) struct ProjectRuntimeBootstrapPlan {
     pub(super) plan: MutationPlan,
-    pub(super) inherited_plugin_ids: BTreeSet<String>,
-}
-
-pub(super) fn project_runtime_owns_plugin_source(
-    context: &AgentContext,
-    descriptor: &ClaudePluginDescriptor,
-) -> Result<bool, AgentError> {
-    let Some(runtime) = project_runtime_for_context(context)? else {
-        return Ok(false);
-    };
-    let Some(snapshot) = load_project_codex_runtime_manifest(&runtime).map_err(|error| {
-        agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            error.to_string(),
-        )
-    })?
-    else {
-        return Ok(false);
-    };
-    let overlay = snapshot.manifest.project_overlay;
-    if overlay.enabled_plugins.get(&descriptor.plugin_id) != Some(&true) {
-        return Ok(false);
-    }
-    let Some(marketplace) = overlay.marketplaces.get(&descriptor.marketplace.name) else {
-        return Ok(false);
-    };
-    Ok(
-        marketplace.source_type == descriptor.marketplace.source_type
-            && marketplace.source == descriptor.marketplace.source
-            && marketplace.ref_name == descriptor.marketplace.ref_name,
-    )
 }
 
 pub(super) fn plan_project_runtime_bootstrap(
     context: &AgentContext,
     inherit_base_config: bool,
     profile_id: Option<&str>,
-    report: &PluginInstallProgressReporter<'_>,
+    _report: &PluginInstallProgressReporter<'_>,
 ) -> Result<Option<ProjectRuntimeBootstrapPlan>, AgentError> {
     let Some(runtime) = project_runtime_for_context(context)? else {
         return Ok(None);
@@ -140,24 +57,15 @@ pub(super) fn plan_project_runtime_bootstrap(
         )
     })?;
     let (auth_source, auth_target) = reusable_auth_paths(context, auth)?;
-    let inherited = if inherit_base_config {
-        prepare_inherited_plugins(context, &base_home, base_config.as_deref(), "", report)?
-    } else {
-        Vec::new()
-    };
+    // Project runtime bootstrap may inherit ordinary Codex settings, but it
+    // must not copy Plugin packages. Plugins are managed only from the Resource
+    // Center and current Codex cannot load them by direct reference.
     let config_resource = project_resource(context, "runtime-config");
     let config_target = ManagedResourceTarget::file(runtime.runtime_home.join("config.toml"));
     let config_state = observe_target(&config_target)?;
     validate_runtime_config_state(context, &runtime, &config_resource, &config_state)?;
     let (overlay, project_settings_keys) =
         project_overlays_for_plan(context, &runtime, &config_state, inherit_base_config)?;
-    let inherited_plugin_ids = inherited
-        .iter()
-        .filter_map(|snapshot| {
-            let logical_id = format!("{}@{}", snapshot.plugin, snapshot.marketplace);
-            (!overlay.enabled_plugins.contains_key(&logical_id)).then_some(logical_id)
-        })
-        .collect();
     let project_settings =
         project_settings_from_config(context, &config_state, &project_settings_keys)?;
     let inherited_config = inherit_base_config
@@ -203,8 +111,6 @@ pub(super) fn plan_project_runtime_bootstrap(
     }
     let mut mutations = Vec::new();
     push_symlink_mutation(&mut mutations, auth_resource, &auth_state, &auth_source);
-    append_inherited_marketplace_mutations(context, &runtime, "", &inherited, &mut mutations)?;
-    append_inherited_package_mutations(context, &runtime, &inherited, &mut mutations)?;
     push_manifest_mutation(
         context,
         &mut mutations,
@@ -231,7 +137,6 @@ pub(super) fn plan_project_runtime_bootstrap(
             mutations,
             expires_at: Utc::now() + Duration::minutes(5),
         },
-        inherited_plugin_ids,
     }))
 }
 
@@ -696,7 +601,6 @@ impl PluginsPort for CodexPluginsPort {
     fn operations(&self) -> BTreeSet<CapabilityOperation> {
         BTreeSet::from([
             CapabilityOperation::List,
-            CapabilityOperation::Install,
             CapabilityOperation::Enable,
             CapabilityOperation::Disable,
             CapabilityOperation::Preview,
@@ -711,7 +615,7 @@ impl PluginsPort for CodexPluginsPort {
 
     fn limitations(&self) -> Vec<CapabilityLimitation> {
         vec![CapabilityLimitation {
-            code: "user_install_requires_codex_marketplace_flow".into(),
+            code: "unsupported_agent_capability".into(),
             message_key: "agents.capabilities.codexPluginInstallRequiresMarketplace".into(),
         }]
     }
@@ -788,295 +692,18 @@ impl PluginsPort for CodexPluginsPort {
     fn plan_install(
         &self,
         context: &AgentContext,
-        request: CollectionInstallRequest,
+        _request: CollectionInstallRequest,
     ) -> Result<MutationPlan, AgentError> {
-        self.plan_install_with_progress(context, request, &|_| {})
+        Err(codex_plugin_install_unsupported(context))
     }
 
     fn plan_install_with_progress(
         &self,
         context: &AgentContext,
-        request: CollectionInstallRequest,
-        report: &PluginInstallProgressReporter<'_>,
+        _request: CollectionInstallRequest,
+        _report: &PluginInstallProgressReporter<'_>,
     ) -> Result<MutationPlan, AgentError> {
-        let Some(runtime) = project_runtime_for_context(context)? else {
-            return Err(agent_error(
-                AgentErrorCode::Unsupported,
-                context,
-                None,
-                "Codex user plugin installation requires its marketplace and authorization flow",
-            ));
-        };
-        let source: ProjectPluginInstallSource =
-            serde_json::from_value(request.source).map_err(|error| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    format!("Invalid Project Plugin install source: {error}"),
-                )
-            })?;
-        validate_install_source(context, &request.logical_id, &source)?;
-
-        let base_home = base_home(context, &runtime.base_installation_id)?;
-        let base_config_path = base_home.join("config.toml");
-        let base_config = read_optional(&base_config_path, context, None)?;
-        let credential_store = base_config
-            .as_deref()
-            .map(|bytes| parse_credential_store(context, bytes))
-            .transpose()?
-            .flatten();
-        let auth = SharedAuthBinding::detect(
-            &base_home,
-            &runtime.runtime_home,
-            credential_store.as_deref(),
-        )
-        .map_err(|error| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                error.to_string(),
-            )
-        })?;
-        let (auth_source, auth_target) = reusable_auth_paths(context, auth)?;
-
-        let marketplace_digest =
-            directory_tree_digest(&source.marketplace.stage_path).map_err(|error| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    format!("Invalid staged marketplace: {error}"),
-                )
-            })?;
-        let package_digest =
-            directory_tree_digest(&source.package.stage_path).map_err(|error| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    format!("Invalid staged Plugin package: {error}"),
-                )
-            })?;
-        validate_staged_manifests(context, &source)?;
-        let inherited = if source.inherit_base_config {
-            prepare_inherited_plugins(
-                context,
-                &base_home,
-                base_config.as_deref(),
-                &request.logical_id,
-                report,
-            )?
-        } else {
-            Vec::new()
-        };
-
-        let config_resource = project_resource(context, request.logical_id.clone());
-        let config_target = ManagedResourceTarget::file(runtime.runtime_home.join("config.toml"));
-        let config_state = observe_target(&config_target)?;
-        validate_runtime_config_state(context, &runtime, &config_resource, &config_state)?;
-
-        let marketplace_overlay = MarketplaceOverlay {
-            source_type: source.marketplace.source_type.clone(),
-            source: source.marketplace.source.clone(),
-            ref_name: source.marketplace.ref_name.clone(),
-            last_revision: source.marketplace.last_revision.clone(),
-        };
-        let (mut overlay, project_settings_keys) = project_overlays_for_plan(
-            context,
-            &runtime,
-            &config_state,
-            source.inherit_base_config,
-        )?;
-        let project_settings =
-            project_settings_from_config(context, &config_state, &project_settings_keys)?;
-        let refreshes_owned_package = source.refresh_owned_package
-            && overlay.enabled_plugins.get(&request.logical_id) == Some(&true)
-            && overlay
-                .marketplaces
-                .get(&source.marketplace.name)
-                .is_some_and(|existing| {
-                    marketplace_ownership_matches(existing, &marketplace_overlay)
-                });
-        if overlay
-            .marketplaces
-            .get(&source.marketplace.name)
-            .is_some_and(|existing| !marketplace_ownership_matches(existing, &marketplace_overlay))
-        {
-            return Err(agent_error(
-                AgentErrorCode::ResourceChanged,
-                context,
-                None,
-                format!(
-                    "Project marketplace {} already uses a different source",
-                    source.marketplace.name
-                ),
-            ));
-        }
-        overlay
-            .marketplaces
-            .insert(source.marketplace.name.clone(), marketplace_overlay);
-        overlay
-            .enabled_plugins
-            .insert(request.logical_id.clone(), true);
-        let inherited_config = source
-            .inherit_base_config
-            .then_some(base_config.as_deref())
-            .flatten();
-        let synthesized = synthesize_project_codex_config_with_settings(
-            inherited_config,
-            &base_home,
-            &overlay,
-            &project_settings,
-        )
-        .map_err(|error| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                error.to_string(),
-            )
-        })?;
-        let manifest = ProjectCodexRuntimeManifest {
-            schema_version: PROJECT_CODEX_RUNTIME_MANIFEST_SCHEMA_VERSION,
-            applied_inherit_base_config: source.inherit_base_config,
-            applied_profile_id: source.profile_id.clone(),
-            project_overlay: overlay,
-            project_settings_keys,
-        };
-
-        let auth_resource = project_resource(context, "runtime-auth");
-        let manifest_resource = project_resource(context, "runtime-manifest");
-        let marketplace_resource =
-            project_resource(context, format!("marketplace:{}", source.marketplace.name));
-        let package_resource = project_resource(
-            context,
-            format!(
-                "package:{}:{}:{}",
-                source.marketplace.name, source.package.name, source.package.version
-            ),
-        );
-
-        let auth_state = observe_target(&ManagedResourceTarget::symlink(auth_target))?;
-        if !matches!(auth_state, TargetState::Missing | TargetState::Symlink(_)) {
-            return Err(storage_conflict(context, &auth_resource));
-        }
-        let manifest_state = observe_target(&ManagedResourceTarget::file(runtime.manifest_path()))?;
-        validate_runtime_manifest_state(context, &runtime, &manifest_resource, &manifest_state)?;
-        let marketplace_target =
-            resolve_project_resource(context, &marketplace_resource, &runtime)?;
-        let marketplace_state = observe_target(&marketplace_target)?;
-        if !matches!(
-            marketplace_state,
-            TargetState::Missing | TargetState::Directory(_)
-        ) {
-            return Err(storage_conflict(context, &marketplace_resource));
-        }
-        let package_target = resolve_project_resource(context, &package_resource, &runtime)?;
-        let package_state = observe_target(&package_target)?;
-        if !matches!(
-            package_state,
-            TargetState::Missing | TargetState::Directory(_)
-        ) {
-            return Err(storage_conflict(context, &package_resource));
-        }
-        let package_matches = match &package_state {
-            TargetState::Missing => false,
-            TargetState::Directory(existing) if existing == &package_digest => true,
-            TargetState::Directory(_) => {
-                let existing =
-                    project_plugin_source_digest(package_target.path()).map_err(|error| {
-                        agent_error(
-                            AgentErrorCode::InvalidPlan,
-                            context,
-                            Some(package_resource.clone()),
-                            format!("Invalid installed Project Plugin package: {error}"),
-                        )
-                    })?;
-                let staged =
-                    project_plugin_source_digest(&source.package.stage_path).map_err(|error| {
-                        agent_error(
-                            AgentErrorCode::InvalidPlan,
-                            context,
-                            Some(package_resource.clone()),
-                            format!("Invalid staged Project Plugin package: {error}"),
-                        )
-                    })?;
-                existing == staged
-            }
-            _ => unreachable!("package storage kind was validated above"),
-        };
-        if matches!(package_state, TargetState::Directory(_))
-            && !package_matches
-            && !refreshes_owned_package
-        {
-            return Err(agent_error(
-                AgentErrorCode::ResourceChanged,
-                context,
-                Some(package_resource.clone()),
-                "The same Project Plugin version already exists with different content",
-            ));
-        }
-        let mut read_set = Vec::new();
-        if let Some(digest) = base_config.as_deref().map(ContentDigest::sha256) {
-            read_set.push(ReadPrecondition {
-                resource: project_resource(context, "base-config"),
-                expected_digest: digest,
-                write_policy: WritePolicy::ReadOnly,
-            });
-        }
-        let mut mutations = Vec::new();
-        push_symlink_mutation(&mut mutations, auth_resource, &auth_state, &auth_source);
-        append_inherited_marketplace_mutations(
-            context,
-            &runtime,
-            &source.marketplace.name,
-            &inherited,
-            &mut mutations,
-        )?;
-        push_directory_mutation(
-            &mut mutations,
-            marketplace_resource,
-            &marketplace_state,
-            &source.marketplace.stage_path,
-            marketplace_digest,
-        );
-        append_inherited_package_mutations(context, &runtime, &inherited, &mut mutations)?;
-        if !package_matches {
-            push_directory_mutation(
-                &mut mutations,
-                package_resource,
-                &package_state,
-                &source.package.stage_path,
-                package_digest,
-            );
-        }
-        push_manifest_mutation(
-            context,
-            &mut mutations,
-            manifest_resource,
-            &manifest_state,
-            &manifest,
-        )?;
-        if config_state.digest().as_ref() != Some(&synthesized.generated_config_digest) {
-            mutations.push(PlannedMutation {
-                resource: config_resource,
-                kind: mutation_kind(&config_state),
-                expected_digest: config_state.digest(),
-                media_type: "application/toml".into(),
-                content: Some(serde_json::Value::String(synthesized.content)),
-            });
-        }
-
-        Ok(MutationPlan {
-            id: PlanId::from(uuid::Uuid::new_v4().to_string()),
-            agent_id: AgentId::from("codex"),
-            context: context.clone(),
-            read_set,
-            mutations,
-            expires_at: Utc::now() + Duration::minutes(5),
-        })
+        Err(codex_plugin_install_unsupported(context))
     }
 
     fn plan_set_enabled(
@@ -1200,6 +827,15 @@ impl PluginsPort for CodexPluginsPort {
         validate_project_plugin_resource(context, resource)?;
         plan_project_override(context, resource, None, &runtime)
     }
+}
+
+fn codex_plugin_install_unsupported(context: &AgentContext) -> AgentError {
+    agent_error(
+        AgentErrorCode::Unsupported,
+        context,
+        None,
+        "unsupported_agent_capability: Codex cannot load a Resource Center Plugin by direct reference",
+    )
 }
 
 fn plan_project_override(
@@ -1530,490 +1166,6 @@ fn base_home(
         })
 }
 
-fn validate_install_source(
-    context: &AgentContext,
-    plugin_id: &str,
-    source: &ProjectPluginInstallSource,
-) -> Result<(), AgentError> {
-    validate_plugin_id(context, plugin_id)?;
-    validate_segment(context, "marketplace", &source.marketplace.name)?;
-    validate_segment(context, "plugin", &source.package.name)?;
-    validate_segment(context, "version", &source.package.version)?;
-    if plugin_id != format!("{}@{}", source.package.name, source.marketplace.name) {
-        return Err(agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            "Plugin id does not match the staged package and marketplace",
-        ));
-    }
-    if !matches!(source.marketplace.source_type.as_str(), "git" | "local")
-        || source.marketplace.source.trim().is_empty()
-    {
-        return Err(agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            "Marketplace source must be a non-empty git or local source",
-        ));
-    }
-    validate_stage_path(context, &source.marketplace.stage_path)?;
-    validate_stage_path(context, &source.package.stage_path)?;
-    Ok(())
-}
-
-fn validate_stage_path(context: &AgentContext, path: &Path) -> Result<(), AgentError> {
-    let managed_root = ad_home()
-        .map_err(|error| agent_error(AgentErrorCode::Io, context, None, error.to_string()))?
-        .join("staging/codex-plugin-conversion");
-    if !path.is_absolute() || !path.starts_with(&managed_root) {
-        return Err(agent_error(
-            AgentErrorCode::PermissionDenied,
-            context,
-            None,
-            "Plugin install sources must be physical directories in AD-owned conversion staging",
-        ));
-    }
-    let canonical = std::fs::canonicalize(path).map_err(|error| {
-        agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            format!("Invalid staged directory {}: {error}", path.display()),
-        )
-    })?;
-    let managed_root = std::fs::canonicalize(&managed_root)
-        .map_err(|error| agent_error(AgentErrorCode::Io, context, None, error.to_string()))?;
-    if !canonical.is_dir() || !canonical.starts_with(&managed_root) {
-        return Err(agent_error(
-            AgentErrorCode::PermissionDenied,
-            context,
-            None,
-            "Plugin install sources must be physical directories in AD-owned conversion staging",
-        ));
-    }
-    Ok(())
-}
-
-fn prepare_inherited_plugins(
-    context: &AgentContext,
-    base_home: &Path,
-    base_config: Option<&[u8]>,
-    project_plugin_id: &str,
-    report: &PluginInstallProgressReporter<'_>,
-) -> Result<Vec<InheritedPluginSnapshot>, AgentError> {
-    let Some(bytes) = base_config else {
-        return Ok(Vec::new());
-    };
-    let config = std::str::from_utf8(bytes)
-        .map_err(|error| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                error.to_string(),
-            )
-        })?
-        .parse::<toml::Value>()
-        .map_err(|error| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                error.to_string(),
-            )
-        })?;
-    let Some(plugins) = config.get("plugins").and_then(toml::Value::as_table) else {
-        return Ok(Vec::new());
-    };
-    let mut enabled_plugins = plugins
-        .iter()
-        .filter(|(plugin_id, plugin_config)| {
-            plugin_id.as_str() != project_plugin_id
-                && plugin_config.get("enabled").and_then(toml::Value::as_bool) != Some(false)
-        })
-        .collect::<Vec<_>>();
-    enabled_plugins.sort_by(|left, right| left.0.cmp(right.0));
-    let total = enabled_plugins.len();
-    let mut inherited = Vec::new();
-    let mut marketplace_snapshots = BTreeMap::<String, (PathBuf, ContentDigest)>::new();
-    for (index, (plugin_id, _plugin_config)) in enabled_plugins.into_iter().enumerate() {
-        report(PluginInstallProgress {
-            logical_id: plugin_id.clone(),
-            current: index + 1,
-            total,
-        });
-        validate_plugin_id(context, plugin_id)?;
-        let (plugin, marketplace) = plugin_id.split_once('@').ok_or_else(|| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                format!("Invalid inherited Plugin id: {plugin_id}"),
-            )
-        })?;
-        let (marketplace_source, marketplace_digest) = if let Some(snapshot) =
-            marketplace_snapshots.get(marketplace)
-        {
-            snapshot.clone()
-        } else {
-            let source =
-                inherited_marketplace_source(context, base_home, &config, marketplace, plugin_id)?;
-            if !source.join(".agents/plugins/marketplace.json").is_file()
-                && !source.join(".claude-plugin/marketplace.json").is_file()
-            {
-                return Err(agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    format!(
-                        "Enabled base Plugin {plugin_id} has no verifiable marketplace snapshot"
-                    ),
-                ));
-            }
-            let snapshot = snapshot_inherited_directory(context, &source)?;
-            marketplace_snapshots.insert(marketplace.to_string(), snapshot.clone());
-            snapshot
-        };
-        let package_base = base_home
-            .join("plugins/cache")
-            .join(marketplace)
-            .join(plugin);
-        let version = active_plugin_version(&package_base).ok_or_else(|| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                format!("Enabled base Plugin {plugin_id} has no installed package cache"),
-            )
-        })?;
-        let package_source = package_base.join(&version);
-        validate_inherited_manifest(context, &package_source, plugin, &version)?;
-        let (package_source, package_digest) =
-            snapshot_inherited_directory(context, &package_source)?;
-        inherited.push(InheritedPluginSnapshot {
-            marketplace: marketplace.to_string(),
-            plugin: plugin.to_string(),
-            version,
-            marketplace_source,
-            marketplace_digest,
-            package_source,
-            package_digest,
-        });
-    }
-    inherited.sort_by(|left, right| {
-        (&left.marketplace, &left.plugin).cmp(&(&right.marketplace, &right.plugin))
-    });
-    Ok(inherited)
-}
-
-fn inherited_marketplace_source(
-    context: &AgentContext,
-    base_home: &Path,
-    config: &toml::Value,
-    marketplace: &str,
-    plugin_id: &str,
-) -> Result<PathBuf, AgentError> {
-    let marketplace_config = config
-        .get("marketplaces")
-        .and_then(toml::Value::as_table)
-        .and_then(|marketplaces| marketplaces.get(marketplace))
-        .and_then(toml::Value::as_table)
-        .ok_or_else(|| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                format!("Enabled base Plugin {plugin_id} has no marketplace configuration"),
-            )
-        })?;
-    let source_type = marketplace_config
-        .get("source_type")
-        .and_then(toml::Value::as_str)
-        .ok_or_else(|| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                format!("Enabled base Plugin {plugin_id} has no marketplace source type"),
-            )
-        })?;
-    let source = match source_type {
-        "git" => base_home.join(".tmp/marketplaces").join(marketplace),
-        "local" => {
-            let configured = marketplace_config
-                .get("source")
-                .and_then(toml::Value::as_str)
-                .filter(|source| !source.is_empty())
-                .ok_or_else(|| {
-                    agent_error(
-                        AgentErrorCode::InvalidPlan,
-                        context,
-                        None,
-                        format!("Enabled base Plugin {plugin_id} has no local marketplace source"),
-                    )
-                })?;
-            let configured = PathBuf::from(configured);
-            if configured.is_absolute() {
-                configured
-            } else {
-                base_home.join(configured)
-            }
-        }
-        other => {
-            return Err(agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                format!(
-                "Enabled base Plugin {plugin_id} uses unsupported marketplace source type {other}"
-            ),
-            ))
-        }
-    };
-    std::fs::canonicalize(&source).map_err(|error| {
-        agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            format!(
-                "Enabled base Plugin {plugin_id} marketplace source {} is unavailable: {error}",
-                source.display()
-            ),
-        )
-    })
-}
-
-fn active_plugin_version(package_base: &Path) -> Option<String> {
-    let mut versions = std::fs::read_dir(package_base)
-        .ok()?
-        .flatten()
-        .filter_map(|entry| {
-            entry.file_type().ok().filter(std::fs::FileType::is_dir)?;
-            entry.file_name().into_string().ok()
-        })
-        .filter(|version| {
-            !version.is_empty()
-                && version != "."
-                && version != ".."
-                && version.chars().all(|character| {
-                    character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
-                })
-        })
-        .collect::<Vec<_>>();
-    if versions.iter().any(|version| version == "local") {
-        return Some("local".into());
-    }
-    versions.sort_by(
-        |left, right| match (Version::parse(left), Version::parse(right)) {
-            (Ok(left), Ok(right)) => left.cmp(&right),
-            _ => left.cmp(right),
-        },
-    );
-    versions.pop()
-}
-
-fn validate_inherited_manifest(
-    context: &AgentContext,
-    package: &Path,
-    plugin: &str,
-    version: &str,
-) -> Result<(), AgentError> {
-    let manifest = parse_json_file(
-        context,
-        &package.join(".codex-plugin/plugin.json"),
-        "inherited Codex Plugin manifest",
-    )?;
-    if manifest.get("name").and_then(serde_json::Value::as_str) != Some(plugin)
-        || version != "local"
-            && manifest.get("version").and_then(serde_json::Value::as_str) != Some(version)
-    {
-        return Err(agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            format!("Inherited Plugin manifest does not match {plugin}@{version}"),
-        ));
-    }
-    Ok(())
-}
-
-fn snapshot_inherited_directory(
-    context: &AgentContext,
-    source: &Path,
-) -> Result<(PathBuf, ContentDigest), AgentError> {
-    let source = std::fs::canonicalize(source).map_err(|error| {
-        agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            format!("Inherited Plugin source is unavailable: {error}"),
-        )
-    })?;
-    let digest = directory_tree_digest(&source).map_err(|error| {
-        agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            format!("Invalid inherited Plugin directory: {error}"),
-        )
-    })?;
-    Ok((source, digest))
-}
-
-fn append_inherited_marketplace_mutations(
-    context: &AgentContext,
-    runtime: &super::ProjectCodexRuntime,
-    project_marketplace: &str,
-    inherited: &[InheritedPluginSnapshot],
-    mutations: &mut Vec<PlannedMutation>,
-) -> Result<(), AgentError> {
-    let mut seen = BTreeSet::new();
-    for snapshot in inherited {
-        if snapshot.marketplace == project_marketplace || !seen.insert(snapshot.marketplace.clone())
-        {
-            continue;
-        }
-        let resource = project_resource(context, format!("marketplace:{}", snapshot.marketplace));
-        let state = observe_target(&resolve_project_resource(context, &resource, runtime)?)?;
-        if !matches!(state, TargetState::Missing | TargetState::Directory(_)) {
-            return Err(storage_conflict(context, &resource));
-        }
-        push_directory_mutation(
-            mutations,
-            resource,
-            &state,
-            &snapshot.marketplace_source,
-            snapshot.marketplace_digest.clone(),
-        );
-    }
-    Ok(())
-}
-
-fn append_inherited_package_mutations(
-    context: &AgentContext,
-    runtime: &super::ProjectCodexRuntime,
-    inherited: &[InheritedPluginSnapshot],
-    mutations: &mut Vec<PlannedMutation>,
-) -> Result<(), AgentError> {
-    for snapshot in inherited {
-        let resource = project_resource(
-            context,
-            format!(
-                "package:{}:{}:{}",
-                snapshot.marketplace, snapshot.plugin, snapshot.version
-            ),
-        );
-        let state = observe_target(&resolve_project_resource(context, &resource, runtime)?)?;
-        if !matches!(state, TargetState::Missing | TargetState::Directory(_)) {
-            return Err(storage_conflict(context, &resource));
-        }
-        push_directory_mutation(
-            mutations,
-            resource,
-            &state,
-            &snapshot.package_source,
-            snapshot.package_digest.clone(),
-        );
-    }
-    Ok(())
-}
-
-fn validate_staged_manifests(
-    context: &AgentContext,
-    source: &ProjectPluginInstallSource,
-) -> Result<(), AgentError> {
-    let marketplace_manifest = [
-        source
-            .marketplace
-            .stage_path
-            .join(".agents/plugins/marketplace.json"),
-        source
-            .marketplace
-            .stage_path
-            .join(".claude-plugin/marketplace.json"),
-    ]
-    .into_iter()
-    .find(|path| path.is_file())
-    .ok_or_else(|| {
-        agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            "Staged marketplace has no supported catalog manifest",
-        )
-    })?;
-    parse_json_file(context, &marketplace_manifest, "marketplace catalog")?;
-
-    let plugin_manifest = source.package.stage_path.join(".codex-plugin/plugin.json");
-    let manifest = parse_json_file(context, &plugin_manifest, "Codex Plugin manifest")?;
-    if manifest.get("name").and_then(serde_json::Value::as_str)
-        != Some(source.package.name.as_str())
-        || manifest.get("version").and_then(serde_json::Value::as_str)
-            != Some(source.package.version.as_str())
-    {
-        return Err(agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            "Codex Plugin manifest name/version does not match the install target",
-        ));
-    }
-    Ok(())
-}
-
-fn project_plugin_source_digest(root: &Path) -> Result<ContentDigest, std::io::Error> {
-    directory_tree_digest_filtered(root, |relative| {
-        if relative.file_name() == Some(std::ffi::OsStr::new("__pycache__"))
-            && is_python_bytecode_cache(&root.join(relative))?
-        {
-            return Ok(false);
-        }
-        Ok(true)
-    })
-}
-
-fn is_python_bytecode_cache(path: &Path) -> Result<bool, std::io::Error> {
-    let metadata = std::fs::symlink_metadata(path)?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        return Ok(false);
-    }
-    for entry in std::fs::read_dir(path)? {
-        let entry = entry?;
-        let metadata = std::fs::symlink_metadata(entry.path())?;
-        if metadata.file_type().is_symlink()
-            || !metadata.is_file()
-            || entry.path().extension() != Some(std::ffi::OsStr::new("pyc"))
-        {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
-fn parse_json_file(
-    context: &AgentContext,
-    path: &Path,
-    kind: &str,
-) -> Result<serde_json::Value, AgentError> {
-    let bytes = std::fs::read(path).map_err(|error| {
-        agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            format!("Failed to read {kind} {}: {error}", path.display()),
-        )
-    })?;
-    serde_json::from_slice(&bytes).map_err(|error| {
-        agent_error(
-            AgentErrorCode::InvalidPlan,
-            context,
-            None,
-            format!("Invalid {kind} {}: {error}", path.display()),
-        )
-    })
-}
-
 fn parse_credential_store(
     context: &AgentContext,
     bytes: &[u8],
@@ -2121,215 +1273,6 @@ fn project_settings_from_config(
                 })
         })
         .collect()
-}
-
-pub(super) fn validate_legacy_project_plugin_ownership(
-    context: &AgentContext,
-    explicit_plugin_ids: &BTreeSet<String>,
-    inherit_base_config: bool,
-) -> Result<bool, AgentError> {
-    let Some(runtime) = project_runtime_for_context(context)? else {
-        return Ok(false);
-    };
-    if load_project_codex_runtime_manifest(&runtime)
-        .map_err(|error| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                error.to_string(),
-            )
-        })?
-        .is_some()
-    {
-        return Ok(false);
-    }
-    let config_state = observe_target(&ManagedResourceTarget::file(
-        runtime.runtime_home.join("config.toml"),
-    ))?;
-    let legacy = project_overlay_from_legacy_config(context, &config_state)?;
-    if legacy.marketplaces.is_empty() && legacy.enabled_plugins.is_empty() {
-        return Ok(true);
-    }
-
-    let base_home = base_home(context, &runtime.base_installation_id)?;
-    let base_config = read_optional(&base_home.join("config.toml"), context, None)?;
-    let inherited = match base_config.as_deref() {
-        Some(base_config) => {
-            let synthesized = synthesize_project_codex_config(
-                Some(base_config),
-                &base_home,
-                &ProjectPluginOverlay::default(),
-            )
-            .map_err(|error| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    error.to_string(),
-                )
-            })?;
-            project_overlay_from_legacy_config(
-                context,
-                &TargetState::File(synthesized.content.into_bytes()),
-            )?
-        }
-        None => ProjectPluginOverlay::default(),
-    };
-    let explicit_marketplaces = explicit_plugin_ids
-        .iter()
-        .filter_map(|plugin_id| {
-            plugin_id
-                .split_once('@')
-                .map(|(_, marketplace)| marketplace)
-        })
-        .collect::<BTreeSet<_>>();
-    let enabled_legacy_marketplaces = legacy
-        .enabled_plugins
-        .iter()
-        .filter(|(_, enabled)| **enabled)
-        .filter_map(|(plugin_id, _)| {
-            plugin_id
-                .split_once('@')
-                .map(|(_, marketplace)| marketplace)
-        })
-        .collect::<BTreeSet<_>>();
-
-    for (plugin_id, enabled) in &legacy.enabled_plugins {
-        if !enabled {
-            continue;
-        }
-        if explicit_plugin_ids.contains(plugin_id)
-            || inherited.enabled_plugins.get(plugin_id) == Some(enabled)
-        {
-            continue;
-        }
-        return Err(agent_error(
-            AgentErrorCode::ResourceChanged,
-            context,
-            None,
-            format!(
-                "Legacy Project Plugin {plugin_id} has ambiguous ownership; select it explicitly and Preview again"
-            ),
-        ));
-    }
-    for (name, marketplace) in &legacy.marketplaces {
-        if !enabled_legacy_marketplaces.contains(name.as_str()) {
-            continue;
-        }
-        if explicit_marketplaces.contains(name.as_str())
-            || inherited.marketplaces.get(name).is_some_and(|inherited| {
-                inherited == marketplace
-                    || inherit_base_config && marketplace_ownership_matches(inherited, marketplace)
-            })
-        {
-            continue;
-        }
-        return Err(agent_error(
-            AgentErrorCode::ResourceChanged,
-            context,
-            None,
-            format!(
-                "Legacy Project marketplace {name} has ambiguous ownership; select its Plugin explicitly and Preview again"
-            ),
-        ));
-    }
-    Ok(true)
-}
-
-fn marketplace_ownership_matches(left: &MarketplaceOverlay, right: &MarketplaceOverlay) -> bool {
-    left.source_type == right.source_type
-        && left.source == right.source
-        && left.ref_name == right.ref_name
-}
-
-fn project_overlay_from_legacy_config(
-    context: &AgentContext,
-    state: &TargetState,
-) -> Result<ProjectPluginOverlay, AgentError> {
-    let TargetState::File(bytes) = state else {
-        return Ok(ProjectPluginOverlay::default());
-    };
-    let config = std::str::from_utf8(bytes)
-        .map_err(|error| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                error.to_string(),
-            )
-        })?
-        .parse::<toml::Value>()
-        .map_err(|error| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                error.to_string(),
-            )
-        })?;
-    let mut overlay = ProjectPluginOverlay::default();
-    if let Some(marketplaces) = config.get("marketplaces").and_then(toml::Value::as_table) {
-        for (name, value) in marketplaces {
-            let marketplace = value.as_table().ok_or_else(|| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    format!("Project marketplace {name} must be a table"),
-                )
-            })?;
-            let required = |key: &str| {
-                marketplace
-                    .get(key)
-                    .and_then(toml::Value::as_str)
-                    .map(str::to_owned)
-                    .ok_or_else(|| {
-                        agent_error(
-                            AgentErrorCode::InvalidPlan,
-                            context,
-                            None,
-                            format!("Project marketplace {name} has no {key}"),
-                        )
-                    })
-            };
-            overlay.marketplaces.insert(
-                name.clone(),
-                MarketplaceOverlay {
-                    source_type: required("source_type")?,
-                    source: required("source")?,
-                    ref_name: marketplace
-                        .get("ref")
-                        .and_then(toml::Value::as_str)
-                        .map(str::to_owned),
-                    last_revision: marketplace
-                        .get("last_revision")
-                        .and_then(toml::Value::as_str)
-                        .map(str::to_owned),
-                },
-            );
-        }
-    }
-    if let Some(plugins) = config.get("plugins").and_then(toml::Value::as_table) {
-        for (plugin_id, value) in plugins {
-            let plugin = value.as_table().ok_or_else(|| {
-                agent_error(
-                    AgentErrorCode::InvalidPlan,
-                    context,
-                    None,
-                    format!("Project Plugin {plugin_id} must be a table"),
-                )
-            })?;
-            overlay.enabled_plugins.insert(
-                plugin_id.clone(),
-                plugin
-                    .get("enabled")
-                    .and_then(toml::Value::as_bool)
-                    .unwrap_or(true),
-            );
-        }
-    }
-    Ok(overlay)
 }
 
 fn validate_plugin_id(context: &AgentContext, plugin_id: &str) -> Result<(), AgentError> {
@@ -2446,28 +1389,6 @@ fn push_manifest_mutation(
     Ok(())
 }
 
-fn push_directory_mutation(
-    mutations: &mut Vec<PlannedMutation>,
-    resource: ResourceRef,
-    state: &TargetState,
-    source: &Path,
-    digest: ContentDigest,
-) {
-    if state.digest().as_ref() == Some(&digest) {
-        return;
-    }
-    mutations.push(PlannedMutation {
-        resource,
-        kind: mutation_kind(state),
-        expected_digest: state.digest(),
-        media_type: "application/vnd.ad.directory".into(),
-        content: Some(serde_json::json!({
-            "path": source.to_string_lossy(),
-            "digest": digest,
-        })),
-    });
-}
-
 fn storage_conflict(context: &AgentContext, resource: &ResourceRef) -> AgentError {
     agent_error(
         AgentErrorCode::ResourceChanged,
@@ -2475,51 +1396,4 @@ fn storage_conflict(context: &AgentContext, resource: &ResourceRef) -> AgentErro
         Some(resource.clone()),
         "Project Plugin target changed storage type",
     )
-}
-
-fn default_true() -> bool {
-    true
-}
-
-#[cfg(test)]
-mod tests {
-    use super::project_plugin_source_digest;
-
-    #[test]
-    fn project_plugin_source_digest_ignores_python_bytecode_caches_only() {
-        let temp = tempfile::tempdir().unwrap();
-        let staged = temp.path().join("staged");
-        let installed = temp.path().join("installed");
-        for root in [&staged, &installed] {
-            std::fs::create_dir_all(root.join("scripts")).unwrap();
-            std::fs::write(root.join("scripts/hook.py"), "print('demo')\n").unwrap();
-        }
-        std::fs::create_dir_all(installed.join("scripts/__pycache__")).unwrap();
-        std::fs::write(
-            installed.join("scripts/__pycache__/hook.cpython-313.pyc"),
-            b"runtime bytecode",
-        )
-        .unwrap();
-
-        assert_eq!(
-            project_plugin_source_digest(&staged).unwrap(),
-            project_plugin_source_digest(&installed).unwrap()
-        );
-
-        std::fs::write(
-            installed.join("scripts/__pycache__/unexpected.txt"),
-            "managed content",
-        )
-        .unwrap();
-        assert_ne!(
-            project_plugin_source_digest(&staged).unwrap(),
-            project_plugin_source_digest(&installed).unwrap()
-        );
-        std::fs::remove_file(installed.join("scripts/__pycache__/unexpected.txt")).unwrap();
-        std::fs::write(installed.join("scripts/hook.py"), "print('changed')\n").unwrap();
-        assert_ne!(
-            project_plugin_source_digest(&staged).unwrap(),
-            project_plugin_source_digest(&installed).unwrap()
-        );
-    }
 }

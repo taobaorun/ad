@@ -2,12 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Duration, Utc};
 
+use crate::fs::paths::managed_collection_runtime_dir;
+
 use super::super::{
-    classify_claude_plugin, inspect_claude_plugin, AgentContext, AgentError, AgentErrorCode,
-    AgentId, CapabilityAvailability, CapabilityLimitation, CapabilityOperation,
-    CollectionInstallRequest, ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan,
-    PlanId, PlannedMutation, PluginsPort, ReadPrecondition, ResourceKind, ResourceLocation,
-    ResourceOrigin, ResourcePort, ResourceRef, ResourceScope, ResourceSnapshot, WritePolicy,
+    AgentContext, AgentError, AgentErrorCode, AgentId, CapabilityAvailability,
+    CapabilityLimitation, CapabilityOperation, CollectionInstallRequest, ContentDigest,
+    ManagedResourceTarget, MutationKind, MutationPlan, PlanId, PlannedMutation, PluginsPort,
+    ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin, ResourcePort, ResourceRef,
+    ResourceScope, ResourceSnapshot, WritePolicy,
 };
 use super::common::{agent_error, read_optional, resolve_claude_home, validate_project_path};
 
@@ -30,6 +32,8 @@ impl ResourcePort for ClaudePluginsPort {
                 "Plugin resource does not belong to the active Agent context",
             ));
         }
+        let managed_project = resource.scope == ResourceScope::Project
+            && resource.logical_id.starts_with("skill-source:");
         let path = match resource.scope {
             ResourceScope::User if resource.project_path.is_none() => {
                 resolve_claude_home(context)?.join("settings.json")
@@ -38,8 +42,27 @@ impl ResourcePort for ClaudePluginsPort {
                 if context.project_path.is_some()
                     && resource.project_path == context.project_path =>
             {
-                validate_project_path(context, context.project_path.as_deref().unwrap_or_default())?
+                if managed_project {
+                    managed_plugin_link(context, &resource.logical_id)?
+                } else if let Some(id) = resource.logical_id.strip_prefix("plugin-control:") {
+                    super::super::installation_control_path(
+                        &super::super::ResourceInstallationId::from(id.to_owned()),
+                    )
+                    .map_err(|error| {
+                        agent_error(
+                            AgentErrorCode::Io,
+                            context,
+                            Some(resource.clone()),
+                            error.to_string(),
+                        )
+                    })?
+                } else {
+                    validate_project_path(
+                        context,
+                        context.project_path.as_deref().unwrap_or_default(),
+                    )?
                     .join(".claude/settings.local.json")
+                }
             }
             _ => {
                 return Err(agent_error(
@@ -50,7 +73,11 @@ impl ResourcePort for ClaudePluginsPort {
                 ))
             }
         };
-        Ok(ManagedResourceTarget::file(path))
+        Ok(if managed_project {
+            ManagedResourceTarget::symlink(path)
+        } else {
+            ManagedResourceTarget::file(path)
+        })
     }
 }
 
@@ -62,6 +89,7 @@ impl PluginsPort for ClaudePluginsPort {
     fn operations(&self) -> BTreeSet<CapabilityOperation> {
         BTreeSet::from([
             CapabilityOperation::List,
+            CapabilityOperation::Install,
             CapabilityOperation::Enable,
             CapabilityOperation::Disable,
             CapabilityOperation::Preview,
@@ -71,14 +99,11 @@ impl PluginsPort for ClaudePluginsPort {
     }
 
     fn availability(&self) -> CapabilityAvailability {
-        CapabilityAvailability::Degraded
+        CapabilityAvailability::Available
     }
 
     fn limitations(&self) -> Vec<CapabilityLimitation> {
-        vec![CapabilityLimitation {
-            code: "plugin_install_not_managed".into(),
-            message_key: "agents.capabilities.pluginInstallNotManaged".into(),
-        }]
+        Vec::new()
     }
 
     fn list(&self, context: &AgentContext) -> Result<Vec<ResourceSnapshot>, AgentError> {
@@ -114,49 +139,11 @@ impl PluginsPort for ClaudePluginsPort {
         plugins
             .into_iter()
             .map(|(plugin_id, (enabled, location, origin))| {
-                let mut content = serde_json::json!({
+                let content = serde_json::json!({
                     "id": plugin_id.clone(),
                     "enabled": enabled,
-                    "classification": classify_claude_plugin(None, enabled),
+                    "source": "external",
                 });
-                if enabled {
-                    if let Some(project_path) = project_path.as_deref() {
-                        match inspect_claude_plugin(
-                            &claude_home,
-                            std::path::Path::new(project_path),
-                            &plugin_id,
-                            enabled,
-                        ) {
-                            Ok(mut descriptor) => {
-                                descriptor.declaration_path = location.clone();
-                                content["classification"] = serde_json::to_value(
-                                    classify_claude_plugin(Some(&descriptor), enabled),
-                                )
-                                .map_err(|error| {
-                                    agent_error(
-                                        AgentErrorCode::Io,
-                                        context,
-                                        None,
-                                        error.to_string(),
-                                    )
-                                })?;
-                                content["descriptor"] =
-                                    serde_json::to_value(descriptor).map_err(|error| {
-                                        agent_error(
-                                            AgentErrorCode::Io,
-                                            context,
-                                            None,
-                                            error.to_string(),
-                                        )
-                                    })?;
-                            }
-                            Err(error) => {
-                                content["inspectionError"] =
-                                    serde_json::Value::String(error.to_string());
-                            }
-                        }
-                    }
-                }
                 let bytes = serde_json::to_vec(&content).map_err(|error| {
                     agent_error(
                         AgentErrorCode::Io,
@@ -189,14 +176,110 @@ impl PluginsPort for ClaudePluginsPort {
     fn plan_install(
         &self,
         context: &AgentContext,
-        _request: CollectionInstallRequest,
+        request: CollectionInstallRequest,
     ) -> Result<MutationPlan, AgentError> {
-        Err(agent_error(
-            AgentErrorCode::Unsupported,
-            context,
-            None,
-            "Claude plugin installation is not managed by AD",
-        ))
+        let project_path = context.project_path.clone().ok_or_else(|| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                None,
+                "Claude Plugin installation requires a project",
+            )
+        })?;
+        validate_project_path(context, &project_path)?;
+        let resource_id = request
+            .source
+            .get("catalogResourceId")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| {
+                agent_error(
+                    AgentErrorCode::InvalidPlan,
+                    context,
+                    None,
+                    "Project Plugin installation requires a catalog resource",
+                )
+            })?;
+        let resolved = super::super::resolve_catalog_resource(resource_id).map_err(|error| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                None,
+                error.to_string(),
+            )
+        })?;
+        if resolved.kind != ResourceKind::Plugins {
+            return Err(agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                None,
+                "Catalog resource is not a Plugin",
+            ));
+        }
+        if !resolved
+            .physical_path
+            .join(".claude-plugin/plugin.json")
+            .is_file()
+        {
+            return Err(agent_error(
+                AgentErrorCode::Unsupported,
+                context,
+                None,
+                "This Plugin does not declare Claude Code support",
+            ));
+        }
+        let resource = ResourceRef {
+            installation_id: context.installation_id.clone(),
+            project_path: Some(project_path),
+            kind: ResourceKind::Plugins,
+            scope: ResourceScope::Project,
+            logical_id: format!("{}/{}", resolved.source_id, resolved.install_id),
+        };
+        let target = self.resolve(context, &resource)?.path().to_path_buf();
+        match std::fs::symlink_metadata(&target) {
+            Ok(_) => {
+                return Err(agent_error(
+                    AgentErrorCode::PermissionDenied,
+                    context,
+                    Some(resource),
+                    "Claude Plugin target already exists; uninstall it before installing another source",
+                ))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(agent_error(
+                    AgentErrorCode::Io,
+                    context,
+                    Some(resource),
+                    error.to_string(),
+                ))
+            }
+        }
+        let digest =
+            super::super::directory_tree_digest(&resolved.stable_path).map_err(|error| {
+                agent_error(
+                    AgentErrorCode::InvalidPlan,
+                    context,
+                    None,
+                    error.to_string(),
+                )
+            })?;
+        Ok(MutationPlan {
+            id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+            agent_id: AgentId::from("claude-code"),
+            context: context.clone(),
+            read_set: Vec::new(),
+            mutations: vec![PlannedMutation {
+                resource,
+                kind: MutationKind::Create,
+                expected_digest: None,
+                media_type: "application/vnd.ad.symlink".into(),
+                content: Some(serde_json::json!({
+                    "path": resolved.stable_path,
+                    "digest": digest,
+                })),
+            }],
+            expires_at: Utc::now() + Duration::minutes(5),
+        })
     }
 
     fn plan_set_enabled(
@@ -205,6 +288,58 @@ impl PluginsPort for ClaudePluginsPort {
         resource: &ResourceRef,
         enabled: bool,
     ) -> Result<MutationPlan, AgentError> {
+        if resource.logical_id.starts_with("skill-source:") {
+            let record = super::super::list_resource_installations()
+                .map_err(|error| agent_error(AgentErrorCode::Io, context, None, error.to_string()))?
+                .into_iter()
+                .find(|record| {
+                    record.effective_installation_id == context.installation_id
+                        && record.canonical_project_path
+                            == context.project_path.as_deref().unwrap_or_default()
+                        && format!("{}/{}", record.source_id, record.install_id)
+                            == resource.logical_id
+                })
+                .ok_or_else(|| {
+                    agent_error(
+                        AgentErrorCode::ResourceChanged,
+                        context,
+                        Some(resource.clone()),
+                        "Managed Plugin installation evidence is unavailable",
+                    )
+                })?;
+            let path = super::super::installation_control_path(&record.id).map_err(|error| {
+                agent_error(
+                    AgentErrorCode::Io,
+                    context,
+                    Some(resource.clone()),
+                    error.to_string(),
+                )
+            })?;
+            let current = std::fs::read(&path).ok();
+            let expected_digest = current.as_deref().map(ContentDigest::sha256);
+            let control_resource = ResourceRef {
+                logical_id: format!("plugin-control:{}", record.id),
+                ..resource.clone()
+            };
+            return Ok(MutationPlan {
+                id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+                agent_id: AgentId::from("claude-code"),
+                context: context.clone(),
+                read_set: Vec::new(),
+                mutations: vec![PlannedMutation {
+                    resource: control_resource,
+                    kind: if current.is_some() {
+                        MutationKind::Replace
+                    } else {
+                        MutationKind::Create
+                    },
+                    expected_digest,
+                    media_type: "application/json".into(),
+                    content: Some(super::super::installation_control_content(enabled)),
+                }],
+                expires_at: Utc::now() + Duration::minutes(5),
+            });
+        }
         plan_project_override(context, resource, Some(enabled))
     }
 
@@ -213,8 +348,168 @@ impl PluginsPort for ClaudePluginsPort {
         context: &AgentContext,
         resource: &ResourceRef,
     ) -> Result<MutationPlan, AgentError> {
+        if resource.logical_id.starts_with("skill-source:") {
+            let target = self.resolve(context, resource)?.path().to_path_buf();
+            let metadata = std::fs::symlink_metadata(&target).map_err(|error| {
+                agent_error(
+                    AgentErrorCode::ResourceChanged,
+                    context,
+                    Some(resource.clone()),
+                    error.to_string(),
+                )
+            })?;
+            if !metadata.file_type().is_symlink() {
+                return Err(agent_error(
+                    AgentErrorCode::PermissionDenied,
+                    context,
+                    Some(resource.clone()),
+                    "Managed Claude Plugin target is not a symlink",
+                ));
+            }
+            let digest = ContentDigest::sha256(
+                std::fs::read_link(&target)
+                    .map_err(|error| {
+                        agent_error(
+                            AgentErrorCode::Io,
+                            context,
+                            Some(resource.clone()),
+                            error.to_string(),
+                        )
+                    })?
+                    .to_string_lossy()
+                    .as_bytes(),
+            );
+            let mut mutations = Vec::new();
+            let record = super::super::list_resource_installations()
+                .map_err(|error| agent_error(AgentErrorCode::Io, context, None, error.to_string()))?
+                .into_iter()
+                .find(|record| {
+                    record.effective_installation_id == context.installation_id
+                        && record.canonical_project_path
+                            == context.project_path.as_deref().unwrap_or_default()
+                        && format!("{}/{}", record.source_id, record.install_id)
+                            == resource.logical_id
+                });
+            if let Some(record) = record {
+                let control_resource = ResourceRef {
+                    logical_id: format!("plugin-control:{}", record.id),
+                    ..resource.clone()
+                };
+                let control_path = self
+                    .resolve(context, &control_resource)?
+                    .path()
+                    .to_path_buf();
+                match std::fs::read(&control_path) {
+                    Ok(bytes) => mutations.push(PlannedMutation {
+                        resource: control_resource,
+                        kind: MutationKind::Delete,
+                        expected_digest: Some(ContentDigest::sha256(&bytes)),
+                        media_type: "application/json".into(),
+                        content: None,
+                    }),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(agent_error(
+                            AgentErrorCode::Io,
+                            context,
+                            Some(resource.clone()),
+                            error.to_string(),
+                        ))
+                    }
+                }
+            }
+            mutations.push(PlannedMutation {
+                resource: resource.clone(),
+                kind: MutationKind::Delete,
+                expected_digest: Some(digest.clone()),
+                media_type: "application/vnd.ad.symlink".into(),
+                content: None,
+            });
+            return Ok(MutationPlan {
+                id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+                agent_id: AgentId::from("claude-code"),
+                context: context.clone(),
+                read_set: vec![ReadPrecondition {
+                    resource: resource.clone(),
+                    expected_digest: digest.clone(),
+                    write_policy: WritePolicy::Mutable,
+                }],
+                mutations,
+                expires_at: Utc::now() + Duration::minutes(5),
+            });
+        }
         plan_project_override(context, resource, None)
     }
+}
+
+pub(crate) fn managed_claude_plugin_links(
+    context: &AgentContext,
+) -> Result<Vec<std::path::PathBuf>, AgentError> {
+    let project_path = context.project_path.as_deref().ok_or_else(|| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            "Project is required",
+        )
+    })?;
+    validate_project_path(context, project_path)?;
+    let records = super::super::list_resource_installations()
+        .map_err(|error| agent_error(AgentErrorCode::Io, context, None, error.to_string()))?;
+    let mut links = records
+        .into_iter()
+        .filter(|record| {
+            record.effective_installation_id == context.installation_id
+                && record.canonical_project_path == project_path
+                && record.resource_kind == ResourceKind::Plugins
+                && record.adapter_contract == "claude-plugin-dir-v1"
+        })
+        .filter_map(|record| match super::super::installation_enabled(&record) {
+            Ok(true) => Some(Ok(record)),
+            Ok(false) => None,
+            Err(error) => Some(Err(agent_error(
+                AgentErrorCode::Io,
+                context,
+                None,
+                error.to_string(),
+            ))),
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(|record| {
+            managed_plugin_link(
+                context,
+                &format!("{}/{}", record.source_id, record.install_id),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    links.sort();
+    Ok(links)
+}
+
+fn managed_plugin_link(
+    context: &AgentContext,
+    logical_id: &str,
+) -> Result<std::path::PathBuf, AgentError> {
+    let project = context.project_path.as_deref().ok_or_else(|| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            "Project is required",
+        )
+    })?;
+    let workspace = super::super::resolve_project_agent_workspace(
+        &context.installation_id,
+        std::path::Path::new(project),
+    )?;
+    let install_id = logical_id.rsplit('/').next().unwrap_or(logical_id);
+    let key =
+        super::super::opaque_contract_id("plugin-link", &[workspace.key.as_str(), install_id])
+            .replace(':', "_");
+    managed_collection_runtime_dir()
+        .map(|runtime| runtime.join(key))
+        .map_err(|error| agent_error(AgentErrorCode::Io, context, None, error.to_string()))
 }
 
 fn plan_project_override(

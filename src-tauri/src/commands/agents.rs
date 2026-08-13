@@ -2,15 +2,15 @@ use crate::agents::{
     builtin_registry, complete_conversion_report, conversion_plan_is_applicable, conversion_report,
     convert_claude_profile_to_codex, profile_settings_content, AcknowledgementRequirement,
     AgentContext, AgentError, AgentErrorCode, AgentId, AgentInstallation, AgentMetadata,
-    CapabilityDescriptor, ClaudeToCodexOptions, ClaudeToCodexRoute, CollectionInstallRequest,
-    ContentDigest, ConversionPreview, ConversionProgressEvent, ConversionReport,
-    ConversionRoutePreview, ExecutionEngine, InstallationId, MutationPlanView,
-    OperationHistoryEntry, OperationReceipt, PlanAcknowledgement, PlanAcknowledgementCode, PlanId,
-    PlanRiskLevel, PlanStore, ProcessObservation, ProfileId, ProjectCodexRuntime,
-    ProjectCodexRuntimeStatus, ProjectCollectionActionPreview, ProjectCollectionActionRequest,
-    ProjectWorkspaceInventory, ReadPrecondition, ReceiptId, ResourceKind, ResourceLocation,
-    ResourceOrigin, ResourceRef, ResourceScope, ResourceSnapshot, RiskFingerprint,
-    SettingsDocument, SettingsEdit, WorkspaceDescriptor, WorkspaceOperationReport, WritePolicy,
+    CapabilityDescriptor, ClaudeToCodexOptions, ClaudeToCodexRoute, ContentDigest,
+    ConversionPreview, ConversionProgressEvent, ConversionReport, ConversionRoutePreview,
+    ExecutionEngine, InstallationId, MutationPlanView, OperationHistoryEntry, OperationReceipt,
+    PlanAcknowledgement, PlanAcknowledgementCode, PlanId, PlanRiskLevel, PlanStore,
+    ProcessObservation, ProfileId, ProjectCodexRuntime, ProjectCodexRuntimeStatus,
+    ProjectCollectionActionPreview, ProjectCollectionActionRequest, ProjectWorkspaceInventory,
+    ReadPrecondition, ReceiptId, ResourceKind, ResourceLocation, ResourceOrigin, ResourceRef,
+    ResourceScope, ResourceSnapshot, RiskFingerprint, SettingsDocument, SettingsEdit,
+    WorkspaceDescriptor, WorkspaceOperationReport, WritePolicy,
 };
 use crate::models::ProfileFile;
 use tauri::{ipc::Channel, Manager, State};
@@ -443,40 +443,6 @@ pub fn preview_agent_profile_apply(
 }
 
 #[tauri::command]
-pub fn preview_agent_collection_install(
-    context: AgentContext,
-    kind: ResourceKind,
-    request: CollectionInstallRequest,
-    plans: State<'_, PlanStore>,
-) -> Result<MutationPlanView, AgentError> {
-    let plan = with_context_adapter(&context, |adapter| match kind {
-        ResourceKind::Skills => adapter
-            .skills()
-            .ok_or_else(|| context_error(&context, "Agent does not support Skill installation"))?
-            .plan_install(&context, request),
-        ResourceKind::Plugins => adapter
-            .plugins()
-            .ok_or_else(|| context_error(&context, "Agent does not support Plugin installation"))?
-            .plan_install(&context, request),
-        _ => Err(context_error(
-            &context,
-            "Only Skill and Plugin collections support installation",
-        )),
-    })?;
-    plans.insert(plan)
-}
-
-#[tauri::command]
-pub fn preview_agent_collection_toggle(
-    context: AgentContext,
-    resource: ResourceRef,
-    enabled: bool,
-    plans: State<'_, PlanStore>,
-) -> Result<MutationPlanView, AgentError> {
-    preview_agent_collection_toggle_inner(context, resource, enabled, plans.inner())
-}
-
-#[tauri::command]
 pub fn preview_project_collection_action(
     installation_id: InstallationId,
     project_path: String,
@@ -660,29 +626,6 @@ fn preview_agent_profile_apply_inner(
                 content: profile_content.content,
             },
         )
-    })?;
-    plans.insert(plan)
-}
-
-fn preview_agent_collection_toggle_inner(
-    context: AgentContext,
-    resource: ResourceRef,
-    enabled: bool,
-    plans: &PlanStore,
-) -> Result<MutationPlanView, AgentError> {
-    let plan = with_context_adapter(&context, |adapter| match resource.kind {
-        ResourceKind::Skills => adapter
-            .skills()
-            .ok_or_else(|| context_error(&context, "Agent does not support Skill toggles"))?
-            .plan_set_enabled(&context, &resource, enabled),
-        ResourceKind::Plugins => adapter
-            .plugins()
-            .ok_or_else(|| context_error(&context, "Agent does not support Plugin toggles"))?
-            .plan_set_enabled(&context, &resource, enabled),
-        _ => Err(context_error(
-            &context,
-            "Only Skill and Plugin resources support enable or disable",
-        )),
     })?;
     plans.insert(plan)
 }
@@ -1407,61 +1350,6 @@ mod tests {
             .unwrap();
         assert!(settings.operations.contains(&CapabilityOperation::Inspect));
         assert!(settings.operations.contains(&CapabilityOperation::Apply));
-    }
-
-    #[test]
-    #[serial_test::serial(home_env)]
-    fn agent_resources_are_inspected_and_toggled_without_direct_writes() {
-        let temp = tempfile::tempdir().unwrap();
-        let codex_home = temp.path().join(".codex");
-        let skill_dir = temp.path().join(".agents/skills/review");
-        std::fs::create_dir_all(&codex_home).unwrap();
-        std::fs::create_dir_all(&skill_dir).unwrap();
-        std::fs::write(skill_dir.join("SKILL.md"), "# Review\n").unwrap();
-        let original = b"model = \"gpt-5.4\"\n";
-        std::fs::write(codex_home.join("config.toml"), original).unwrap();
-        let previous_home = std::env::var("AD_HOME").ok();
-        let previous_codex_home = std::env::var("CODEX_HOME").ok();
-        std::env::set_var("AD_HOME", temp.path());
-        std::env::set_var("CODEX_HOME", &codex_home);
-
-        let installation = builtin_registry()
-            .discover()
-            .into_iter()
-            .find(|item| item.agent_id.as_str() == "codex")
-            .unwrap();
-        let context = AgentContext {
-            installation_id: installation.id,
-            project_path: None,
-        };
-        let settings = inspect_agent_settings(context.clone()).unwrap();
-        let skills = list_agent_skills(context.clone()).unwrap();
-        let store = PlanStore::default();
-        let plan = preview_agent_collection_toggle_inner(
-            context,
-            skills[0].resource.clone(),
-            false,
-            &store,
-        )
-        .unwrap();
-
-        assert_eq!(settings.len(), 1);
-        assert_eq!(settings[0].media_type, "application/toml");
-        assert_eq!(skills.len(), 1);
-        assert_eq!(plan.changes.len(), 1);
-        assert_eq!(
-            std::fs::read(codex_home.join("config.toml")).unwrap(),
-            original
-        );
-
-        match previous_home {
-            Some(value) => std::env::set_var("AD_HOME", value),
-            None => std::env::remove_var("AD_HOME"),
-        }
-        match previous_codex_home {
-            Some(value) => std::env::set_var("CODEX_HOME", value),
-            None => std::env::remove_var("CODEX_HOME"),
-        }
     }
 
     #[test]

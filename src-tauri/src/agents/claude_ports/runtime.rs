@@ -6,6 +6,7 @@ use super::super::{
     ProcessPort, ResourceScope,
 };
 use super::common::{agent_error, resolve_claude_home, validate_project_path};
+use super::plugins::managed_claude_plugin_links;
 
 #[derive(Debug, Default)]
 pub(crate) struct ClaudeProcessPort;
@@ -60,9 +61,18 @@ impl LaunchPort for ClaudeLaunchPort {
             )
         })?;
         let project = validate_project_path(context, project_path)?;
+        let args = managed_claude_plugin_links(context)?
+            .into_iter()
+            .flat_map(|path| {
+                [
+                    "--plugin-dir".to_owned(),
+                    path.to_string_lossy().into_owned(),
+                ]
+            })
+            .collect();
         Ok(LaunchRecipe {
             program: "claude".into(),
-            args: Vec::new(),
+            args,
             env: BTreeMap::new(),
             cwd: project.to_string_lossy().into_owned(),
         })

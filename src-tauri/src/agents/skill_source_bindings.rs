@@ -9,10 +9,12 @@ use rustix::fs::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::skill_activation::{inspect_activation_impact, inspect_skills};
+use super::resource_scanner::scan_catalog_resources;
+use super::skill_activation::inspect_activation_impact;
 use super::skill_artifact_tree::{inspect_tree, ArtifactLimits};
 use super::{
-    ContentDigest, SkillActivationImpact, SkillArtifactError, SkillArtifactItem, SkillSourceType,
+    ContentDigest, ResourceKind, SkillActivationImpact, SkillArtifactError, SkillArtifactItem,
+    SkillSourceType,
 };
 use crate::fs::paths::{
     ad_home, managed_skill_source_dir, managed_skill_source_generations_dir,
@@ -20,7 +22,8 @@ use crate::fs::paths::{
 };
 use crate::models::SkillSource;
 
-pub const SKILL_SOURCE_BINDING_SCHEMA_VERSION: u32 = 2;
+pub const SKILL_SOURCE_BINDING_SCHEMA_VERSION: u32 = 3;
+const LEGACY_SKILL_SOURCE_BINDING_SCHEMA_VERSION: u32 = 2;
 
 const DIRECTORY_FLAGS: OFlags = OFlags::RDONLY
     .union(OFlags::DIRECTORY)
@@ -39,7 +42,23 @@ pub struct SkillSourceBinding {
     pub tree_digest: ContentDigest,
     pub manifest_digest: ContentDigest,
     pub skills: Vec<SkillArtifactItem>,
+    #[serde(default)]
+    pub resources: Vec<SourceResourceItem>,
     pub activation_impact: SkillActivationImpact,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SourceResourceItem {
+    pub kind: ResourceKind,
+    pub install_id: String,
+    pub display_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub subpath: String,
+    pub descriptor_digest: ContentDigest,
+    #[serde(default)]
+    pub supported_agents: std::collections::BTreeSet<String>,
 }
 
 pub struct StagedGitSkillSourceBinding {
@@ -111,7 +130,10 @@ pub fn resolve_skill_source_item(
     binding: &SkillSourceBinding,
     item: &SkillArtifactItem,
 ) -> Result<(PathBuf, PathBuf), SkillArtifactError> {
-    if binding.schema_version != SKILL_SOURCE_BINDING_SCHEMA_VERSION {
+    if !matches!(
+        binding.schema_version,
+        LEGACY_SKILL_SOURCE_BINDING_SCHEMA_VERSION | SKILL_SOURCE_BINDING_SCHEMA_VERSION
+    ) {
         return Err(SkillArtifactError::Corrupt(format!(
             "unsupported Skill source binding schema {}",
             binding.schema_version
@@ -175,12 +197,8 @@ pub fn inspect_local_skill_source_binding(
     let selected_root = select_source_root(&canonical_root, source.subdirectory.as_deref())?;
     let manifest = inspect_tree(&selected_root, ArtifactLimits::default())?;
     let tree_digest = manifest.digest()?;
-    let skills = inspect_skills(&selected_root, &manifest)?;
-    if skills.is_empty() {
-        return Err(SkillArtifactError::InvalidSource(
-            "source contains no SKILL.md".into(),
-        ));
-    }
+    let resources = inspect_source_resources(&selected_root)?;
+    let skills = skill_items(&resources);
     let activation_impact = inspect_activation_impact(&selected_root, &manifest)?;
     let manifest_bytes = serde_json::to_vec(&manifest)
         .map_err(|error| SkillArtifactError::Corrupt(error.to_string()))?;
@@ -198,6 +216,7 @@ pub fn inspect_local_skill_source_binding(
         tree_digest,
         manifest_digest: ContentDigest::sha256(&manifest_bytes),
         skills,
+        resources,
         activation_impact,
     })
 }
@@ -250,12 +269,8 @@ fn build_staged_git_binding(
     let selected_root = select_source_root(&checkout_root, source.subdirectory.as_deref())?;
     let manifest = inspect_tree(&selected_root, ArtifactLimits::default())?;
     let tree_digest = manifest.digest()?;
-    let skills = inspect_skills(&selected_root, &manifest)?;
-    if skills.is_empty() {
-        return Err(SkillArtifactError::InvalidSource(
-            "source contains no SKILL.md".into(),
-        ));
-    }
+    let resources = inspect_source_resources(&selected_root)?;
+    let skills = skill_items(&resources);
     let activation_impact = inspect_activation_impact(&selected_root, &manifest)?;
     let manifest_bytes = serde_json::to_vec(&manifest)
         .map_err(|error| SkillArtifactError::Corrupt(error.to_string()))?;
@@ -291,6 +306,7 @@ fn build_staged_git_binding(
         tree_digest,
         manifest_digest: ContentDigest::sha256(&manifest_bytes),
         skills,
+        resources,
         activation_impact,
     };
     Ok(StagedGitSkillSourceBinding {
@@ -301,6 +317,37 @@ fn build_staged_git_binding(
         _lease: lease,
         published: false,
     })
+}
+
+fn inspect_source_resources(
+    selected_root: &Path,
+) -> Result<Vec<SourceResourceItem>, SkillArtifactError> {
+    scan_catalog_resources(selected_root).map(|resources| {
+        resources
+            .into_iter()
+            .map(|resource| SourceResourceItem {
+                kind: resource.kind,
+                install_id: resource.install_id,
+                display_name: resource.display_name,
+                description: resource.description,
+                subpath: resource.subpath,
+                descriptor_digest: resource.descriptor_digest,
+                supported_agents: resource.supported_agents,
+            })
+            .collect()
+    })
+}
+
+fn skill_items(resources: &[SourceResourceItem]) -> Vec<SkillArtifactItem> {
+    resources
+        .iter()
+        .filter(|resource| resource.kind == ResourceKind::Skills)
+        .map(|resource| SkillArtifactItem {
+            logical_id: resource.install_id.clone(),
+            subpath: resource.subpath.clone(),
+            instruction_digest: resource.descriptor_digest.clone(),
+        })
+        .collect()
 }
 
 #[cfg(test)]

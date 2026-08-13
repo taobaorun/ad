@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use chrono::{Duration, Utc};
 
@@ -83,14 +83,11 @@ impl SkillsPort for ClaudeSkillsPort {
     }
 
     fn availability(&self) -> CapabilityAvailability {
-        CapabilityAvailability::Degraded
+        CapabilityAvailability::Available
     }
 
     fn limitations(&self) -> Vec<CapabilityLimitation> {
-        vec![CapabilityLimitation {
-            code: "git_acquisition_uses_legacy_flow".into(),
-            message_key: "agents.capabilities.gitAcquisitionUsesLegacyFlow".into(),
-        }]
+        Vec::new()
     }
 
     fn list(&self, context: &AgentContext) -> Result<Vec<ResourceSnapshot>, AgentError> {
@@ -118,13 +115,22 @@ impl SkillsPort for ClaudeSkillsPort {
         context: &AgentContext,
         request: CollectionInstallRequest,
     ) -> Result<MutationPlan, AgentError> {
-        let source = install_source(context, &request)?;
-        let scope = if context.project_path.is_some() {
-            ResourceScope::Project
-        } else {
-            ResourceScope::User
-        };
-        plan_skill_toggle(context, &request.logical_id, scope, Some(source), true)
+        if context.project_path.is_none() {
+            return Err(agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                None,
+                "Skill installation requires a project",
+            ));
+        }
+        let (logical_id, source) = install_source(context, &request)?;
+        plan_skill_toggle(
+            context,
+            &logical_id,
+            ResourceScope::Project,
+            Some(source),
+            true,
+        )
     }
 
     fn plan_set_enabled(
@@ -190,7 +196,8 @@ impl SkillsPort for ClaudeSkillsPort {
         request: CollectionInstallRequest,
     ) -> Result<MutationPlan, AgentError> {
         self.resolve(context, resource)?;
-        if request.logical_id != resource.logical_id {
+        let (logical_id, source) = install_source(context, &request)?;
+        if logical_id != resource.logical_id {
             return Err(agent_error(
                 AgentErrorCode::InvalidPlan,
                 context,
@@ -198,7 +205,6 @@ impl SkillsPort for ClaudeSkillsPort {
                 "Skill update identity differs from the installed resource",
             ));
         }
-        let source = install_source(context, &request)?;
         plan_skill_toggle(
             context,
             &resource.logical_id,
@@ -221,38 +227,42 @@ impl SkillsPort for ClaudeSkillsPort {
 fn install_source(
     context: &AgentContext,
     request: &CollectionInstallRequest,
-) -> Result<PathBuf, AgentError> {
-    let source_path = request
+) -> Result<(String, PathBuf), AgentError> {
+    let resource_id = request
         .source
-        .get("path")
+        .get("catalogResourceId")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| {
             agent_error(
                 AgentErrorCode::InvalidPlan,
                 context,
                 None,
-                "Claude local skill install requires source.path",
+                "Project Skill installation requires a catalog resource",
             )
         })?;
-    let requested_source = PathBuf::from(source_path);
-    let lexical_source = if request.source.get("catalog").is_some() {
-        requested_source
-    } else {
-        direct_skill_source(&requested_source).map_err(|error| {
-            agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                format!("Invalid skill source path {source_path}: {error}"),
-            )
-        })?
-    };
+    let resolved = super::super::resolve_catalog_resource(resource_id).map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            error.to_string(),
+        )
+    })?;
+    if resolved.kind != ResourceKind::Skills {
+        return Err(agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            "Catalog resource is not a Skill",
+        ));
+    }
+    let lexical_source = resolved.stable_path;
     let physical_source = std::fs::canonicalize(&lexical_source).map_err(|error| {
         agent_error(
             AgentErrorCode::InvalidPlan,
             context,
             None,
-            format!("Invalid skill source path {source_path}: {error}"),
+            format!("Invalid catalog Skill source: {error}"),
         )
     })?;
     if !physical_source.is_dir() || !physical_source.join("SKILL.md").is_file() {
@@ -263,23 +273,10 @@ fn install_source(
             "Claude skill source must be a directory containing SKILL.md",
         ));
     }
-    Ok(lexical_source)
-}
-
-fn direct_skill_source(source: &Path) -> std::io::Result<PathBuf> {
-    let metadata = std::fs::symlink_metadata(source)?;
-    if !metadata.file_type().is_symlink() {
-        return Ok(source.to_path_buf());
-    }
-    let target = std::fs::read_link(source)?;
-    if target.is_absolute() {
-        Ok(target)
-    } else {
-        Ok(source
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join(target))
-    }
+    Ok((
+        format!("{}/{}", resolved.source_id, resolved.install_id),
+        lexical_source,
+    ))
 }
 
 fn skill_snapshot(
@@ -384,7 +381,7 @@ fn plan_skill_toggle(
                 )
             })?;
             let digest = ContentDigest::sha256(current_target.to_string_lossy().as_bytes());
-            if !replacement_is_authorized(&target, &resource, &digest) {
+            if !replacement_is_authorized(&target, &resource, &digest, enabled) {
                 return Err(agent_error(
                     AgentErrorCode::PermissionDenied,
                     context,
@@ -486,6 +483,7 @@ fn replacement_is_authorized(
     target: &std::path::Path,
     resource: &ResourceRef,
     digest: &ContentDigest,
+    validate_source: bool,
 ) -> bool {
     if is_legacy_ad_managed_symlink(target) {
         return true;
@@ -506,7 +504,13 @@ fn replacement_is_authorized(
         ResourceStateKind::Symlink,
         Some(digest),
     )
-    .and_then(|_| validate_ownership_artifact(&record))
+    .and_then(|_| {
+        if validate_source {
+            validate_ownership_artifact(&record)
+        } else {
+            Ok(())
+        }
+    })
     .is_ok()
 }
 
@@ -528,27 +532,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalog_root_skill_keeps_the_stable_lexical_source() {
-        let temp = tempfile::tempdir().unwrap();
-        let generation = temp.path().join("generations/one");
-        std::fs::create_dir_all(&generation).unwrap();
-        std::fs::write(generation.join("SKILL.md"), "---\nname: root\n---\n").unwrap();
-        let current = temp.path().join("current");
-        std::os::unix::fs::symlink("generations/one", &current).unwrap();
+    fn arbitrary_skill_path_is_not_an_install_source() {
         let context = AgentContext {
             installation_id: "claude-code:test".into(),
             project_path: None,
         };
         let request = CollectionInstallRequest {
             logical_id: "root".into(),
-            source: serde_json::json!({
-                "path": current,
-                "catalog": {"bindingId": "skill-source-binding:test"},
-            }),
+            source: serde_json::json!({"path": "/tmp/untrusted"}),
         };
 
-        let source = install_source(&context, &request).unwrap();
+        let error = install_source(&context, &request).unwrap_err();
 
-        assert_eq!(source, current);
+        assert!(error.message.contains("catalog resource"));
     }
 }

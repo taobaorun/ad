@@ -53,6 +53,8 @@ pub fn run() {
         .manage(agents::PlanStore::default())
         .manage(agents::SkillCatalogPlanStore::default())
         .manage(agents::LegacySkillMigrationPlanStore::default())
+        .manage(agents::ResourceRemovalPlanStore::default())
+        .manage(agents::SourceRemovalPlanStore::default())
         .manage(commands::shortcut::ShortcutState::default())
         .setup(|app| {
             // First-run: relocate AD data from ~/.claude/ to ~/.ad/ if needed.
@@ -240,8 +242,6 @@ pub fn run() {
             commands::agents::preview_claude_to_codex_route,
             commands::agents::preview_agent_settings_edit,
             commands::agents::preview_agent_profile_apply,
-            commands::agents::preview_agent_collection_install,
-            commands::agents::preview_agent_collection_toggle,
             commands::agents::preview_project_collection_action,
             commands::agents::apply_project_collection_action,
             commands::agents::apply_agent_plan,
@@ -274,6 +274,14 @@ pub fn run() {
             commands::shortcut::set_global_shortcut,
             commands::settings::open_settings_window,
             commands::skill_catalog::list_skill_catalog,
+            commands::skill_catalog::list_resource_catalog,
+            commands::skill_catalog::preview_remove_catalog_resource,
+            commands::skill_catalog::apply_remove_catalog_resource,
+            commands::skill_catalog::list_resource_removal_operations,
+            commands::skill_catalog::retry_remove_catalog_resource,
+            commands::skill_catalog::readd_catalog_resource,
+            commands::skill_catalog::preview_remove_catalog_source,
+            commands::skill_catalog::apply_remove_catalog_source,
             commands::skill_catalog::preview_add_skill_catalog_source,
             commands::skill_catalog::preview_update_skill_catalog_source,
             commands::skill_catalog::preview_remove_skill_catalog_source,

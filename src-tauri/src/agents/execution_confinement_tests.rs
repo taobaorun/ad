@@ -31,6 +31,40 @@ fn resolving_a_missing_target_does_not_create_parent_directories() {
 
 #[test]
 #[serial_test::serial(home_env)]
+fn ad_managed_target_accepts_a_lexical_home_alias() {
+    let temp = tempfile::tempdir().unwrap();
+    let lexical_home = temp.path().to_path_buf();
+    std::env::set_var("AD_HOME", &lexical_home);
+    let target_parent = lexical_home.join(".ad/runtime/collections");
+    let source = lexical_home.join("source/demo");
+    std::fs::create_dir_all(&target_parent).unwrap();
+    std::fs::create_dir_all(&source).unwrap();
+    let canonical_home = std::fs::canonicalize(&lexical_home).unwrap();
+    if lexical_home == canonical_home {
+        return;
+    }
+    let resource = ResourceRef {
+        installation_id: InstallationId::from("claude-code:test"),
+        project_path: Some(
+            canonical_home
+                .join("project")
+                .to_string_lossy()
+                .into_owned(),
+        ),
+        kind: ResourceKind::Plugins,
+        scope: ResourceScope::Project,
+        logical_id: "skill-source:test/demo".into(),
+    };
+
+    let target_path = target_parent.join("demo");
+    std::os::unix::fs::symlink(&source, &target_path).unwrap();
+    let target = ConfinedTarget::resolve(&resource, &target_path).unwrap();
+
+    assert!(matches!(target.observe().unwrap(), TargetState::Symlink(_)));
+}
+
+#[test]
+#[serial_test::serial(home_env)]
 fn held_parent_fd_prevents_symlink_ancestor_swap_escape() {
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path().join("project");

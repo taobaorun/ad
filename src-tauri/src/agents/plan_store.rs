@@ -268,6 +268,31 @@ impl PlanStore {
             .collect())
     }
 
+    pub(crate) fn resource_lifecycle_ids_for_locking(
+        &self,
+        plan_id: &PlanId,
+    ) -> Result<Vec<String>, AgentError> {
+        let state = self.state.lock().map_err(|_| lock_error())?;
+        let stored = state.active.get(plan_id).ok_or_else(|| {
+            plan_error(
+                AgentErrorCode::InvalidPlan,
+                None,
+                None,
+                "Unknown mutation plan",
+                false,
+            )
+        })?;
+        Ok(stored
+            .plan
+            .mutations
+            .iter()
+            .filter(|mutation| mutation.kind != super::MutationKind::Delete)
+            .filter_map(|mutation| super::resource_lifecycle_id(&mutation.resource))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect())
+    }
+
     pub fn claim_validated<F>(
         &self,
         plan_id: &PlanId,

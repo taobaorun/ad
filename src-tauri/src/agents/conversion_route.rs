@@ -9,12 +9,10 @@ use super::conversion::{
     ArtifactDisposition, ConversionArtifact, ConversionEndpoint, ConversionRiskLevel,
     ConversionSummary, FieldMapping,
 };
-use super::execution_fs::observe_target;
 use super::settings_inventory::{merge_semantic_value, settings_value_contains_sensitive_data};
 use super::{
-    builtin_registry, prepare_project_plugin_install, render_project_codex_runtime_manifest,
-    AdapterRegistry, AgentAdapter, AgentContext, AgentError, AgentErrorCode, AgentId,
-    ClaudePluginDescriptor, CollectionInstallRequest, ContentDigest, ConversionReport,
+    builtin_registry, render_project_codex_runtime_manifest, AdapterRegistry, AgentAdapter,
+    AgentContext, AgentError, AgentErrorCode, AgentId, ContentDigest, ConversionReport,
     CoverageStatus, MutationPlan, MutationPlanView, PlanId, PlannedMutation, PluginInstallProgress,
     ProjectCodexRuntimeManifest, ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin,
     ResourceRef, ResourceScope, ResourceSnapshot, SettingsEdit, WritePolicy,
@@ -88,7 +86,6 @@ pub enum ConversionProgressPhase {
     ReadingConfiguration,
     InspectingSkills,
     InspectingPlugins,
-    PreparingProjectPlugin,
     VerifyingInheritedPlugins,
     FinalizingPlan,
 }
@@ -324,31 +321,6 @@ fn append_collection_artifacts(
                 },
                 confirmed,
             ) {
-                if target.is_none() && confirmed {
-                    let source_digest =
-                        observe_target(&source_port.resolve(source_context, &source.resource)?)?
-                            .digest()
-                            .ok_or_else(|| {
-                                route_error(
-                                    source_context,
-                                    "Confirmed Skill source no longer exists",
-                                )
-                            })?;
-                    let install = target_port.plan_install(
-                        target_context,
-                        CollectionInstallRequest {
-                            logical_id: name.into(),
-                            source: serde_json::json!({"path": source.location.path}),
-                        },
-                    )?;
-                    result.plan.read_set.push(ReadPrecondition {
-                        resource: source.resource.clone(),
-                        expected_digest: source_digest,
-                        write_policy: WritePolicy::ReadOnly,
-                    });
-                    result.plan.read_set.extend(install.read_set);
-                    result.plan.mutations.extend(install.mutations);
-                }
                 result.artifacts.push(artifact);
             }
         }
@@ -366,277 +338,46 @@ fn append_collection_artifacts(
         ));
     }
     report(progress_event(ConversionProgressPhase::InspectingPlugins));
-    if let (Some(source_port), Some(target_port)) =
-        (source_adapter.plugins(), target_adapter.plugins())
-    {
-        let targets = snapshots_in_scope(target_port.list(target_context)?, scope);
-        let sources = snapshots_in_scope(source_port.list(source_context)?, scope);
-        let legacy_replay = if scope == ResourceScope::Project {
-            let explicit_plugin_ids = sources
-                .iter()
-                .map(|source| source.resource.logical_id.clone())
-                .collect::<BTreeSet<_>>();
-            super::codex_plugins::validate_legacy_project_plugin_ownership(
-                target_context,
-                &explicit_plugin_ids,
-                options.inherit_base_config,
-            )?
-        } else {
-            false
+    let mut bootstrap_plans = Vec::new();
+    if scope == ResourceScope::Project {
+        let report_bootstrap = |progress: PluginInstallProgress| {
+            report(ConversionProgressEvent {
+                phase: ConversionProgressPhase::VerifyingInheritedPlugins,
+                current: progress.current,
+                total: Some(progress.total),
+                item: Some(progress.logical_id),
+            });
         };
-        let mut plugin_install_plans = Vec::new();
-        let mut inherited_base_plugin_ids = BTreeSet::new();
-        if scope == ResourceScope::Project {
-            let report_inherited = |progress: PluginInstallProgress| {
-                report(ConversionProgressEvent {
-                    phase: ConversionProgressPhase::VerifyingInheritedPlugins,
-                    current: progress.current,
-                    total: Some(progress.total),
-                    item: Some(progress.logical_id),
-                });
-            };
-            if let Some(bootstrap) = super::codex_plugins::plan_project_runtime_bootstrap(
-                target_context,
-                options.inherit_base_config,
-                options.profile_id.as_deref(),
-                &report_inherited,
-            )? {
-                inherited_base_plugin_ids = bootstrap.inherited_plugin_ids;
-                plugin_install_plans.push(bootstrap.plan);
-            }
+        if let Some(bootstrap) = super::codex_plugins::plan_project_runtime_bootstrap(
+            target_context,
+            options.inherit_base_config,
+            options.profile_id.as_deref(),
+            &report_bootstrap,
+        )? {
+            bootstrap_plans.push(bootstrap.plan);
         }
-        let total = sources.len();
-        for (index, source) in sources.into_iter().enumerate() {
-            let target = targets.iter().find(|target| {
-                target.resource.logical_id == source.resource.logical_id
-                    && target.resource.scope == source.resource.scope
-            });
-            let target_resource = target
-                .map(|snapshot| snapshot.resource.clone())
-                .or_else(|| {
-                    Some(collection_resource(
-                        target_context,
-                        ResourceKind::Plugins,
-                        scope,
-                        &source.resource.logical_id,
-                    ))
-                });
-            let target_location = target_resource.as_ref().and_then(|resource| {
-                target_port
-                    .resolve(target_context, resource)
-                    .ok()
-                    .map(|resolved| ResourceLocation {
-                        path: resolved.path().to_string_lossy().into_owned(),
-                        origin: scope_origin(scope),
-                    })
-            });
-            let mut artifact =
-                map_plugin_artifact(&source, target_context, target, target_location);
-            let descriptor = if matches!(
-                artifact.disposition,
-                ArtifactDisposition::Mapped
-                    | ArtifactDisposition::Partial
-                    | ArtifactDisposition::Conflict
-            ) {
-                source
-                    .content
-                    .get("descriptor")
-                    .cloned()
-                    .map(|value| {
-                        serde_json::from_value::<ClaudePluginDescriptor>(value).map_err(|error| {
-                            route_error(
-                                source_context,
-                                format!("Invalid Claude Plugin descriptor: {error}"),
-                            )
-                        })
-                    })
-                    .transpose()?
-            } else {
-                None
-            };
-            let managed_replay = if scope == ResourceScope::Project && target.is_some() {
-                match descriptor.as_ref() {
-                    Some(descriptor) => super::codex_plugins::project_runtime_owns_plugin_source(
-                        target_context,
-                        descriptor,
-                    )?,
-                    None => false,
-                }
-            } else {
-                false
-            };
-            if (legacy_replay || managed_replay)
-                && target.is_some()
-                && artifact.disposition == ArtifactDisposition::Conflict
-            {
-                artifact.disposition = if artifact.detail_code.as_deref() == Some("partial") {
-                    ArtifactDisposition::Partial
-                } else {
-                    ArtifactDisposition::Mapped
-                };
+    }
+    if let Some(source_port) = source_adapter.plugins() {
+        for source in snapshots_in_scope(source_port.list(source_context)?, scope) {
+            let mut artifact = map_plugin_artifact(&source, target_context, None, None);
+            if artifact.disposition != ArtifactDisposition::Unchanged {
+                artifact.disposition = ArtifactDisposition::Unsupported;
                 artifact.resolution = None;
-                artifact.message = if managed_replay {
-                    "AD-managed target will be revalidated from the same Project Plugin source"
-                        .into()
-                } else {
-                    "Legacy target will be revalidated from the explicit Project Plugin source"
-                        .into()
-                };
-            }
-            let reuses_inherited_user_plugin = options.inherit_base_config
-                && source.location.origin == ResourceOrigin::User
-                && source.content.get("enabled").and_then(Value::as_bool) == Some(true)
-                && inherited_base_plugin_ids.contains(&source.resource.logical_id);
-            if reuses_inherited_user_plugin {
-                artifact.disposition = ArtifactDisposition::Unchanged;
-                artifact.resolution = None;
+                artifact.risk = ConversionRiskLevel::Safe;
+                artifact.detail_code = Some("unsupported_agent_capability".into());
                 artifact.message =
-                    "User Plugin is already provided by inherited Base Codex configuration".into();
-            }
-            let needs_project_install = !reuses_inherited_user_plugin
-                && scope == ResourceScope::Project
-                && (matches!(
-                    artifact.disposition,
-                    ArtifactDisposition::Mapped | ArtifactDisposition::Partial
-                ) && (target.is_none() || legacy_replay || managed_replay)
-                    || (legacy_replay || managed_replay)
-                        && target.is_some()
-                        && artifact.disposition == ArtifactDisposition::Unchanged);
-            if needs_project_install {
-                report(ConversionProgressEvent {
-                    phase: ConversionProgressPhase::PreparingProjectPlugin,
-                    current: index + 1,
-                    total: Some(total),
-                    item: Some(source.resource.logical_id.clone()),
-                });
-                let descriptor = descriptor.as_ref().ok_or_else(|| {
-                    route_error(
-                        source_context,
-                        format!(
-                            "Plugin {} has no resolved package descriptor",
-                            source.resource.logical_id
-                        ),
-                    )
-                })?;
-                let prepared = prepare_project_plugin_install(descriptor).map_err(|error| {
-                    route_error(
-                        source_context,
-                        format!("Failed to prepare Project Plugin: {error}"),
-                    )
-                })?;
-                let report_inherited = |progress: PluginInstallProgress| {
-                    report(ConversionProgressEvent {
-                        phase: ConversionProgressPhase::VerifyingInheritedPlugins,
-                        current: progress.current,
-                        total: Some(progress.total),
-                        item: Some(progress.logical_id),
-                    });
-                };
-                let mut install_source = prepared.source;
-                let install_source_object = install_source.as_object_mut().ok_or_else(|| {
-                    route_error(
-                        source_context,
-                        "Prepared Project Plugin source must be an object",
-                    )
-                })?;
-                install_source_object.insert(
-                    "inheritBaseConfig".into(),
-                    Value::Bool(options.inherit_base_config),
-                );
-                install_source_object.insert(
-                    "refreshOwnedPackage".into(),
-                    Value::Bool(legacy_replay || managed_replay),
-                );
-                if let Some(profile_id) = options.profile_id.as_deref() {
-                    install_source_object
-                        .insert("profileId".into(), Value::String(profile_id.to_owned()));
-                }
-                let install = target_port.plan_install_with_progress(
-                    target_context,
-                    CollectionInstallRequest {
-                        logical_id: prepared.logical_id,
-                        source: install_source,
-                    },
-                    &report_inherited,
-                )?;
-                let declaration_resource = plugin_declaration_resource(source_context, &source)?;
-                let source_settings = source_adapter.settings().ok_or_else(|| {
-                    route_error(source_context, "Source Agent does not expose settings")
-                })?;
-                let source_digest = observe_target(
-                    &source_settings.resolve(source_context, &declaration_resource)?,
-                )?
-                .digest()
-                .ok_or_else(|| {
-                    route_error(source_context, "Plugin declaration no longer exists")
-                })?;
-                result.plan.read_set.push(ReadPrecondition {
-                    resource: declaration_resource,
-                    expected_digest: source_digest,
-                    write_policy: WritePolicy::ReadOnly,
-                });
-                if managed_replay
-                    && artifact.disposition == ArtifactDisposition::Mapped
-                    && install.mutations.is_empty()
-                {
-                    artifact.disposition = ArtifactDisposition::Unchanged;
-                    artifact.detail_code = None;
-                    artifact.message =
-                        "AD-managed target already matches the Project Plugin source".into();
-                }
-                plugin_install_plans.push(install);
+                    "Plugin content is not converted between Agents; add its original source to the Resource Center"
+                        .into();
             }
             result.artifacts.push(artifact);
         }
-        merge_plugin_install_plans(result, plugin_install_plans, target_context)?;
     }
+    merge_plugin_install_plans(result, bootstrap_plans, target_context)?;
     result
         .artifacts
         .sort_by(|left, right| left.id.cmp(&right.id));
     result.plan.read_set = deduplicate_preconditions(std::mem::take(&mut result.plan.read_set))?;
     Ok(())
-}
-
-fn plugin_declaration_resource(
-    context: &AgentContext,
-    snapshot: &ResourceSnapshot,
-) -> Result<ResourceRef, AgentError> {
-    let (scope, logical_id, project_path) = match snapshot.location.origin {
-        ResourceOrigin::User => (ResourceScope::User, "user-settings", None),
-        ResourceOrigin::Project
-            if snapshot
-                .location
-                .path
-                .ends_with("/.claude/settings.local.json") =>
-        {
-            (
-                ResourceScope::Project,
-                "project-local",
-                context.project_path.clone(),
-            )
-        }
-        ResourceOrigin::Project if snapshot.location.path.ends_with("/.claude/settings.json") => (
-            ResourceScope::Project,
-            "project-shared",
-            context.project_path.clone(),
-        ),
-        _ => {
-            return Err(route_error(
-                context,
-                format!(
-                    "Unsupported Claude Plugin declaration location: {}",
-                    snapshot.location.path
-                ),
-            ))
-        }
-    };
-    Ok(ResourceRef {
-        installation_id: context.installation_id.clone(),
-        project_path,
-        kind: ResourceKind::Settings,
-        scope,
-        logical_id: logical_id.into(),
-    })
 }
 
 fn progress_event(phase: ConversionProgressPhase) -> ConversionProgressEvent {
@@ -1409,7 +1150,7 @@ fn append_marketplace_artifacts(
             item_count: None,
             detail_code: None,
             message: format!(
-                "Marketplace {marketplace_id} must be configured through the Codex plugin marketplace"
+                "Marketplace {marketplace_id} is not migrated; add the original Plugin source to the Resource Center separately"
             ),
         });
     }

@@ -7,6 +7,7 @@ import { Dialog } from './ui/dialog';
 interface SkillCatalogPlanDialogProps {
   plan: SkillCatalogPlanView | null;
   busy: boolean;
+  resourceMode?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -14,6 +15,7 @@ interface SkillCatalogPlanDialogProps {
 export function SkillCatalogPlanDialog({
   plan,
   busy,
+  resourceMode = false,
   onCancel,
   onConfirm,
 }: SkillCatalogPlanDialogProps) {
@@ -56,18 +58,24 @@ export function SkillCatalogPlanDialog({
         <div className="space-y-3 text-xs">
           <div className="rounded-md border border-border bg-muted/30 p-3">
             <div className="font-medium">{plan.displayName}</div>
-            <div className="mt-1 break-all font-mono text-[10px] text-muted-foreground">
-              {plan.sourceId}
-            </div>
+            {!resourceMode && (
+              <div className="mt-1 break-all font-mono text-[10px] text-muted-foreground">
+                {plan.sourceId}
+              </div>
+            )}
           </div>
           {payload && (
             <div>
               <div className="font-medium">{t('settings.skills.plan.sourceBinding')}</div>
-              <div className="mt-1 font-mono text-[10px] text-muted-foreground">
-                {'stableRoot' in payload ? payload.stableRoot : payload.artifactId}
-              </div>
+              {!resourceMode && (
+                <div className="mt-1 font-mono text-[10px] text-muted-foreground">
+                  {'stableRoot' in payload ? payload.stableRoot : payload.artifactId}
+                </div>
+              )}
               <div className="mt-1 text-muted-foreground">
-                {t('settings.skills.plan.skills', { count: payload.skills.length })}
+                {resourceMode && 'resources' in payload
+                  ? t('resourceCenter.plan.resources', { count: payload.resources.length })
+                  : t('settings.skills.plan.skills', { count: payload.skills.length })}
               </div>
             </div>
           )}

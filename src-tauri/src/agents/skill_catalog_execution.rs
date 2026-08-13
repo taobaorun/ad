@@ -4,17 +4,21 @@ use sha2::{Digest, Sha256};
 
 use super::execution_lock::{execution_instance_id, TargetLockSet};
 use super::execution_state::ExecutionState;
+use super::resource_catalog::{
+    persist_resource_catalog_projection, resource_catalog_lock_target,
+    resource_lifecycle_lock_target,
+};
 use super::skill_catalog::{load_skill_catalog_state_from, SkillCatalogError};
 use super::skill_catalog_plans::{
     ClaimedSkillCatalogPlan, SkillCatalogAction, SkillCatalogPlanError,
 };
 use super::{
-    cleanup_unpublished_skill_staging, observe_skill_source_revision,
+    catalog_resource_id, cleanup_unpublished_skill_staging, observe_skill_source_revision,
     publish_staged_git_skill_source_binding, reconcile_git_skill_source_current,
     skill_catalog_plan_references_are_current, switch_git_skill_source_binding, ContentDigest,
-    PlanId, ReceiptId, ResourceRef, SkillArtifactError, SkillArtifactRef, SkillCatalogEntry,
-    SkillCatalogPlanClaim, SkillCatalogPlanStore, SkillCatalogPlanView, SkillSourceBinding,
-    SkillSourceType, WorkspaceKey,
+    PlanId, ReceiptId, ResourceKind, ResourceRef, SkillArtifactError, SkillArtifactRef,
+    SkillCatalogEntry, SkillCatalogPlanClaim, SkillCatalogPlanStore, SkillCatalogPlanView,
+    SkillSourceBinding, SkillSourceType, WorkspaceKey,
 };
 use crate::fs::paths::skill_catalog_path;
 
@@ -151,12 +155,18 @@ pub fn apply_skill_catalog_plan(
     let catalog_path =
         skill_catalog_path().map_err(|error| SkillCatalogError::Corrupt(error.to_string()))?;
     let operation_id = uuid::Uuid::new_v4().to_string();
-    let _lock = TargetLockSet::acquire_for_ad_states(
-        &[catalog_path, state.ownership().display_path().to_path_buf()],
-        &operation_id,
-        &state,
-    )
-    .map_err(lock_error)?;
+    let mut lock_targets = vec![
+        catalog_path,
+        resource_catalog_lock_target(&state),
+        state.ownership().display_path().to_path_buf(),
+    ];
+    lock_targets.extend(
+        catalog_plan_resource_ids(&binding.view)
+            .iter()
+            .map(|resource_id| resource_lifecycle_lock_target(&state, resource_id)),
+    );
+    let _lock = TargetLockSet::acquire_for_ad_states(&lock_targets, &operation_id, &state)
+        .map_err(lock_error)?;
     let current = load_skill_catalog_state_from(state.state())?;
     if current.revision != binding.view.expected_catalog_revision {
         return Err(SkillCatalogExecutionError::CatalogChanged);
@@ -193,6 +203,33 @@ pub fn apply_skill_catalog_plan(
         });
     }
     apply_claimed_plan(claimed, current, operation_id, &state)
+}
+
+fn catalog_plan_resource_ids(view: &SkillCatalogPlanView) -> std::collections::BTreeSet<String> {
+    let mut ids = std::collections::BTreeSet::new();
+    for binding in [view.binding.as_ref(), view.current_binding.as_ref()]
+        .into_iter()
+        .flatten()
+    {
+        if binding.resources.is_empty() {
+            ids.extend(binding.skills.iter().map(|skill| {
+                catalog_resource_id(&view.source_id, ResourceKind::Skills, &skill.logical_id)
+            }));
+        } else {
+            ids.extend(binding.resources.iter().map(|resource| {
+                catalog_resource_id(&view.source_id, resource.kind, &resource.install_id)
+            }));
+        }
+    }
+    for artifact in [view.artifact.as_ref(), view.current_artifact.as_ref()]
+        .into_iter()
+        .flatten()
+    {
+        ids.extend(artifact.skills.iter().map(|skill| {
+            catalog_resource_id(&view.source_id, ResourceKind::Skills, &skill.logical_id)
+        }));
+    }
+    ids
 }
 
 pub fn preview_rollback_skill_catalog_source(
@@ -262,8 +299,8 @@ fn apply_claimed_plan(
         plan_id: plan.view.id.clone(),
         action: plan.view.action,
         source_id: plan.view.source_id.clone(),
-        before_catalog_revision: current.revision,
-        after_catalog_revision: after_revision,
+        before_catalog_revision: current.revision.clone(),
+        after_catalog_revision: after_revision.clone(),
         artifact,
         binding,
         previous_binding: plan.view.current_binding.clone(),
@@ -355,6 +392,33 @@ fn apply_claimed_plan(
             receipt: Some(receipt),
             issues: std::iter::once(error.to_string())
                 .chain(compensation_issue)
+                .collect(),
+        });
+    }
+    let projected = load_skill_catalog_state_from(state.state())?.snapshot();
+    if let Err(error) = persist_resource_catalog_projection(state.state(), &projected) {
+        let catalog_compensation = match current.bytes.as_deref() {
+            Some(bytes) => state.state().write_atomic("skill_catalog.json", bytes),
+            None => state.state().remove("skill_catalog.json"),
+        }
+        .err()
+        .map(|error| error.to_string());
+        let source_compensation = git_publication
+            .take()
+            .and_then(|publication| publication.compensate().err())
+            .map(|error| error.to_string());
+        journal.state = CatalogJournalState::Compensated;
+        persist_journal(state, &journal_name, &journal, true)?;
+        let mut receipt = journal.receipt.clone();
+        receipt.status = SkillCatalogReceiptStatus::Compensated;
+        persist_receipt(state, &receipt)?;
+        return Ok(SkillCatalogOperationReport {
+            outcome: SkillCatalogOperationOutcome::Compensated,
+            source: None,
+            receipt: Some(receipt),
+            issues: std::iter::once(error.to_string())
+                .chain(catalog_compensation)
+                .chain(source_compensation)
                 .collect(),
         });
     }
@@ -521,7 +585,11 @@ pub fn recover_skill_catalog_state(
         skill_catalog_path().map_err(|error| SkillCatalogError::Corrupt(error.to_string()))?;
     let recovery_id = format!("skill-catalog-recovery:{}", uuid::Uuid::new_v4());
     let _lock = TargetLockSet::acquire_for_ad_states(
-        &[catalog_path, state.ownership().display_path().to_path_buf()],
+        &[
+            catalog_path,
+            resource_catalog_lock_target(&state),
+            state.ownership().display_path().to_path_buf(),
+        ],
         &recovery_id,
         &state,
     )

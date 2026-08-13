@@ -9,6 +9,8 @@ pub(super) struct CollectionManagementInput<'a> {
     pub kind: ResourceKind,
     pub state: EffectiveResourceState,
     pub ownership: ResourceOwnershipKind,
+    pub agent_supported: bool,
+    pub target_occupied: bool,
     pub has_health_error: bool,
     pub owned_artifact: Option<&'a str>,
     pub owned_source_binding: bool,
@@ -21,6 +23,20 @@ pub(super) fn resource_management(input: CollectionManagementInput<'_>) -> Resou
         ResourceAction::Inspect,
         ResourceActionAvailability::Available,
     );
+    if input.ownership == ResourceOwnershipKind::External {
+        return ResourceManagementView {
+            status: ResourceManagementStatus::External,
+            actions: vec![
+                inspect,
+                limited_action(
+                    ResourceAction::OpenExternal,
+                    ResourceActionAvailability::External,
+                    "external_resource",
+                    "agents.resources.externalResource",
+                ),
+            ],
+        };
+    }
     if input.has_health_error || input.state == EffectiveResourceState::Conflict {
         let mut actions = vec![inspect];
         if input.has_health_error
@@ -40,27 +56,21 @@ pub(super) fn resource_management(input: CollectionManagementInput<'_>) -> Resou
             actions,
         };
     }
-    if input.ownership == ResourceOwnershipKind::External {
-        return ResourceManagementView {
-            status: ResourceManagementStatus::External,
-            actions: vec![
-                inspect,
-                limited_action(
-                    ResourceAction::OpenExternal,
-                    ResourceActionAvailability::External,
-                    "external_resource",
-                    "agents.resources.externalResource",
-                ),
-            ],
-        };
-    }
     match input.kind {
         ResourceKind::Skills if input.state == EffectiveResourceState::Unconfigured => {
             ResourceManagementView {
                 status: ResourceManagementStatus::Managed,
                 actions: vec![
                     inspect,
-                    confirmation_action(ResourceAction::Install),
+                    if input.target_occupied {
+                        unavailable_action(
+                            ResourceAction::Install,
+                            "target_occupied",
+                            "agents.resources.targetOccupied",
+                        )
+                    } else {
+                        confirmation_action(ResourceAction::Install)
+                    },
                     unavailable_action(
                         ResourceAction::Update,
                         "skill_not_installed",
@@ -127,6 +137,27 @@ pub(super) fn resource_management(input: CollectionManagementInput<'_>) -> Resou
                 ),
             ],
         },
+        ResourceKind::Plugins if input.state == EffectiveResourceState::Unconfigured => {
+            let install = if !input.agent_supported {
+                unavailable_action(
+                    ResourceAction::Install,
+                    "unsupported_agent_capability",
+                    "agents.resources.unsupportedAgentCapability",
+                )
+            } else if input.target_occupied {
+                unavailable_action(
+                    ResourceAction::Install,
+                    "target_occupied",
+                    "agents.resources.targetOccupied",
+                )
+            } else {
+                confirmation_action(ResourceAction::Install)
+            };
+            ResourceManagementView {
+                status: ResourceManagementStatus::Managed,
+                actions: vec![inspect, install],
+            }
+        }
         ResourceKind::Plugins if codex_runtime_unavailable(input.workspace) => {
             let toggle = if input.state == EffectiveResourceState::Enabled {
                 ResourceAction::Disable
@@ -149,9 +180,24 @@ pub(super) fn resource_management(input: CollectionManagementInput<'_>) -> Resou
                     ),
                     unavailable_action(
                         ResourceAction::Update,
-                        "plugin_update_requires_conversion_source",
-                        "agents.resources.pluginUpdateRequiresConversionSource",
+                        "unsupported_agent_capability",
+                        "agents.resources.unsupportedAgentCapability",
                     ),
+                ],
+            }
+        }
+        ResourceKind::Plugins if input.owned_artifact.is_some() => {
+            let toggle = if input.state == EffectiveResourceState::Enabled {
+                ResourceAction::Disable
+            } else {
+                ResourceAction::Enable
+            };
+            ResourceManagementView {
+                status: ResourceManagementStatus::Managed,
+                actions: vec![
+                    inspect,
+                    confirmation_action(toggle),
+                    confirmation_action(ResourceAction::Remove),
                 ],
             }
         }
@@ -190,12 +236,12 @@ fn plugin_management(
             unavailable_action(
                 ResourceAction::Update,
                 if codex {
-                    "plugin_update_requires_conversion_source"
+                    "unsupported_agent_capability"
                 } else {
                     "plugin_update_external"
                 },
                 if codex {
-                    "agents.resources.pluginUpdateRequiresConversionSource"
+                    "agents.resources.unsupportedAgentCapability"
                 } else {
                     "agents.resources.pluginUpdateExternal"
                 },
@@ -291,6 +337,8 @@ mod tests {
             kind: ResourceKind::Plugins,
             state: EffectiveResourceState::Enabled,
             ownership: ResourceOwnershipKind::AgentManaged,
+            agent_supported: false,
+            target_occupied: false,
             has_health_error: false,
             owned_artifact: None,
             owned_source_binding: false,
@@ -310,6 +358,37 @@ mod tests {
     }
 
     #[test]
+    fn unconfigured_codex_plugin_exposes_unsupported_install() {
+        let installation = AgentInstallation::with_id("codex:test", "codex", "/Users/test/.codex");
+        let workspace =
+            WorkspaceDescriptor::for_installation("/Users/test/project", &installation, None);
+
+        let management = resource_management(CollectionManagementInput {
+            workspace: &workspace,
+            kind: ResourceKind::Plugins,
+            state: EffectiveResourceState::Unconfigured,
+            ownership: ResourceOwnershipKind::AdManaged,
+            agent_supported: false,
+            target_occupied: false,
+            has_health_error: false,
+            owned_artifact: None,
+            owned_source_binding: false,
+            available_artifact: None,
+            has_resettable_declaration: false,
+        });
+
+        assert_eq!(management.status, ResourceManagementStatus::Managed);
+        assert!(management.actions.iter().any(|action| {
+            action.action == ResourceAction::Install
+                && action.availability == ResourceActionAvailability::Unavailable
+                && action
+                    .limitation
+                    .as_ref()
+                    .is_some_and(|limitation| limitation.code == "unsupported_agent_capability")
+        }));
+    }
+
+    #[test]
     fn legacy_skill_update_is_exposed_as_relink() {
         let installation =
             AgentInstallation::with_id("claude:test", "claude-code", "/Users/test/.claude");
@@ -321,6 +400,8 @@ mod tests {
             kind: ResourceKind::Skills,
             state: EffectiveResourceState::Enabled,
             ownership: ResourceOwnershipKind::AdManaged,
+            agent_supported: true,
+            target_occupied: false,
             has_health_error: false,
             owned_artifact: Some("/Users/test/.ad/artifacts/skills/old/tree/review"),
             owned_source_binding: false,
@@ -347,6 +428,8 @@ mod tests {
             kind: ResourceKind::Skills,
             state: EffectiveResourceState::Enabled,
             ownership: ResourceOwnershipKind::AdManaged,
+            agent_supported: true,
+            target_occupied: false,
             has_health_error: true,
             owned_artifact: Some("/Users/test/source/review"),
             owned_source_binding: true,

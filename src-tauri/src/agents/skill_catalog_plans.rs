@@ -1,4 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
+use std::path::Path;
 use std::sync::Mutex;
 
 use chrono::{DateTime, Duration, Utc};
@@ -491,6 +492,10 @@ fn reference_impact(
             .as_ref()
             .is_some_and(|binding| binding.source_id == source_id)
             || record
+                .catalog_binding
+                .as_ref()
+                .is_some_and(|binding| binding.source_id == source_id)
+            || record
                 .resource
                 .logical_id
                 .strip_prefix(source_id)
@@ -507,16 +512,42 @@ fn reference_impact(
                 resource: Some(record.resource.clone()),
             });
         } else if candidate.is_some_and(|binding| {
-            record.source_binding.as_ref().is_some_and(|owned| {
+            let legacy_skill_missing = record.source_binding.as_ref().is_some_and(|owned| {
                 !binding
                     .skills
                     .iter()
                     .any(|item| item.subpath == owned.skill_subpath)
-            })
+            });
+            let catalog_resource_missing = record.catalog_binding.as_ref().is_some_and(|owned| {
+                !binding.resources.iter().any(|item| {
+                    item.kind == owned.resource_kind
+                        && item.install_id == owned.install_id
+                        && item.subpath == owned.resource_subpath
+                })
+            });
+            let catalog_resource_unsupported =
+                record.catalog_binding.as_ref().is_some_and(|owned| {
+                    binding
+                        .resources
+                        .iter()
+                        .find(|item| {
+                            item.kind == owned.resource_kind
+                                && item.install_id == owned.install_id
+                                && item.subpath == owned.resource_subpath
+                        })
+                        .is_some_and(|item| {
+                            !candidate_supports_agent(
+                                binding,
+                                item,
+                                &record.resource.installation_id,
+                            )
+                        })
+                });
+            legacy_skill_missing || catalog_resource_missing || catalog_resource_unsupported
         }) {
             impact.blocking_issues.push(SkillCatalogBlockingIssue {
-                code: "source_update_breaks_installed_skill".into(),
-                message: "The candidate Git revision removes an installed Skill".into(),
+                code: "source_update_breaks_installation".into(),
+                message: "The candidate source revision removes an installed resource".into(),
                 resource: Some(record.resource.clone()),
             });
         }
@@ -539,6 +570,30 @@ fn reference_impact(
         impact.applicability = SkillCatalogPlanApplicability::Blocked;
     }
     Ok(impact)
+}
+
+fn candidate_supports_agent(
+    binding: &SkillSourceBinding,
+    item: &super::SourceResourceItem,
+    installation_id: &super::InstallationId,
+) -> bool {
+    let agent_id = installation_id
+        .as_str()
+        .split(':')
+        .next()
+        .unwrap_or_default();
+    match item.kind {
+        super::ResourceKind::Skills => true,
+        super::ResourceKind::Plugins if agent_id == "claude-code" => {
+            item.supported_agents.contains(agent_id)
+                || (item.supported_agents.is_empty()
+                    && Path::new(&binding.physical_root)
+                        .join(&item.subpath)
+                        .join(".claude-plugin/plugin.json")
+                        .is_file())
+        }
+        _ => false,
+    }
 }
 
 pub(crate) fn skill_catalog_plan_references_are_current(

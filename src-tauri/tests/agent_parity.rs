@@ -2,10 +2,11 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use ad_lib::agents::{
-    builtin_registry, AgentAdapter, AgentContext, AgentErrorCode, AgentId, AgentInstallation,
-    CapabilityAvailability, CapabilityOperation, CollectionInstallRequest, ExecutionEngine,
-    MutationPlan, OperationStatus, PlanStore, ResourceKey, ResourceKind, ResourceScope,
-    SettingsEdit, WorkspaceDescriptor,
+    apply_skill_catalog_plan, builtin_registry, load_resource_catalog_snapshot, AgentAdapter,
+    AgentContext, AgentErrorCode, AgentId, AgentInstallation, CapabilityAvailability,
+    CapabilityOperation, CollectionInstallRequest, ExecutionEngine, MutationPlan, OperationStatus,
+    PlanStore, ResourceKey, ResourceKind, ResourceScope, SettingsEdit, SkillCatalogPlanClaim,
+    SkillCatalogPlanStore, SkillSourceRequest, SkillSourceType, WorkspaceDescriptor,
 };
 
 #[test]
@@ -66,6 +67,8 @@ struct ContractExpectation {
     settings_media_type: &'static str,
     settings_content: serde_json::Value,
     skills_availability: CapabilityAvailability,
+    plugins_availability: CapabilityAvailability,
+    arbitrary_plugin_install_error: AgentErrorCode,
 }
 
 #[test]
@@ -88,11 +91,42 @@ fn claude_and_codex_satisfy_the_same_required_user_journeys() {
         .into_owned();
     let claude_context = context_for(&registry, "claude-code", &project_path);
     let codex_context = context_for(&registry, "codex", &project_path);
+    let source_plans = SkillCatalogPlanStore::default();
+    let source_plan = source_plans
+        .preview_add(SkillSourceRequest {
+            display_name: "Parity Skills".into(),
+            source_type: SkillSourceType::Local,
+            location: skill_source
+                .parent()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+            branch: None,
+            subdirectory: None,
+            auto_update: false,
+        })
+        .unwrap();
+    apply_skill_catalog_plan(
+        &source_plans,
+        &SkillCatalogPlanClaim {
+            plan_id: source_plan.id,
+            risk_fingerprint: source_plan.risk_fingerprint,
+            confirmed: true,
+        },
+    )
+    .unwrap();
+    let skill_resource_id = load_resource_catalog_snapshot()
+        .unwrap()
+        .resources
+        .into_values()
+        .find(|resource| resource.install_id == "parity-skill")
+        .unwrap()
+        .id;
 
     assert_required_journeys(
         registry.adapter("claude-code").unwrap(),
         &claude_context,
-        &skill_source,
+        &skill_resource_id,
         ContractExpectation {
             agent_id: "claude-code",
             program: "claude",
@@ -102,13 +136,15 @@ fn claude_and_codex_satisfy_the_same_required_user_journeys() {
                 "model": "claude-sonnet-4-5",
                 "enabledPlugins": {"demo": true}
             }),
-            skills_availability: CapabilityAvailability::Degraded,
+            skills_availability: CapabilityAvailability::Available,
+            plugins_availability: CapabilityAvailability::Available,
+            arbitrary_plugin_install_error: AgentErrorCode::InvalidPlan,
         },
     );
     assert_required_journeys(
         registry.adapter("codex").unwrap(),
         &codex_context,
-        &skill_source,
+        &skill_resource_id,
         ContractExpectation {
             agent_id: "codex",
             program: "codex",
@@ -118,6 +154,8 @@ fn claude_and_codex_satisfy_the_same_required_user_journeys() {
                 "model = \"gpt-5.4\"\n\n[plugins.demo]\nenabled = true\n".into(),
             ),
             skills_availability: CapabilityAvailability::Available,
+            plugins_availability: CapabilityAvailability::Degraded,
+            arbitrary_plugin_install_error: AgentErrorCode::Unsupported,
         },
     );
     assert_codex_snapshots_exclude_sensitive_runtime_files(
@@ -154,7 +192,7 @@ fn assert_codex_snapshots_exclude_sensitive_runtime_files(
 fn assert_required_journeys(
     adapter: &dyn AgentAdapter,
     context: &AgentContext,
-    skill_source: &Path,
+    skill_resource_id: &str,
     expected: ContractExpectation,
 ) {
     assert_eq!(adapter.definition().id.as_str(), expected.agent_id);
@@ -213,8 +251,8 @@ fn assert_required_journeys(
         .plan_install(
             context,
             CollectionInstallRequest {
-                logical_id: "parity-skill".into(),
-                source: serde_json::json!({"path": skill_source}),
+                logical_id: String::new(),
+                source: serde_json::json!({"catalogResourceId": skill_resource_id}),
             },
         )
         .unwrap();
@@ -227,8 +265,10 @@ fn assert_required_journeys(
     apply_complete(disable_plan);
 
     let plugins = adapter.plugins().expect("plugins port");
-    assert_eq!(plugins.availability(), CapabilityAvailability::Degraded);
-    assert!(!plugins.limitations().is_empty());
+    assert_eq!(plugins.availability(), expected.plugins_availability);
+    if plugins.availability() == CapabilityAvailability::Degraded {
+        assert!(!plugins.limitations().is_empty());
+    }
     assert_operations(
         plugins.operations(),
         &[
@@ -260,7 +300,7 @@ fn assert_required_journeys(
             },
         )
         .unwrap_err();
-    assert_eq!(install_error.code, AgentErrorCode::Unsupported);
+    assert_eq!(install_error.code, expected.arbitrary_plugin_install_error);
 
     let processes = adapter.processes().expect("process port");
     assert_eq!(processes.availability(), CapabilityAvailability::Available);

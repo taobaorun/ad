@@ -307,17 +307,14 @@ pub(super) fn map_skill_artifact(
             }),
             "Target already has a Skill with this name from a different source".into(),
         ),
-        None if confirmed => (
-            ArtifactDisposition::Mapped,
-            None,
-            "Confirmed local Skill source will be linked into Codex".into(),
-        ),
         None => (
-            ArtifactDisposition::RequiresInput,
-            Some(ResolutionRequirement {
-                kind: ConversionResolutionKind::ConfirmLocalSkillSource,
-            }),
-            "Skill source must be confirmed before Codex installation".into(),
+            ArtifactDisposition::Unsupported,
+            None,
+            if confirmed {
+                "Add this Skill to the Resource Center, then install it from the project".into()
+            } else {
+                "This Skill is not managed by the Resource Center".into()
+            },
         ),
     };
     Some(ConversionArtifact {
@@ -355,32 +352,7 @@ pub(super) fn map_plugin_artifact(
                 &source.resource.logical_id,
             ))
         });
-    let route = source
-        .content
-        .get("classification")
-        .and_then(|classification| classification.get("route"))
-        .and_then(Value::as_str);
-    let residual = source
-        .content
-        .get("classification")
-        .and_then(|classification| classification.get("residualReasons"))
-        .and_then(Value::as_array)
-        .map(|reasons| {
-            reasons
-                .iter()
-                .filter_map(Value::as_str)
-                .collect::<Vec<_>>()
-                .join("; ")
-        })
-        .unwrap_or_default();
-    let (disposition, resolution, risk, message) = if route == Some("source_disabled") {
-        (
-            ArtifactDisposition::Unchanged,
-            None,
-            ConversionRiskLevel::Safe,
-            "Source Plugin is disabled; no Codex change is required".into(),
-        )
-    } else if target.is_some() {
+    let (disposition, resolution, risk, message) = if target.is_some() {
         (
             ArtifactDisposition::Conflict,
             Some(ResolutionRequirement {
@@ -389,53 +361,13 @@ pub(super) fn map_plugin_artifact(
             ConversionRiskLevel::Confirmation,
             "Target plugin identity exists but marketplace equivalence is not confirmed".into(),
         )
-    } else if matches!(route, Some("package_copy" | "package_transform")) {
-        (
-            ArtifactDisposition::Mapped,
-            None,
-            ConversionRiskLevel::Confirmation,
-            if route == Some("package_copy") {
-                "Codex-compatible package will be installed into the Project runtime".into()
-            } else {
-                "Claude package will be transformed and installed into the Project runtime".into()
-            },
-        )
-    } else if route == Some("partial") {
-        (
-            ArtifactDisposition::Partial,
-            None,
-            ConversionRiskLevel::Confirmation,
-            format!("Plugin has portable components but also unresolved components: {residual}"),
-        )
     } else {
         (
             ArtifactDisposition::Unsupported,
             None,
             ConversionRiskLevel::Safe,
-            if residual.is_empty() {
-                source
-                    .content
-                    .get("inspectionError")
-                    .and_then(Value::as_str)
-                    .unwrap_or("Plugin has no verified Codex-compatible components")
-                    .to_string()
-            } else {
-                residual.clone()
-            },
+            "Plugin content is not converted between Agents".into(),
         )
-    };
-    let detail_code = if route == Some("source_disabled") {
-        Some("source_disabled")
-    } else if route == Some("package_copy") {
-        Some("package_copy")
-    } else if route == Some("package_transform") {
-        Some("package_transform")
-    } else if route == Some("partial") {
-        Some("partial")
-    } else if residual.contains("LSP") {
-        Some("lsp_unsupported")
-    } else {
-        Some("unresolved")
     };
     ConversionArtifact {
         id: format!("plugin:{}", source.resource.logical_id),
@@ -448,7 +380,7 @@ pub(super) fn map_plugin_artifact(
         resolution,
         risk,
         item_count: None,
-        detail_code: detail_code.map(str::to_owned),
+        detail_code: Some("unsupported_agent_capability".into()),
         message,
     }
 }

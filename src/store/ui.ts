@@ -18,11 +18,13 @@ const STORAGE_KEY = 'ad.ui-state.v1';
 interface Persisted {
   activeProjectPath: string | null;
   sidebarCollapsed: boolean;
+  workspaceMode: 'projects' | 'resources';
 }
 
 const defaults: Persisted = {
   activeProjectPath: null,
   sidebarCollapsed: false,
+  workspaceMode: 'projects',
 };
 
 function load(): Persisted {
@@ -56,6 +58,7 @@ interface State extends Persisted {
   switchTemplateOpen: boolean;
 
   setActiveProject: (path: string | null) => void;
+  setWorkspaceMode: (mode: 'projects' | 'resources') => void;
   openPalette: (prefill?: string) => void;
   closePalette: () => void;
   openEditDrawer: (profileId: string) => void;
@@ -74,8 +77,22 @@ export const useUiState = create<State>((set, get) => ({
 
   setActiveProject: (path) => {
     if (path !== get().activeProjectPath && !requestAgentWorkspaceChange()) return;
-    set({ activeProjectPath: path });
-    save({ activeProjectPath: path, sidebarCollapsed: get().sidebarCollapsed });
+    set({ activeProjectPath: path, workspaceMode: 'projects' });
+    save({
+      activeProjectPath: path,
+      sidebarCollapsed: get().sidebarCollapsed,
+      workspaceMode: 'projects',
+    });
+  },
+
+  setWorkspaceMode: (workspaceMode) => {
+    if (workspaceMode !== get().workspaceMode && !requestAgentWorkspaceChange()) return;
+    set({ workspaceMode });
+    save({
+      activeProjectPath: get().activeProjectPath,
+      sidebarCollapsed: get().sidebarCollapsed,
+      workspaceMode,
+    });
   },
 
   openPalette: (prefill = '') => set({ paletteOpen: true, palettePrefill: prefill }),
@@ -90,6 +107,10 @@ export const useUiState = create<State>((set, get) => ({
   toggleSidebar: () => {
     const next = !get().sidebarCollapsed;
     set({ sidebarCollapsed: next });
-    save({ activeProjectPath: get().activeProjectPath, sidebarCollapsed: next });
+    save({
+      activeProjectPath: get().activeProjectPath,
+      sidebarCollapsed: next,
+      workspaceMode: get().workspaceMode,
+    });
   },
 }));

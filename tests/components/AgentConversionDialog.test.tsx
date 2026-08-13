@@ -595,7 +595,7 @@ describe('AgentConversionButton', () => {
     expect(await screen.findByText('Safe changes applied with residual items')).toBeInTheDocument();
   });
 
-  it('turns a confirmed local Skill into a new backend preview', async () => {
+  it('does not offer to adopt a local Skill during conversion', async () => {
     const safe = await previewClaudeToCodexRoute();
     previewClaudeToCodexRoute.mockReset().mockResolvedValue({
       ...safe,
@@ -641,15 +641,14 @@ describe('AgentConversionButton', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Convert configuration' }));
     fireEvent.click(screen.getByRole('button', { name: 'Preview conversion' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Include this Skill' }));
 
-    await waitFor(() =>
-      expect(previewClaudeToCodexRoute).toHaveBeenLastCalledWith(
-        { installationId: 'claude-code:default' },
-        { installationId: 'codex:default' },
-        { confirmedSkillIds: ['review'] },
-        expect.any(Function),
-      ),
+    await screen.findByText('Input required');
+    expect(screen.queryByRole('button', { name: 'Include this Skill' })).not.toBeInTheDocument();
+    expect(previewClaudeToCodexRoute).toHaveBeenLastCalledWith(
+      { installationId: 'claude-code:default' },
+      { installationId: 'codex:default' },
+      {},
+      expect.any(Function),
     );
   });
 
@@ -707,7 +706,7 @@ describe('AgentConversionButton', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Convert configuration' }));
     fireEvent.click(screen.getByRole('button', { name: 'Preview conversion' }));
 
-    expect(await screen.findByText('Verifying inherited Codex Plugins')).toBeInTheDocument();
+    expect(await screen.findByText('Preparing the project runtime')).toBeInTheDocument();
     expect(screen.getByText('browser@openai-bundled · 2 / 9')).toBeInTheDocument();
     const progressStatus = screen.getByRole('status');
     expect(progressStatus).toHaveAttribute('aria-busy', 'true');

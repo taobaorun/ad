@@ -162,6 +162,14 @@ pub fn skill_catalog_path() -> Result<PathBuf, FsError> {
     Ok(state_dir()?.join("skill_catalog.json"))
 }
 
+pub fn resource_catalog_path() -> Result<PathBuf, FsError> {
+    Ok(state_dir()?.join("resource_catalog.json"))
+}
+
+pub fn managed_collection_runtime_dir() -> Result<PathBuf, FsError> {
+    Ok(ad_home()?.join("runtime").join("collections"))
+}
+
 pub fn skill_migration_archive_dir() -> Result<PathBuf, FsError> {
     Ok(ad_home()?.join("archive").join("skill-catalog"))
 }

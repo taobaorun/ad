@@ -56,7 +56,77 @@
     "noMatch": "没有匹配「{{query}}」的项目。",
     "pin": "固定到顶部",
     "unpin": "取消固定",
-    "pinnedAria": "已固定"
+    "pinnedAria": "已固定",
+    "resources": "资源"
+  },
+  "resourceCenter": {
+    "eyebrow": "受管资源库",
+    "title": "资源中心",
+    "subtitle": "统一管理可安装到项目的 Skill 与 Plugin。",
+    "addSource": "添加来源",
+    "sources": "来源",
+    "updateSource": "更新来源 {{name}}",
+    "removeSource": "删除来源 {{name}}",
+    "search": "搜索资源或来源…",
+    "filterLabel": "资源类型",
+    "filter": { "all": "全部", "skills": "Skill", "plugins": "Plugin" },
+    "refresh": "刷新",
+    "loading": "正在加载资源…",
+    "empty": "暂无匹配资源",
+    "emptyHint": "添加 Git 仓库或本地目录后，标准资源会显示在这里。",
+    "noManaged": "当前视图没有已纳管资源",
+    "removedResources": "已移除资源（{{count}}）",
+    "kind": { "skills": "Skill", "plugins": "Plugin" },
+    "agent": { "claude-code": "Claude Code", "codex": "Codex" },
+    "unsupported": "当前 Agent 均不支持",
+    "suppressed": "已移除",
+    "readd": "重新添加",
+    "readdAria": "重新添加资源 {{name}}",
+    "addDialog": {
+      "title": "添加资源来源",
+      "description": "添加 Git 仓库或本地目录，AD 会先检查其中的标准 Skill 与 Plugin。"
+    },
+    "plan": {
+      "resources": "发现 {{count}} 个 Skill 或 Plugin"
+    },
+    "sourceRemove": {
+      "title": "删除来源「{{name}}」",
+      "description": "AD 会先逐项卸载该来源在所有项目中的资源；全部成功后仅删除来源记录，不删除本地目录或 Git 原始内容。",
+      "resources": "来源资源",
+      "confirm": "确认删除来源",
+      "removing": "正在删除…",
+      "retry": "重试剩余项",
+      "retryHint": "部分资源未能完成卸载；来源仍然保留，可重试剩余项。",
+      "phase": {
+        "uninstalling": "正在逐项卸载资源",
+        "removing_source": "正在移除来源记录",
+        "complete": "已完成",
+        "partial_failure": "部分资源卸载失败"
+      }
+    },
+    "remove": {
+      "title": "移除「{{name}}」",
+      "description": "AD 会先从所有项目逐项卸载，全部成功后才从资源库移除。",
+      "projects": "受影响项目",
+      "agents": "Agent 安装",
+      "confirm": "确认移除",
+      "removing": "正在移除…",
+      "retry": "重试失败项",
+      "retryHint": "部分项目卸载失败；已成功的项目保持卸载，只会重试剩余项。",
+      "aria": "移除资源 {{name}}",
+      "phase": {
+        "uninstalling": "正在从项目卸载",
+        "suppressing": "正在更新资源库",
+        "complete": "已完成",
+        "partial_failure": "部分项目卸载失败"
+      },
+      "state": {
+        "pending": "等待中",
+        "running": "处理中",
+        "succeeded": "已卸载",
+        "failed": "失败"
+      }
+    }
   },
   "detail": {
     "selectPrefix": "从侧栏选择一个项目（或按 ",
@@ -440,7 +510,7 @@
     "permissionsHint": "权限语义无法无损推断，默认不修改目标权限。",
     "permissionsDangerHint": "此选项允许命令在无审批、无沙箱限制下运行，仅在明确需要对等 bypassPermissions 时使用。",
     "sourceUnchanged": "Claude Code 源仅用于读取。只有明确确认后，AD 才会写入目标资源。",
-    "projectRuntimeHint": "项目级转换会自动创建隔离的 CODEX_HOME；Marketplace、Plugin 缓存和启用状态只在从 AD 启动该项目时生效。用户登录态复用，不需要按项目重复登录。",
+    "projectRuntimeHint": "项目级转换会自动创建隔离的 CODEX_HOME；转换后的项目设置只影响当前项目。用户登录态复用，不需要按项目重复登录。",
     "profileId": "Codex Profile（可选）",
     "profileIdPlaceholder": "例如 project_api",
     "profileIdHint": "用于项目 API Key、模型或环境差异；留空时复用用户登录与基础配置。",
@@ -453,8 +523,7 @@
         "reading_configuration": "正在读取并映射配置",
         "inspecting_skills": "正在盘点 Skills",
         "inspecting_plugins": "正在盘点 Plugins",
-        "preparing_project_plugin": "正在准备项目 Plugin",
-        "verifying_inherited_plugins": "正在校验继承的 Codex Plugins",
+        "verifying_inherited_plugins": "正在准备项目运行时",
         "finalizing_plan": "正在汇总转换计划"
       },
       "itemCount": "{{item}} · {{current}} / {{total}}",
@@ -469,7 +538,7 @@
     "artifacts": "转换项",
     "sourcePath": "源路径",
     "targetPath": "目标路径",
-    "manualTarget": "需要在 Codex Plugin Marketplace 中完成设置",
+    "manualTarget": "当前 Agent 不支持",
     "confirmSkill": "转换此 Skill",
     "skillConfirmed": "已纳入 Skill",
     "noChanges": "源配置已读取，但没有安全的自动写入项；其中 {{count}} 项需要输入、存在冲突或无法转换。可调整上方转换决策后重新预览。",
@@ -502,12 +571,7 @@
       "dangerous": "危险变更"
     },
     "pluginDetail": {
-      "source_disabled": "源 Plugin 已禁用，无需写入 Codex。",
-      "package_copy": "现有 Codex-compatible package 将自动安装到项目隔离运行时。",
-      "package_transform": "Claude package 将在 AD 临时区转换后自动安装到项目隔离运行时。",
-      "partial": "部分组件可移植，但仍有组件需要处理；当前不会报告为完整成功。",
-      "lsp_unsupported": "该 Plugin 仅包含 Claude LSP 组件；Codex 当前没有原生 LSP Plugin 载体。",
-      "unresolved": "无法验证 Plugin package、Marketplace 或组件映射，未生成安装变更。"
+      "unsupported_agent_capability": "Codex 无法通过直接引用加载此 Plugin。请先将原始来源添加到资源中心，并选择受支持的 Agent。"
     },
     "kind": {
       "settings": "设置与权限",
@@ -539,7 +603,7 @@
       "disposition": {
         "exact": "此值在 Codex 中有直接对应形式。",
         "mapped": "此项将转换到列出的 Codex 目标。",
-        "partial": "可移植组件将自动安装；不兼容组件会保留为明确的剩余项。",
+        "partial": "此项只能部分表示，并会保留为明确的残留项。",
         "requires_input": "需要完成转换决策后才能纳入此项。",
         "unsupported": "目前没有经过验证的 Codex 自动等价能力；源配置保持不变。",
         "conflict": "转换值与现有目标不同，默认保留现有目标。",
@@ -568,9 +632,7 @@
   },
   "agents": {
     "capabilities": {
-      "pluginInstallNotManaged": "当前 Agent 的 Plugin 安装不由 AD 管理；仍可管理已有 Plugin 的启停状态。",
-      "gitAcquisitionUsesLegacyFlow": "Git 获取仍使用旧版 Source 流程；本地 Skill 变更使用安全计划引擎。",
-      "codexPluginInstallRequiresMarketplace": "项目级 Plugin 可由 AD 自动安装；用户级安装仍需使用 Codex Marketplace 流程。",
+      "codexPluginInstallRequiresMarketplace": "Codex 当前不支持安装资源中心的受管 Plugin。",
       "projectWritePending": "当前尚不支持项目级写入。"
     },
     "resources": {
@@ -581,11 +643,12 @@
       "skillOwnershipUnproven": "AD 无法证明该项目 Skill 的所有权，已阻止修改。",
       "codexRuntimeNotPrepared": "请先准备隔离的 Codex 项目 Runtime，再修改项目 Plugin。",
       "pluginInheritedOnly": "该 Plugin 仅从上层继承，没有可重置的项目覆盖。",
-      "pluginUpdateRequiresConversionSource": "Codex Plugin 更新需要经过验证的配置转化来源或 Marketplace 来源。",
+      "targetOccupied": "当前项目与 Agent 的同名目标已被另一个来源占用。请先卸载当前安装，再安装此来源。",
       "pluginUpdateExternal": "Plugin 包更新仍需通过 Agent 自身的外部 Plugin 流程。",
       "actionCompensated": "操作失败，所有变更均已恢复。",
       "actionPartialFailure": "操作仅部分完成，请检查回执后再继续。",
-      "actionFailed": "项目资源操作失败。"
+      "actionFailed": "项目资源操作失败。",
+      "unsupportedAgentCapability": "当前 Agent 不支持此 Plugin。"
     },
     "plan": {
       "impact": {
@@ -669,7 +732,7 @@
       "skills": {
         "title_one": "“{{name}}” 有 {{count}} 个同名来源",
         "title_other": "“{{name}}” 有 {{count}} 个同名来源",
-        "description": "AD 无法安全决定使用哪个来源，因此已暂停写操作。请在设置 → Skill 来源中只保留一个来源，或重命名来源中的重复 Skill。"
+        "description": "目标中已有另一个来源的安装。请先卸载当前安装，再单独安装所需来源。"
       },
       "plugins": {
         "title_one": "“{{name}}” 有 {{count}} 个冲突声明",

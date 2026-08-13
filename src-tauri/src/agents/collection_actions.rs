@@ -2,14 +2,13 @@ use std::path::Path;
 
 use super::collection_skills::project_ownership_records;
 use super::{
-    builtin_registry, inspect_project_workspace_inventory, load_skill_catalog_snapshot,
-    resolve_skill_source_item, verify_skill_artifact, AgentContext, AgentError, AgentErrorCode,
-    CollectionInstallRequest, CollectionResourceView, ExecutionEngine, InstallationId,
-    MutationPlan, OperationStatus, PlanAcknowledgement, PlanAcknowledgementCode, PlanId, PlanStore,
-    ProjectCollectionActionPreview, ProjectCollectionActionRequest, ProjectWorkspaceInventory,
-    ResourceAction, ResourceActionAvailability, ResourceKey, ResourceKind, ResourceRef,
-    ResourceScope, RiskFingerprint, WorkspaceDescriptor, WorkspaceOperationIssue,
-    WorkspaceOperationOutcome, WorkspaceOperationReport,
+    builtin_registry, inspect_project_workspace_inventory, AgentContext, AgentError,
+    AgentErrorCode, CollectionInstallRequest, CollectionResourceView, ExecutionEngine,
+    InstallationId, MutationPlan, OperationStatus, PlanAcknowledgement, PlanAcknowledgementCode,
+    PlanId, PlanStore, ProjectCollectionActionPreview, ProjectCollectionActionRequest,
+    ProjectWorkspaceInventory, ResourceAction, ResourceActionAvailability, ResourceKey,
+    ResourceKind, ResourceRef, ResourceScope, RiskFingerprint, WorkspaceDescriptor,
+    WorkspaceOperationIssue, WorkspaceOperationOutcome, WorkspaceOperationReport,
 };
 
 pub(crate) struct PlannedProjectCollectionAction {
@@ -59,13 +58,25 @@ pub(crate) fn plan_project_collection_action(
                 .ok_or_else(|| action_error(&inventory.workspace, "Agent has no Skill port"))?;
             match request.action {
                 ResourceAction::Install => {
-                    let binding = catalog_binding(&inventory.workspace, &resource.key)?;
-                    port.plan_install(&context, binding.request)?
+                    let resource_id = catalog_resource_for_key(
+                        &inventory.workspace,
+                        &resource.key,
+                        ResourceKind::Skills,
+                    )?;
+                    port.plan_install(&context, CollectionInstallRequest::catalog(resource_id))?
                 }
                 ResourceAction::Update => {
-                    let binding = catalog_binding(&inventory.workspace, &resource.key)?;
+                    let resource_id = catalog_resource_for_key(
+                        &inventory.workspace,
+                        &resource.key,
+                        ResourceKind::Skills,
+                    )?;
                     let installed = owned_skill(&inventory.workspace, resource)?;
-                    port.plan_update(&context, &installed, binding.request)?
+                    port.plan_update(
+                        &context,
+                        &installed,
+                        CollectionInstallRequest::catalog(resource_id),
+                    )?
                 }
                 ResourceAction::Remove => {
                     let installed = owned_skill(&inventory.workspace, resource)?;
@@ -91,20 +102,37 @@ pub(crate) fn plan_project_collection_action(
             let port = adapter
                 .plugins()
                 .ok_or_else(|| action_error(&inventory.workspace, "Agent has no Plugin port"))?;
-            let target = ResourceRef {
-                installation_id: context.installation_id.clone(),
-                project_path: context.project_path.clone(),
-                kind: ResourceKind::Plugins,
-                scope: ResourceScope::Project,
-                logical_id: resource.logical_id.clone(),
-            };
             match request.action {
-                ResourceAction::Enable | ResourceAction::Disable => port.plan_set_enabled(
-                    &context,
-                    &target,
-                    request.action == ResourceAction::Enable,
-                )?,
-                ResourceAction::Remove => port.plan_remove(&context, &target)?,
+                ResourceAction::Install => {
+                    let resource_id = catalog_resource_for_key(
+                        &inventory.workspace,
+                        &resource.key,
+                        ResourceKind::Plugins,
+                    )?;
+                    port.plan_install(&context, CollectionInstallRequest::catalog(resource_id))?
+                }
+                ResourceAction::Enable | ResourceAction::Disable => {
+                    let target = owned_collection(&inventory.workspace, resource)?;
+                    port.plan_set_enabled(
+                        &context,
+                        &target,
+                        request.action == ResourceAction::Enable,
+                    )?
+                }
+                ResourceAction::Remove => {
+                    let target = if resource.ownership.record_id.is_some() {
+                        owned_collection(&inventory.workspace, resource)?
+                    } else {
+                        ResourceRef {
+                            installation_id: context.installation_id.clone(),
+                            project_path: context.project_path.clone(),
+                            kind: ResourceKind::Plugins,
+                            scope: ResourceScope::Project,
+                            logical_id: resource.logical_id.clone(),
+                        }
+                    };
+                    port.plan_remove(&context, &target)?
+                }
                 _ => {
                     return Err(action_error(
                         &inventory.workspace,
@@ -125,6 +153,49 @@ pub(crate) fn plan_project_collection_action(
         workspace: inventory.workspace,
         plan,
     })
+}
+
+fn catalog_resource_for_key(
+    workspace: &WorkspaceDescriptor,
+    resource_key: &ResourceKey,
+    kind: ResourceKind,
+) -> Result<String, AgentError> {
+    let catalog = super::load_resource_catalog_snapshot()
+        .map_err(|error| action_error(workspace, error.to_string()))?;
+    catalog
+        .resources
+        .values()
+        .find(|candidate| {
+            candidate.kind == kind
+                && candidate.present
+                && candidate.lifecycle == super::ResourceLifecycle::Managed
+                && ResourceKey::for_collection(
+                    &workspace.key,
+                    &workspace.agent_id,
+                    kind,
+                    &candidate.install_id,
+                    &candidate.source_id,
+                ) == *resource_key
+        })
+        .map(|candidate| candidate.id.clone())
+        .ok_or_else(|| action_error(workspace, "Catalog resource revision is unavailable"))
+}
+
+fn owned_collection(
+    workspace: &WorkspaceDescriptor,
+    view: &CollectionResourceView,
+) -> Result<ResourceRef, AgentError> {
+    let record_id = view.ownership.record_id.as_ref().ok_or_else(|| {
+        action_error(
+            workspace,
+            "Collection ownership is not proven for this workspace",
+        )
+    })?;
+    super::collection_skills::project_ownership_records_for(workspace, view.kind)?
+        .into_iter()
+        .find(|record| &record.id == record_id)
+        .map(|record| record.resource)
+        .ok_or_else(|| action_error(workspace, "Collection ownership record changed"))
 }
 
 pub fn preview_project_collection_action(
@@ -204,70 +275,6 @@ fn operation_issue(code: &str) -> WorkspaceOperationIssue {
         message_key: message_key.into(),
         resource_key: None,
     }
-}
-
-struct CatalogBinding {
-    request: CollectionInstallRequest,
-}
-
-fn catalog_binding(
-    workspace: &WorkspaceDescriptor,
-    resource_key: &ResourceKey,
-) -> Result<CatalogBinding, AgentError> {
-    let catalog = load_skill_catalog_snapshot()
-        .map_err(|error| action_error(workspace, error.to_string()))?;
-    for source in catalog.entries {
-        for skill in source.skills() {
-            let key = ResourceKey::for_collection(
-                &workspace.key,
-                &workspace.agent_id,
-                ResourceKind::Skills,
-                &skill.logical_id,
-                &source.source_id,
-            );
-            if &key == resource_key {
-                let (path, source_facts) = if let Some(binding) = &source.current_binding {
-                    let (stable, physical) = resolve_skill_source_item(binding, skill)
-                        .map_err(|error| action_error(workspace, error.to_string()))?;
-                    (
-                        stable,
-                        serde_json::json!({
-                            "bindingId": binding.binding_id,
-                            "sourceId": binding.source_id,
-                            "sourceType": binding.source_type,
-                            "stableRoot": binding.stable_root,
-                            "physicalRoot": binding.physical_root,
-                            "subpath": skill.subpath,
-                            "canonicalPath": physical,
-                        }),
-                    )
-                } else {
-                    let artifact = source.current_artifact.as_ref().ok_or_else(|| {
-                        action_error(workspace, "Catalog Skill payload is unavailable")
-                    })?;
-                    let tree = verify_skill_artifact(artifact)
-                        .map_err(|error| action_error(workspace, error.to_string()))?;
-                    (
-                        tree.join(&skill.subpath),
-                        serde_json::json!({"artifactId": artifact.artifact_id}),
-                    )
-                };
-                return Ok(CatalogBinding {
-                    request: CollectionInstallRequest {
-                        logical_id: format!("{}/{}", source.source_id, skill.logical_id),
-                        source: serde_json::json!({
-                            "path": path,
-                            "catalog": source_facts,
-                        }),
-                    },
-                });
-            }
-        }
-    }
-    Err(action_error(
-        workspace,
-        "Catalog Skill revision is unavailable",
-    ))
 }
 
 fn owned_skill(

@@ -105,6 +105,15 @@ pub struct CollectionInstallRequest {
     pub source: Value,
 }
 
+impl CollectionInstallRequest {
+    pub(crate) fn catalog(resource_id: impl Into<String>) -> Self {
+        Self {
+            logical_id: String::new(),
+            source: serde_json::json!({"catalogResourceId": resource_id.into()}),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginInstallProgress {

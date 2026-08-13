@@ -4,6 +4,7 @@ use serde_json::Value;
 
 use super::collection_management::{resource_management, CollectionManagementInput};
 pub(super) use super::collection_skills::inspect_skills;
+use super::collection_skills::project_ownership_records_for;
 use super::settings_inventory::SettingsLayerSemantic;
 use super::{
     builtin_registry, opaque_contract_id, AgentContext, AgentError, AgentErrorCode,
@@ -45,7 +46,12 @@ pub(super) fn inspect_plugins(
             observations.push(runtime_plugin_observation(workspace, logical_id, *enabled));
         }
     }
-    let diagnostics = inspect_plugin_health(workspace, &mut observations)?;
+    let (catalog, catalog_diagnostics) = catalog_plugin_observations(workspace)?;
+    observations.extend(catalog);
+    let diagnostics = inspect_plugin_health(workspace, &mut observations)?
+        .into_iter()
+        .chain(catalog_diagnostics)
+        .collect();
     Ok(collection_inventory(
         workspace,
         ResourceKind::Plugins,
@@ -53,6 +59,106 @@ pub(super) fn inspect_plugins(
         version_diagnostic,
         diagnostics,
     ))
+}
+
+fn catalog_plugin_observations(
+    workspace: &WorkspaceDescriptor,
+) -> Result<(Vec<CollectionObservation>, Vec<ItemDiagnostic>), AgentError> {
+    let catalog = match super::load_resource_catalog_snapshot() {
+        Ok(catalog) => catalog,
+        Err(_) => {
+            return Ok((
+                Vec::new(),
+                vec![ItemDiagnostic {
+                    code: "resource_catalog_unavailable".into(),
+                    message_key: "agents.inventory.resourceCatalogUnavailable".into(),
+                    retryable: false,
+                    resource_key: None,
+                }],
+            ))
+        }
+    };
+    let ownership = project_ownership_records_for(workspace, ResourceKind::Plugins)?;
+    let installations = super::list_resource_installations()
+        .map_err(|error| inventory_error(workspace, error.to_string()))?;
+    let mut observations = Vec::new();
+    for candidate in catalog.resources.values().filter(|resource| {
+        resource.kind == ResourceKind::Plugins
+            && resource.present
+            && resource.lifecycle == super::ResourceLifecycle::Managed
+    }) {
+        let source = catalog
+            .sources
+            .get(&candidate.source_id)
+            .ok_or_else(|| inventory_error(workspace, "Catalog Plugin source is unavailable"))?;
+        let owned = ownership.iter().find(|record| {
+            record.catalog_binding.as_ref().is_some_and(|binding| {
+                binding.resource_id == candidate.id
+                    && record.resource.installation_id == workspace.effective_installation_id
+            })
+        });
+        let enabled = installations
+            .iter()
+            .find(|installation| {
+                installation.resource_id == candidate.id
+                    && installation.effective_installation_id == workspace.effective_installation_id
+                    && installation.canonical_project_path == workspace.canonical_project_path
+            })
+            .map(super::installation_enabled)
+            .transpose()
+            .map_err(|error| inventory_error(workspace, error.to_string()))?
+            .unwrap_or(false);
+        let resource = owned.map_or_else(
+            || ResourceRef {
+                installation_id: workspace.effective_installation_id.clone(),
+                project_path: Some(workspace.canonical_project_path.clone()),
+                kind: ResourceKind::Plugins,
+                scope: ResourceScope::Project,
+                logical_id: format!("{}/{}", candidate.source_id, candidate.install_id),
+            },
+            |record| record.resource.clone(),
+        );
+        let resolved = super::resolve_catalog_resource(&candidate.id)
+            .map_err(|error| inventory_error(workspace, error.to_string()))?;
+        let agent_supported = candidate
+            .compatible_agents
+            .contains(workspace.agent_id.as_str());
+        observations.push(CollectionObservation {
+            target_id: PhysicalTargetId::for_resource(&resource),
+            resource,
+            layer: ResourceLayer::Project,
+            source_id: candidate.source_id.clone(),
+            logical_id: candidate.install_id.clone(),
+            display_name: candidate.display_name.clone(),
+            description: candidate.description.clone(),
+            enabled,
+            ownership: ResourceOwnershipKind::AdManaged,
+            agent_supported,
+            ownership_record: owned.cloned(),
+            health: ResourceHealthView {
+                status: ResourceHealthStatus::Healthy,
+                diagnostic: None,
+            },
+            configured: owned.is_some(),
+            artifact_id: Some(resolved.stable_path.to_string_lossy().into_owned()),
+            resettable: false,
+            source: Some(ResourceSourceView {
+                kind: match source.source_type {
+                    super::SkillSourceType::Git => ResourceSourceKind::CatalogGit,
+                    super::SkillSourceType::Local => ResourceSourceKind::CatalogLocal,
+                },
+                display_name: source.display_name.clone(),
+                location: super::skill_catalog::format_safe_source_location(
+                    source.source_type,
+                    &source.location,
+                )
+                .ok_or_else(|| inventory_error(workspace, "Catalog source location is invalid"))?,
+                branch: source.branch.clone(),
+                subdirectory: source.subdirectory.clone(),
+            }),
+        });
+    }
+    Ok((observations, Vec::new()))
 }
 
 #[derive(Clone)]
@@ -66,6 +172,7 @@ pub(super) struct CollectionObservation {
     pub description: Option<String>,
     pub enabled: bool,
     pub ownership: ResourceOwnershipKind,
+    pub agent_supported: bool,
     pub ownership_record: Option<ResourceOwnershipRecord>,
     pub health: ResourceHealthView,
     pub configured: bool,
@@ -153,7 +260,8 @@ fn plugin_observation(
         display_name: logical_id.to_owned(),
         description: None,
         enabled,
-        ownership: ResourceOwnershipKind::AgentManaged,
+        ownership: ResourceOwnershipKind::External,
+        agent_supported: true,
         ownership_record: None,
         health: ResourceHealthView {
             status: ResourceHealthStatus::Healthy,
@@ -191,7 +299,8 @@ fn runtime_plugin_observation(
         display_name: logical_id.to_owned(),
         description: None,
         enabled,
-        ownership: ResourceOwnershipKind::Unknown,
+        ownership: ResourceOwnershipKind::External,
+        agent_supported: true,
         ownership_record: None,
         health: ResourceHealthView {
             status: ResourceHealthStatus::Healthy,
@@ -222,12 +331,21 @@ pub(super) fn collection_inventory(
             .or_default()
             .push(observation);
     }
-    let conflicts = groups
-        .keys()
-        .fold(BTreeMap::<String, usize>::new(), |mut counts, key| {
-            *counts.entry(key.0.clone()).or_default() += 1;
-            counts
-        });
+    let configured_sources = groups.iter().fold(
+        BTreeMap::<String, std::collections::BTreeSet<String>>::new(),
+        |mut sources, ((logical_id, source_id), declarations)| {
+            if declarations
+                .iter()
+                .any(|declaration| declaration.configured)
+            {
+                sources
+                    .entry(logical_id.clone())
+                    .or_default()
+                    .insert(source_id.clone());
+            }
+            sources
+        },
+    );
     let mut resources = groups
         .into_iter()
         .filter_map(|((logical_id, source_id), mut declarations)| {
@@ -280,7 +398,17 @@ pub(super) fn collection_inventory(
             let winner_key = declaration_views
                 .last()
                 .map(|declaration| declaration.key.clone());
-            let conflict = conflicts.get(&logical_id).copied().unwrap_or_default() > 1;
+            let configured_source_count = configured_sources
+                .get(&logical_id)
+                .map_or(0, std::collections::BTreeSet::len);
+            // Same-named resources from different catalog sources are choices, not
+            // conflicts. Once one source occupies the project target, alternatives
+            // remain visible but unavailable until the installed source is removed.
+            let conflict = configured_source_count > 1;
+            let target_occupied = configured.is_empty() && configured_source_count == 1;
+            let agent_supported = declarations
+                .iter()
+                .all(|declaration| declaration.agent_supported);
             let ownership_record =
                 configured_winner.and_then(|declaration| declaration.ownership_record.as_ref());
             let ownership = configured_winner
@@ -302,6 +430,8 @@ pub(super) fn collection_inventory(
                 kind,
                 state: effective_state,
                 ownership,
+                agent_supported,
+                target_occupied,
                 has_health_error: configured_winner
                     .is_some_and(|winner| winner.health.status == ResourceHealthStatus::Error),
                 owned_artifact: ownership_record.map(|record| record.artifact_id.as_str()),

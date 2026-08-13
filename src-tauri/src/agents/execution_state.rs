@@ -24,6 +24,9 @@ pub(super) struct ExecutionState {
     locks: StateDirectory,
     journals: StateDirectory,
     ownership: StateDirectory,
+    resource_installations: StateDirectory,
+    resource_installation_controls: StateDirectory,
+    resource_removal_operations: StateDirectory,
     backups: StateDirectory,
     history: StateDirectory,
     skill_catalog_journals: StateDirectory,
@@ -55,6 +58,11 @@ impl ExecutionState {
         let locks = state.open_or_create_directory("execution-locks")?;
         let journals = state.open_or_create_directory("operation-journals")?;
         let ownership = state.open_or_create_directory("resource-ownership")?;
+        let resource_installations = state.open_or_create_directory("resource-installations")?;
+        let resource_installation_controls =
+            state.open_or_create_directory("resource-installation-controls")?;
+        let resource_removal_operations =
+            state.open_or_create_directory("resource-removal-operations")?;
         let backup_root = root.open_or_create_directory("backups")?;
         let backups = backup_root.open_or_create_directory("operations")?;
         let skill_catalog_backups = backup_root.open_or_create_directory("skill-catalog")?;
@@ -73,6 +81,9 @@ impl ExecutionState {
             locks,
             journals,
             ownership,
+            resource_installations,
+            resource_installation_controls,
+            resource_removal_operations,
             backups,
             history,
             skill_catalog_journals,
@@ -99,6 +110,18 @@ impl ExecutionState {
 
     pub(super) fn ownership(&self) -> &StateDirectory {
         &self.ownership
+    }
+
+    pub(super) fn resource_installations(&self) -> &StateDirectory {
+        &self.resource_installations
+    }
+
+    pub(super) fn resource_installation_controls(&self) -> &StateDirectory {
+        &self.resource_installation_controls
+    }
+
+    pub(super) fn resource_removal_operations(&self) -> &StateDirectory {
+        &self.resource_removal_operations
     }
 
     pub(super) fn backups(&self) -> &StateDirectory {

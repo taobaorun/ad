@@ -9,6 +9,8 @@ Requirements: `R1`–`R8`
 Authority: user request on 2026-08-05, clarified as “让安装链接直接指向原始/受管 source checkout”
 Review report: `docs/design-docs/skill-source-checkout-links.review.md`
 
+> Superseded for current product behavior by `docs/design-docs/skill-plugin-resource-management.md` and its HTML rendering. This document remains the historical design authority for the original stable-checkout-link migration.
+
 ## Product Contract
 
 ### Actor and outcome

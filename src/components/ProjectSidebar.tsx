@@ -5,7 +5,7 @@ import { useProfiles } from '@/store/profiles';
 import { useUiState } from '@/store/ui';
 import { tauri } from '@/lib/tauri';
 import type { Project, ProjectStatus } from '@/lib/projectTypes';
-import { Plus, Pin, Search, X } from 'lucide-react';
+import { Boxes, Plus, Pin, Search, X } from 'lucide-react';
 
 export function ProjectSidebar() {
   const { t } = useTranslation();
@@ -18,6 +18,8 @@ export function ProjectSidebar() {
 
   const activeProjectPath = useUiState((s) => s.activeProjectPath);
   const setActiveProject = useUiState((s) => s.setActiveProject);
+  const workspaceMode = useUiState((s) => s.workspaceMode);
+  const setWorkspaceMode = useUiState((s) => s.setWorkspaceMode);
   const openPalette = useUiState((s) => s.openPalette);
 
   const [query, setQuery] = useState('');
@@ -90,6 +92,22 @@ export function ProjectSidebar() {
       </div>
 
       {/* Search */}
+      <div className="px-2 pt-2">
+        <button
+          type="button"
+          aria-current={workspaceMode === 'resources' ? 'page' : undefined}
+          onClick={() => setWorkspaceMode('resources')}
+          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          style={{
+            color: workspaceMode === 'resources' ? 'var(--ds-accent)' : 'var(--ds-fg-2)',
+            background: workspaceMode === 'resources' ? 'var(--ds-bg-soft)' : 'transparent',
+          }}
+        >
+          <Boxes className="h-3.5 w-3.5" />
+          {t('sidebar.resources')}
+        </button>
+      </div>
+
       {projects.length > 0 && (
         <div className="px-2 pt-2" style={{ flexShrink: 0 }}>
           <div
@@ -167,7 +185,7 @@ export function ProjectSidebar() {
               <ProjectRow
                 project={p}
                 shortcutIdx={projects.indexOf(p)}
-                active={p.path === activeProjectPath}
+                active={workspaceMode === 'projects' && p.path === activeProjectPath}
                 onSelect={() => setActiveProject(p.path)}
                 onTogglePin={() => void setPinned(p.path, !p.pinned)}
               />

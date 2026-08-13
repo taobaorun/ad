@@ -11,8 +11,9 @@ use super::{
     WorkspaceKey,
 };
 
-pub const RESOURCE_OWNERSHIP_SCHEMA_VERSION: u32 = 2;
+pub const RESOURCE_OWNERSHIP_SCHEMA_VERSION: u32 = 3;
 const LEGACY_RESOURCE_OWNERSHIP_SCHEMA_VERSION: u32 = 1;
+const SKILL_RESOURCE_OWNERSHIP_SCHEMA_VERSION: u32 = 2;
 pub const OWNERSHIP_EVIDENCE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,6 +31,8 @@ pub struct ResourceOwnershipRecord {
     pub artifact_digest: ContentDigest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_binding: Option<SkillOwnershipBinding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_binding: Option<CatalogOwnershipBinding>,
     pub creating_receipt_id: ReceiptId,
     pub updated_by_receipt_id: ReceiptId,
 }
@@ -42,6 +45,18 @@ pub struct SkillOwnershipBinding {
     pub binding_id: String,
     pub stable_root: String,
     pub skill_subpath: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CatalogOwnershipBinding {
+    pub resource_id: String,
+    pub source_id: String,
+    pub install_id: String,
+    pub resource_kind: ResourceKind,
+    pub stable_root: String,
+    pub resource_subpath: String,
+    pub adapter_contract: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,6 +82,7 @@ pub(super) struct OwnershipArtifact {
     pub id: String,
     pub digest: ContentDigest,
     pub source_binding: Option<SkillOwnershipBinding>,
+    pub catalog_binding: Option<CatalogOwnershipBinding>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,11 +95,13 @@ pub(super) struct OwnershipRestore {
 pub(super) fn ownership_managed(resource: &ResourceRef, storage: ResourceStorage) -> bool {
     resource.scope == ResourceScope::Project
         && resource.project_path.is_some()
-        && matches!(
+        && (matches!(
             (resource.kind, storage),
             (ResourceKind::Skills, ResourceStorage::Symlink)
                 | (ResourceKind::Plugins, ResourceStorage::Directory)
-        )
+        ) || (resource.kind == ResourceKind::Plugins
+            && storage == ResourceStorage::Symlink
+            && resource.logical_id.starts_with("skill-source:")))
 }
 
 pub(super) fn ownership_record_id(resource: &ResourceRef) -> OwnershipRecordId {
@@ -147,6 +165,40 @@ pub(super) fn load_ownership_record(
     Ok(Some(record))
 }
 
+pub(super) fn load_ownership_record_by_id(
+    state: &ExecutionState,
+    id: &OwnershipRecordId,
+) -> Result<Option<ResourceOwnershipRecord>, AgentError> {
+    let name = record_name(id);
+    let bytes = match state.ownership().read(&name) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(AgentError {
+                code: AgentErrorCode::Io,
+                message: format!("Failed to read ownership record: {error}"),
+                agent_id: None,
+                installation_id: None,
+                resource: None,
+                retryable: false,
+                details: Some(serde_json::json!({"phase": "resource_ownership"})),
+            })
+        }
+    };
+    let record: ResourceOwnershipRecord =
+        serde_json::from_slice(&bytes).map_err(|error| AgentError {
+            code: AgentErrorCode::PermissionDenied,
+            message: format!("Invalid ownership record: {error}"),
+            agent_id: None,
+            installation_id: None,
+            resource: None,
+            retryable: false,
+            details: Some(serde_json::json!({"phase": "resource_ownership"})),
+        })?;
+    validate_record_identity(&record, id)?;
+    Ok(Some(record))
+}
+
 pub(super) fn validate_ownership_record(
     record: &ResourceOwnershipRecord,
     resource: &ResourceRef,
@@ -191,6 +243,9 @@ pub(super) fn validate_ownership_artifact(
     if let Some(source_binding) = &record.source_binding {
         return validate_owned_skill_binding(record, source_binding);
     }
+    if let Some(catalog_binding) = &record.catalog_binding {
+        return validate_owned_catalog_binding(record, catalog_binding);
+    }
     let path = Path::new(&record.artifact_id);
     let metadata = std::fs::symlink_metadata(path).map_err(|error| {
         ownership_error(
@@ -231,6 +286,52 @@ pub(super) fn validate_ownership_artifact(
         ));
     }
     Ok(())
+}
+
+pub(super) fn validate_ownership_target(
+    record: &ResourceOwnershipRecord,
+) -> Result<(), AgentError> {
+    let target = Path::new(&record.target_path);
+    let metadata = std::fs::symlink_metadata(target).map_err(|error| {
+        ownership_error(
+            AgentErrorCode::ResourceChanged,
+            &record.resource,
+            format!("Owned target is unavailable: {error}"),
+        )
+    })?;
+    let kind = if metadata.file_type().is_symlink() {
+        ResourceStateKind::Symlink
+    } else if metadata.is_dir() {
+        ResourceStateKind::Directory
+    } else if metadata.is_file() {
+        ResourceStateKind::File
+    } else {
+        return Err(ownership_error(
+            AgentErrorCode::PermissionDenied,
+            &record.resource,
+            "Owned target has an unsupported storage type",
+        ));
+    };
+    let digest = match kind {
+        ResourceStateKind::Symlink => Some(ContentDigest::sha256(
+            std::fs::read_link(target)
+                .map_err(|error| {
+                    ownership_error(AgentErrorCode::Io, &record.resource, error.to_string())
+                })?
+                .to_string_lossy()
+                .as_bytes(),
+        )),
+        ResourceStateKind::Directory => {
+            Some(super::directory_tree_digest(target).map_err(|error| {
+                ownership_error(AgentErrorCode::Io, &record.resource, error.to_string())
+            })?)
+        }
+        ResourceStateKind::File => Some(ContentDigest::sha256(&std::fs::read(target).map_err(
+            |error| ownership_error(AgentErrorCode::Io, &record.resource, error.to_string()),
+        )?)),
+        ResourceStateKind::Missing => None,
+    };
+    validate_ownership_record(record, &record.resource, target, kind, digest.as_ref())
 }
 
 pub(super) fn ownership_source_binding(
@@ -288,6 +389,108 @@ pub(super) fn ownership_source_binding(
         stable_root: binding.stable_root.clone(),
         skill_subpath: item.subpath.clone(),
     }))
+}
+
+pub(super) fn ownership_catalog_binding(
+    resource: &ResourceRef,
+    artifact_id: &str,
+) -> Result<Option<CatalogOwnershipBinding>, AgentError> {
+    if !matches!(resource.kind, ResourceKind::Skills | ResourceKind::Plugins) {
+        return Ok(None);
+    }
+    let Some((source_id, install_id)) = resource.logical_id.rsplit_once('/') else {
+        return Ok(None);
+    };
+    let catalog = super::load_resource_catalog_snapshot().map_err(|error| {
+        ownership_error(
+            AgentErrorCode::InvalidPlan,
+            resource,
+            format!("Resource catalog is unavailable: {error}"),
+        )
+    })?;
+    let candidate = catalog
+        .resources
+        .values()
+        .find(|candidate| {
+            candidate.source_id == source_id
+                && candidate.install_id == install_id
+                && candidate.kind == resource.kind
+                && candidate.present
+                && candidate.lifecycle == super::ResourceLifecycle::Managed
+        })
+        .ok_or_else(|| {
+            ownership_error(
+                AgentErrorCode::InvalidPlan,
+                resource,
+                "Catalog resource is unavailable",
+            )
+        })?;
+    let resolved = super::resolve_catalog_resource(&candidate.id).map_err(|error| {
+        ownership_error(AgentErrorCode::InvalidPlan, resource, error.to_string())
+    })?;
+    if resolved.stable_path != Path::new(artifact_id) {
+        return Err(ownership_error(
+            AgentErrorCode::InvalidPlan,
+            resource,
+            "Collection link target does not match its catalog resource",
+        ));
+    }
+    let source = catalog.sources.get(source_id).ok_or_else(|| {
+        ownership_error(
+            AgentErrorCode::InvalidPlan,
+            resource,
+            "Catalog source is unavailable",
+        )
+    })?;
+    let binding = source.binding.as_ref().ok_or_else(|| {
+        ownership_error(
+            AgentErrorCode::InvalidPlan,
+            resource,
+            "Catalog source binding is unavailable",
+        )
+    })?;
+    if binding.binding_id.starts_with("skill-artifact:") {
+        return Ok(None);
+    }
+    let adapter_contract = match resource.kind {
+        ResourceKind::Skills => "project-skill-link-v1",
+        ResourceKind::Plugins => "claude-plugin-dir-v1",
+        _ => unreachable!("catalog ownership only handles collections"),
+    };
+    Ok(Some(CatalogOwnershipBinding {
+        resource_id: candidate.id.clone(),
+        source_id: source_id.to_owned(),
+        install_id: install_id.to_owned(),
+        resource_kind: resource.kind,
+        stable_root: binding.stable_root.clone(),
+        resource_subpath: candidate.subpath.clone(),
+        adapter_contract: adapter_contract.into(),
+    }))
+}
+
+fn validate_owned_catalog_binding(
+    record: &ResourceOwnershipRecord,
+    owned: &CatalogOwnershipBinding,
+) -> Result<(), AgentError> {
+    let resolved = super::resolve_catalog_resource(&owned.resource_id).map_err(|error| {
+        ownership_error(
+            AgentErrorCode::ResourceChanged,
+            &record.resource,
+            error.to_string(),
+        )
+    })?;
+    if resolved.source_id != owned.source_id
+        || resolved.install_id != owned.install_id
+        || resolved.kind != owned.resource_kind
+        || resolved.stable_path != Path::new(&record.artifact_id)
+    {
+        return Err(ownership_error(
+            AgentErrorCode::PermissionDenied,
+            &record.resource,
+            "Owned catalog resource identity changed",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_owned_skill_binding(
@@ -533,9 +736,13 @@ fn validate_record_identity(
         && Path::new(&record.artifact_id).is_absolute();
     let valid_schema = matches!(
         record.schema_version,
-        LEGACY_RESOURCE_OWNERSHIP_SCHEMA_VERSION | RESOURCE_OWNERSHIP_SCHEMA_VERSION
+        LEGACY_RESOURCE_OWNERSHIP_SCHEMA_VERSION
+            | SKILL_RESOURCE_OWNERSHIP_SCHEMA_VERSION
+            | RESOURCE_OWNERSHIP_SCHEMA_VERSION
     ) && (record.schema_version != LEGACY_RESOURCE_OWNERSHIP_SCHEMA_VERSION
-        || record.source_binding.is_none());
+        || (record.source_binding.is_none() && record.catalog_binding.is_none()))
+        && (record.schema_version != SKILL_RESOURCE_OWNERSHIP_SCHEMA_VERSION
+            || record.catalog_binding.is_none());
     let valid_identity = valid_schema
         && &record.id == expected_id
         && record.target_id == PhysicalTargetId::for_resource(&record.resource)
