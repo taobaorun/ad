@@ -51,15 +51,73 @@ fn write_skill(source: &Path, body: &str) {
 }
 
 fn write_plugin(source: &Path) {
-    let plugin = source.join("native-plugin");
+    write_plugin_named(source, "native-plugin");
+}
+
+fn write_plugin_named(source: &Path, name: &str) {
+    let plugin = source.join(name);
     std::fs::create_dir_all(plugin.join(".claude-plugin")).unwrap();
     std::fs::create_dir_all(plugin.join("commands")).unwrap();
     std::fs::write(
         plugin.join(".claude-plugin/plugin.json"),
-        r#"{"name":"native-plugin","description":"Native Plugin"}"#,
+        format!(r#"{{"name":"{name}","description":"Native Plugin"}}"#),
     )
     .unwrap();
     std::fs::write(plugin.join("commands/demo.md"), "# Demo\n").unwrap();
+}
+
+fn add_root_git_plugin_source() -> String {
+    let source = SkillSource {
+        id: format!("skill-source:{}", uuid::Uuid::new_v4()),
+        source_type: SkillSourceType::Git,
+        url: "https://example.com/team/root-plugin.git".into(),
+        branch: None,
+        subdirectory: None,
+        auto_update: false,
+        added_at: Utc::now(),
+    };
+    let operation = crate::fs::paths::skill_acquisition_staging_dir()
+        .unwrap()
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(operation.join("source/.claude-plugin")).unwrap();
+    std::fs::write(
+        operation.join("source/.claude-plugin/plugin.json"),
+        r#"{"name":"root-plugin","description":"Root Plugin"}"#,
+    )
+    .unwrap();
+    let staged = super::skill_source_bindings::stage_existing_git_checkout_for_test(
+        &source,
+        operation,
+        &"a".repeat(40),
+    )
+    .unwrap();
+    let (binding, publication) = publish_staged_git_skill_source_binding(staged, None).unwrap();
+    publication.commit();
+    let request = SkillSourceRequest {
+        display_name: "Root Plugin".into(),
+        source_type: SkillSourceType::Git,
+        location: source.url.clone(),
+        branch: None,
+        subdirectory: None,
+        auto_update: false,
+    };
+    let mut document = super::skill_catalog::SkillCatalogDocument::empty();
+    document
+        .add_binding(source.id.clone(), &request, binding, Utc::now())
+        .unwrap();
+    let state = ExecutionState::open().unwrap();
+    state
+        .state()
+        .write_atomic("skill_catalog.json", &document.render().unwrap())
+        .unwrap();
+    super::resource_catalog::persist_resource_catalog_projection(
+        state.state(),
+        &super::skill_catalog::load_skill_catalog_state_from(state.state())
+            .unwrap()
+            .snapshot(),
+    )
+    .unwrap();
+    source.id
 }
 
 fn claude_installation() -> InstallationId {
@@ -537,6 +595,127 @@ fn catalog_claude_plugin_installs_as_one_link_and_decorates_only_its_project_lau
 
 #[test]
 #[serial(home_env)]
+fn root_level_git_plugin_installs_from_the_stable_checkout_link() {
+    let (_home, _guard, _source, project_a, _project_b) = setup();
+    let source_id = add_root_git_plugin_source();
+    let installation_id = claude_installation();
+    let inventory = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    let candidate = plugin(&inventory, "root-plugin");
+
+    apply_action(
+        &installation_id,
+        &project_a,
+        &inventory,
+        candidate,
+        ResourceAction::Install,
+        &PlanStore::default(),
+    );
+
+    let record = list_resource_installations().unwrap().pop().unwrap();
+    assert_eq!(record.source_id, source_id);
+    let target = PathBuf::from(
+        load_ownership_record_by_id(
+            &ExecutionState::open().unwrap(),
+            &record.ownership_record_ids[0],
+        )
+        .unwrap()
+        .unwrap()
+        .target_path,
+    );
+    let catalog = load_resource_catalog_snapshot().unwrap();
+    let stable_root = PathBuf::from(
+        &catalog.sources[&record.source_id]
+            .binding
+            .as_ref()
+            .unwrap()
+            .stable_root,
+    );
+    assert_eq!(std::fs::read_link(target).unwrap(), stable_root);
+}
+
+#[test]
+#[serial(home_env)]
+fn unavailable_catalog_plugin_does_not_hide_healthy_plugins() {
+    let (_home, _guard, source, project_a, _project_b) = setup();
+    write_plugin_named(&source, "broken-plugin");
+    write_plugin_named(&source, "healthy-plugin");
+    add_catalog_source(&source);
+    std::fs::remove_dir_all(source.join("broken-plugin")).unwrap();
+
+    let inventory =
+        inspect_project_workspace_inventory(&claude_installation(), &project_a).unwrap();
+
+    let broken = plugin(&inventory, "broken-plugin");
+    assert_eq!(broken.health.status, ResourceHealthStatus::Error);
+    assert_eq!(
+        broken.health.diagnostic.as_ref().unwrap().code,
+        "resource_catalog_binding_invalid"
+    );
+    assert!(!action_is_available(broken, ResourceAction::Install));
+    let healthy = plugin(&inventory, "healthy-plugin");
+    assert_eq!(healthy.health.status, ResourceHealthStatus::Healthy);
+    assert!(action_is_available(healthy, ResourceAction::Install));
+}
+
+#[test]
+#[serial(home_env)]
+fn missing_managed_plugin_link_is_reported_and_excluded_from_launch() {
+    let (_home, _guard, source, project_a, _project_b) = setup();
+    write_plugin(&source);
+    add_catalog_source(&source);
+    let installation_id = claude_installation();
+    let inventory = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    apply_action(
+        &installation_id,
+        &project_a,
+        &inventory,
+        plugin(&inventory, "native-plugin"),
+        ResourceAction::Install,
+        &PlanStore::default(),
+    );
+    let context = AgentContext {
+        installation_id: installation_id.clone(),
+        project_path: Some(
+            std::fs::canonicalize(&project_a)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+        ),
+    };
+    let link = PathBuf::from(
+        &builtin_registry()
+            .adapter("claude-code")
+            .unwrap()
+            .launcher()
+            .unwrap()
+            .recipe(&context)
+            .unwrap()
+            .args[1],
+    );
+    std::fs::remove_file(&link).unwrap();
+
+    let damaged = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    let damaged_plugin = plugin(&damaged, "native-plugin");
+    assert_eq!(damaged_plugin.health.status, ResourceHealthStatus::Error);
+    assert_eq!(
+        damaged_plugin.health.diagnostic.as_ref().unwrap().code,
+        "plugin_ownership_invalid"
+    );
+    assert_eq!(
+        damaged_plugin.management.status,
+        ResourceManagementStatus::ReadOnly
+    );
+    assert!(builtin_registry()
+        .adapter("claude-code")
+        .unwrap()
+        .launcher()
+        .unwrap()
+        .recipe(&context)
+        .is_err());
+}
+
+#[test]
+#[serial(home_env)]
 fn plugin_without_claude_descriptor_is_visible_but_not_installable_for_claude() {
     let (_home, _guard, source, project_a, _project_b) = setup();
     let plugin_root = source.join("codex-only");
@@ -891,6 +1070,45 @@ fn source_removal_composes_resource_uninstall_and_preserves_source_content() {
     assert!(events
         .windows(2)
         .all(|pair| pair[0].sequence < pair[1].sequence));
+}
+
+#[test]
+#[serial(home_env)]
+fn source_removal_treats_an_absent_uninstalled_resource_as_complete() {
+    let (_home, _guard, source, _project_a, _project_b) = setup();
+    let keep = source.join("keep");
+    std::fs::create_dir_all(&keep).unwrap();
+    std::fs::write(keep.join("SKILL.md"), "---\nname: keep\n---\n").unwrap();
+    let source_id = add_catalog_source(&source);
+    std::fs::remove_dir_all(source.join("review")).unwrap();
+    update_catalog_source(&source_id);
+    let absent_id = catalog_resource_id(&source_id, ResourceKind::Skills, "review");
+    assert!(!load_resource_catalog_snapshot().unwrap().resources[&absent_id].present);
+
+    let source_removals = SourceRemovalPlanStore::default();
+    let preview = source_removals.preview(&source_id).unwrap();
+    assert_eq!(
+        preview
+            .resources
+            .iter()
+            .find(|resource| resource.resource_id == absent_id)
+            .unwrap()
+            .state,
+        ResourceRemovalItemState::Succeeded
+    );
+    let report = source_removals
+        .apply(
+            &preview.plan_id,
+            &preview.risk_fingerprint,
+            true,
+            &ResourceRemovalPlanStore::default(),
+            &SkillCatalogPlanStore::default(),
+            &|_| {},
+        )
+        .unwrap();
+
+    assert_eq!(report.phase, SourceRemovalPhase::Complete);
+    assert!(load_resource_catalog_snapshot().unwrap().sources.is_empty());
 }
 
 #[test]

@@ -662,6 +662,17 @@ pub fn recover_skill_catalog_state(
                     continue;
                 }
             }
+            if let Err(error) =
+                persist_resource_catalog_projection(state.state(), &current.snapshot())
+            {
+                journal.state = CatalogJournalState::RepairRequired;
+                persist_journal(&state, name, &journal, true)?;
+                report.repair_required += 1;
+                report.diagnostics.push(format!(
+                    "resource catalog cannot be recovered for journal {name}: {error}"
+                ));
+                continue;
+            }
             let mut receipt = journal.receipt.clone();
             receipt.status = SkillCatalogReceiptStatus::Recovered;
             persist_receipt(&state, &receipt)?;

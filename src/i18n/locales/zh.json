@@ -635,6 +635,10 @@
       "codexPluginInstallRequiresMarketplace": "Codex 当前不支持安装资源中心的受管 Plugin。",
       "projectWritePending": "当前尚不支持项目级写入。"
     },
+    "inventory": {
+      "pluginArtifactInvalid": "该 Plugin 的受管来源不可用，或已与资源中心记录不一致。",
+      "pluginOwnershipInvalid": "该 Plugin 的项目安装链接已缺失，或已与 AD 的安装记录不一致。"
+    },
     "resources": {
       "externalResource": "该资源不由 AD 持有，将保持只读。",
       "skillNotInstalled": "请先在当前项目安装此 Skill，再执行更新或移除。",
