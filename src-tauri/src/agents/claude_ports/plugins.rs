@@ -255,7 +255,7 @@ impl PluginsPort for ClaudePluginsPort {
             }
         }
         let digest =
-            super::super::directory_tree_digest(&resolved.stable_path).map_err(|error| {
+            super::super::directory_tree_digest(&resolved.physical_path).map_err(|error| {
                 agent_error(
                     AgentErrorCode::InvalidPlan,
                     context,
@@ -456,6 +456,8 @@ pub(crate) fn managed_claude_plugin_links(
     validate_project_path(context, project_path)?;
     let records = super::super::list_resource_installations()
         .map_err(|error| agent_error(AgentErrorCode::Io, context, None, error.to_string()))?;
+    let state = super::super::execution_state::ExecutionState::open()
+        .map_err(|error| agent_error(AgentErrorCode::Io, context, None, error.to_string()))?;
     let mut links = records
         .into_iter()
         .filter(|record| {
@@ -477,10 +479,39 @@ pub(crate) fn managed_claude_plugin_links(
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .map(|record| {
-            managed_plugin_link(
+            let expected = managed_plugin_link(
                 context,
                 &format!("{}/{}", record.source_id, record.install_id),
-            )
+            )?;
+            if record.ownership_record_ids.len() != 1 {
+                return Err(agent_error(
+                    AgentErrorCode::ResourceChanged,
+                    context,
+                    None,
+                    "Managed Plugin ownership evidence is invalid",
+                ));
+            }
+            let ownership =
+                super::super::load_ownership_record_by_id(&state, &record.ownership_record_ids[0])?
+                    .ok_or_else(|| {
+                        agent_error(
+                            AgentErrorCode::ResourceChanged,
+                            context,
+                            None,
+                            "Managed Plugin ownership evidence is unavailable",
+                        )
+                    })?;
+            super::super::validate_ownership_target(&ownership)?;
+            super::super::validate_ownership_artifact(&ownership)?;
+            if std::path::Path::new(&ownership.target_path) != expected {
+                return Err(agent_error(
+                    AgentErrorCode::PermissionDenied,
+                    context,
+                    Some(ownership.resource),
+                    "Managed Plugin target does not match its runtime location",
+                ));
+            }
+            Ok(expected)
         })
         .collect::<Result<Vec<_>, _>>()?;
     links.sort();

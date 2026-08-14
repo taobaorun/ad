@@ -635,6 +635,10 @@
       "codexPluginInstallRequiresMarketplace": "Managed Plugins from the Resource Center are not supported by Codex.",
       "projectWritePending": "Project writes are not currently available."
     },
+    "inventory": {
+      "pluginArtifactInvalid": "This Plugin's managed source is unavailable or no longer matches the Resource Center.",
+      "pluginOwnershipInvalid": "This Plugin's managed project link is missing or no longer matches AD's installation record."
+    },
     "resources": {
       "externalResource": "This resource is owned outside AD and remains read-only.",
       "skillNotInstalled": "Install this Skill in the project before updating or removing it.",

@@ -215,7 +215,9 @@ impl SourceRemovalPlanStore {
                         .map(|item| (&item.canonical_project_path, &item.agent_id))
                         .collect::<BTreeSet<_>>()
                         .len(),
-                    state: if resource.lifecycle == ResourceLifecycle::Suppressed {
+                    state: if resource.lifecycle == ResourceLifecycle::Suppressed
+                        || (!resource.present && matching.is_empty())
+                    {
                         ResourceRemovalItemState::Succeeded
                     } else {
                         ResourceRemovalItemState::Pending

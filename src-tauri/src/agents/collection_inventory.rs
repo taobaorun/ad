@@ -82,6 +82,7 @@ fn catalog_plugin_observations(
     let installations = super::list_resource_installations()
         .map_err(|error| inventory_error(workspace, error.to_string()))?;
     let mut observations = Vec::new();
+    let mut diagnostics = Vec::new();
     for candidate in catalog.resources.values().filter(|resource| {
         resource.kind == ResourceKind::Plugins
             && resource.present
@@ -118,8 +119,56 @@ fn catalog_plugin_observations(
             },
             |record| record.resource.clone(),
         );
-        let resolved = super::resolve_catalog_resource(&candidate.id)
-            .map_err(|error| inventory_error(workspace, error.to_string()))?;
+        let (artifact_id, mut health) = match super::resolve_catalog_resource(&candidate.id) {
+            Ok(resolved) => (
+                Some(resolved.stable_path.to_string_lossy().into_owned()),
+                ResourceHealthView {
+                    status: ResourceHealthStatus::Healthy,
+                    diagnostic: None,
+                },
+            ),
+            Err(_) => {
+                let diagnostic = ItemDiagnostic {
+                    code: "resource_catalog_binding_invalid".into(),
+                    message_key: "agents.inventory.pluginArtifactInvalid".into(),
+                    retryable: false,
+                    resource_key: None,
+                };
+                diagnostics.push(diagnostic.clone());
+                (
+                    None,
+                    ResourceHealthView {
+                        status: ResourceHealthStatus::Error,
+                        diagnostic: Some(diagnostic),
+                    },
+                )
+            }
+        };
+        let mut configured = false;
+        let mut ownership_kind = ResourceOwnershipKind::AdManaged;
+        let mut ownership_record = None;
+        if let Some(record) = owned {
+            if super::validate_ownership_target(record)
+                .and_then(|_| super::validate_ownership_artifact(record))
+                .is_ok()
+            {
+                configured = true;
+                ownership_record = Some(record.clone());
+            } else {
+                let diagnostic = ItemDiagnostic {
+                    code: "plugin_ownership_invalid".into(),
+                    message_key: "agents.inventory.pluginOwnershipInvalid".into(),
+                    retryable: false,
+                    resource_key: None,
+                };
+                diagnostics.push(diagnostic.clone());
+                ownership_kind = ResourceOwnershipKind::Unknown;
+                health = ResourceHealthView {
+                    status: ResourceHealthStatus::Error,
+                    diagnostic: Some(diagnostic),
+                };
+            }
+        }
         let agent_supported = candidate
             .compatible_agents
             .contains(workspace.agent_id.as_str());
@@ -131,16 +180,13 @@ fn catalog_plugin_observations(
             logical_id: candidate.install_id.clone(),
             display_name: candidate.display_name.clone(),
             description: candidate.description.clone(),
-            enabled,
-            ownership: ResourceOwnershipKind::AdManaged,
+            enabled: enabled && configured,
+            ownership: ownership_kind,
             agent_supported,
-            ownership_record: owned.cloned(),
-            health: ResourceHealthView {
-                status: ResourceHealthStatus::Healthy,
-                diagnostic: None,
-            },
-            configured: owned.is_some(),
-            artifact_id: Some(resolved.stable_path.to_string_lossy().into_owned()),
+            ownership_record,
+            health,
+            configured,
+            artifact_id,
             resettable: false,
             source: Some(ResourceSourceView {
                 kind: match source.source_type {
@@ -158,7 +204,7 @@ fn catalog_plugin_observations(
             }),
         });
     }
-    Ok((observations, Vec::new()))
+    Ok((observations, diagnostics))
 }
 
 #[derive(Clone)]
@@ -432,8 +478,8 @@ pub(super) fn collection_inventory(
                 ownership,
                 agent_supported,
                 target_occupied,
-                has_health_error: configured_winner
-                    .is_some_and(|winner| winner.health.status == ResourceHealthStatus::Error),
+                has_health_error: configured_winner.unwrap_or(&winner).health.status
+                    == ResourceHealthStatus::Error,
                 owned_artifact: ownership_record.map(|record| record.artifact_id.as_str()),
                 owned_source_binding: ownership_record
                     .is_some_and(|record| record.source_binding.is_some()),

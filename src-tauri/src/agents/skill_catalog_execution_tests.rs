@@ -99,6 +99,109 @@ fn recovery_finishes_receipt_when_catalog_commit_is_durable() {
 
 #[test]
 #[serial(home_env)]
+fn recovery_reprojects_resources_after_a_durable_git_catalog_commit() {
+    let home = tempfile::tempdir().unwrap();
+    std::env::set_var("AD_HOME", home.path());
+    let source = git_source();
+    let first_staged = staged_git_checkout(&source, "first", &"a".repeat(40));
+    let (first, first_publication) =
+        publish_staged_git_skill_source_binding(first_staged, None).unwrap();
+    first_publication.commit();
+    let request = SkillSourceRequest {
+        display_name: "Team skills".into(),
+        source_type: SkillSourceType::Git,
+        location: source.url.clone(),
+        branch: None,
+        subdirectory: None,
+        auto_update: false,
+    };
+    let mut document = super::super::skill_catalog::SkillCatalogDocument::empty();
+    document
+        .add_binding(source.id.clone(), &request, first.clone(), Utc::now())
+        .unwrap();
+    let before_bytes = document.render().unwrap();
+    let before_catalog_revision = ContentDigest::sha256(&before_bytes);
+    let state = ExecutionState::open().unwrap();
+    state
+        .state()
+        .write_atomic("skill_catalog.json", &before_bytes)
+        .unwrap();
+    persist_resource_catalog_projection(
+        state.state(),
+        &load_skill_catalog_state_from(state.state())
+            .unwrap()
+            .snapshot(),
+    )
+    .unwrap();
+
+    let second_staged = staged_git_checkout(&source, "second", &"b".repeat(40));
+    let (second, second_publication) =
+        publish_staged_git_skill_source_binding(second_staged, Some(&first)).unwrap();
+    second_publication.commit();
+    document
+        .update_binding(&source.id, second.clone(), Utc::now())
+        .unwrap();
+    let after_bytes = document.render().unwrap();
+    let after_catalog_revision = ContentDigest::sha256(&after_bytes);
+    state
+        .state()
+        .write_atomic("skill_catalog.json", &after_bytes)
+        .unwrap();
+    let stale = crate::agents::load_resource_catalog_snapshot().unwrap();
+    assert_eq!(
+        stale.sources[&source.id]
+            .binding
+            .as_ref()
+            .unwrap()
+            .physical_root,
+        first.physical_root
+    );
+    let recovery_receipt = SkillCatalogReceipt {
+        schema_version: RECEIPT_SCHEMA_VERSION,
+        id: ReceiptId::from(format!("skill-catalog-receipt:{}", uuid::Uuid::new_v4())),
+        plan_id: PlanId::from(format!("skill-catalog-plan:{}", uuid::Uuid::new_v4())),
+        action: SkillCatalogAction::Update,
+        source_id: source.id.clone(),
+        before_catalog_revision,
+        after_catalog_revision,
+        artifact: None,
+        binding: Some(second.clone()),
+        previous_binding: Some(first),
+        rollback_of: None,
+        affected_resources: Vec::new(),
+        affected_workspaces: Vec::new(),
+        backup_id: None,
+        status: SkillCatalogReceiptStatus::Complete,
+        created_at: Utc::now(),
+    };
+    write_applying_journal(&state, recovery_receipt);
+
+    let report = recover_skill_catalog_state().unwrap();
+
+    assert_eq!(report.recovered, 1);
+    let recovered = crate::agents::load_resource_catalog_snapshot().unwrap();
+    assert_eq!(
+        recovered.sources[&source.id]
+            .binding
+            .as_ref()
+            .unwrap()
+            .physical_root,
+        second.physical_root
+    );
+    let resource_id = catalog_resource_id(&source.id, ResourceKind::Skills, "review");
+    let resolved = crate::agents::resolve_catalog_resource(&resource_id).unwrap();
+    assert!(resolved
+        .physical_path
+        .starts_with(std::fs::canonicalize(&second.physical_root).unwrap()));
+    assert!(
+        std::fs::read_to_string(resolved.physical_path.join("SKILL.md"))
+            .unwrap()
+            .contains("second")
+    );
+}
+
+#[test]
+#[serial(home_env)]
 fn recovery_compensates_when_catalog_commit_never_happened() {
     let home = tempfile::tempdir().unwrap();
     std::env::set_var("AD_HOME", home.path());
