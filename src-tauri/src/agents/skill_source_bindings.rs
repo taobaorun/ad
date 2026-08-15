@@ -17,8 +17,7 @@ use super::{
     SkillSourceType,
 };
 use crate::fs::paths::{
-    ad_home, managed_skill_source_dir, managed_skill_source_generations_dir,
-    skill_acquisition_staging_dir, skill_library_dir,
+    ad_home, managed_skill_source_dir, skill_acquisition_staging_dir, skill_library_dir,
 };
 use crate::models::SkillSource;
 
@@ -223,6 +222,8 @@ pub fn inspect_local_skill_source_binding(
 
 pub fn stage_git_skill_source_binding(
     source: &SkillSource,
+    display_name: &str,
+    current_binding: Option<&SkillSourceBinding>,
 ) -> Result<StagedGitSkillSourceBinding, SkillArtifactError> {
     if source.source_type != SkillSourceType::Git {
         return Err(SkillArtifactError::InvalidSource(
@@ -247,6 +248,8 @@ pub fn stage_git_skill_source_binding(
             .map_err(|error| SkillArtifactError::Git(error.to_string()))?;
         build_staged_git_binding(
             source,
+            display_name,
+            current_binding,
             operation_root.clone(),
             checkout_root,
             revision,
@@ -261,6 +264,8 @@ pub fn stage_git_skill_source_binding(
 
 fn build_staged_git_binding(
     source: &SkillSource,
+    display_name: &str,
+    current_binding: Option<&SkillSourceBinding>,
     operation_root: PathBuf,
     checkout_root: PathBuf,
     revision: String,
@@ -275,8 +280,18 @@ fn build_staged_git_binding(
     let manifest_bytes = serde_json::to_vec(&manifest)
         .map_err(|error| SkillArtifactError::Corrupt(error.to_string()))?;
     let source_key = skill_source_key(&source.id);
-    let source_root = managed_skill_source_dir(&source_key).map_err(path_error)?;
-    let generations = managed_skill_source_generations_dir(&source_key).map_err(path_error)?;
+    let source_root = if let Some(current_binding) = current_binding {
+        if current_binding.source_id != source.id {
+            return Err(SkillArtifactError::Corrupt(
+                "current Git source binding belongs to another source".into(),
+            ));
+        }
+        managed_git_source_root(current_binding)?
+    } else {
+        let directory_name = skill_source_directory_name(display_name, &source.id);
+        managed_skill_source_dir(&directory_name).map_err(path_error)?
+    };
+    let generations = source_root.join("generations");
     let source_revision = format!("git:{revision}");
     let generation_digest =
         ContentDigest::sha256(format!("{}:{}", source_revision, tree_digest.as_str()).as_bytes());
@@ -356,9 +371,28 @@ pub(super) fn stage_existing_git_checkout_for_test(
     operation_root: PathBuf,
     revision: &str,
 ) -> Result<StagedGitSkillSourceBinding, SkillArtifactError> {
+    stage_existing_git_checkout_with_current_for_test(
+        source,
+        "Git source",
+        None,
+        operation_root,
+        revision,
+    )
+}
+
+#[cfg(test)]
+pub(super) fn stage_existing_git_checkout_with_current_for_test(
+    source: &SkillSource,
+    display_name: &str,
+    current_binding: Option<&SkillSourceBinding>,
+    operation_root: PathBuf,
+    revision: &str,
+) -> Result<StagedGitSkillSourceBinding, SkillArtifactError> {
     let lease = super::skill_artifact_lease::acquire_staging_lease(&operation_root)?;
     build_staged_git_binding(
         source,
+        display_name,
+        current_binding,
         operation_root.clone(),
         operation_root.join("source"),
         revision.to_owned(),
@@ -374,10 +408,9 @@ pub fn publish_staged_git_skill_source_binding(
     if let Some(previous) = previous {
         validate_managed_git_binding_location(previous)?;
     }
-    let source_key = skill_source_key(&staged.binding.source_id);
-    let source_root = managed_skill_source_dir(&source_key).map_err(path_error)?;
-    let generations = managed_skill_source_generations_dir(&source_key).map_err(path_error)?;
-    ensure_managed_git_source_directories(&source_key)?;
+    let source_root = managed_git_source_root(&staged.binding)?;
+    let generations = source_root.join("generations");
+    ensure_managed_git_source_directories(&source_root)?;
     let current_path = source_root.join("current");
     let previous_target = validate_current_before_switch(&current_path, previous)?;
     let staged_selected = staged
@@ -554,6 +587,32 @@ pub fn skill_source_key(source_id: &str) -> String {
         .to_owned()
 }
 
+pub(crate) fn skill_source_directory_name(display_name: &str, source_id: &str) -> String {
+    let mut slug = String::new();
+    let mut separator_pending = false;
+    for character in display_name.trim().chars().flat_map(char::to_lowercase) {
+        if character.is_alphanumeric() {
+            if separator_pending && !slug.is_empty() && slug.chars().count() < 48 {
+                slug.push('-');
+            }
+            separator_pending = false;
+            if slug.chars().count() < 48 {
+                slug.push(character);
+            }
+        } else if !slug.is_empty() {
+            separator_pending = true;
+        }
+    }
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+    if slug.is_empty() {
+        slug.push_str("source");
+    }
+    let source_key = skill_source_key(source_id);
+    format!("{slug}--{}", &source_key[..12])
+}
+
 fn validate_managed_git_binding_location(
     binding: &SkillSourceBinding,
 ) -> Result<(), SkillArtifactError> {
@@ -565,17 +624,49 @@ fn validate_managed_git_binding_location(
         ));
     }
     let source_key = skill_source_key(&binding.source_id);
-    let source_root = managed_skill_source_dir(&source_key).map_err(path_error)?;
+    let source_root = managed_git_source_root(binding)?;
     let expected_binding_id = format!("skill-source-binding:{source_key}");
-    if binding.binding_id != expected_binding_id
-        || Path::new(&binding.stable_root) != source_root.join("current")
-    {
+    if binding.binding_id != expected_binding_id {
         return Err(SkillArtifactError::Corrupt(
             "managed Git source binding is outside its backend-derived source root".into(),
         ));
     }
     relative_generation_target(&source_root.join("current"), binding.physical_root.as_str())?;
     Ok(())
+}
+
+fn managed_git_source_root(binding: &SkillSourceBinding) -> Result<PathBuf, SkillArtifactError> {
+    let stable_root = Path::new(&binding.stable_root);
+    if stable_root.file_name() != Some(std::ffi::OsStr::new("current")) {
+        return Err(SkillArtifactError::Corrupt(
+            "managed Git source binding has an invalid stable root".into(),
+        ));
+    }
+    let source_root = stable_root.parent().ok_or_else(|| {
+        SkillArtifactError::Corrupt("managed Git source stable root has no parent".into())
+    })?;
+    let directory_name = source_root
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .ok_or_else(|| {
+            SkillArtifactError::Corrupt(
+                "managed Git source directory name is not valid Unicode".into(),
+            )
+        })?;
+    let source_key = skill_source_key(&binding.source_id);
+    let readable_suffix = format!("--{}", &source_key[..12]);
+    if directory_name != source_key && !directory_name.ends_with(&readable_suffix) {
+        return Err(SkillArtifactError::Corrupt(
+            "managed Git source directory does not match its source identity".into(),
+        ));
+    }
+    let expected_root = managed_skill_source_dir(directory_name).map_err(path_error)?;
+    if source_root != expected_root {
+        return Err(SkillArtifactError::Corrupt(
+            "managed Git source binding is outside the Skill library".into(),
+        ));
+    }
+    Ok(expected_root)
 }
 
 fn select_source_root(
@@ -626,14 +717,13 @@ fn io_error(path: &Path, source: std::io::Error) -> SkillArtifactError {
     }
 }
 
-fn ensure_managed_git_source_directories(source_key: &str) -> Result<(), SkillArtifactError> {
+fn ensure_managed_git_source_directories(source_root: &Path) -> Result<(), SkillArtifactError> {
     let ad_root = ad_home().map_err(path_error)?;
     ensure_private_directory(&ad_root)?;
     let library = skill_library_dir().map_err(path_error)?;
     ensure_private_directory(&library)?;
-    let source_root = managed_skill_source_dir(source_key).map_err(path_error)?;
-    ensure_private_directory(&source_root)?;
-    let generations = managed_skill_source_generations_dir(source_key).map_err(path_error)?;
+    ensure_private_directory(source_root)?;
+    let generations = source_root.join("generations");
     ensure_private_directory(&generations)
 }
 

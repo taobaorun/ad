@@ -5,7 +5,8 @@ use serial_test::serial;
 
 use super::skill_source_bindings::{
     inspect_local_skill_source_binding, publish_staged_git_skill_source_binding,
-    reconcile_git_skill_source_current, skill_source_key, stage_existing_git_checkout_for_test,
+    reconcile_git_skill_source_current, skill_source_directory_name, skill_source_key,
+    stage_existing_git_checkout_for_test, stage_existing_git_checkout_with_current_for_test,
     switch_git_skill_source_binding,
 };
 use crate::fs::paths::{
@@ -50,6 +51,41 @@ fn staged_git_checkout(body: &str, revision: &str) -> super::StagedGitSkillSourc
     stage_existing_git_checkout_for_test(&git_source(), operation, revision).unwrap()
 }
 
+fn staged_git_checkout_with_current(
+    body: &str,
+    revision: &str,
+    current: &super::SkillSourceBinding,
+) -> super::StagedGitSkillSourceBinding {
+    let operation = skill_acquisition_staging_dir()
+        .unwrap()
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(operation.join("source/review")).unwrap();
+    std::fs::write(
+        operation.join("source/review/SKILL.md"),
+        format!("---\nname: review\n---\n{body}"),
+    )
+    .unwrap();
+    stage_existing_git_checkout_with_current_for_test(
+        &git_source(),
+        "Renamed Git Source",
+        Some(current),
+        operation,
+        revision,
+    )
+    .unwrap()
+}
+
+#[test]
+fn git_source_directory_name_is_readable_and_identity_scoped() {
+    let name = skill_source_directory_name("  团队 Skills / Plugin 管理  ", "git-source");
+    let source_key = skill_source_key("git-source");
+
+    assert_eq!(
+        name,
+        format!("团队-skills-plugin-管理--{}", &source_key[..12])
+    );
+}
+
 #[test]
 #[serial(home_env)]
 fn local_binding_points_at_the_original_checkout_without_publishing_an_artifact() {
@@ -90,6 +126,15 @@ fn git_binding_switches_one_stable_current_link_and_can_compensate() {
         publish_staged_git_skill_source_binding(first_staged, None).unwrap();
     first_publication.commit();
     let stable_root = Path::new(&first.stable_root);
+    assert_eq!(
+        stable_root
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy(),
+        skill_source_directory_name("Git source", "git-source")
+    );
     let first_link_target = std::fs::read_link(stable_root).unwrap();
     let projects = home.path().join("projects");
     let project_a = projects.join("a/review");
@@ -151,6 +196,46 @@ fn git_binding_switches_one_stable_current_link_and_can_compensate() {
 
 #[test]
 #[serial(home_env)]
+fn git_binding_update_keeps_a_legacy_digest_root_compatible() {
+    let home = tempfile::tempdir().unwrap();
+    std::env::set_var("AD_HOME", home.path());
+    let first_staged = staged_git_checkout("first", &"a".repeat(40));
+    let (first, first_publication) =
+        publish_staged_git_skill_source_binding(first_staged, None).unwrap();
+    first_publication.commit();
+
+    let readable_root = Path::new(&first.stable_root).parent().unwrap();
+    let legacy_root = home
+        .path()
+        .join(".ad/skill-library")
+        .join(skill_source_key("git-source"));
+    std::fs::rename(readable_root, &legacy_root).unwrap();
+    let mut legacy = first.clone();
+    legacy.stable_root = legacy_root.join("current").to_string_lossy().into_owned();
+    let generation_relative = Path::new(&first.physical_root)
+        .strip_prefix(readable_root)
+        .unwrap();
+    legacy.physical_root = legacy_root
+        .join(generation_relative)
+        .to_string_lossy()
+        .into_owned();
+
+    let second_staged = staged_git_checkout_with_current("second", &"b".repeat(40), &legacy);
+    assert_eq!(second_staged.binding().stable_root, legacy.stable_root);
+    let (second, publication) =
+        publish_staged_git_skill_source_binding(second_staged, Some(&legacy)).unwrap();
+    publication.commit();
+
+    assert_eq!(second.stable_root, legacy.stable_root);
+    assert!(
+        std::fs::read_to_string(legacy_root.join("current/review/SKILL.md"))
+            .unwrap()
+            .contains("second")
+    );
+}
+
+#[test]
+#[serial(home_env)]
 fn git_binding_rejects_a_symlinked_managed_source_root() {
     let home = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
@@ -158,8 +243,11 @@ fn git_binding_rejects_a_symlinked_managed_source_root() {
     let staged = staged_git_checkout("first", &"a".repeat(40));
     let library = home.path().join(".ad/skill-library");
     std::fs::create_dir_all(&library).unwrap();
-    std::os::unix::fs::symlink(outside.path(), library.join(skill_source_key("git-source")))
-        .unwrap();
+    std::os::unix::fs::symlink(
+        outside.path(),
+        library.join(skill_source_directory_name("Git source", "git-source")),
+    )
+    .unwrap();
 
     let error = publish_staged_git_skill_source_binding(staged, None).unwrap_err();
 
@@ -254,7 +342,11 @@ fn git_binding_rejects_a_symlinked_existing_generation_with_a_matching_subtree()
     let binding = staged.binding().clone();
     std::fs::create_dir_all(outside.path().join("selected/review")).unwrap();
     std::fs::write(outside.path().join("selected/review/SKILL.md"), body).unwrap();
-    let generations = managed_skill_source_generations_dir(&skill_source_key(&source.id)).unwrap();
+    let generations = managed_skill_source_generations_dir(&skill_source_directory_name(
+        "Git source",
+        &source.id,
+    ))
+    .unwrap();
     std::fs::create_dir_all(&generations).unwrap();
     let generation_root = Path::new(&binding.physical_root)
         .parent()
