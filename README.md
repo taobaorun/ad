@@ -2,14 +2,14 @@
 
 AD 是一个 macOS 桌面应用，用于按项目管理本地 Coding Agent 配置。目前内置支持 Claude Code 与 Codex。
 
-AD 通过顶级资源中心统一纳管 Skill / Plugin 的 Git 或本地来源；项目安装只能从资源中心选择资源，并明确选择当前项目的 Agent。选择项目和 Agent installation 后，AD 会把最终生效的 Settings、Skills、Plugins、来源、覆盖关系和管理状态集中到同一个 Project Agent Workspace。受支持的写操作统一经过 Preview → Apply → receipt，并提供受 digest 保护的 rollback。
+AD 提供与项目并列的顶级 Harness，用于管理和分发给 Agent 使用的可复用能力。本期 Harness 开放 Skills / Plugins 子功能，统一纳管 Git 或本地来源；项目安装只能从该受管库选择资源，并明确选择当前项目的 Agent。选择项目和 Agent installation 后，AD 会把最终生效的 Settings、Skills、Plugins、来源、覆盖关系和管理状态集中到同一个 Project Agent Workspace。受支持的写操作统一经过 Preview → Apply → receipt，并提供受 digest 保护的 rollback。
 
 ## 当前能力
 
 - Claude Code / Codex 的 user 与 project 配置盘点、编辑、历史和恢复；
-- Skill / Plugin 资源中心、Local 原始目录链接、Git 共享受管 checkout，以及项目级安装/启停/卸载；
+- Harness 中的 Skills / Plugins 管理、Local 原始目录链接、Git 共享受管 checkout，以及项目级安装/启停/卸载；
 - Skill 支持 Claude Code 与 Codex；Plugin 通过项目级 direct reference 支持 Claude Code，当前 Codex 明确显示不支持；
-- Claude Code 有效项目环境到 Codex 的 Settings 转换；外部 Skill / Plugin 只显示为“非 AD 托管”，必须先加入资源中心才能由 AD 安装；
+- Claude Code 有效项目环境到 Codex 的 Settings 转换；外部 Skill / Plugin 只显示为“非 AD 托管”，必须先加入 Harness 受管库才能由 AD 安装；
 - 项目 A/B、Agent installation、operation receipt 与 history 的项目级隔离；
 - 对 external、degraded、unsupported、partial 和 conflict 状态如实呈现。
 
@@ -51,4 +51,4 @@ pnpm release:mac
 - auth、token、session、chat/prompt history、logs、SQLite 和索引不进入配置快照、diff、backup 或日志；
 - 项目级配置隔离不等同于第三方 Skill、Plugin、hook 或 MCP 的运行时沙箱。
 
-资源管理的产品契约与技术设计见 [`docs/product-specs/skill-plugin-resource-management.md`](./docs/product-specs/skill-plugin-resource-management.md) 和 [`docs/design-docs/skill-plugin-resource-management.html`](./docs/design-docs/skill-plugin-resource-management.html)；整体架构见 [`docs/design-docs/architecture.md`](./docs/design-docs/architecture.md)。
+Harness 中 Skills / Plugins 管理的产品契约与技术设计见 [`docs/product-specs/skill-plugin-resource-management.md`](./docs/product-specs/skill-plugin-resource-management.md) 和 [`docs/design-docs/skill-plugin-resource-management.md`](./docs/design-docs/skill-plugin-resource-management.md)；整体架构见 [`docs/design-docs/architecture.md`](./docs/design-docs/architecture.md)。

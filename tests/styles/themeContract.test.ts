@@ -42,6 +42,8 @@ describe('theme contract', () => {
 
   it('gives native controls a single semantic focus indicator', () => {
     expect(themeCss).toContain(':root :is(button, a[href], input, textarea, select):focus-visible');
+    expect(themeCss).toContain(':root [data-input-shell]:focus-within');
+    expect(themeCss).toContain(':root [data-input-shell] :is(input, textarea):focus-visible');
     expect(themeCss).toContain('--ring: var(--color-link);');
     expect(themeCss).toContain('box-shadow: 0 0 0 2px rgb(var(--ring));');
     expect(themeCss).toContain('outline: 2px solid transparent;');

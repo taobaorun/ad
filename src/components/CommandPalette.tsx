@@ -347,7 +347,10 @@ export function CommandPalette() {
       }}
     >
       <div className="flex max-h-[500px] w-[560px] max-w-[calc(100%-48px)] flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
-        <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+        <div
+          data-input-shell=""
+          className="flex items-center gap-3 rounded-t-xl border-b border-border px-4 py-3"
+        >
           <span className="font-mono text-xs text-muted-foreground">⌘K</span>
           <input
             ref={inputRef}

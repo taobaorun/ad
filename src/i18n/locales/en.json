@@ -57,12 +57,19 @@
     "pin": "Pin to top",
     "unpin": "Unpin",
     "pinnedAria": "Pinned",
-    "resources": "Resources"
+    "harness": "Harness"
   },
   "resourceCenter": {
-    "eyebrow": "Managed library",
-    "title": "Resource Center",
-    "subtitle": "Manage Skills and Plugins that can be installed into projects.",
+    "eyebrow": "Agent capability workspace",
+    "title": "Harness",
+    "subtitle": "Manage reusable capabilities for your agents.",
+    "capabilityNavLabel": "Harness capabilities",
+    "capability": {
+      "mcp": "MCP",
+      "mcpStatus": "Coming soon"
+    },
+    "sectionTitle": "Skills & Plugins",
+    "sectionSubtitle": "Manage Skills and Plugins that can be installed into projects.",
     "addSource": "Add source",
     "sources": "Sources",
     "updateSource": "Update source {{name}}",
@@ -571,7 +578,7 @@
       "dangerous": "Dangerous"
     },
     "pluginDetail": {
-      "unsupported_agent_capability": "Codex cannot load this Plugin by direct reference. Add the original source to the Resource Center and use a supported Agent."
+      "unsupported_agent_capability": "Codex cannot load this Plugin by direct reference. Add the original source to Harness and use a supported Agent."
     },
     "kind": {
       "settings": "Settings and permissions",
@@ -632,11 +639,11 @@
   },
   "agents": {
     "capabilities": {
-      "codexPluginInstallRequiresMarketplace": "Managed Plugins from the Resource Center are not supported by Codex.",
+      "codexPluginInstallRequiresMarketplace": "Managed Plugins from Harness are not supported by Codex.",
       "projectWritePending": "Project writes are not currently available."
     },
     "inventory": {
-      "pluginArtifactInvalid": "This Plugin's managed source is unavailable or no longer matches the Resource Center.",
+      "pluginArtifactInvalid": "This Plugin's managed source is unavailable or no longer matches Harness.",
       "pluginOwnershipInvalid": "This Plugin's managed project link is missing or no longer matches AD's installation record."
     },
     "resources": {

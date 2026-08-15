@@ -172,6 +172,16 @@ aside {
   outline-offset: 2px;
 }
 
+/* Composite inputs (icons, shortcuts, or actions sharing one visual field) draw
+   their focus indicator on the field shell instead of around the inner text box. */
+:root [data-input-shell]:focus-within {
+  box-shadow: 0 0 0 2px rgb(var(--ring));
+}
+
+:root [data-input-shell] :is(input, textarea):focus-visible {
+  box-shadow: none;
+}
+
 /* Theme-aware scrollbars use non-critical Overlay roles in both flavors. */
 
 /* `-webkit-appearance: none` is required to displace macOS "Always show scroll

@@ -104,13 +104,14 @@ export function ProjectSidebar() {
           }}
         >
           <Boxes className="h-3.5 w-3.5" />
-          {t('sidebar.resources')}
+          {t('sidebar.harness')}
         </button>
       </div>
 
       {projects.length > 0 && (
         <div className="px-2 pt-2" style={{ flexShrink: 0 }}>
           <div
+            data-input-shell=""
             className="flex items-center gap-1.5 rounded-md px-2"
             style={{
               height: 28,
