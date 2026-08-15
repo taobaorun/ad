@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Boxes, GitBranch, Link2, Plus, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
+import {
+  Boxes,
+  GitBranch,
+  Link2,
+  Network,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { tauri } from '@/lib/tauri';
 import type {
@@ -252,151 +262,177 @@ export function ResourceCenter() {
   return (
     <section
       className="h-full w-full overflow-y-auto bg-background"
-      aria-labelledby="resource-center-title"
+      aria-labelledby="harness-title"
     >
       <div className="mx-auto w-full max-w-[1180px] px-6 py-8 lg:px-10">
-        <header className="flex flex-wrap items-end justify-between gap-4">
+        <header>
           <div>
             <div className="mb-2 inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
               <Boxes className="h-4 w-4" /> {t('resourceCenter.eyebrow')}
             </div>
-            <h1 id="resource-center-title" className="text-2xl font-semibold tracking-tight">
+            <h1 id="harness-title" className="text-2xl font-semibold tracking-tight">
               {t('resourceCenter.title')}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">{t('resourceCenter.subtitle')}</p>
           </div>
-          <Button type="button" onClick={() => setAddOpen(true)}>
-            <Plus className="h-4 w-4" /> {t('resourceCenter.addSource')}
-          </Button>
         </header>
 
-        <div className="mt-7 flex flex-wrap gap-3 rounded-xl border border-border bg-card p-3">
-          <label className="flex min-w-[220px] flex-1 items-center gap-2 rounded-lg bg-muted/60 px-3">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <span className="sr-only">{t('resourceCenter.search')}</span>
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t('resourceCenter.search')}
-              className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none"
-            />
-          </label>
-          <div
-            className="flex rounded-lg bg-muted/60 p-1"
-            role="group"
-            aria-label={t('resourceCenter.filterLabel')}
+        <nav
+          className="mt-6 flex items-center gap-1 border-b border-border"
+          aria-label={t('resourceCenter.capabilityNavLabel')}
+        >
+          <a
+            href="#harness-skills-plugins"
+            aria-current="page"
+            className="inline-flex items-center gap-2 border-b-2 border-primary px-3 py-2 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {(['all', 'skills', 'plugins'] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={filter === value}
-                onClick={() => setFilter(value)}
-                className="rounded-md px-3 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                style={{ background: filter === value ? 'var(--ds-bg-card)' : 'transparent' }}
-              >
-                {t(`resourceCenter.filter.${value}`)}
-              </button>
-            ))}
-          </div>
-          <Button type="button" variant="ghost" size="sm" onClick={() => void load()}>
-            <RefreshCw className="h-3.5 w-3.5" /> {t('resourceCenter.refresh')}
-          </Button>
-        </div>
-
-        {catalog && Object.values(catalog.sources).length > 0 && (
-          <div
-            className="mt-4 flex flex-wrap items-center gap-2"
-            aria-label={t('resourceCenter.sources')}
+            <Boxes className="h-4 w-4 text-primary" />
+            {t('resourceCenter.sectionTitle')}
+          </a>
+          <span
+            role="link"
+            aria-disabled="true"
+            className="inline-flex cursor-not-allowed items-center gap-2 border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground opacity-70"
           >
-            <span className="mr-1 text-xs font-medium text-muted-foreground">
-              {t('resourceCenter.sources')}
+            <Network className="h-4 w-4" />
+            <span>{t('resourceCenter.capability.mcp')}</span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium">
+              {t('resourceCenter.capability.mcpStatus')}
             </span>
-            {Object.values(catalog.sources)
-              .sort((left, right) => left.displayName.localeCompare(right.displayName))
-              .map((source) => (
-                <div
-                  key={source.id}
-                  className="inline-flex items-center gap-1 rounded-full border border-border bg-card py-1 pl-2.5 pr-1"
-                >
-                  {source.sourceType === 'git' ? (
-                    <GitBranch className="h-3 w-3 text-muted-foreground" />
-                  ) : (
-                    <Link2 className="h-3 w-3 text-muted-foreground" />
-                  )}
-                  <span className="max-w-44 truncate text-xs">{source.displayName}</span>
-                  <span className="text-[9px] uppercase text-muted-foreground">
-                    {source.sourceType}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={sourceActionId !== null}
-                    onClick={() => void previewSourceUpdate(source)}
-                    aria-label={t('resourceCenter.updateSource', { name: source.displayName })}
-                    className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-                  >
-                    <RefreshCw
-                      className={`h-3 w-3 ${sourceActionId === source.id ? 'animate-spin' : ''}`}
-                    />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={sourceActionId !== null}
-                    onClick={() => void previewSourceRemoval(source)}
-                    aria-label={t('resourceCenter.removeSource', { name: source.displayName })}
-                    className="rounded-full p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-          </div>
-        )}
+          </span>
+        </nav>
 
-        {error && (
-          <div
-            role="alert"
-            className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-          >
-            {error}
-          </div>
-        )}
-        {loading ? (
-          <div className="py-20 text-center text-sm text-muted-foreground">
-            {t('resourceCenter.loading')}
-          </div>
-        ) : resources.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-dashed border-border px-6 py-16 text-center">
-            <Boxes className="mx-auto h-7 w-7 text-muted-foreground" />
-            <h2 className="mt-3 text-sm font-medium">{t('resourceCenter.empty')}</h2>
-            <p className="mt-1 text-xs text-muted-foreground">{t('resourceCenter.emptyHint')}</p>
-          </div>
-        ) : managedResources.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-dashed border-border px-6 py-12 text-center">
-            <Boxes className="mx-auto h-7 w-7 text-muted-foreground" />
-            <h2 className="mt-3 text-sm font-medium">{t('resourceCenter.noManaged')}</h2>
-          </div>
-        ) : (
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {managedResources.map((resource) => (
-              <ResourceCard
-                key={resource.id}
-                resource={resource}
-                source={catalog?.sources[resource.sourceId]}
-                onRemove={() => void previewRemoval(resource)}
-                onReadd={() => void readd(resource)}
-                busy={readdingResourceId === resource.id}
+        <section
+          id="harness-skills-plugins"
+          className="mt-6 scroll-mt-4"
+          aria-labelledby="skills-plugins-title"
+        >
+          <header className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h2 id="skills-plugins-title" className="text-base font-semibold tracking-tight">
+                {t('resourceCenter.sectionTitle')}
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('resourceCenter.sectionSubtitle')}
+              </p>
+            </div>
+            <Button type="button" onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" /> {t('resourceCenter.addSource')}
+            </Button>
+          </header>
+
+          <div className="mt-4 flex flex-wrap gap-3 rounded-xl border border-border bg-card p-3">
+            <label
+              data-input-shell=""
+              className="flex min-w-[220px] flex-1 items-center gap-2 rounded-lg bg-muted/60 px-3"
+            >
+              <Search className="h-4 w-4 text-muted-foreground" />
+              <span className="sr-only">{t('resourceCenter.search')}</span>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t('resourceCenter.search')}
+                className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none"
               />
-            ))}
+            </label>
+            <div
+              className="flex rounded-lg bg-muted/60 p-1"
+              role="group"
+              aria-label={t('resourceCenter.filterLabel')}
+            >
+              {(['all', 'skills', 'plugins'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={filter === value}
+                  onClick={() => setFilter(value)}
+                  className="rounded-md px-3 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  style={{ background: filter === value ? 'var(--ds-bg-card)' : 'transparent' }}
+                >
+                  {t(`resourceCenter.filter.${value}`)}
+                </button>
+              ))}
+            </div>
+            <Button type="button" variant="ghost" size="sm" onClick={() => void load()}>
+              <RefreshCw className="h-3.5 w-3.5" /> {t('resourceCenter.refresh')}
+            </Button>
           </div>
-        )}
-        {!loading && suppressedResources.length > 0 && (
-          <details className="mt-8 rounded-xl border border-border bg-card">
-            <summary className="cursor-pointer list-none px-4 py-3 text-xs font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              {t('resourceCenter.removedResources', { count: suppressedResources.length })}
-            </summary>
-            <div className="grid gap-3 border-t border-border p-3 sm:grid-cols-2 xl:grid-cols-3">
-              {suppressedResources.map((resource) => (
+
+          {catalog && Object.values(catalog.sources).length > 0 && (
+            <div
+              className="mt-4 flex flex-wrap items-center gap-2"
+              aria-label={t('resourceCenter.sources')}
+            >
+              <span className="mr-1 text-xs font-medium text-muted-foreground">
+                {t('resourceCenter.sources')}
+              </span>
+              {Object.values(catalog.sources)
+                .sort((left, right) => left.displayName.localeCompare(right.displayName))
+                .map((source) => (
+                  <div
+                    key={source.id}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-card py-1 pl-2.5 pr-1"
+                  >
+                    {source.sourceType === 'git' ? (
+                      <GitBranch className="h-3 w-3 text-muted-foreground" />
+                    ) : (
+                      <Link2 className="h-3 w-3 text-muted-foreground" />
+                    )}
+                    <span className="max-w-44 truncate text-xs">{source.displayName}</span>
+                    <span className="text-[9px] uppercase text-muted-foreground">
+                      {source.sourceType}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={sourceActionId !== null}
+                      onClick={() => void previewSourceUpdate(source)}
+                      aria-label={t('resourceCenter.updateSource', { name: source.displayName })}
+                      className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                    >
+                      <RefreshCw
+                        className={`h-3 w-3 ${sourceActionId === source.id ? 'animate-spin' : ''}`}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={sourceActionId !== null}
+                      onClick={() => void previewSourceRemoval(source)}
+                      aria-label={t('resourceCenter.removeSource', { name: source.displayName })}
+                      className="rounded-full p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          {error && (
+            <div
+              role="alert"
+              className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+            >
+              {error}
+            </div>
+          )}
+          {loading ? (
+            <div className="py-20 text-center text-sm text-muted-foreground">
+              {t('resourceCenter.loading')}
+            </div>
+          ) : resources.length === 0 ? (
+            <div className="mt-6 rounded-xl border border-dashed border-border px-6 py-16 text-center">
+              <Boxes className="mx-auto h-7 w-7 text-muted-foreground" />
+              <h2 className="mt-3 text-sm font-medium">{t('resourceCenter.empty')}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{t('resourceCenter.emptyHint')}</p>
+            </div>
+          ) : managedResources.length === 0 ? (
+            <div className="mt-6 rounded-xl border border-dashed border-border px-6 py-12 text-center">
+              <Boxes className="mx-auto h-7 w-7 text-muted-foreground" />
+              <h2 className="mt-3 text-sm font-medium">{t('resourceCenter.noManaged')}</h2>
+            </div>
+          ) : (
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {managedResources.map((resource) => (
                 <ResourceCard
                   key={resource.id}
                   resource={resource}
@@ -407,8 +443,27 @@ export function ResourceCenter() {
                 />
               ))}
             </div>
-          </details>
-        )}
+          )}
+          {!loading && suppressedResources.length > 0 && (
+            <details className="mt-8 rounded-xl border border-border bg-card">
+              <summary className="cursor-pointer list-none px-4 py-3 text-xs font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                {t('resourceCenter.removedResources', { count: suppressedResources.length })}
+              </summary>
+              <div className="grid gap-3 border-t border-border p-3 sm:grid-cols-2 xl:grid-cols-3">
+                {suppressedResources.map((resource) => (
+                  <ResourceCard
+                    key={resource.id}
+                    resource={resource}
+                    source={catalog?.sources[resource.sourceId]}
+                    onRemove={() => void previewRemoval(resource)}
+                    onReadd={() => void readd(resource)}
+                    busy={readdingResourceId === resource.id}
+                  />
+                ))}
+              </div>
+            </details>
+          )}
+        </section>
       </div>
       <SkillSourceAddDialog
         open={addOpen}

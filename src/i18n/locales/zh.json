@@ -57,12 +57,19 @@
     "pin": "固定到顶部",
     "unpin": "取消固定",
     "pinnedAria": "已固定",
-    "resources": "资源"
+    "harness": "Harness"
   },
   "resourceCenter": {
-    "eyebrow": "受管资源库",
-    "title": "资源中心",
-    "subtitle": "统一管理可安装到项目的 Skill 与 Plugin。",
+    "eyebrow": "Agent 能力工作区",
+    "title": "Harness",
+    "subtitle": "统一管理提供给 Agent 使用的可复用能力。",
+    "capabilityNavLabel": "Harness 能力",
+    "capability": {
+      "mcp": "MCP",
+      "mcpStatus": "即将推出"
+    },
+    "sectionTitle": "Skills / Plugins",
+    "sectionSubtitle": "管理可安装到项目的 Skill 与 Plugin。",
     "addSource": "添加来源",
     "sources": "来源",
     "updateSource": "更新来源 {{name}}",
@@ -571,7 +578,7 @@
       "dangerous": "危险变更"
     },
     "pluginDetail": {
-      "unsupported_agent_capability": "Codex 无法通过直接引用加载此 Plugin。请先将原始来源添加到资源中心，并选择受支持的 Agent。"
+      "unsupported_agent_capability": "Codex 无法通过直接引用加载此 Plugin。请先将原始来源添加到 Harness，并选择受支持的 Agent。"
     },
     "kind": {
       "settings": "设置与权限",
@@ -632,11 +639,11 @@
   },
   "agents": {
     "capabilities": {
-      "codexPluginInstallRequiresMarketplace": "Codex 当前不支持安装资源中心的受管 Plugin。",
+      "codexPluginInstallRequiresMarketplace": "Codex 当前不支持安装 Harness 中的受管 Plugin。",
       "projectWritePending": "当前尚不支持项目级写入。"
     },
     "inventory": {
-      "pluginArtifactInvalid": "该 Plugin 的受管来源不可用，或已与资源中心记录不一致。",
+      "pluginArtifactInvalid": "该 Plugin 的受管来源不可用，或已与 Harness 记录不一致。",
       "pluginOwnershipInvalid": "该 Plugin 的项目安装链接已缺失，或已与 AD 的安装记录不一致。"
     },
     "resources": {

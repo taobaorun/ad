@@ -120,7 +120,18 @@ describe('ResourceCenter', () => {
 
   it('distinguishes source and kind while filtering without exposing source paths as primary copy', async () => {
     render(<ResourceCenter />);
-    expect(await screen.findByRole('heading', { name: 'Resource Center' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Harness', level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Skills & Plugins', level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Harness capabilities' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Skills & Plugins' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(screen.getByRole('link', { name: 'MCP Coming soon' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(screen.getByText('Coming soon')).toBeInTheDocument();
     expect(screen.getByText('Review')).toBeInTheDocument();
     expect(screen.getByText('Toolbox')).toBeInTheDocument();
     expect(screen.getAllByText('Team tools')).toHaveLength(3);

@@ -226,7 +226,10 @@ export function AgentCollectionPanel({
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+      <div
+        data-input-shell=""
+        className="flex shrink-0 items-center gap-2 rounded-t-lg border-b border-border px-3 py-2"
+      >
         <Search className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
         <label htmlFor="agent-resource-filter" className="sr-only">
           {t('agentCollections.filter')}

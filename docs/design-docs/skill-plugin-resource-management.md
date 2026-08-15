@@ -1,4 +1,4 @@
-# Technical Design: Skill / Plugin 资源中心与项目安装
+# Technical Design: Harness 中的 Skill / Plugin 管理与项目安装
 
 Design identity: `TD-skill-plugin-resource-management/v1`
 
@@ -8,7 +8,7 @@ Product Contract: `docs/product-specs/skill-plugin-resource-management.md`
 
 Requirements covered: `R1`–`R12`
 
-Authority: 用户于 2026-08-13 确认的产品契约，以及其中对 Agent adapter、身份、路径安全、持久化、并发与恢复的工程授权
+Authority: 用户于 2026-08-13 确认的资源管理契约、2026-08-15 确认的 Harness 产品层级，以及其中对 Agent adapter、身份、路径安全、持久化、并发与恢复的工程授权
 
 ## Current behavior, constraints, and invariants
 
@@ -24,9 +24,9 @@ Authority: 用户于 2026-08-13 确认的产品契约，以及其中对 Agent ad
 
 当前 Plugin 路径与新契约存在直接冲突：
 
-- Claude Plugin port 只管理既有声明的启用、禁用和移除，不负责从资源中心安装。
+- Claude Plugin port 只管理既有声明的启用、禁用和移除，不负责从 Harness 受管库安装。
 - Codex Plugin install 目前会把 marketplace 与 package 复制到 project-derived `CODEX_HOME`，Agent Conversion 还可能把 Claude Plugin 转换、裁剪并生成 Codex manifest。这些路径不能继续作为新资源安装路径。
-- Plugin inventory 主要来自 Agent 配置或 runtime declaration，没有资源中心身份，也没有可用于全局影响枚举的项目安装账本。
+- Plugin inventory 主要来自 Agent 配置或 runtime declaration，没有 Harness 受管库身份，也没有可用于全局影响枚举的项目安装账本。
 - `ResourceOwnershipRecord` 目前只足以证明一个主要物理目标；它没有表达一个资源安装、其启用状态、adapter contract 与多个附加状态之间的高层关系。
 
 ### Agent capability evidence
@@ -36,14 +36,14 @@ Authority: 用户于 2026-08-13 确认的产品契约，以及其中对 Agent ad
 - Claude Code 的官方 CLI 提供可重复的 `--plugin-dir <path>`，会话可以直接从目录加载 Plugin；marketplace install 则会复制到 Claude cache。AD 因此可以通过项目/Agent 专属软链接和 AD 的 LaunchRecipe 直接加载原始 Plugin，而不走 marketplace copy。[Claude Code CLI reference](https://code.claude.com/docs/en/cli-usage)；[Claude Code Plugins reference](https://code.claude.com/docs/en/plugins-reference)
 - 当前 Codex `rust-v0.147.0` 的 Plugin loader 只加载 PluginStore 中的 active installation；active version 枚举要求 version entry 本身是目录，原生 install 又会复制 source tree。当前没有可证明满足“完整原始目录通过一个稳定软链接自动传播”的直接加载协议。[Codex PluginStore](https://github.com/openai/codex/blob/rust-v0.147.0/codex-rs/core-plugins/src/store.rs)；[Codex Plugin loader](https://github.com/openai/codex/blob/rust-v0.147.0/codex-rs/core-plugins/src/loader.rs)
 
-因此，本期能力矩阵为：Project Skill 支持 Claude Code 与 Codex；符合 Claude native Plugin 规范的 Project Plugin 支持 Claude Code；当前 Codex Plugin 明确为 unsupported。后续 Codex 若提供原生 direct-reference contract，只需增加 adapter 实现，不改变资源中心模型。AD 不通过复制、生成 manifest、拆出 Plugin 内 Skill 或创建不完整链接目录来伪造支持。
+因此，本期能力矩阵为：Project Skill 支持 Claude Code 与 Codex；符合 Claude native Plugin 规范的 Project Plugin 支持 Claude Code；当前 Codex Plugin 明确为 unsupported。后续 Codex 若提供原生 direct-reference contract，只需增加 adapter 实现，不改变 Harness 中 Skills / Plugins 受管库的模型。AD 不通过复制、生成 manifest、拆出 Plugin 内 Skill 或创建不完整链接目录来伪造支持。
 
 ### Invariants
 
-1. 资源中心是所有 AD Project Skill / Plugin 安装的唯一入口；public IPC 不接受 frontend 提供的任意 source path。
+1. Harness 中的 Skills / Plugins 受管库是所有 AD Project Skill / Plugin 安装的唯一入口；public IPC 不接受 frontend 提供的任意 source path。
 2. source 原始内容永不被 AD 转换、改写、裁剪、补全或重新打包。扫描只产生 metadata、digest 和诊断。
 3. Local source 是外部拥有的目录，AD 永不修改或删除；Git source 使用 AD-owned generation 和稳定 `current` view。
-4. Project action 只修改当前 workspace 与明确选择的 Agent。资源中心移除是单独的全局 lifecycle operation，必须先展示影响并确认。
+4. Project action 只修改当前 workspace 与明确选择的 Agent。Harness 受管资源移除是单独的全局 lifecycle operation，必须先展示影响并确认。
 5. 不同 source 的同名资源拥有不同 `ResourceId`，在中心共存；冲突只根据目标 Agent adapter 返回的实际 target claim 判断。
 6. 只有同时存在有效 InstallationRecord 与物理 ownership evidence 的目标才允许 AD 删除或替换。其他观察项一律是 external / 非 AD 托管。
 7. inventory、应用启动、source refresh 和项目扫描都是只读行为，不能自动接管 external、解除 suppressed 状态或迁移物理安装。
@@ -81,9 +81,9 @@ Claude Plugin install 在 AD 的 workspace-scoped runtime root 下创建一个�
 
 单个中心资源移除不是直接删 catalog row。它先冻结资源 lifecycle、枚举 active installations，经一次影响确认后，按确定顺序逐个调用与项目页相同的 standard uninstall planner/executor。成功项不因其他项失败而回滚；资源只在 active installation 数量为零后转为 suppressed。
 
-### D6 — Product information architecture separates library from project state
+### D6 — Harness contains capability management while projects own installation state
 
-主窗口增加与项目并列的“资源”顶级入口。资源中心默认围绕 Skill / Plugin 展示受管库；source 是二级管理对象。项目页围绕当前 Agent 展示“已安装”和“可安装”，external 只显示“非 AD 托管”及重新检查。机制说明、完整路径和诊断细节只在必要的按需详情中出现。
+主窗口提供与项目并列的 Harness 顶级入口。Harness 是面向 Agent 的可复用能力工作区；内部使用紧凑的横向能力导航，Skills / Plugins 是本期唯一可用项，MCP 以不可交互的“即将推出”位置呈现，不建立 route、状态或配置 surface。页面以 Harness 为一级标题，以 Skills / Plugins 为当前能力标题；受管库继续围绕 Skill / Plugin 展示，source 是二级管理对象。项目页围绕当前 Agent 展示“已安装”和“可安装”，external 只显示“非 AD 托管”及重新检查。机制说明、完整路径和诊断细节只在必要的按需详情中出现。
 
 ## Proposed structure and responsibilities
 
@@ -359,10 +359,10 @@ Source remove 是同一 coordinator 的组合操作：它对 source 下每个 ma
 
 ### Suppression lifecycle
 
-- `managed + present`：出现在资源中心和项目 available candidates。
+- `managed + present`：出现在 Harness 受管库和项目 available candidates。
 - `managed + absent/invalid`：保留管理与卸载能力，但不能新安装；source detail 显示简洁 health。
 - `suppressed`：不出现在普通资源库和项目 candidates；source scan、refresh、Git update、restart 都只更新其 present/diagnostic，不自动恢复。
-- `suppressed -> managed`：仅由资源中心 source detail 中的明确 re-add preview/apply 触发；之后仍需在具体项目另行 install。
+- `suppressed -> managed`：仅由 Harness 的 Skills / Plugins source detail 中的明确 re-add preview/apply 触发；之后仍需在具体项目另行 install。
 
 ### Migration and compatibility
 
@@ -371,7 +371,7 @@ Source remove 是同一 coordinator 的组合操作：它对 source 下每个 ma
 1. 当 `resource_catalog.json` 尚不存在时，reader 把 `skill_catalog.json` v2 投影为 ResourceCatalog view，保留 source ID、现有 stable/physical roots 和 Skill subpaths。第一次明确的 catalog mutation 在 journal 中写入新 document；旧文件保留为 recovery evidence，不 dual-write。
 2. 新 source 使用 general resource library path；既有 Git source 继续使用其已记录的 `skill-library` root，避免移动或复制 checkout。物理目录名不是产品语义。
 3. 现有 Skill ownership v2 在 inventory 中继续被识别为 AD-managed。第一次 install-state mutation 可以在同一 receipt 中 backfill InstallationRecord；资源移除也可直接把可证明的 legacy ownership 作为 impacted installation 并调用 legacy standard uninstall，不要求先迁移。
-4. 既有 AD 复制/转换产生的 Codex Plugin 不自动映射到资源中心、不重新链接、不删除。可证明 ownership 时显示为既有 AD 安装并保留 uninstall；无法证明时按 external。要使用新模型，用户先卸载，再把原 source 加入资源中心并重新安装。
+4. 既有 AD 复制/转换产生的 Codex Plugin 不自动映射到 Harness 受管库、不重新链接、不删除。可证明 ownership 时显示为既有 AD 安装并保留 uninstall；无法证明时按 external。要使用新模型，用户先卸载，再把原 source 加入 Harness 并重新安装。
 5. Agent Conversion 不再为新操作准备、转换或安装 Plugin package。Plugin 只报告为未迁移/unsupported residual；Skill 和其他已确认 conversion behavior 不因此重构。
 6. 历史 receipts 和 ownership schema 继续可读；本期不删除旧 staging、artifact、catalog 或 Plugin cache。破坏性 cleanup 另行设计。
 
@@ -397,7 +397,7 @@ Source remove 是同一 coordinator 的组合操作：它对 source 下每个 ma
 
 ### UX states and accessibility
 
-资源中心必须覆盖 loading、empty、healthy library、source degraded、resource unsupported、operation error 和 partial failure。项目页覆盖无项目、Agent unavailable、无 installed、无 available、managed conflict、external conflict 与 action pending。每个主区域只有一个视觉主操作；高级 source 字段、完整诊断和历史信息按需展开。
+Harness 的 Skills / Plugins 子功能必须覆盖 loading、empty、healthy library、source degraded、resource unsupported、operation error 和 partial failure。项目页覆盖无项目、Agent unavailable、无 installed、无 available、managed conflict、external conflict 与 action pending。每个主区域只有一个视觉主操作；高级 source 字段、完整诊断和历史信息按需展开。
 
 安装流程必须在确认面板中显式显示目标 Agent，即使它默认来自 titlebar selection。unsupported candidate 保持可见但 disabled，附一条简洁原因。不同 source 的同名 candidate 同时显示 source type badge 与 source label。
 
@@ -419,7 +419,7 @@ Rejected。它不能保证 source 新增顶层文件或改变任意结构后自�
 
 ### Treat Agent declarations as install sources
 
-Rejected。它会绕过资源中心、要求推断 external 来源，并可能把用户自行安装的内容接管为 AD-owned。Agent declarations只用于项目 inventory。
+Rejected。它会绕过 Harness 受管库、要求推断 external 来源，并可能把用户自行安装的内容接管为 AD-owned。Agent declarations只用于项目 inventory。
 
 ### Remove a catalog resource immediately and leave dangling project links
 
@@ -431,7 +431,7 @@ Rejected。跨项目补偿会把一次可重试的 partial failure 扩大为更�
 
 ### Auto-re-add a resource when source scan sees it again
 
-Rejected。source update 与 restart 会绕过用户明确的资源中心生命周期选择，违反 R11。
+Rejected。source update 与 restart 会绕过用户在 Harness 中明确作出的生命周期选择，违反 R11。
 
 ## Risks and verification approach
 

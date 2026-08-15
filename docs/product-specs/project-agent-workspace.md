@@ -1,10 +1,10 @@
 # Project Agent Workspace 产品规格与证据
 
-> 状态：M7 已通过发布验证；Skill / Plugin 资源管理语义已由 `docs/product-specs/skill-plugin-resource-management.md` 取代并扩展
+> 状态：M7 已通过发布验证；Harness 中的 Skill / Plugin 管理语义已由 `docs/product-specs/skill-plugin-resource-management.md` 取代并扩展
 >
 > 范围：Claude Code、Codex；macOS 桌面第一方 UI
 >
-> 关联设计：`docs/design-docs/architecture.md`、`docs/design-docs/skill-plugin-resource-management.html`
+> 关联设计：`docs/design-docs/architecture.md`、`docs/design-docs/skill-plugin-resource-management.md`
 
 ## 产品承诺
 
@@ -26,16 +26,17 @@ AD 以项目为中心管理本地 Coding Agent 配置。用户选择项目和 Ag
 - 用户只能编辑 adapter 声明的项目目标，继承层保持只读；
 - 切换项目或 Agent 时，未保存 draft 必须显式处理。
 
-### 2. 管理全部 Skill / Plugin
+### 2. 通过 Harness 管理全部 Skill / Plugin
 
-- 顶级资源中心是 AD 安装 Skill / Plugin 的唯一来源；本期 source 支持 Git 仓库和本地目录，来源类型在选择时始终可见；
+- 与项目并列的顶级 Harness 是面向 Agent 的可复用能力工作区；内部能力导航中 Skills / Plugins 为当前可用项，MCP 只显示为禁用的“即将推出”位置；
+- Harness 中的 Skills / Plugins 受管库是 AD 安装 Skill / Plugin 的唯一来源；本期 source 支持 Git 仓库和本地目录，来源类型在选择时始终可见；
 - Local source 绑定原始规范目录，Git source 从受限 staging 发布到受管 generation，并通过稳定 `current` link 暴露；
 - 项目安装始终写 Agent 原生 Skill symlink：Local 直接指向原始 Skill 目录，Git 指向 `~/.ad/skill-library/<source-key>/current/<skill-subpath>`；
 - Local 编辑立即对所有关联项目可见；Git source update 原子切换共享 `current`，缺失任一已安装资源时阻止切换；
 - Skill 支持 Claude Code 与 Codex；Claude Plugin 通过项目级软链接和 direct-reference launch 加载，当前 Codex Plugin 明确显示不支持；
 - 安装、启用、禁用和卸载只改变当前项目与用户选择的 Agent；不同来源的同名资源可共存，目标冲突时必须先卸载现有来源，再单独安装另一来源；
 - 资源或来源移除先展示受影响项目，确认后逐项目复用标准卸载并展示进度；全部成功后才抑制资源或移除 source entry，Local/Git source 内容本身不删除；
-- external/unowned Skill / Plugin 可见但只读且标记“非 AD 托管”；AD 不推断来源、不备份、不删除、不接管，用户必须先把来源加入资源中心再安装；
+- external/unowned Skill / Plugin 可见但只读且标记“非 AD 托管”；AD 不推断来源、不备份、不删除、不接管，用户必须先把来源加入 Harness 的 Skills / Plugins 受管库再安装；
 - legacy source、project state 和 link 通过显式 reconciliation 迁移，成功留 receipt 后才归档旧状态。
 
 ### 3. 管理全部 Plugin

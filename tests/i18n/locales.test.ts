@@ -14,6 +14,17 @@ describe('i18n locales', () => {
     expect(en.startup.loadingStatus).toBe('AD is loading');
     expect(zh.startup.loadingStatus).toBe('正在加载 AD');
   });
+
+  it('names the agent capability workspace Harness in both locales', () => {
+    expect(en.sidebar.harness).toBe('Harness');
+    expect(zh.sidebar.harness).toBe('Harness');
+    expect(en.resourceCenter.title).toBe('Harness');
+    expect(zh.resourceCenter.title).toBe('Harness');
+    expect(en.resourceCenter.sectionTitle).toBe('Skills & Plugins');
+    expect(zh.resourceCenter.sectionTitle).toBe('Skills / Plugins');
+    expect(en.resourceCenter.capability.mcpStatus).toBe('Coming soon');
+    expect(zh.resourceCenter.capability.mcpStatus).toBe('即将推出');
+  });
 });
 
 function leafKeys(value: unknown, prefix = ''): string[] {
