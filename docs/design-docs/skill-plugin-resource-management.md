@@ -369,7 +369,7 @@ Source remove 是同一 coordinator 的组合操作：它对 source 下每个 ma
 迁移采用 read-compatible、write-on-explicit-action，不在启动或 inventory 静默改写：
 
 1. 当 `resource_catalog.json` 尚不存在时，reader 把 `skill_catalog.json` v2 投影为 ResourceCatalog view，保留 source ID、现有 stable/physical roots 和 Skill subpaths。第一次明确的 catalog mutation 在 journal 中写入新 document；旧文件保留为 recovery evidence，不 dual-write。
-2. 新 source 使用 general resource library path；既有 Git source 继续使用其已记录的 `skill-library` root，避免移动或复制 checkout。物理目录名不是产品语义。
+2. 新 Git source 使用 `<readable-source-name>--<short-id>` 的 `skill-library` root，便于人工识别；目录短 ID 与 backend binding identity 防止同名冲突。既有 Git source 继续使用其已记录的 legacy root，避免移动或复制 checkout；目录显示名不参与运行时资源身份。
 3. 现有 Skill ownership v2 在 inventory 中继续被识别为 AD-managed。第一次 install-state mutation 可以在同一 receipt 中 backfill InstallationRecord；资源移除也可直接把可证明的 legacy ownership 作为 impacted installation 并调用 legacy standard uninstall，不要求先迁移。
 4. 既有 AD 复制/转换产生的 Codex Plugin 不自动映射到 Harness 受管库、不重新链接、不删除。可证明 ownership 时显示为既有 AD 安装并保留 uninstall；无法证明时按 external。要使用新模型，用户先卸载，再把原 source 加入 Harness 并重新安装。
 5. Agent Conversion 不再为新操作准备、转换或安装 Plugin package。Plugin 只报告为未迁移/unsupported residual；Skill 和其他已确认 conversion behavior 不因此重构。

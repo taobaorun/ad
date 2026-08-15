@@ -110,7 +110,7 @@ struct SkillSourceItem {
 ```
 
 - Local binding：`checkout_root == stable_root == canonicalize(location/subdirectory)`。
-- Git binding：`checkout_root` 是当前 generation 的物理 tree；`stable_root` 是 `~/.ad/skill-library/<source-key>/current`。
+- Git binding：`checkout_root` 是当前 generation 的物理 tree；新来源的 `stable_root` 是 `~/.ad/skill-library/<readable-source-name>--<short-id>/current`，legacy SHA-256 root 保持可读可更新。
 - Install target：`stable_root.join(skill.subpath)`，而不是 artifact tree 或项目副本。
 - Catalog 保存 source binding 与最近一次已确认 scan metadata；资源 inventory 在当前 source 上做只读复验并单独报告 drift/health。
 
@@ -132,13 +132,15 @@ Local 内容由外部进程修改时：
 Git source 使用 generation + stable view：
 
 ```text
-~/.ad/skill-library/<source-key>/
+~/.ad/skill-library/<readable-source-name>--<short-id>/
   current -> generations/<revision-key>/tree
   generations/
     <revision-key>/
       tree/
       manifest.json
 ```
+
+目录前缀只用于人工识别，短 ID 与完整 binding identity 用于消歧和安全校验。已有纯 SHA-256 目录不会被自动重命名，因为项目安装、ownership 和 rollback receipt 可能仍引用其稳定路径。
 
 Add/Update 在唯一 staging 中执行受控 clone/fetch/checkout 和 tree validation。验证成功后把 generation 原子发布到 source root，再以 symlink Replace 原子切换 `current`。项目链接始终指向 `current/<skill-subpath>`，因此 current 切换会同时更新所有关联项目而不触碰项目目录。
 

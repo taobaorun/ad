@@ -148,7 +148,7 @@ impl SkillCatalogPlanStore {
         let state = load_skill_catalog_state()?;
         let source_id = new_source_id();
         let source = acquisition_source(source_id.clone(), &request)?;
-        let (artifact, binding, staged_git) = inspect_source(&source)?;
+        let (artifact, binding, staged_git) = inspect_source(&source, &request.display_name, None)?;
         let now = Utc::now();
         let mut candidate = state.document.clone();
         if let Some(binding) = &binding {
@@ -197,7 +197,8 @@ impl SkillCatalogPlanStore {
             .cloned()
             .ok_or_else(|| SkillCatalogError::NotFound(source_id.to_owned()))?;
         let source = entry.acquisition_source();
-        let (artifact, binding, staged_git) = inspect_source(&source)?;
+        let (artifact, binding, staged_git) =
+            inspect_source(&source, &entry.display_name, entry.current_binding.as_ref())?;
         let now = Utc::now();
         let impact = reference_impact(&entry.source_id, binding.as_ref(), false)?;
         let view = plan_view(
@@ -635,7 +636,11 @@ type InspectedSkillSource = (
     Option<StagedGitSkillSourceBinding>,
 );
 
-fn inspect_source(source: &SkillSource) -> Result<InspectedSkillSource, SkillCatalogPlanError> {
+fn inspect_source(
+    source: &SkillSource,
+    display_name: &str,
+    current_binding: Option<&SkillSourceBinding>,
+) -> Result<InspectedSkillSource, SkillCatalogPlanError> {
     match source.source_type {
         SkillSourceType::Local => Ok((
             None,
@@ -643,7 +648,7 @@ fn inspect_source(source: &SkillSource) -> Result<InspectedSkillSource, SkillCat
             None,
         )),
         SkillSourceType::Git => {
-            let staged = stage_git_skill_source_binding(source)?;
+            let staged = stage_git_skill_source_binding(source, display_name, current_binding)?;
             Ok((None, Some(staged.binding().clone()), Some(staged)))
         }
     }

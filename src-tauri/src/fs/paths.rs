@@ -133,17 +133,30 @@ pub fn skill_library_dir() -> Result<PathBuf, FsError> {
     Ok(ad_home()?.join("skill-library"))
 }
 
-pub fn managed_skill_source_dir(source_key: &str) -> Result<PathBuf, FsError> {
-    if source_key.len() != 64 || !source_key.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+pub fn managed_skill_source_dir(directory_name: &str) -> Result<PathBuf, FsError> {
+    let legacy_digest =
+        directory_name.len() == 64 && directory_name.bytes().all(|byte| byte.is_ascii_hexdigit());
+    let readable_name = directory_name
+        .rsplit_once("--")
+        .is_some_and(|(slug, short_id)| {
+            !slug.is_empty()
+                && slug.chars().count() <= 48
+                && slug
+                    .chars()
+                    .all(|character| character.is_alphanumeric() || character == '-')
+                && short_id.len() == 12
+                && short_id.bytes().all(|byte| byte.is_ascii_hexdigit())
+        });
+    if !legacy_digest && !readable_name {
         return Err(FsError::InvalidPath(
-            "managed Skill source key must be a SHA-256 hex digest".into(),
+            "managed Skill source directory must be a legacy SHA-256 digest or a readable name with a short source ID".into(),
         ));
     }
-    Ok(skill_library_dir()?.join(source_key))
+    Ok(skill_library_dir()?.join(directory_name))
 }
 
-pub fn managed_skill_source_generations_dir(source_key: &str) -> Result<PathBuf, FsError> {
-    Ok(managed_skill_source_dir(source_key)?.join("generations"))
+pub fn managed_skill_source_generations_dir(directory_name: &str) -> Result<PathBuf, FsError> {
+    Ok(managed_skill_source_dir(directory_name)?.join("generations"))
 }
 
 pub fn skill_sources_path() -> Result<PathBuf, FsError> {

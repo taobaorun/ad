@@ -31,7 +31,7 @@ AD 以项目为中心管理本地 Coding Agent 配置。用户选择项目和 Ag
 - 与项目并列的顶级 Harness 是面向 Agent 的可复用能力工作区；内部能力导航中 Skills / Plugins 为当前可用项，MCP 只显示为禁用的“即将推出”位置；
 - Harness 中的 Skills / Plugins 受管库是 AD 安装 Skill / Plugin 的唯一来源；本期 source 支持 Git 仓库和本地目录，来源类型在选择时始终可见；
 - Local source 绑定原始规范目录，Git source 从受限 staging 发布到受管 generation，并通过稳定 `current` link 暴露；
-- 项目安装始终写 Agent 原生 Skill symlink：Local 直接指向原始 Skill 目录，Git 指向 `~/.ad/skill-library/<source-key>/current/<skill-subpath>`；
+- 项目安装始终写 Agent 原生 Skill symlink：Local 直接指向原始 Skill 目录，Git 指向 `~/.ad/skill-library/<readable-source-name>--<short-id>/current/<skill-subpath>`；升级前创建的纯 SHA-256 source root 继续兼容且不自动搬移；
 - Local 编辑立即对所有关联项目可见；Git source update 原子切换共享 `current`，缺失任一已安装资源时阻止切换；
 - Skill 支持 Claude Code 与 Codex；Claude Plugin 通过项目级软链接和 direct-reference launch 加载，当前 Codex Plugin 明确显示不支持；
 - 安装、启用、禁用和卸载只改变当前项目与用户选择的 Agent；不同来源的同名资源可共存，目标冲突时必须先卸载现有来源，再单独安装另一来源；
