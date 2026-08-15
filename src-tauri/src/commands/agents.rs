@@ -7,10 +7,11 @@ use crate::agents::{
     ExecutionEngine, InstallationId, MutationPlanView, OperationHistoryEntry, OperationReceipt,
     PlanAcknowledgement, PlanAcknowledgementCode, PlanId, PlanRiskLevel, PlanStore,
     ProcessObservation, ProfileId, ProjectCodexRuntime, ProjectCodexRuntimeStatus,
-    ProjectCollectionActionPreview, ProjectCollectionActionRequest, ProjectWorkspaceInventory,
-    ReadPrecondition, ReceiptId, ResourceKind, ResourceLocation, ResourceOrigin, ResourceRef,
-    ResourceScope, ResourceSnapshot, RiskFingerprint, SettingsDocument, SettingsEdit,
-    WorkspaceDescriptor, WorkspaceOperationReport, WritePolicy,
+    ProjectCollectionActionPreview, ProjectCollectionActionRequest,
+    ProjectCollectionSourceInstallPreview, ProjectCollectionSourceInstallRequest,
+    ProjectWorkspaceInventory, ReadPrecondition, ReceiptId, ResourceKind, ResourceLocation,
+    ResourceOrigin, ResourceRef, ResourceScope, ResourceSnapshot, RiskFingerprint,
+    SettingsDocument, SettingsEdit, WorkspaceDescriptor, WorkspaceOperationReport, WritePolicy,
 };
 use crate::models::ProfileFile;
 use tauri::{ipc::Channel, Manager, State};
@@ -457,7 +458,22 @@ pub fn preview_project_collection_action(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
+pub fn preview_project_collection_source_install(
+    installation_id: InstallationId,
+    project_path: String,
+    request: ProjectCollectionSourceInstallRequest,
+    plans: State<'_, PlanStore>,
+) -> Result<ProjectCollectionSourceInstallPreview, AgentError> {
+    crate::agents::preview_project_collection_source_install(
+        &installation_id,
+        std::path::Path::new(&project_path),
+        request,
+        plans.inner(),
+    )
+}
+
+#[tauri::command(async)]
 pub fn apply_project_collection_action(
     plan_id: PlanId,
     expected_context: AgentContext,

@@ -165,6 +165,32 @@ impl PlanStore {
         resource_key: &super::ResourceKey,
         action: super::ResourceAction,
     ) -> Result<MutationPlanView, AgentError> {
+        self.insert_workspace_action_with_id(
+            plan,
+            workspace_key,
+            format!("{}:{}", action.contract_name(), resource_key),
+        )
+    }
+
+    pub fn insert_workspace_source_install(
+        &self,
+        plan: MutationPlan,
+        workspace_key: &super::WorkspaceKey,
+        source_resource_key: &super::ResourceKey,
+    ) -> Result<MutationPlanView, AgentError> {
+        self.insert_workspace_action_with_id(
+            plan,
+            workspace_key,
+            format!("install_source:{source_resource_key}"),
+        )
+    }
+
+    fn insert_workspace_action_with_id(
+        &self,
+        plan: MutationPlan,
+        workspace_key: &super::WorkspaceKey,
+        action_id: String,
+    ) -> Result<MutationPlanView, AgentError> {
         let actual_workspace =
             super::workspace_key_for_context(&plan.context).ok_or_else(|| {
                 plan_error(
@@ -185,7 +211,7 @@ impl PlanStore {
             ));
         }
         let mut intent = PlanExecutionIntent::apply(&plan)?;
-        intent.action_id = Some(format!("{}:{}", action.contract_name(), resource_key));
+        intent.action_id = Some(action_id);
         self.insert_with_intent_at(
             plan,
             Utc::now(),

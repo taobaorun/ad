@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, RefreshCw, RotateCcw, ShieldAlert, Trash2 } from 'lucide-react';
 import { useSkills } from '@/store/skills';
-import type { SkillCatalogPlanView, SkillSourceRequest } from '@/lib/skillCatalogTypes';
+import type {
+  SkillCatalogPlanView,
+  SkillSourcePreviewProgress,
+  SkillSourceRequest,
+} from '@/lib/skillCatalogTypes';
 import { Button } from './ui/button';
 import { SkillSourceAddDialog } from './SkillSourceAddDialog';
 import { SkillCatalogPlanDialog } from './SkillCatalogPlanDialog';
@@ -21,6 +25,8 @@ export function SkillSourcesSection() {
   const [plan, setPlan] = useState<SkillCatalogPlanView | null>(null);
   const [previewing, setPreviewing] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
+  const [previewProgress, setPreviewProgress] = useState<SkillSourcePreviewProgress | null>(null);
+  const [previewStartedAt, setPreviewStartedAt] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rollbackCandidate, setRollbackCandidate] = useState<{
@@ -41,12 +47,16 @@ export function SkillSourcesSection() {
   async function previewAdd(request: SkillSourceRequest) {
     setError(null);
     setPreviewing('add');
+    setPreviewStartedAt(Date.now());
+    setPreviewProgress({ sequence: 1, phase: 'preparing' });
     try {
-      const nextPlan = await previewAddSource(request);
+      const nextPlan = await previewAddSource(request, setPreviewProgress);
       setAddOpen(false);
       setPlan(nextPlan);
     } finally {
       setPreviewing(null);
+      setPreviewProgress(null);
+      setPreviewStartedAt(null);
     }
   }
 
@@ -242,6 +252,8 @@ export function SkillSourcesSection() {
       <SkillSourceAddDialog
         open={addOpen}
         busy={previewing === 'add'}
+        progress={previewProgress}
+        startedAt={previewStartedAt}
         onOpenChange={setAddOpen}
         onPreview={previewAdd}
       />

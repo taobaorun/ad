@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResourceCenter } from '@/components/ResourceCenter';
 import i18n from '@/i18n';
@@ -118,7 +118,7 @@ describe('ResourceCenter', () => {
     });
   });
 
-  it('distinguishes source and kind while filtering without exposing source paths as primary copy', async () => {
+  it('shows only sources while keeping source-kind filtering', async () => {
     render(<ResourceCenter />);
     expect(await screen.findByRole('heading', { name: 'Harness', level: 1 })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Skills & Plugins', level: 2 })).toBeInTheDocument();
@@ -132,56 +132,29 @@ describe('ResourceCenter', () => {
       'true',
     );
     expect(screen.getByText('Coming soon')).toBeInTheDocument();
-    expect(screen.getByText('Review')).toBeInTheDocument();
-    expect(screen.getByText('Toolbox')).toBeInTheDocument();
-    expect(screen.getAllByText('Team tools')).toHaveLength(3);
-    expect(screen.getAllByText('Claude Code')).toHaveLength(2);
-    expect(screen.getByText('Codex')).toBeInTheDocument();
+    expect(screen.getByText('Team tools')).toBeInTheDocument();
+    expect(screen.getByText('https://example.com/team/tools.git')).toBeInTheDocument();
+    expect(screen.queryByText('Review')).not.toBeInTheDocument();
+    expect(screen.queryByText('Toolbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('Claude Code')).not.toBeInTheDocument();
+    expect(screen.queryByText('Codex')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Plugins' }));
-    expect(screen.queryByText('Review')).not.toBeInTheDocument();
-    expect(screen.getByText('Toolbox')).toBeInTheDocument();
+    expect(screen.getByText('Team tools')).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText('Search resources or sources…'), {
+    fireEvent.change(screen.getByPlaceholderText('Search sources…'), {
       target: { value: 'missing' },
     });
-    expect(screen.getByText('No matching resources')).toBeInTheDocument();
+    expect(screen.getByText('No matching sources')).toBeInTheDocument();
   });
 
-  it('previews impact and applies removal with progress', async () => {
+  it('updates a source directly from its card', async () => {
     render(<ResourceCenter />);
-    await screen.findByText('Review');
-    fireEvent.click(screen.getByRole('button', { name: 'Remove resource Review' }));
-
-    expect(await screen.findByRole('heading', { name: 'Remove “Review”' })).toBeInTheDocument();
-    expect(screen.getAllByText('2')).toHaveLength(2);
-    fireEvent.click(screen.getByRole('button', { name: 'Remove resource' }));
-
-    await waitFor(() => expect(mocks.applyRemoveCatalogResource).toHaveBeenCalled());
+    await screen.findByText('Team tools');
+    fireEvent.click(screen.getByRole('button', { name: 'Update source Team tools' }));
     await waitFor(() =>
-      expect(screen.queryByRole('heading', { name: 'Remove “Review”' })).not.toBeInTheDocument(),
+      expect(mocks.previewUpdateSkillCatalogSource).toHaveBeenCalledWith(sourceId),
     );
-    expect(mocks.listResourceCatalog).toHaveBeenCalledTimes(2);
-  });
-
-  it('keeps removed resources in a secondary section and requires an explicit re-add', async () => {
-    const removed = {
-      ...catalog,
-      resources: {
-        ...catalog.resources,
-        [skillId]: { ...catalog.resources[skillId], lifecycle: 'suppressed' },
-      },
-    };
-    mocks.listResourceCatalog.mockResolvedValue(removed);
-    mocks.readdCatalogResource.mockResolvedValue(catalog);
-
-    render(<ResourceCenter />);
-    fireEvent.click(await screen.findByText('Removed resources (1)'));
-    expect(screen.getByText('Removed')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Re-add resource Review' }));
-
-    await waitFor(() => expect(mocks.readdCatalogResource).toHaveBeenCalledWith(skillId));
-    expect(screen.queryByText('Removed')).not.toBeInTheDocument();
   });
 
   it('shows source lifecycle actions and previews aggregate removal impact', async () => {
@@ -216,7 +189,7 @@ describe('ResourceCenter', () => {
     mocks.previewRemoveCatalogSource.mockResolvedValue(sourceRemoval);
 
     render(<ResourceCenter />);
-    await screen.findByText('Review');
+    await screen.findByText('Team tools');
     fireEvent.click(screen.getByRole('button', { name: 'Remove source Team tools' }));
 
     expect(
@@ -225,5 +198,57 @@ describe('ResourceCenter', () => {
     expect(mocks.previewRemoveCatalogSource).toHaveBeenCalledWith(sourceId);
     expect(screen.getByText('Source resources')).toBeInTheDocument();
     expect(screen.getAllByText('2').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('redirects a duplicate add to the existing source card', async () => {
+    render(<ResourceCenter />);
+    await screen.findByText('Team tools');
+    fireEvent.click(screen.getByRole('button', { name: 'Add source' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Team tools' } });
+    fireEvent.change(screen.getByLabelText('Git URL'), {
+      target: { value: 'https://example.com/team/tools.git' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect & Preview' }));
+
+    expect(
+      await screen.findByText(
+        '“Team tools” is already managed. Update or remove the existing source here.',
+      ),
+    ).toBeInTheDocument();
+    expect(mocks.previewAddSkillCatalogSource).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue('Team tools')).toBeInTheDocument();
+  });
+
+  it('shows source clone progress and keeps failures in the dialog for retry', async () => {
+    let rejectPreview!: (reason?: unknown) => void;
+    const previewResult = new Promise((_resolve, reject) => {
+      rejectPreview = reject;
+    });
+    mocks.previewAddSkillCatalogSource
+      .mockImplementationOnce((_request, onProgress) => {
+        onProgress({ sequence: 2, phase: 'cloning' });
+        return previewResult;
+      })
+      .mockImplementationOnce(() => new Promise(() => {}));
+
+    render(<ResourceCenter />);
+    await screen.findByText('Team tools');
+    fireEvent.click(screen.getByRole('button', { name: 'Add source' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'New tools' } });
+    fireEvent.change(screen.getByLabelText('Git URL'), {
+      target: { value: 'https://example.com/new/tools.git' },
+    });
+    const preview = screen.getByRole('button', { name: 'Inspect & Preview' });
+    fireEvent.click(preview);
+    fireEvent.click(preview);
+
+    expect(await screen.findByText('Cloning repository…')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(mocks.previewAddSkillCatalogSource).toHaveBeenCalledOnce();
+    await act(async () => rejectPreview(new Error('Repository unavailable')));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Repository unavailable');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(mocks.previewAddSkillCatalogSource).toHaveBeenCalledTimes(2);
   });
 });

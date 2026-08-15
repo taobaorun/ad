@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Layers3, Search, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Layers3, Search, ShieldAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { formatAgentError } from '@/lib/agentErrors';
 import type {
   CollectionResourceView,
   ProjectCollectionActionPreview,
+  ProjectCollectionSourceInstallPreview,
   ProjectWorkspaceInventory,
   ResourceAction,
   ResourceActionView,
+  ResourceSourceView,
 } from '@/lib/agentResourceInventoryTypes';
 import type { AgentContext, CapabilityDescriptor } from '@/lib/agentTypes';
 import { tauri } from '@/lib/tauri';
-import { runDetachedWorkspaceOperation, useWorkspaceOperations } from '@/store/workspaceOperations';
 
-import { AgentPlanDialog } from './AgentPlanDialog';
+import { AgentPlanDialog, type AgentPlanProgress } from './AgentPlanDialog';
 import { Button } from './ui/button';
 
 interface AgentCollectionPanelProps {
@@ -33,13 +34,19 @@ export function AgentCollectionPanel({
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionPreview, setActionPreview] = useState<ProjectCollectionActionPreview | null>(null);
+  const [actionPreview, setActionPreview] = useState<
+    ProjectCollectionActionPreview | ProjectCollectionSourceInstallPreview | null
+  >(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [actionProgress, setActionProgress] = useState<AgentPlanProgress | null>(null);
+  const [pendingApplyOutcome, setPendingApplyOutcome] = useState<'changed' | 'no_change' | null>(
+    null,
+  );
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<string | null>(null);
   const loadRequestRef = useRef(0);
   const actionRequestRef = useRef(0);
-  const handledOperationRef = useRef<string | null>(null);
+  const actionBusyRef = useRef(false);
   const contextKey = useMemo(() => JSON.stringify(context), [context]);
   const activeContextKeyRef = useRef(contextKey);
   activeContextKeyRef.current = contextKey;
@@ -92,9 +99,13 @@ export function AgentCollectionPanel({
 
   useEffect(() => {
     actionRequestRef.current += 1;
+    actionBusyRef.current = false;
+    setActionBusy(false);
+    setActionProgress(null);
     setActionPreview(null);
     setActionError(null);
     setActionResult(null);
+    setPendingApplyOutcome(null);
   }, [contextKey]);
 
   const previewAction = useCallback(
@@ -141,26 +152,152 @@ export function AgentCollectionPanel({
     [context.installationId, context.projectPath, contextKey, inventory],
   );
 
-  const applyAction = useCallback(() => {
-    if (!actionPreview) return;
+  const previewSourceInstall = useCallback(
+    async (sourceResource: CollectionResourceView) => {
+      if (!inventory || !context.projectPath) return;
+      const requestId = ++actionRequestRef.current;
+      const requestContextKey = contextKey;
+      setActionBusy(true);
+      setActionError(null);
+      setActionResult(null);
+      try {
+        const next = await tauri.previewProjectCollectionSourceInstall(
+          context.installationId,
+          context.projectPath,
+          {
+            workspaceKey: inventory.workspace.key,
+            inventoryRevision: inventory.revision,
+            sourceResourceKey: sourceResource.key,
+          },
+        );
+        if (
+          requestId === actionRequestRef.current &&
+          requestContextKey === activeContextKeyRef.current
+        ) {
+          setActionPreview(next);
+        }
+      } catch (caught) {
+        if (
+          requestId === actionRequestRef.current &&
+          requestContextKey === activeContextKeyRef.current
+        ) {
+          setActionError(formatAgentError(caught));
+        }
+      } finally {
+        if (
+          requestId === actionRequestRef.current &&
+          requestContextKey === activeContextKeyRef.current
+        ) {
+          setActionBusy(false);
+        }
+      }
+    },
+    [context.installationId, context.projectPath, contextKey, inventory],
+  );
+
+  const applyAction = useCallback(async () => {
+    if (!actionPreview || actionBusyRef.current) return;
+    actionBusyRef.current = true;
     const preview = actionPreview;
-    setActionPreview(null);
+    const requestId = actionRequestRef.current;
+    const requestContextKey = contextKey;
+    let successfulOutcome = pendingApplyOutcome;
+    const applyingPhase: AgentPlanProgress['phase'] =
+      'resourceKeys' in preview
+        ? 'installing'
+        : preview.action === 'install'
+          ? 'installing'
+          : preview.action === 'remove'
+            ? 'removing'
+            : preview.action === 'update'
+              ? 'updating'
+              : 'applying';
+    setActionBusy(true);
+    setActionProgress({
+      phase: successfulOutcome ? 'refreshing' : applyingPhase,
+      startedAt: Date.now(),
+    });
     setActionError(null);
     setActionResult(null);
-    void runDetachedWorkspaceOperation(preview.workspaceKey, preview.plan.id, () =>
-      tauri.applyProjectCollectionAction(
-        preview.plan.id,
-        preview.plan.context,
-        preview.plan.riskFingerprint,
-      ),
-    ).catch(() => undefined);
-  }, [actionPreview]);
+    try {
+      if (!successfulOutcome) {
+        const report = await tauri.applyProjectCollectionAction(
+          preview.plan.id,
+          preview.plan.context,
+          preview.plan.riskFingerprint,
+        );
+        if (
+          requestId !== actionRequestRef.current ||
+          requestContextKey !== activeContextKeyRef.current
+        ) {
+          return;
+        }
+        if (report.workspaceKey !== preview.workspaceKey) {
+          throw new Error('Workspace operation returned a result for a different workspace');
+        }
+        if (report.outcome !== 'changed' && report.outcome !== 'no_change') {
+          setActionError(
+            report.outcome === 'partial_failure'
+              ? t('agentCollections.partialFailure')
+              : t(`agentCollections.outcome.${report.outcome}`),
+          );
+          return;
+        }
+        successfulOutcome = report.outcome;
+        setPendingApplyOutcome(successfulOutcome);
+        setActionProgress({ phase: 'refreshing', startedAt: Date.now() });
+      }
+
+      const next = await tauri.inspectProjectAgentWorkspace(
+        context.installationId,
+        context.projectPath!,
+      );
+      if (
+        requestId !== actionRequestRef.current ||
+        requestContextKey !== activeContextKeyRef.current
+      ) {
+        return;
+      }
+      setInventory(next);
+      setActionPreview(null);
+      setPendingApplyOutcome(null);
+      setActionResult(
+        successfulOutcome === 'changed'
+          ? t('agentCollections.applySuccess')
+          : t('agentCollections.noChange'),
+      );
+    } catch (caught) {
+      if (
+        requestId === actionRequestRef.current &&
+        requestContextKey === activeContextKeyRef.current
+      ) {
+        setActionError(formatAgentError(caught));
+      }
+    } finally {
+      if (
+        requestId === actionRequestRef.current &&
+        requestContextKey === activeContextKeyRef.current
+      ) {
+        actionBusyRef.current = false;
+        setActionBusy(false);
+        setActionProgress(null);
+      }
+    }
+  }, [
+    actionPreview,
+    context.installationId,
+    context.projectPath,
+    contextKey,
+    pendingApplyOutcome,
+    t,
+  ]);
 
   const cancelAction = useCallback(() => {
     if (actionBusy) return;
     actionRequestRef.current += 1;
     setActionPreview(null);
     setActionError(null);
+    setPendingApplyOutcome(null);
   }, [actionBusy]);
 
   const query = filter.trim().toLocaleLowerCase();
@@ -172,38 +309,10 @@ export function AgentCollectionPanel({
     () => inventory?.plugins.resources.filter((resource) => matches(resource, query)) ?? [],
     [inventory, query],
   );
-  const workspaceKey = inventory?.workspace.key;
-  const trackedOperation = useWorkspaceOperations((state) =>
-    workspaceKey ? state.operations[workspaceKey] : undefined,
-  );
-  const operationBusy = trackedOperation?.status === 'applying';
   const hasResources = Boolean(
     inventory && inventory.skills.resources.length + inventory.plugins.resources.length > 0,
   );
   const limitations = capabilities.flatMap((capability) => capability.limitations);
-
-  useEffect(() => {
-    if (!trackedOperation) return;
-    if (trackedOperation.status === 'applying') {
-      setActionError(null);
-      setActionResult(null);
-      return;
-    }
-    const completionKey = `${trackedOperation.operationId}:${trackedOperation.finishedAt ?? ''}`;
-    if (handledOperationRef.current === completionKey) return;
-    handledOperationRef.current = completionKey;
-    if (trackedOperation.status === 'failed') {
-      setActionError(trackedOperation.error ?? t('agentCollections.applyFailed'));
-    } else if (trackedOperation.status === 'partial_failure') {
-      setActionError(t('agentCollections.partialFailure'));
-    } else {
-      const outcome = trackedOperation.report?.outcome;
-      if (outcome === 'changed') setActionResult(t('agentCollections.applySuccess'));
-      else if (outcome === 'no_change') setActionResult(t('agentCollections.noChange'));
-      else if (outcome) setActionError(t(`agentCollections.outcome.${outcome}`));
-      else setActionError(t('agentCollections.applyFailed'));
-    }
-  }, [t, trackedOperation]);
 
   if (loading) {
     return (
@@ -258,25 +367,6 @@ export function AgentCollectionPanel({
           className="flex shrink-0 items-center justify-between gap-3 border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
         >
           <span>{actionError}</span>
-          {trackedOperation?.report?.receipt && onOpenHistory && (
-            <Button type="button" size="sm" variant="ghost" onClick={onOpenHistory}>
-              {t('agentCollections.viewReceipt')}
-            </Button>
-          )}
-        </div>
-      )}
-      {operationBusy && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="flex shrink-0 items-center justify-between gap-3 border-b border-primary/30 bg-primary/5 px-3 py-2 text-xs text-foreground"
-        >
-          <span>{t('agentCollections.applyDetached')}</span>
-          {onOpenHistory && (
-            <Button type="button" size="sm" variant="ghost" onClick={onOpenHistory}>
-              {t('agentCollections.viewHistory')}
-            </Button>
-          )}
         </div>
       )}
       {actionResult && (
@@ -309,10 +399,11 @@ export function AgentCollectionPanel({
               inventory={inventory.skills}
               resources={filteredSkills}
               t={t}
-              busy={actionBusy || operationBusy}
+              busy={actionBusy}
               queryActive={query.length > 0}
               showEmptyState={hasResources}
               onAction={previewAction}
+              onInstallSource={previewSourceInstall}
               onReload={load}
             />
             <CollectionSection
@@ -320,7 +411,7 @@ export function AgentCollectionPanel({
               inventory={inventory.plugins}
               resources={filteredPlugins}
               t={t}
-              busy={actionBusy || operationBusy}
+              busy={actionBusy}
               queryActive={query.length > 0}
               showEmptyState={hasResources}
               onAction={previewAction}
@@ -343,6 +434,7 @@ export function AgentCollectionPanel({
         plan={actionPreview?.plan ?? null}
         busy={actionBusy}
         error={actionPreview ? actionError : null}
+        progress={actionProgress}
         onCancel={cancelAction}
         onConfirm={() => void applyAction()}
       />
@@ -359,6 +451,7 @@ interface CollectionSectionProps {
   queryActive: boolean;
   showEmptyState: boolean;
   onAction: (resource: CollectionResourceView, action: ResourceAction) => void;
+  onInstallSource?: (sourceResource: CollectionResourceView) => void;
   onOpenSkillSources?: () => Promise<void>;
   onReload: () => Promise<void>;
 }
@@ -372,6 +465,7 @@ function CollectionSection({
   queryActive,
   showEmptyState,
   onAction,
+  onInstallSource,
   onOpenSkillSources,
   onReload,
 }: CollectionSectionProps) {
@@ -413,56 +507,18 @@ function CollectionSection({
           onReload={onReload}
         />
       ))}
-      {resources.length > 0 && (
-        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-          {resources.map((resource) => (
-            <li key={resource.key} className="flex items-start gap-3 px-3 py-2.5">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="truncate text-sm font-medium">{resource.displayName}</span>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-                    {t(`agentCollections.state.${resource.effectiveState}`)}
-                  </span>
-                  {resource.health.status !== 'healthy' && (
-                    <AlertTriangle
-                      className="h-3.5 w-3.5 text-warning"
-                      aria-label={t(`agentCollections.health.${resource.health.status}`)}
-                    />
-                  )}
-                </div>
-                {resource.description && (
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {resource.description}
-                  </div>
-                )}
-                {resource.provenance.source && (
-                  <div
-                    className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground"
-                    title={resource.provenance.source.location}
-                  >
-                    <span className="truncate">{resource.provenance.source.displayName}</span>
-                    <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
-                      {t(
-                        `agentCollections.conflictResolution.sourceKind.${resource.provenance.source.kind}`,
-                      )}
-                    </span>
-                  </div>
-                )}
-                <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-                  <Layers3 className="h-3 w-3" aria-hidden="true" />
-                  <span>
-                    {t('agentCollections.declarations', {
-                      count: resource.provenance.declarations.length,
-                    })}
-                  </span>
-                  <span>· {t(`agentCollections.management.${resource.management.status}`)}</span>
-                </div>
-                <ResourceActions resource={resource} busy={busy} t={t} onAction={onAction} />
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      {resources.length > 0 && inventory.kind === 'skills' && onInstallSource ? (
+        <SkillSourceGroups
+          resources={resources}
+          allResources={inventory.resources}
+          busy={busy}
+          t={t}
+          onAction={onAction}
+          onInstallSource={onInstallSource}
+        />
+      ) : resources.length > 0 ? (
+        <ResourceList resources={resources} busy={busy} t={t} onAction={onAction} showSource />
+      ) : null}
       {showEmptyState &&
         resources.length === 0 &&
         !queryActive &&
@@ -473,6 +529,309 @@ function CollectionSection({
         )}
     </section>
   );
+}
+
+interface ResourceListProps {
+  resources: CollectionResourceView[];
+  busy: boolean;
+  t: ReturnType<typeof useTranslation>['t'];
+  onAction: (resource: CollectionResourceView, action: ResourceAction) => void;
+  showSource: boolean;
+  embedded?: boolean;
+}
+
+function ResourceList({
+  resources,
+  busy,
+  t,
+  onAction,
+  showSource,
+  embedded = false,
+}: ResourceListProps) {
+  return (
+    <ul
+      className={
+        embedded
+          ? 'divide-y divide-border'
+          : 'divide-y divide-border overflow-hidden rounded-lg border border-border'
+      }
+    >
+      {resources.map((resource) => (
+        <li key={resource.key} className="flex items-start gap-3 px-3 py-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-sm font-medium">{resource.displayName}</span>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                {t(`agentCollections.state.${resource.effectiveState}`)}
+              </span>
+              {resource.health.status !== 'healthy' && (
+                <AlertTriangle
+                  className="h-3.5 w-3.5 text-warning"
+                  aria-label={t(`agentCollections.health.${resource.health.status}`)}
+                />
+              )}
+            </div>
+            {resource.description && (
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                {resource.description}
+              </div>
+            )}
+            {showSource && resource.provenance.source && (
+              <div
+                className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground"
+                title={resource.provenance.source.location}
+              >
+                <span className="truncate">{resource.provenance.source.displayName}</span>
+                <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
+                  {t(
+                    `agentCollections.conflictResolution.sourceKind.${resource.provenance.source.kind}`,
+                  )}
+                </span>
+              </div>
+            )}
+            <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Layers3 className="h-3 w-3" aria-hidden="true" />
+              <span>
+                {t('agentCollections.declarations', {
+                  count: resource.provenance.declarations.length,
+                })}
+              </span>
+              <span>· {t(`agentCollections.management.${resource.management.status}`)}</span>
+            </div>
+            <ResourceActions resource={resource} busy={busy} t={t} onAction={onAction} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+interface SkillSourceGroup {
+  key: string;
+  source?: ResourceSourceView;
+  resources: CollectionResourceView[];
+}
+
+function SkillSourceGroups({
+  resources,
+  allResources,
+  busy,
+  t,
+  onAction,
+  onInstallSource,
+}: Omit<ResourceListProps, 'showSource'> & {
+  allResources: CollectionResourceView[];
+  onInstallSource: (sourceResource: CollectionResourceView) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      {groupSkillsBySource(resources).map((group) => {
+        const allGroupResources = allResources.filter(
+          (resource) => sourceIdentity(resource.provenance.source) === group.key,
+        );
+        const sourceResource = allGroupResources[0];
+        const installable = allGroupResources.filter((resource) =>
+          actionIsAvailable(resource, 'install'),
+        );
+        const canBatchInstall =
+          sourceResource &&
+          group.source &&
+          ['catalog_git', 'catalog_local'].includes(group.source.kind) &&
+          installable.length > 1;
+        if (allGroupResources.length === 1) {
+          return (
+            <MergedSkillSourceCard
+              key={group.key}
+              resource={group.resources[0]!}
+              source={group.source}
+              busy={busy}
+              t={t}
+              onAction={onAction}
+            />
+          );
+        }
+        return (
+          <section
+            key={group.key}
+            className="overflow-hidden rounded-xl border border-border bg-card"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="truncate text-sm font-semibold">
+                    {group.source?.displayName ?? t('agentCollections.sourceGroup.unknown')}
+                  </h4>
+                  {group.source && (
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      {t(`agentCollections.conflictResolution.sourceKind.${group.source.kind}`)}
+                    </span>
+                  )}
+                  <span className="text-[11px] text-muted-foreground">
+                    {t('agentCollections.sourceGroup.skillsCount', {
+                      count: allGroupResources.length,
+                    })}
+                  </span>
+                </div>
+                {group.source && <SourceDetails source={group.source} t={t} />}
+              </div>
+              {canBatchInstall && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
+                  disabled={busy}
+                  onClick={() => onInstallSource(sourceResource)}
+                >
+                  {t('agentCollections.sourceGroup.installAll', { count: installable.length })}
+                </Button>
+              )}
+            </div>
+            <ResourceList
+              resources={group.resources}
+              busy={busy}
+              t={t}
+              onAction={onAction}
+              showSource={false}
+              embedded
+            />
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function MergedSkillSourceCard({
+  resource,
+  source,
+  busy,
+  t,
+  onAction,
+}: {
+  resource: CollectionResourceView;
+  source?: ResourceSourceView;
+  busy: boolean;
+  t: ReturnType<typeof useTranslation>['t'];
+  onAction: (resource: CollectionResourceView, action: ResourceAction) => void;
+}) {
+  const distinctSourceName =
+    source &&
+    source.displayName.trim().toLocaleLowerCase() !==
+      resource.displayName.trim().toLocaleLowerCase()
+      ? source.displayName
+      : null;
+  return (
+    <section className="rounded-xl border border-border bg-card px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="truncate text-sm font-semibold">{resource.displayName}</h4>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+              {t(`agentCollections.state.${resource.effectiveState}`)}
+            </span>
+            {source && (
+              <span className="rounded-full bg-muted/70 px-2 py-0.5 text-[10px] text-muted-foreground">
+                {t(`agentCollections.conflictResolution.sourceKind.${source.kind}`)}
+              </span>
+            )}
+            {resource.health.status !== 'healthy' && (
+              <AlertTriangle
+                className="h-3.5 w-3.5 text-warning"
+                aria-label={t(`agentCollections.health.${resource.health.status}`)}
+              />
+            )}
+          </div>
+          {distinctSourceName && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t('agentCollections.sourceGroup.fromSource', { source: distinctSourceName })}
+            </p>
+          )}
+          {resource.description && (
+            <p className="mt-1 text-xs text-muted-foreground">{resource.description}</p>
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-[11px] text-muted-foreground">
+            <Layers3 className="h-3 w-3" aria-hidden="true" />
+            <span>
+              {t('agentCollections.declarations', {
+                count: resource.provenance.declarations.length,
+              })}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>{t(`agentCollections.management.${resource.management.status}`)}</span>
+          </div>
+        </div>
+        <ResourceActions
+          resource={resource}
+          busy={busy}
+          t={t}
+          onAction={onAction}
+          className="shrink-0"
+        />
+      </div>
+      {source && <SourceDetails source={source} t={t} />}
+    </section>
+  );
+}
+
+function SourceDetails({
+  source,
+  t,
+}: {
+  source: ResourceSourceView;
+  t: ReturnType<typeof useTranslation>['t'];
+}) {
+  return (
+    <details className="group/details mt-2 text-[11px] text-muted-foreground">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded py-0.5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <ChevronDown
+          className="h-3 w-3 transition-transform group-open/details:rotate-180 motion-reduce:transition-none"
+          aria-hidden="true"
+        />
+        {t('agentCollections.sourceGroup.details')}
+      </summary>
+      <div className="mt-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+        <div
+          className="break-all font-mono leading-relaxed text-foreground"
+          title={source.location}
+        >
+          {source.location}
+        </div>
+        {(source.branch || source.subdirectory) && (
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+            {source.branch && (
+              <span>
+                {t('agentCollections.conflictResolution.branch', { branch: source.branch })}
+              </span>
+            )}
+            {source.subdirectory && (
+              <span className="break-all">
+                {t('agentCollections.conflictResolution.subdirectory', {
+                  subdirectory: source.subdirectory,
+                })}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function groupSkillsBySource(resources: CollectionResourceView[]): SkillSourceGroup[] {
+  const groups = new Map<string, SkillSourceGroup>();
+  for (const resource of resources) {
+    const source = resource.provenance.source;
+    const key = sourceIdentity(source);
+    const group = groups.get(key) ?? { key, source, resources: [] };
+    group.resources.push(resource);
+    groups.set(key, group);
+  }
+  return Array.from(groups.values());
+}
+
+function sourceIdentity(source: ResourceSourceView | undefined): string {
+  return source ? JSON.stringify(source) : 'unknown';
 }
 
 interface ConflictGuidanceProps {
@@ -663,13 +1022,20 @@ interface ResourceActionsProps {
   busy: boolean;
   t: ReturnType<typeof useTranslation>['t'];
   onAction: (resource: CollectionResourceView, action: ResourceAction) => void;
+  className?: string;
 }
 
-function ResourceActions({ resource, busy, t, onAction }: ResourceActionsProps) {
+function ResourceActions({
+  resource,
+  busy,
+  t,
+  onAction,
+  className = 'mt-2',
+}: ResourceActionsProps) {
   const actions = resource.management.actions.filter(isMutationAction);
   if (actions.length === 0) return null;
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+    <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
       {actions.map((action) => {
         const available = ['available', 'confirmation_required'].includes(action.availability);
         const label = actionLabel(resource, action, t);
@@ -697,6 +1063,14 @@ function isMutationAction(action: ResourceActionView): boolean {
   return ['install', 'update', 'remove', 'enable', 'disable'].includes(action.action);
 }
 
+function actionIsAvailable(resource: CollectionResourceView, action: ResourceAction): boolean {
+  return resource.management.actions.some(
+    (candidate) =>
+      candidate.action === action &&
+      ['available', 'confirmation_required'].includes(candidate.availability),
+  );
+}
+
 function actionLabel(
   resource: CollectionResourceView,
   action: ResourceActionView,
@@ -716,7 +1090,11 @@ function actionLabel(
 
 function matches(resource: CollectionResourceView, query: string): boolean {
   if (!query) return true;
-  return [resource.displayName, resource.logicalId, resource.description ?? ''].some((value) =>
-    value.toLocaleLowerCase().includes(query),
-  );
+  return [
+    resource.displayName,
+    resource.logicalId,
+    resource.description ?? '',
+    resource.provenance.source?.displayName ?? '',
+    resource.provenance.source?.location ?? '',
+  ].some((value) => value.toLocaleLowerCase().includes(query));
 }

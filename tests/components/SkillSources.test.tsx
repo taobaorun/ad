@@ -165,14 +165,17 @@ describe('SkillSourcesSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Inspect & Preview' }));
 
     await waitFor(() =>
-      expect(previewAddSkillCatalogSource).toHaveBeenCalledWith({
-        displayName: 'Team Skills',
-        sourceType: 'git',
-        location: 'git@example.com:team/skills.git',
-        branch: undefined,
-        subdirectory: undefined,
-        autoUpdate: false,
-      }),
+      expect(previewAddSkillCatalogSource).toHaveBeenCalledWith(
+        {
+          displayName: 'Team Skills',
+          sourceType: 'git',
+          location: 'git@example.com:team/skills.git',
+          branch: undefined,
+          subdirectory: undefined,
+          autoUpdate: false,
+        },
+        expect.any(Function),
+      ),
     );
     expect(await screen.findByText('Confirm Skill source addition')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));

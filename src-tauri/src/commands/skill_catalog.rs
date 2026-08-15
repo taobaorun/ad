@@ -10,8 +10,9 @@ use crate::agents::{
     PlanId, ReceiptId, ResourceCatalogSnapshot, ResourceRemovalOperationSnapshot,
     ResourceRemovalPlanStore, ResourceRemovalPlanView, ResourceRemovalProgress,
     ResourceRemovalReport, RiskFingerprint, SkillCatalogOperationReport, SkillCatalogPlanClaim,
-    SkillCatalogPlanStore, SkillCatalogPlanView, SkillCatalogSnapshot, SkillSourceRequest,
-    SourceRemovalPlanStore, SourceRemovalPlanView, SourceRemovalProgress, SourceRemovalReport,
+    SkillCatalogPlanStore, SkillCatalogPlanView, SkillCatalogSnapshot, SkillSourcePreviewProgress,
+    SkillSourceRequest, SourceRemovalPlanStore, SourceRemovalPlanView, SourceRemovalProgress,
+    SourceRemovalReport,
 };
 
 use super::{CmdResult, CommandError};
@@ -108,15 +109,20 @@ pub fn apply_remove_catalog_source(
         .map_err(command_error)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn preview_add_skill_catalog_source(
     request: SkillSourceRequest,
+    on_progress: Channel<SkillSourcePreviewProgress>,
     plans: State<'_, SkillCatalogPlanStore>,
 ) -> CmdResult<SkillCatalogPlanView> {
-    plans.preview_add(request).map_err(command_error)
+    plans
+        .preview_add_with_progress(request, &|progress| {
+            let _ = on_progress.send(progress);
+        })
+        .map_err(command_error)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn preview_update_skill_catalog_source(
     source_id: String,
     plans: State<'_, SkillCatalogPlanStore>,
@@ -143,7 +149,7 @@ pub fn preview_rollback_skill_catalog_source_update(
     preview_rollback_skill_catalog_source(&receipt_id, &plans).map_err(command_error)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn apply_skill_catalog_source_plan(
     claim: SkillCatalogPlanClaim,
     plans: State<'_, SkillCatalogPlanStore>,

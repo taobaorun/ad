@@ -69,18 +69,21 @@
       "mcpStatus": "Coming soon"
     },
     "sectionTitle": "Skills & Plugins",
-    "sectionSubtitle": "Manage Skills and Plugins that can be installed into projects.",
+    "sectionSubtitle": "Manage reusable sources for Skills and Plugins installed into projects.",
     "addSource": "Add source",
     "sources": "Sources",
     "updateSource": "Update source {{name}}",
     "removeSource": "Remove source {{name}}",
-    "search": "Search resources or sources…",
+    "duplicateSource": "“{{name}}” is already managed. Update or remove the existing source here.",
+    "sourceBranch": "Branch: {{branch}}",
+    "sourceSubdirectory": "Subdirectory: {{subdirectory}}",
+    "search": "Search sources…",
     "filterLabel": "Resource type",
     "filter": { "all": "All", "skills": "Skills", "plugins": "Plugins" },
     "refresh": "Refresh",
-    "loading": "Loading resources…",
-    "empty": "No matching resources",
-    "emptyHint": "Add a Git repository or local directory to see its standard resources here.",
+    "loading": "Loading sources…",
+    "empty": "No matching sources",
+    "emptyHint": "Add a Git repository or local directory to manage it here.",
     "noManaged": "No managed resources match this view",
     "removedResources": "Removed resources ({{count}})",
     "kind": { "skills": "Skill", "plugins": "Plugin" },
@@ -434,6 +437,14 @@
         "addingSource": "Adding source…",
         "inspecting": "Inspecting…",
         "preview": "Inspect & Preview",
+        "retry": "Retry",
+        "progress": {
+          "preparing": "Preparing source inspection…",
+          "cloning": "Cloning repository…",
+          "inspecting": "Inspecting Skills and Plugins…",
+          "planning": "Preparing review…",
+          "hint": "You can keep using this window while AD finishes this step."
+        },
         "backendIdHint": "AD issues the source ID; the display name is never used as a filesystem path."
       },
       "plan": {
@@ -728,6 +739,14 @@
       "partial": "This is a partial inventory. Verified resources remain visible; unverified locations are not claimed as complete.",
       "failed": "This category could not be inspected. No write actions are available."
     },
+    "sourceGroup": {
+      "unknown": "Unidentified source",
+      "skillsCount_one": "{{count}} Skill",
+      "skillsCount_other": "{{count}} Skills",
+      "fromSource": "Source: {{source}}",
+      "details": "Source details",
+      "installAll": "Install all ({{count}})"
+    },
     "declarations_one": "{{count}} declaration",
     "declarations_other": "{{count}} declarations",
     "state": {
@@ -805,6 +824,9 @@
     "rollbackConfirm": "Rollback the last collection change? This will only proceed if its resources have not changed since Apply.",
     "rollbackSuccess": "Rolled back"
   },
+  "operationProgress": {
+    "elapsed": "{{seconds}}s elapsed"
+  },
   "agentPlan": {
     "title": "Review changes",
     "description": "AD will verify the resources again, create backups, and then apply this plan.",
@@ -830,7 +852,16 @@
     },
     "cancel": "Cancel",
     "apply": "Apply",
-    "applying": "Applying…"
+    "applying": "Applying…",
+    "retry": "Retry",
+    "progress": {
+      "installing": "Installing project resources…",
+      "removing": "Removing project resources…",
+      "updating": "Updating project resources…",
+      "applying": "Applying project changes…",
+      "refreshing": "Refreshing project resources…",
+      "hint": "Keep this dialog open until the operation finishes."
+    }
   },
   "legacySkillMigration": {
     "title": "Legacy project Skill state",

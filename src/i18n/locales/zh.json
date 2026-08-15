@@ -69,18 +69,21 @@
       "mcpStatus": "即将推出"
     },
     "sectionTitle": "Skills / Plugins",
-    "sectionSubtitle": "管理可安装到项目的 Skill 与 Plugin。",
+    "sectionSubtitle": "管理用于项目 Skill 与 Plugin 安装的可复用来源。",
     "addSource": "添加来源",
     "sources": "来源",
     "updateSource": "更新来源 {{name}}",
     "removeSource": "删除来源 {{name}}",
-    "search": "搜索资源或来源…",
+    "duplicateSource": "「{{name}}」已经处于管理中，可在这里更新或删除现有来源。",
+    "sourceBranch": "分支：{{branch}}",
+    "sourceSubdirectory": "子目录：{{subdirectory}}",
+    "search": "搜索来源…",
     "filterLabel": "资源类型",
     "filter": { "all": "全部", "skills": "Skill", "plugins": "Plugin" },
     "refresh": "刷新",
-    "loading": "正在加载资源…",
-    "empty": "暂无匹配资源",
-    "emptyHint": "添加 Git 仓库或本地目录后，标准资源会显示在这里。",
+    "loading": "正在加载来源…",
+    "empty": "暂无匹配来源",
+    "emptyHint": "添加 Git 仓库或本地目录后，可在这里统一管理。",
     "noManaged": "当前视图没有已纳管资源",
     "removedResources": "已移除资源（{{count}}）",
     "kind": { "skills": "Skill", "plugins": "Plugin" },
@@ -434,6 +437,14 @@
         "addingSource": "正在添加 source…",
         "inspecting": "正在检查…",
         "preview": "检查并预览",
+        "retry": "重试",
+        "progress": {
+          "preparing": "正在准备来源检查…",
+          "cloning": "正在克隆仓库…",
+          "inspecting": "正在检查 Skill 与 Plugin…",
+          "planning": "正在准备确认信息…",
+          "hint": "AD 完成此步骤期间，窗口仍可正常响应。"
+        },
         "backendIdHint": "Source ID 由 AD 签发，显示名称不会作为文件路径。"
       },
       "plan": {
@@ -728,6 +739,14 @@
       "partial": "当前为部分清单。已验证资源仍会显示，但不会把未知位置宣称为完整覆盖。",
       "failed": "无法检查此类别，所有写操作均已停用。"
     },
+    "sourceGroup": {
+      "unknown": "未标识来源",
+      "skillsCount_one": "{{count}} 个 Skill",
+      "skillsCount_other": "{{count}} 个 Skill",
+      "fromSource": "来源：{{source}}",
+      "details": "来源信息",
+      "installAll": "全部安装（{{count}}）"
+    },
     "declarations_one": "{{count}} 个声明",
     "declarations_other": "{{count}} 个声明",
     "state": {
@@ -805,6 +824,9 @@
     "rollbackConfirm": "回滚上一次集合变更？仅当应用后相关资源未再变化时才会继续。",
     "rollbackSuccess": "已回滚"
   },
+  "operationProgress": {
+    "elapsed": "已用时 {{seconds}} 秒"
+  },
   "agentPlan": {
     "title": "检查变更",
     "description": "AD 会再次校验资源、创建备份，然后应用此计划。",
@@ -830,7 +852,16 @@
     },
     "cancel": "取消",
     "apply": "应用",
-    "applying": "应用中…"
+    "applying": "应用中…",
+    "retry": "重试",
+    "progress": {
+      "installing": "正在安装项目资源…",
+      "removing": "正在移除项目资源…",
+      "updating": "正在更新项目资源…",
+      "applying": "正在应用项目变更…",
+      "refreshing": "正在刷新项目资源…",
+      "hint": "请保持此弹窗打开，操作完成后会自动关闭。"
+    }
   },
   "legacySkillMigration": {
     "title": "旧版项目 Skill 状态",

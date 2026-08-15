@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     opaque_contract_id, AgentContext, AgentId, DeclarationKey, InventoryRevision, MutationKind,
     MutationPlan, OperationReceipt, PhysicalTargetId, PlanId, ResourceAction, ResourceKey,
-    ResourceKind, ResourceRef, ResourceScope, RiskFingerprint, WorkspaceKey,
+    ResourceKind, ResourceRef, ResourceScope, ResourceSourceView, RiskFingerprint, WorkspaceKey,
 };
 
 impl ResourceKey {
@@ -304,6 +304,24 @@ pub struct ProjectCollectionActionPreview {
     pub workspace_key: WorkspaceKey,
     pub resource_key: ResourceKey,
     pub action: ResourceAction,
+    pub plan: MutationPlanView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectCollectionSourceInstallRequest {
+    pub workspace_key: WorkspaceKey,
+    pub inventory_revision: InventoryRevision,
+    /// Opaque Skill resource key used to identify the catalog source server-side.
+    pub source_resource_key: ResourceKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectCollectionSourceInstallPreview {
+    pub workspace_key: WorkspaceKey,
+    pub source: ResourceSourceView,
+    pub resource_keys: Vec<ResourceKey>,
     pub plan: MutationPlanView,
 }
 
