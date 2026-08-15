@@ -41,11 +41,15 @@ fn restore_environment(name: &str, value: Option<OsString>) {
 }
 
 fn write_skill(source: &Path, body: &str) {
-    let skill = source.join("review");
+    write_skill_named(source, "review", "Review code", body);
+}
+
+fn write_skill_named(source: &Path, name: &str, description: &str, body: &str) {
+    let skill = source.join(name);
     std::fs::create_dir_all(&skill).unwrap();
     std::fs::write(
         skill.join("SKILL.md"),
-        format!("---\nname: review\ndescription: Review code\n---\n{body}\n"),
+        format!("---\nname: {name}\ndescription: {description}\n---\n{body}\n"),
     )
     .unwrap();
 }
@@ -445,6 +449,56 @@ fn catalog_local_skill_actions_share_the_original_live_source() {
         },
     )
     .unwrap();
+}
+
+#[test]
+#[serial(home_env)]
+fn catalog_source_batch_install_previews_and_applies_one_combined_plan() {
+    let (_home, _guard, source, project_a, _project_b) = setup();
+    write_skill_named(&source, "format", "Format code", "format instructions");
+    add_catalog_source(&source);
+    let installation_id = claude_installation();
+    let plans = PlanStore::default();
+    let inventory = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    let anchor = skill(&inventory, "review");
+
+    let preview = preview_project_collection_source_install(
+        &installation_id,
+        &project_a,
+        ProjectCollectionSourceInstallRequest {
+            workspace_key: inventory.workspace.key.clone(),
+            inventory_revision: inventory.revision.clone(),
+            source_resource_key: anchor.key.clone(),
+        },
+        &plans,
+    )
+    .unwrap();
+
+    assert_eq!(preview.source, resource_source(anchor).clone());
+    assert_eq!(preview.resource_keys.len(), 2);
+    assert_eq!(preview.plan.changes.len(), 2);
+    let report = apply_project_collection_action_plan(
+        &preview.plan.id,
+        &preview.plan.context,
+        &preview.plan.risk_fingerprint,
+        true,
+        &plans,
+    )
+    .unwrap();
+    assert_eq!(report.outcome, WorkspaceOperationOutcome::Changed);
+    assert_eq!(report.receipt.as_ref().unwrap().applied_resources.len(), 2);
+    assert!(project_a.join(".claude/skills/review").is_symlink());
+    assert!(project_a.join(".claude/skills/format").is_symlink());
+
+    let installed = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    assert!(!action_is_available(
+        skill(&installed, "review"),
+        ResourceAction::Install
+    ));
+    assert!(!action_is_available(
+        skill(&installed, "format"),
+        ResourceAction::Install
+    ));
 }
 
 #[test]

@@ -7,17 +7,20 @@ import { ProjectWorkspaceInventorySchema } from '@/lib/agentResourceInventoryTyp
 import {
   AgentContextSchema,
   CapabilityDescriptorSchema,
+  DeclarationKeySchema,
+  PhysicalTargetIdSchema,
   ResourceKeySchema,
 } from '@/lib/agentTypes';
-import { resetWorkspaceOperationTracker } from '@/store/workspaceOperations';
 
 const {
   inspectProjectAgentWorkspace,
   previewProjectCollectionAction,
+  previewProjectCollectionSourceInstall,
   applyProjectCollectionAction,
 } = vi.hoisted(() => ({
   inspectProjectAgentWorkspace: vi.fn(),
   previewProjectCollectionAction: vi.fn(),
+  previewProjectCollectionSourceInstall: vi.fn(),
   applyProjectCollectionAction: vi.fn(),
 }));
 
@@ -25,6 +28,7 @@ vi.mock('@/lib/tauri', () => ({
   tauri: {
     inspectProjectAgentWorkspace,
     previewProjectCollectionAction,
+    previewProjectCollectionSourceInstall,
     applyProjectCollectionAction,
   },
 }));
@@ -177,10 +181,12 @@ function inventory(model = 'current', key = 'workspace:sha256:project') {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((next) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((next, fail) => {
     resolve = next;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function actionableInventory() {
@@ -247,6 +253,67 @@ function conflictingSkillInventory() {
   return next;
 }
 
+function sourceGroupedInventory() {
+  const next = actionableInventory();
+  const review = next.skills.resources[0]!;
+  review.provenance.source = {
+    kind: 'catalog_git',
+    displayName: 'Team Skills',
+    location: 'https://github.com/example/team-skills.git',
+    branch: 'main',
+  };
+  const format = structuredClone(review);
+  format.key = ResourceKeySchema.parse('resource:sha256:format-available');
+  format.logicalId = 'format-available';
+  format.displayName = 'Format available';
+  format.description = 'Formats the active change';
+  next.skills.resources = [review, format];
+  next.skills.coverage.observed = 2;
+  next.skills.coverage.visible = 2;
+  return next;
+}
+
+function singleInstalledSkillInventory() {
+  const next = actionableInventory();
+  const resource = next.skills.resources[0]!;
+  resource.logicalId = 'ad-skill-governance';
+  resource.displayName = 'ad-skill-governance';
+  resource.description = undefined;
+  resource.effectiveState = 'enabled';
+  resource.provenance.source = {
+    kind: 'installed_path',
+    displayName: 'ad-skill-governance',
+    location: '/Users/test/project/.agents/skills/ad-skill-governance',
+  };
+  resource.provenance.declarations = [
+    {
+      key: DeclarationKeySchema.parse('declaration:sha256:governance'),
+      layer: 'project',
+      sourceId: 'installed:ad-skill-governance',
+      targetId: PhysicalTargetIdSchema.parse('target:sha256:governance'),
+      scope: 'project',
+    },
+  ];
+  resource.management = {
+    status: 'read_only',
+    actions: [
+      {
+        action: 'remove',
+        intent: 'standard',
+        availability: 'unavailable',
+        limitation: {
+          code: 'read_only',
+          messageKey: 'agents.resources.readOnly',
+        },
+      },
+    ],
+  };
+  next.plugins.resources = [];
+  next.plugins.coverage.observed = 0;
+  next.plugins.coverage.visible = 0;
+  return next;
+}
+
 function actionPreview() {
   const current = actionableInventory();
   const resource = current.skills.resources[0]!;
@@ -292,13 +359,45 @@ function actionPreview() {
   };
 }
 
+function sourceInstallPreview() {
+  const current = sourceGroupedInventory();
+  const review = current.skills.resources[0]!;
+  const format = current.skills.resources[1]!;
+  const preview = actionPreview();
+  return {
+    workspaceKey: current.workspace.key,
+    source: review.provenance.source!,
+    resourceKeys: [review.key, format.key],
+    plan: {
+      ...preview.plan,
+      id: 'plan:install-team-skills',
+      changes: [
+        preview.plan.changes[0]!,
+        {
+          ...preview.plan.changes[0]!,
+          resource: {
+            ...preview.plan.changes[0]!.resource,
+            logicalId: format.logicalId,
+          },
+          target: {
+            ...preview.plan.changes[0]!.target,
+            id: 'target:sha256:format-install',
+            display: 'Project Skill format',
+          },
+        },
+      ],
+      riskFingerprint: 'risk:sha256:install-team-skills',
+    },
+  };
+}
+
 describe('AgentCollectionPanel', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
     inspectProjectAgentWorkspace.mockReset().mockResolvedValue(inventory());
     previewProjectCollectionAction.mockReset();
+    previewProjectCollectionSourceInstall.mockReset();
     applyProjectCollectionAction.mockReset();
-    resetWorkspaceOperationTracker();
   });
 
   it('lists complete catalog source addresses and offers conflict recovery actions', async () => {
@@ -448,6 +547,67 @@ describe('AgentCollectionPanel', () => {
     expect(await screen.findByText('Applied')).toBeInTheDocument();
   });
 
+  it('groups project Skills by source and installs every eligible Skill with one plan', async () => {
+    const available = sourceGroupedInventory();
+    inspectProjectAgentWorkspace.mockResolvedValue(available);
+    previewProjectCollectionSourceInstall.mockResolvedValue(sourceInstallPreview());
+    applyProjectCollectionAction.mockResolvedValue({
+      workspaceKey: available.workspace.key,
+      outcome: 'changed',
+      issues: [],
+    });
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+
+    expect(await screen.findByRole('heading', { name: 'Team Skills' })).toBeInTheDocument();
+    expect(screen.getByText('https://github.com/example/team-skills.git')).not.toBeVisible();
+    expect(screen.getByText('2 Skills')).toBeInTheDocument();
+    expect(screen.getByText('Review available')).toBeInTheDocument();
+    expect(screen.getByText('Format available')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'review' } });
+    expect(screen.queryByText('Format available')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Install all (2)' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Source details'));
+    expect(screen.getByText('https://github.com/example/team-skills.git')).toBeVisible();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Install all (2)' }));
+    });
+
+    expect(previewProjectCollectionSourceInstall).toHaveBeenCalledWith(
+      context.installationId,
+      context.projectPath,
+      {
+        workspaceKey: available.workspace.key,
+        inventoryRevision: available.revision,
+        sourceResourceKey: available.skills.resources[0]!.key,
+      },
+    );
+    expect(await screen.findByText('Review changes')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    });
+    expect(applyProjectCollectionAction).toHaveBeenCalledOnce();
+    expect(applyProjectCollectionAction).toHaveBeenCalledWith(
+      'plan:install-team-skills',
+      context,
+      'risk:sha256:install-team-skills',
+    );
+  });
+
+  it('merges a same-named installed Skill into one card and hides its path by default', async () => {
+    inspectProjectAgentWorkspace.mockResolvedValue(singleInstalledSkillInventory());
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+
+    expect(await screen.findByText('ad-skill-governance')).toBeInTheDocument();
+    expect(screen.getAllByText('ad-skill-governance')).toHaveLength(1);
+    expect(screen.getByText('Enabled')).toBeInTheDocument();
+    expect(screen.getByText('Current installation')).toBeInTheDocument();
+    const location = screen.getByText('/Users/test/project/.agents/skills/ad-skill-governance');
+    expect(location).not.toBeVisible();
+
+    fireEvent.click(screen.getByText('Source details'));
+    expect(location).toBeVisible();
+  });
+
   it('renders backend-owned relink and repair action intent', async () => {
     const relink = actionableInventory();
     const relinkResource = relink.skills.resources[0]!;
@@ -488,25 +648,25 @@ describe('AgentCollectionPanel', () => {
     expect(install).toHaveFocus();
   });
 
-  it('keeps Apply running after the panel detaches and restores its result on reopen', async () => {
+  it('keeps the plan dialog open through apply and refresh progress', async () => {
     const available = actionableInventory();
     const apply = deferred<{
       workspaceKey: string;
       outcome: 'changed';
       issues: never[];
     }>();
-    inspectProjectAgentWorkspace.mockResolvedValue(available);
+    const refresh = deferred<ReturnType<typeof inventory>>();
+    inspectProjectAgentWorkspace
+      .mockResolvedValueOnce(available)
+      .mockReturnValueOnce(refresh.promise);
     previewProjectCollectionAction.mockResolvedValue(actionPreview());
     applyProjectCollectionAction.mockReturnValue(apply.promise);
 
-    const first = render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Install: Review available' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
-    expect(await screen.findByText(/Apply is running for this project/)).toBeInTheDocument();
-    first.unmount();
-
-    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
-    expect(await screen.findByText(/Apply is running for this project/)).toBeInTheDocument();
+    expect(await screen.findByText('Installing project resources…')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
     await act(async () =>
       apply.resolve({
         workspaceKey: available.workspace.key,
@@ -514,9 +674,47 @@ describe('AgentCollectionPanel', () => {
         issues: [],
       }),
     );
+    expect(await screen.findByText('Refreshing project resources…')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await act(async () => refresh.resolve(inventory('installed')));
 
     expect(await screen.findByText('Applied')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(applyProjectCollectionAction).toHaveBeenCalledOnce();
+  });
+
+  it('keeps an install failure in the dialog and retries without duplicate submission', async () => {
+    const available = actionableInventory();
+    const firstApply = deferred<{
+      workspaceKey: string;
+      outcome: 'changed';
+      issues: never[];
+    }>();
+    inspectProjectAgentWorkspace.mockResolvedValue(available);
+    previewProjectCollectionAction.mockResolvedValue(actionPreview());
+    applyProjectCollectionAction.mockReturnValueOnce(firstApply.promise).mockResolvedValueOnce({
+      workspaceKey: available.workspace.key,
+      outcome: 'changed',
+      issues: [],
+    });
+
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Install: Review available' }));
+    const applyButton = await screen.findByRole('button', { name: 'Apply' });
+    fireEvent.click(applyButton);
+    fireEvent.click(applyButton);
+    expect(await screen.findByText('Installing project resources…')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
+    expect(applyProjectCollectionAction).toHaveBeenCalledOnce();
+
+    await act(async () => firstApply.reject(new Error('Install failed')));
+    expect(await screen.findByText('Install failed')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    const retry = screen.getByRole('button', { name: 'Retry' });
+    fireEvent.click(retry);
+
+    expect(await screen.findByText('Applied')).toBeInTheDocument();
+    expect(applyProjectCollectionAction).toHaveBeenCalledTimes(2);
   });
 
   it('does not report external or conflicting outcomes as applied', async () => {

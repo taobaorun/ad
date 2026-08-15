@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use super::collection_skills::project_ownership_records;
@@ -6,9 +7,11 @@ use super::{
     AgentErrorCode, CollectionInstallRequest, CollectionResourceView, ExecutionEngine,
     InstallationId, MutationPlan, OperationStatus, PlanAcknowledgement, PlanAcknowledgementCode,
     PlanId, PlanStore, ProjectCollectionActionPreview, ProjectCollectionActionRequest,
-    ProjectWorkspaceInventory, ResourceAction, ResourceActionAvailability, ResourceKey,
-    ResourceKind, ResourceRef, ResourceScope, RiskFingerprint, WorkspaceDescriptor,
-    WorkspaceOperationIssue, WorkspaceOperationOutcome, WorkspaceOperationReport,
+    ProjectCollectionSourceInstallPreview, ProjectCollectionSourceInstallRequest,
+    ProjectWorkspaceInventory, ReadPrecondition, ResourceAction, ResourceActionAvailability,
+    ResourceKey, ResourceKind, ResourceRef, ResourceScope, ResourceSourceKind, RiskFingerprint,
+    WorkspaceDescriptor, WorkspaceOperationIssue, WorkspaceOperationOutcome,
+    WorkspaceOperationReport,
 };
 
 pub(crate) struct PlannedProjectCollectionAction {
@@ -23,18 +26,26 @@ pub(crate) fn plan_project_collection_action(
 ) -> Result<PlannedProjectCollectionAction, AgentError> {
     let inventory = inspect_project_workspace_inventory(installation_id, project_path)?;
     validate_request(&inventory, request)?;
+    plan_inventory_collection_action(&inventory, &request.resource_key, request.action)
+}
+
+fn plan_inventory_collection_action(
+    inventory: &ProjectWorkspaceInventory,
+    resource_key: &ResourceKey,
+    requested_action: ResourceAction,
+) -> Result<PlannedProjectCollectionAction, AgentError> {
     let resource = inventory
         .skills
         .resources
         .iter()
         .chain(inventory.plugins.resources.iter())
-        .find(|resource| resource.key == request.resource_key)
+        .find(|resource| resource.key == *resource_key)
         .ok_or_else(|| action_error(&inventory.workspace, "Workspace resource no longer exists"))?;
     let action = resource
         .management
         .actions
         .iter()
-        .find(|candidate| candidate.action == request.action)
+        .find(|candidate| candidate.action == requested_action)
         .ok_or_else(|| action_error(&inventory.workspace, "Resource action was not offered"))?;
     if !matches!(
         action.availability,
@@ -56,7 +67,7 @@ pub(crate) fn plan_project_collection_action(
             let port = adapter
                 .skills()
                 .ok_or_else(|| action_error(&inventory.workspace, "Agent has no Skill port"))?;
-            match request.action {
+            match requested_action {
                 ResourceAction::Install => {
                     let resource_id = catalog_resource_for_key(
                         &inventory.workspace,
@@ -87,7 +98,7 @@ pub(crate) fn plan_project_collection_action(
                     port.plan_set_enabled(
                         &context,
                         &installed,
-                        request.action == ResourceAction::Enable,
+                        requested_action == ResourceAction::Enable,
                     )?
                 }
                 _ => {
@@ -102,7 +113,7 @@ pub(crate) fn plan_project_collection_action(
             let port = adapter
                 .plugins()
                 .ok_or_else(|| action_error(&inventory.workspace, "Agent has no Plugin port"))?;
-            match request.action {
+            match requested_action {
                 ResourceAction::Install => {
                     let resource_id = catalog_resource_for_key(
                         &inventory.workspace,
@@ -116,7 +127,7 @@ pub(crate) fn plan_project_collection_action(
                     port.plan_set_enabled(
                         &context,
                         &target,
-                        request.action == ResourceAction::Enable,
+                        requested_action == ResourceAction::Enable,
                     )?
                 }
                 ResourceAction::Remove => {
@@ -150,7 +161,7 @@ pub(crate) fn plan_project_collection_action(
     };
     plan.validate()?;
     Ok(PlannedProjectCollectionAction {
-        workspace: inventory.workspace,
+        workspace: inventory.workspace.clone(),
         plan,
     })
 }
@@ -217,6 +228,140 @@ pub fn preview_project_collection_action(
         action: request.action,
         plan,
     })
+}
+
+pub fn preview_project_collection_source_install(
+    installation_id: &InstallationId,
+    project_path: &Path,
+    request: ProjectCollectionSourceInstallRequest,
+    plans: &PlanStore,
+) -> Result<ProjectCollectionSourceInstallPreview, AgentError> {
+    let inventory = inspect_project_workspace_inventory(installation_id, project_path)?;
+    validate_source_install_request(&inventory, &request)?;
+    let source = inventory
+        .skills
+        .resources
+        .iter()
+        .find(|resource| resource.key == request.source_resource_key)
+        .and_then(|resource| resource.provenance.source.as_ref())
+        .filter(|source| {
+            matches!(
+                source.kind,
+                ResourceSourceKind::CatalogGit | ResourceSourceKind::CatalogLocal
+            )
+        })
+        .cloned()
+        .ok_or_else(|| {
+            action_error(
+                &inventory.workspace,
+                "Skill source is no longer available for batch installation",
+            )
+        })?;
+    let resource_keys = inventory
+        .skills
+        .resources
+        .iter()
+        .filter(|resource| resource.provenance.source.as_ref() == Some(&source))
+        .filter(|resource| action_available(resource, ResourceAction::Install))
+        .map(|resource| resource.key.clone())
+        .collect::<Vec<_>>();
+    if resource_keys.is_empty() {
+        return Err(action_error(
+            &inventory.workspace,
+            "Skill source has no installable resources",
+        ));
+    }
+
+    let mut partial_plans = Vec::with_capacity(resource_keys.len());
+    for resource_key in &resource_keys {
+        partial_plans.push(
+            plan_inventory_collection_action(&inventory, resource_key, ResourceAction::Install)?
+                .plan,
+        );
+    }
+    let combined = combine_collection_plans(&inventory.workspace, partial_plans)?;
+    let plan = plans.insert_workspace_source_install(
+        combined,
+        &inventory.workspace.key,
+        &request.source_resource_key,
+    )?;
+    Ok(ProjectCollectionSourceInstallPreview {
+        workspace_key: inventory.workspace.key,
+        source,
+        resource_keys,
+        plan,
+    })
+}
+
+fn action_available(resource: &CollectionResourceView, action: ResourceAction) -> bool {
+    resource.management.actions.iter().any(|candidate| {
+        candidate.action == action
+            && matches!(
+                candidate.availability,
+                ResourceActionAvailability::Available
+                    | ResourceActionAvailability::ConfirmationRequired
+            )
+    })
+}
+
+fn combine_collection_plans(
+    workspace: &WorkspaceDescriptor,
+    plans: Vec<MutationPlan>,
+) -> Result<MutationPlan, AgentError> {
+    let first = plans
+        .first()
+        .ok_or_else(|| action_error(workspace, "No installable Skill plans were produced"))?;
+    let agent_id = first.agent_id.clone();
+    let context = first.context.clone();
+    let expires_at = plans
+        .iter()
+        .map(|plan| plan.expires_at)
+        .min()
+        .ok_or_else(|| action_error(workspace, "No installable Skill plans were produced"))?;
+    let mut read_set = BTreeMap::<ResourceRef, ReadPrecondition>::new();
+    let mut mutation_resources = BTreeSet::<ResourceRef>::new();
+    let mut mutations = Vec::new();
+
+    for plan in plans {
+        if plan.agent_id != agent_id || plan.context != context {
+            return Err(action_error(
+                workspace,
+                "Skill source produced plans for different Agent contexts",
+            ));
+        }
+        for precondition in plan.read_set {
+            if let Some(existing) = read_set.get(&precondition.resource) {
+                if existing != &precondition {
+                    return Err(action_error(
+                        workspace,
+                        "Skill source produced conflicting read preconditions",
+                    ));
+                }
+            } else {
+                read_set.insert(precondition.resource.clone(), precondition);
+            }
+        }
+        for mutation in plan.mutations {
+            if !mutation_resources.insert(mutation.resource.clone()) {
+                return Err(action_error(
+                    workspace,
+                    "Skill source produced overlapping mutations",
+                ));
+            }
+            mutations.push(mutation);
+        }
+    }
+
+    let combined = MutationPlan {
+        id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+        agent_id,
+        context,
+        read_set: read_set.into_values().collect(),
+        mutations,
+        expires_at,
+    };
+    combined.validate()?;
+    Ok(combined)
 }
 
 pub fn apply_project_collection_action_plan(
@@ -304,6 +449,22 @@ fn validate_request(
         Err(action_error(
             &inventory.workspace,
             "Workspace inventory changed after the action was shown",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_source_install_request(
+    inventory: &ProjectWorkspaceInventory,
+    request: &ProjectCollectionSourceInstallRequest,
+) -> Result<(), AgentError> {
+    if inventory.workspace.key != request.workspace_key
+        || inventory.revision != request.inventory_revision
+    {
+        Err(action_error(
+            &inventory.workspace,
+            "Workspace inventory changed after the source action was shown",
         ))
     } else {
         Ok(())

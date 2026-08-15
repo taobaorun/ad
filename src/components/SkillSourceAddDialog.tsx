@@ -1,12 +1,16 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { SkillSourceRequest } from '@/lib/skillCatalogTypes';
+import { formatAgentErrorMessage } from '@/lib/agentErrors';
+import type { SkillSourcePreviewProgress, SkillSourceRequest } from '@/lib/skillCatalogTypes';
+import { OperationProgress } from './OperationProgress';
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
 
 interface SkillSourceAddDialogProps {
   open: boolean;
   busy: boolean;
+  progress: SkillSourcePreviewProgress | null;
+  startedAt: number | null;
   resourceMode?: boolean;
   onOpenChange: (open: boolean) => void;
   onPreview: (request: SkillSourceRequest) => Promise<void>;
@@ -15,6 +19,8 @@ interface SkillSourceAddDialogProps {
 export function SkillSourceAddDialog({
   open,
   busy,
+  progress,
+  startedAt,
   resourceMode = false,
   onOpenChange,
   onPreview,
@@ -26,6 +32,7 @@ export function SkillSourceAddDialog({
   const [branch, setBranch] = useState('');
   const [subdirectory, setSubdirectory] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
 
   function updateLocation(value: string) {
     setLocation(value);
@@ -40,6 +47,8 @@ export function SkillSourceAddDialog({
   }
 
   async function submit() {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setError(null);
     try {
       await onPreview({
@@ -51,7 +60,9 @@ export function SkillSourceAddDialog({
         autoUpdate: false,
       });
     } catch (reason) {
-      setError(String(reason));
+      setError(formatAgentErrorMessage(reason));
+    } finally {
+      submittingRef.current = false;
     }
   }
 
@@ -67,89 +78,103 @@ export function SkillSourceAddDialog({
           : 'settings.skills.addDialog.description',
       )}
       footer={
-        <div className="flex justify-end gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => onOpenChange(false)}
-          >
-            {t('common.cancel')}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={busy || !displayName || !location}
-            onClick={() => void submit()}
-          >
-            {busy
-              ? t('settings.skills.addDialog.inspecting')
-              : t('settings.skills.addDialog.preview')}
-          </Button>
-        </div>
-      }
-    >
-      <Field label={t('settings.skills.addDialog.name')}>
-        <input
-          value={displayName}
-          onChange={(event) => setDisplayName(event.target.value)}
-          className={inputClass}
-        />
-      </Field>
-      <Field label={t('settings.skills.addDialog.type')}>
-        <div className="flex gap-2">
-          {(['git', 'local'] as const).map((type) => (
+        busy ? undefined : (
+          <div className="flex justify-end gap-2">
             <Button
-              key={type}
               type="button"
               size="sm"
-              variant={sourceType === type ? 'secondary' : 'outline'}
-              onClick={() => setSourceType(type)}
+              variant="outline"
+              disabled={busy}
+              onClick={() => onOpenChange(false)}
             >
-              {t(`settings.skills.addDialog.type${type === 'git' ? 'Git' : 'Local'}`)}
+              {t('common.cancel')}
             </Button>
-          ))}
-        </div>
-      </Field>
-      <Field
-        label={
-          sourceType === 'git'
-            ? t('settings.skills.addDialog.gitUrl')
-            : t('settings.skills.addDialog.path')
-        }
-      >
-        <input
-          value={location}
-          onChange={(event) => updateLocation(event.target.value)}
-          className={inputClass}
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy || !displayName || !location}
+              onClick={() => void submit()}
+            >
+              {busy
+                ? t('settings.skills.addDialog.inspecting')
+                : error
+                  ? t('settings.skills.addDialog.retry')
+                  : t('settings.skills.addDialog.preview')}
+            </Button>
+          </div>
+        )
+      }
+    >
+      {busy && progress && startedAt !== null ? (
+        <OperationProgress
+          label={t(`settings.skills.addDialog.progress.${progress.phase}`)}
+          startedAt={startedAt}
+          hint={t('settings.skills.addDialog.progress.hint')}
         />
-      </Field>
-      {sourceType === 'git' && (
-        <Field label={t('settings.skills.addDialog.branch')}>
-          <input
-            value={branch}
-            onChange={(event) => setBranch(event.target.value)}
-            className={inputClass}
-          />
-        </Field>
-      )}
-      <Field label={t('settings.skills.addDialog.subdirectory')}>
-        <input
-          value={subdirectory}
-          onChange={(event) => setSubdirectory(event.target.value)}
-          className={inputClass}
-        />
-      </Field>
-      {!resourceMode && (
-        <p className="text-[11px] text-muted-foreground">
-          {t('settings.skills.addDialog.backendIdHint')}
-        </p>
-      )}
-      {error && (
-        <div role="alert" className="mt-3 text-xs text-destructive">
-          {error}
-        </div>
+      ) : (
+        <>
+          <Field label={t('settings.skills.addDialog.name')}>
+            <input
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              className={inputClass}
+            />
+          </Field>
+          <Field label={t('settings.skills.addDialog.type')}>
+            <div className="flex gap-2">
+              {(['git', 'local'] as const).map((type) => (
+                <Button
+                  key={type}
+                  type="button"
+                  size="sm"
+                  variant={sourceType === type ? 'secondary' : 'outline'}
+                  onClick={() => setSourceType(type)}
+                >
+                  {t(`settings.skills.addDialog.type${type === 'git' ? 'Git' : 'Local'}`)}
+                </Button>
+              ))}
+            </div>
+          </Field>
+          <Field
+            label={
+              sourceType === 'git'
+                ? t('settings.skills.addDialog.gitUrl')
+                : t('settings.skills.addDialog.path')
+            }
+          >
+            <input
+              value={location}
+              onChange={(event) => updateLocation(event.target.value)}
+              className={inputClass}
+            />
+          </Field>
+          {sourceType === 'git' && (
+            <Field label={t('settings.skills.addDialog.branch')}>
+              <input
+                value={branch}
+                onChange={(event) => setBranch(event.target.value)}
+                className={inputClass}
+              />
+            </Field>
+          )}
+          <Field label={t('settings.skills.addDialog.subdirectory')}>
+            <input
+              value={subdirectory}
+              onChange={(event) => setSubdirectory(event.target.value)}
+              className={inputClass}
+            />
+          </Field>
+          {!resourceMode && (
+            <p className="text-[11px] text-muted-foreground">
+              {t('settings.skills.addDialog.backendIdHint')}
+            </p>
+          )}
+          {error && (
+            <div role="alert" className="mt-3 text-xs text-destructive">
+              {error}
+            </div>
+          )}
+        </>
       )}
     </Dialog>
   );

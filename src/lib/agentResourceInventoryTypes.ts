@@ -240,6 +240,21 @@ export const ProjectCollectionActionPreviewSchema = z
     plan: MutationPlanViewSchema,
   })
   .strict();
+export const ProjectCollectionSourceInstallRequestSchema = z
+  .object({
+    workspaceKey: WorkspaceKeySchema,
+    inventoryRevision: InventoryRevisionSchema,
+    sourceResourceKey: ResourceKeySchema,
+  })
+  .strict();
+export const ProjectCollectionSourceInstallPreviewSchema = z
+  .object({
+    workspaceKey: WorkspaceKeySchema,
+    source: ResourceSourceViewSchema,
+    resourceKeys: z.array(ResourceKeySchema).min(1),
+    plan: MutationPlanViewSchema,
+  })
+  .strict();
 
 export type CoverageStatus = z.infer<typeof CoverageStatusSchema>;
 export type ItemDiagnostic = z.infer<typeof ItemDiagnosticSchema>;
@@ -273,3 +288,9 @@ export type SettingsEffectiveView = z.infer<typeof SettingsEffectiveViewSchema>;
 export type ProjectWorkspaceInventory = z.infer<typeof ProjectWorkspaceInventorySchema>;
 export type ProjectCollectionActionRequest = z.infer<typeof ProjectCollectionActionRequestSchema>;
 export type ProjectCollectionActionPreview = z.infer<typeof ProjectCollectionActionPreviewSchema>;
+export type ProjectCollectionSourceInstallRequest = z.infer<
+  typeof ProjectCollectionSourceInstallRequestSchema
+>;
+export type ProjectCollectionSourceInstallPreview = z.infer<
+  typeof ProjectCollectionSourceInstallPreviewSchema
+>;

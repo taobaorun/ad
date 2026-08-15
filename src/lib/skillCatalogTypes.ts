@@ -159,6 +159,13 @@ export const SkillCatalogOperationReportSchema = z
   })
   .strict();
 
+export const SkillSourcePreviewProgressSchema = z
+  .object({
+    sequence: z.number().int().positive(),
+    phase: z.enum(['preparing', 'cloning', 'inspecting', 'planning']),
+  })
+  .strict();
+
 export interface SkillSourceRequest {
   displayName: string;
   sourceType: 'git' | 'local';
@@ -172,3 +179,4 @@ export type SkillCatalogEntry = z.infer<typeof SkillCatalogEntrySchema>;
 export type SkillCatalogSnapshot = z.infer<typeof SkillCatalogSnapshotSchema>;
 export type SkillCatalogPlanView = z.infer<typeof SkillCatalogPlanViewSchema>;
 export type SkillCatalogOperationReport = z.infer<typeof SkillCatalogOperationReportSchema>;
+export type SkillSourcePreviewProgress = z.infer<typeof SkillSourcePreviewProgressSchema>;

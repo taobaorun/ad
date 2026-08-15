@@ -21,6 +21,7 @@ import {
   CollectionResourceInventorySchema,
   CollectionResourceViewSchema,
   ProjectCollectionActionRequestSchema,
+  ProjectCollectionSourceInstallRequestSchema,
   ProjectWorkspaceInventorySchema,
   ResourceProvenanceViewSchema,
   ResourceSourceViewSchema,
@@ -312,6 +313,22 @@ describe('Agent schemas', () => {
     ).toBe(false);
   });
 
+  it('uses an opaque Skill resource key to request a source batch install', () => {
+    const request = {
+      workspaceKey: 'workspace:sha256:test',
+      inventoryRevision: 'inventory-revision:sha256:test',
+      sourceResourceKey: 'resource:sha256:review',
+    };
+
+    expect(ProjectCollectionSourceInstallRequestSchema.parse(request)).toEqual(request);
+    expect(
+      ProjectCollectionSourceInstallRequestSchema.safeParse({
+        ...request,
+        source: { location: '/private/catalog' },
+      }).success,
+    ).toBe(false);
+  });
+
   it('preserves partial coverage and item diagnostics without hiding valid peers', () => {
     const item = CollectionResourceViewSchema.parse({
       key: 'resource:sha256:healthy',
@@ -552,6 +569,64 @@ describe('Agent schemas', () => {
         retryable: true,
       }).retryable,
     ).toBe(true);
+  });
+
+  it('accepts catalog ownership bindings in operation receipts', () => {
+    const receipt = OperationReceiptSchema.parse({
+      schemaVersion: 3,
+      id: 'receipt-catalog-install',
+      planId: 'plan-catalog-install',
+      operationKind: 'apply',
+      context: {
+        installationId: 'codex:project',
+        projectPath: '/Users/test/project',
+      },
+      workspaceKey: 'workspace:test',
+      status: 'complete',
+      appliedResources: [],
+      backupPaths: [],
+      postApplyStates: [],
+      ownershipChanges: [
+        {
+          kind: 'upsert',
+          recordId: 'ownership:catalog-skill',
+          record: {
+            schemaVersion: 3,
+            id: 'ownership:catalog-skill',
+            workspaceKey: 'workspace:test',
+            resource: {
+              installationId: 'codex:project',
+              projectPath: '/Users/test/project',
+              kind: 'skills',
+              scope: 'project',
+              logicalId: 'catalog-skill',
+            },
+            targetId: 'target:catalog-skill',
+            targetPath: '/Users/test/project/.agents/skills/catalog-skill',
+            targetKind: 'symlink',
+            targetDigest: 'sha256:target',
+            artifactId: 'artifact:catalog-skill',
+            artifactDigest: 'sha256:artifact',
+            catalogBinding: {
+              resourceId: 'catalog-resource:catalog-skill',
+              sourceId: 'catalog-source:team-skills',
+              installId: 'catalog-install:catalog-skill',
+              resourceKind: 'skills',
+              stableRoot: '/Users/test/.ad/catalog/team-skills',
+              resourceSubpath: 'catalog-skill',
+              adapterContract: 'codex:skills:v1',
+            },
+            creatingReceiptId: 'receipt-catalog-install',
+            updatedByReceiptId: 'receipt-catalog-install',
+          },
+        },
+      ],
+      ownershipEvidenceVersion: 1,
+      rollback: { available: true },
+      createdAt: '2026-08-15T01:00:00Z',
+    });
+
+    expect(receipt.ownershipChanges[0]?.record?.catalogBinding?.resourceKind).toBe('skills');
   });
 
   it('accepts directory states in operation receipts', () => {

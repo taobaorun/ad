@@ -287,6 +287,18 @@ export const AppliedResourceStateSchema = z
   })
   .strict();
 
+export const CatalogOwnershipBindingSchema = z
+  .object({
+    resourceId: z.string().min(1),
+    sourceId: z.string().min(1),
+    installId: z.string().min(1),
+    resourceKind: ResourceKindSchema,
+    stableRoot: z.string().min(1),
+    resourceSubpath: z.string(),
+    adapterContract: z.string().min(1),
+  })
+  .strict();
+
 export const ResourceOwnershipRecordSchema = z
   .object({
     schemaVersion: z.number().int().positive(),
@@ -309,6 +321,7 @@ export const ResourceOwnershipRecordSchema = z
       })
       .strict()
       .optional(),
+    catalogBinding: CatalogOwnershipBindingSchema.optional(),
     creatingReceiptId: ReceiptIdSchema,
     updatedByReceiptId: ReceiptIdSchema,
   })
@@ -591,6 +604,7 @@ export type OperationStatus = z.infer<typeof OperationStatusSchema>;
 export type OperationReceipt = z.infer<typeof OperationReceiptSchema>;
 export type OperationHistoryEntry = z.infer<typeof OperationHistoryEntrySchema>;
 export type AppliedResourceState = z.infer<typeof AppliedResourceStateSchema>;
+export type CatalogOwnershipBinding = z.infer<typeof CatalogOwnershipBindingSchema>;
 export type AgentErrorCode = z.infer<typeof AgentErrorCodeSchema>;
 export type AgentError = z.infer<typeof AgentErrorSchema>;
 export type ConversionIssue = z.infer<typeof ConversionIssueSchema>;

@@ -28,6 +28,22 @@ const DIRECTORY_FLAGS: OFlags = OFlags::RDONLY
     .union(OFlags::DIRECTORY)
     .union(OFlags::NOFOLLOW);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillSourcePreviewPhase {
+    Preparing,
+    Cloning,
+    Inspecting,
+    Planning,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SkillSourcePreviewProgress {
+    pub sequence: u32,
+    pub phase: SkillSourcePreviewPhase,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillSourceBinding {
@@ -225,6 +241,15 @@ pub fn stage_git_skill_source_binding(
     display_name: &str,
     current_binding: Option<&SkillSourceBinding>,
 ) -> Result<StagedGitSkillSourceBinding, SkillArtifactError> {
+    stage_git_skill_source_binding_with_progress(source, display_name, current_binding, &|_| {})
+}
+
+pub fn stage_git_skill_source_binding_with_progress(
+    source: &SkillSource,
+    display_name: &str,
+    current_binding: Option<&SkillSourceBinding>,
+    on_phase: &dyn Fn(SkillSourcePreviewPhase),
+) -> Result<StagedGitSkillSourceBinding, SkillArtifactError> {
     if source.source_type != SkillSourceType::Git {
         return Err(SkillArtifactError::InvalidSource(
             "Git source binding staging requires a Git source".into(),
@@ -242,10 +267,12 @@ pub fn stage_git_skill_source_binding(
     let lease = super::skill_artifact_lease::acquire_staging_lease(&operation_root)?;
     let result = (|| {
         let checkout_root = operation_root.join("source");
+        on_phase(SkillSourcePreviewPhase::Cloning);
         crate::fs::git::clone(&source.url, &checkout_root, source.branch.as_deref())
             .map_err(|error| SkillArtifactError::Git(error.to_string()))?;
         let revision = crate::fs::git::head_revision(&checkout_root)
             .map_err(|error| SkillArtifactError::Git(error.to_string()))?;
+        on_phase(SkillSourcePreviewPhase::Inspecting);
         build_staged_git_binding(
             source,
             display_name,

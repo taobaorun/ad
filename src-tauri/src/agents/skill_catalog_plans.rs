@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::Mutex;
@@ -11,10 +12,11 @@ use super::skill_catalog::{
     SkillCatalogError,
 };
 use super::{
-    inspect_local_skill_source_binding, stage_git_skill_source_binding, ContentDigest, PlanId,
-    ReceiptId, ResourceOwnershipRecord, ResourceRef, RiskFingerprint, SkillArtifactError,
-    SkillArtifactRef, SkillCatalogSnapshot, SkillSourceBinding, SkillSourceRequest,
-    SkillSourceType, StagedGitSkillSourceBinding, WorkspaceKey,
+    inspect_local_skill_source_binding, stage_git_skill_source_binding_with_progress,
+    ContentDigest, PlanId, ReceiptId, ResourceOwnershipRecord, ResourceRef, RiskFingerprint,
+    SkillArtifactError, SkillArtifactRef, SkillCatalogSnapshot, SkillSourceBinding,
+    SkillSourcePreviewPhase, SkillSourcePreviewProgress, SkillSourceRequest, SkillSourceType,
+    StagedGitSkillSourceBinding, WorkspaceKey,
 };
 use crate::models::SkillSource;
 
@@ -144,11 +146,31 @@ impl SkillCatalogPlanStore {
         &self,
         request: SkillSourceRequest,
     ) -> Result<SkillCatalogPlanView, SkillCatalogPlanError> {
+        self.preview_add_with_progress(request, &|_| {})
+    }
+
+    pub fn preview_add_with_progress(
+        &self,
+        request: SkillSourceRequest,
+        on_progress: &dyn Fn(SkillSourcePreviewProgress),
+    ) -> Result<SkillCatalogPlanView, SkillCatalogPlanError> {
+        let sequence = Cell::new(0_u32);
+        let emit = |phase| {
+            let next = sequence.get() + 1;
+            sequence.set(next);
+            on_progress(SkillSourcePreviewProgress {
+                sequence: next,
+                phase,
+            });
+        };
+        emit(SkillSourcePreviewPhase::Preparing);
         validate_request(&request)?;
         let state = load_skill_catalog_state()?;
         let source_id = new_source_id();
         let source = acquisition_source(source_id.clone(), &request)?;
-        let (artifact, binding, staged_git) = inspect_source(&source, &request.display_name, None)?;
+        let (artifact, binding, staged_git) =
+            inspect_source_with_progress(&source, &request.display_name, None, &emit)?;
+        emit(SkillSourcePreviewPhase::Planning);
         let now = Utc::now();
         let mut candidate = state.document.clone();
         if let Some(binding) = &binding {
@@ -641,14 +663,31 @@ fn inspect_source(
     display_name: &str,
     current_binding: Option<&SkillSourceBinding>,
 ) -> Result<InspectedSkillSource, SkillCatalogPlanError> {
+    inspect_source_with_progress(source, display_name, current_binding, &|_| {})
+}
+
+fn inspect_source_with_progress(
+    source: &SkillSource,
+    display_name: &str,
+    current_binding: Option<&SkillSourceBinding>,
+    on_phase: &dyn Fn(SkillSourcePreviewPhase),
+) -> Result<InspectedSkillSource, SkillCatalogPlanError> {
     match source.source_type {
-        SkillSourceType::Local => Ok((
-            None,
-            Some(inspect_local_skill_source_binding(source)?),
-            None,
-        )),
+        SkillSourceType::Local => {
+            on_phase(SkillSourcePreviewPhase::Inspecting);
+            Ok((
+                None,
+                Some(inspect_local_skill_source_binding(source)?),
+                None,
+            ))
+        }
         SkillSourceType::Git => {
-            let staged = stage_git_skill_source_binding(source, display_name, current_binding)?;
+            let staged = stage_git_skill_source_binding_with_progress(
+                source,
+                display_name,
+                current_binding,
+                on_phase,
+            )?;
             Ok((None, Some(staged.binding().clone()), Some(staged)))
         }
     }

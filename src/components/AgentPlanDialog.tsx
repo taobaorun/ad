@@ -6,16 +6,30 @@ import type { MutationPlanView } from '@/lib/agentTypes';
 
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
+import { OperationProgress } from './OperationProgress';
+
+export interface AgentPlanProgress {
+  phase: 'installing' | 'removing' | 'updating' | 'applying' | 'refreshing';
+  startedAt: number;
+}
 
 interface AgentPlanDialogProps {
   plan: MutationPlanView | null;
   busy: boolean;
   error: string | null;
+  progress?: AgentPlanProgress | null;
   onCancel: () => void;
   onConfirm: () => void;
 }
 
-export function AgentPlanDialog({ plan, busy, error, onCancel, onConfirm }: AgentPlanDialogProps) {
+export function AgentPlanDialog({
+  plan,
+  busy,
+  error,
+  progress = null,
+  onCancel,
+  onConfirm,
+}: AgentPlanDialogProps) {
   const { t } = useTranslation();
   const acknowledgements = plan?.requiredAcknowledgements ?? [];
   const changes = plan?.changes ?? [];
@@ -39,25 +53,27 @@ export function AgentPlanDialog({ plan, busy, error, onCancel, onConfirm }: Agen
       size="lg"
       closeDisabled={busy}
       footer={
-        <div className="flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
-            disabled={busy}
-            data-dialog-initial-focus
-          >
-            {t('agentPlan.cancel')}
-          </Button>
-          <Button
-            type="button"
-            variant={dangerous ? 'destructive' : 'default'}
-            onClick={onConfirm}
-            disabled={busy || plan === null}
-          >
-            {busy ? t('agentPlan.applying') : t('agentPlan.apply')}
-          </Button>
-        </div>
+        busy && progress ? undefined : (
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={busy}
+              data-dialog-initial-focus
+            >
+              {t('agentPlan.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant={dangerous ? 'destructive' : 'default'}
+              onClick={onConfirm}
+              disabled={busy || plan === null}
+            >
+              {busy ? t('agentPlan.applying') : error ? t('agentPlan.retry') : t('agentPlan.apply')}
+            </Button>
+          </div>
+        )
       }
     >
       {error && (
@@ -68,7 +84,13 @@ export function AgentPlanDialog({ plan, busy, error, onCancel, onConfirm }: Agen
           {error}
         </div>
       )}
-      {plan && (
+      {busy && progress ? (
+        <OperationProgress
+          label={t(`agentPlan.progress.${progress.phase}`)}
+          startedAt={progress.startedAt}
+          hint={t('agentPlan.progress.hint')}
+        />
+      ) : plan ? (
         <div className="space-y-4 text-sm">
           <section
             aria-labelledby="agent-plan-risk"
@@ -150,7 +172,7 @@ export function AgentPlanDialog({ plan, busy, error, onCancel, onConfirm }: Agen
             </ul>
           </details>
         </div>
-      )}
+      ) : null}
     </Dialog>
   );
 }

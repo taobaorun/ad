@@ -51,9 +51,12 @@ import {
 } from './agentTypes';
 import {
   ProjectCollectionActionPreviewSchema,
+  ProjectCollectionSourceInstallPreviewSchema,
   ProjectWorkspaceInventorySchema,
   type ProjectCollectionActionPreview,
   type ProjectCollectionActionRequest,
+  type ProjectCollectionSourceInstallPreview,
+  type ProjectCollectionSourceInstallRequest,
   type ProjectWorkspaceInventory,
 } from './agentResourceInventoryTypes';
 import {
@@ -65,9 +68,11 @@ import {
   SkillCatalogOperationReportSchema,
   SkillCatalogPlanViewSchema,
   SkillCatalogSnapshotSchema,
+  SkillSourcePreviewProgressSchema,
   type SkillCatalogOperationReport,
   type SkillCatalogPlanView,
   type SkillCatalogSnapshot,
+  type SkillSourcePreviewProgress,
   type SkillSourceRequest,
 } from './skillCatalogTypes';
 import {
@@ -164,6 +169,18 @@ export const tauri = {
   ): Promise<ProjectCollectionActionPreview> =>
     ProjectCollectionActionPreviewSchema.parse(
       await invoke<unknown>('preview_project_collection_action', {
+        installationId,
+        projectPath,
+        request,
+      }),
+    ),
+  previewProjectCollectionSourceInstall: async (
+    installationId: InstallationId,
+    projectPath: string,
+    request: ProjectCollectionSourceInstallRequest,
+  ): Promise<ProjectCollectionSourceInstallPreview> =>
+    ProjectCollectionSourceInstallPreviewSchema.parse(
+      await invoke<unknown>('preview_project_collection_source_install', {
         installationId,
         projectPath,
         request,
@@ -434,8 +451,14 @@ export const tauri = {
   },
   previewAddSkillCatalogSource: async (
     request: SkillSourceRequest,
-  ): Promise<SkillCatalogPlanView> =>
-    SkillCatalogPlanViewSchema.parse(await invoke('preview_add_skill_catalog_source', { request })),
+    onProgress: (progress: SkillSourcePreviewProgress) => void = () => {},
+  ): Promise<SkillCatalogPlanView> => {
+    const channel = new Channel<unknown>();
+    channel.onmessage = (message) => onProgress(SkillSourcePreviewProgressSchema.parse(message));
+    return SkillCatalogPlanViewSchema.parse(
+      await invoke('preview_add_skill_catalog_source', { request, onProgress: channel }),
+    );
+  },
   previewUpdateSkillCatalogSource: async (sourceId: string): Promise<SkillCatalogPlanView> =>
     SkillCatalogPlanViewSchema.parse(
       await invoke('preview_update_skill_catalog_source', { sourceId }),

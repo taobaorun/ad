@@ -4,6 +4,7 @@ import type {
   SkillCatalogEntry,
   SkillCatalogOperationReport,
   SkillCatalogPlanView,
+  SkillSourcePreviewProgress,
   SkillSourceRequest,
 } from '@/lib/skillCatalogTypes';
 
@@ -11,7 +12,10 @@ interface SkillsState {
   sources: SkillCatalogEntry[];
 
   loadSources: () => Promise<void>;
-  previewAddSource: (source: SkillSourceRequest) => Promise<SkillCatalogPlanView>;
+  previewAddSource: (
+    source: SkillSourceRequest,
+    onProgress?: (progress: SkillSourcePreviewProgress) => void,
+  ) => Promise<SkillCatalogPlanView>;
   previewRemoveSource: (sourceId: string) => Promise<SkillCatalogPlanView>;
   previewUpdateSource: (sourceId: string) => Promise<SkillCatalogPlanView>;
   previewRollbackSourceUpdate: (receiptId: string) => Promise<SkillCatalogPlanView>;
@@ -27,7 +31,7 @@ export const useSkills = create<SkillsState>((set, get) => ({
     set({ sources: catalog.entries });
   },
 
-  previewAddSource: (source) => tauri.previewAddSkillCatalogSource(source),
+  previewAddSource: (source, onProgress) => tauri.previewAddSkillCatalogSource(source, onProgress),
 
   previewRemoveSource: (sourceId) => tauri.previewRemoveSkillCatalogSource(sourceId),
 
