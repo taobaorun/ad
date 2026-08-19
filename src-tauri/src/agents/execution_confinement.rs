@@ -294,12 +294,26 @@ impl ConfinedTarget {
             .map_err(|error| self.io_error(error))
     }
 
+    #[cfg(test)]
     pub(super) fn write_directory_atomic(&self, source: &Path) -> Result<(), AgentError> {
+        self.write_directory_atomic_filtered(source, false)
+    }
+
+    pub(super) fn write_directory_atomic_filtered(
+        &self,
+        source: &Path,
+        exclude_agent_skill_projections: bool,
+    ) -> Result<(), AgentError> {
         let parent = self
             .parent(true)?
             .expect("creating target parents always returns a directory");
-        super::execution_tree::write_directory_atomic(&parent, self.name.as_os_str(), source)
-            .map_err(|error| self.io_error(error))
+        super::execution_tree::write_directory_atomic(
+            &parent,
+            self.name.as_os_str(),
+            source,
+            exclude_agent_skill_projections,
+        )
+        .map_err(|error| self.io_error(error))
     }
 
     pub(super) fn write_directory_from(&self, source: &StateDirectory) -> Result<(), AgentError> {

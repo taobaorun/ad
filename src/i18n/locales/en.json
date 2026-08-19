@@ -650,7 +650,7 @@
   },
   "agents": {
     "capabilities": {
-      "codexPluginInstallRequiresMarketplace": "Managed Plugins from Harness are not supported by Codex.",
+      "codexPluginInstallRequiresMarketplace": "Project Plugins can be installed from Harness; user-level installation remains in the Codex marketplace flow.",
       "projectWritePending": "Project writes are not currently available."
     },
     "inventory": {
@@ -749,9 +749,11 @@
     },
     "declarations_one": "{{count}} declaration",
     "declarations_other": "{{count}} declarations",
+    "catalogCandidate": "Detected in managed source",
     "state": {
       "enabled": "Enabled",
       "disabled": "Disabled",
+      "available": "Available",
       "unconfigured": "Unconfigured",
       "conflict": "Conflict",
       "external": "External",

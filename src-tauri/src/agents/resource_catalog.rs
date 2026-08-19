@@ -493,10 +493,7 @@ fn projected_source(
 fn current_compatible_agents(item: &SourceResourceItem) -> BTreeSet<String> {
     match item.kind {
         ResourceKind::Skills => BTreeSet::from(["claude-code".into(), "codex".into()]),
-        ResourceKind::Plugins if item.supported_agents.contains("claude-code") => {
-            BTreeSet::from(["claude-code".into()])
-        }
-        ResourceKind::Plugins => BTreeSet::new(),
+        ResourceKind::Plugins => item.supported_agents.clone(),
         _ => BTreeSet::new(),
     }
 }
@@ -525,13 +522,22 @@ impl ResourceCatalogDocument {
                     .sources
                     .get(&resource.source_id)
                     .and_then(|source| source.binding.as_ref())
-                    .filter(|binding| {
-                        Path::new(&binding.physical_root)
-                            .join(&resource.subpath)
-                            .join(".claude-plugin/plugin.json")
-                            .is_file()
+                    .map(|binding| {
+                        let root = Path::new(&binding.physical_root).join(&resource.subpath);
+                        let mut agents = BTreeSet::new();
+                        if root.join(".claude-plugin/plugin.json").is_file() {
+                            agents.insert("claude-code".into());
+                        }
+                        if super::codex_plugins::read_codex_catalog_plugin_metadata(
+                            &root,
+                            &resource.install_id,
+                        )
+                        .is_ok()
+                        {
+                            agents.insert("codex".into());
+                        }
+                        agents
                     })
-                    .map(|_| BTreeSet::from(["claude-code".into()]))
                     .unwrap_or_default(),
                 _ => BTreeSet::new(),
             };

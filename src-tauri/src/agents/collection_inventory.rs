@@ -42,7 +42,11 @@ pub(super) fn inspect_plugins(
         }
     }
     if let Some(manifest) = runtime_manifest {
+        let managed_codex_plugins = managed_codex_plugin_ids(workspace)?;
         for (logical_id, enabled) in &manifest.project_overlay.enabled_plugins {
+            if managed_codex_plugins.contains(logical_id) {
+                continue;
+            }
             observations.push(runtime_plugin_observation(workspace, logical_id, *enabled));
         }
     }
@@ -171,7 +175,17 @@ fn catalog_plugin_observations(
         }
         let agent_supported = candidate
             .compatible_agents
-            .contains(workspace.agent_id.as_str());
+            .contains(workspace.agent_id.as_str())
+            || (workspace.agent_id.as_str() == "codex"
+                && super::resolve_catalog_resource(&candidate.id)
+                    .ok()
+                    .is_some_and(|resolved| {
+                        super::codex_plugins::read_codex_catalog_plugin_metadata(
+                            &resolved.physical_path,
+                            &candidate.install_id,
+                        )
+                        .is_ok()
+                    }));
         observations.push(CollectionObservation {
             target_id: PhysicalTargetId::for_resource(&resource),
             resource,
@@ -205,6 +219,42 @@ fn catalog_plugin_observations(
         });
     }
     Ok((observations, diagnostics))
+}
+
+fn managed_codex_plugin_ids(
+    workspace: &WorkspaceDescriptor,
+) -> Result<std::collections::BTreeSet<String>, AgentError> {
+    if workspace.agent_id.as_str() != "codex" {
+        return Ok(std::collections::BTreeSet::new());
+    }
+    Ok(
+        project_ownership_records_for(workspace, ResourceKind::Plugins)?
+            .into_iter()
+            .filter(|record| {
+                record
+                    .catalog_binding
+                    .as_ref()
+                    .is_some_and(|binding| binding.adapter_contract == "codex-plugin-store-v1")
+            })
+            .filter_map(|record| {
+                let version = std::path::Path::new(&record.target_path).file_name()?;
+                let plugin = std::path::Path::new(&record.target_path)
+                    .parent()?
+                    .file_name()?;
+                let marketplace = std::path::Path::new(&record.target_path)
+                    .parent()?
+                    .parent()?
+                    .file_name()?;
+                (!version.is_empty() && !plugin.is_empty() && !marketplace.is_empty()).then(|| {
+                    format!(
+                        "{}@{}",
+                        plugin.to_string_lossy(),
+                        marketplace.to_string_lossy()
+                    )
+                })
+            })
+            .collect(),
+    )
 }
 
 #[derive(Clone)]

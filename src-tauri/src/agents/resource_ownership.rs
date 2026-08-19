@@ -454,6 +454,9 @@ pub(super) fn ownership_catalog_binding(
     }
     let adapter_contract = match resource.kind {
         ResourceKind::Skills => "project-skill-link-v1",
+        ResourceKind::Plugins if resource.installation_id.as_str().starts_with("codex:") => {
+            "codex-plugin-store-v1"
+        }
         ResourceKind::Plugins => "claude-plugin-dir-v1",
         _ => unreachable!("catalog ownership only handles collections"),
     };

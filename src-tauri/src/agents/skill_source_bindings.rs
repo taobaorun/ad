@@ -9,9 +9,8 @@ use rustix::fs::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::resource_scanner::scan_catalog_resources;
+use super::resource_scanner::{inspect_catalog_tree, scan_catalog_resources};
 use super::skill_activation::inspect_activation_impact;
-use super::skill_artifact_tree::{inspect_tree, ArtifactLimits};
 use super::{
     ContentDigest, ResourceKind, SkillActivationImpact, SkillArtifactError, SkillArtifactItem,
     SkillSourceType,
@@ -210,7 +209,7 @@ pub fn inspect_local_skill_source_binding(
         ));
     }
     let selected_root = select_source_root(&canonical_root, source.subdirectory.as_deref())?;
-    let manifest = inspect_tree(&selected_root, ArtifactLimits::default())?;
+    let manifest = inspect_catalog_tree(&selected_root)?;
     let tree_digest = manifest.digest()?;
     let resources = inspect_source_resources(&selected_root)?;
     let skills = skill_items(&resources);
@@ -299,7 +298,7 @@ fn build_staged_git_binding(
     lease: File,
 ) -> Result<StagedGitSkillSourceBinding, SkillArtifactError> {
     let selected_root = select_source_root(&checkout_root, source.subdirectory.as_deref())?;
-    let manifest = inspect_tree(&selected_root, ArtifactLimits::default())?;
+    let manifest = inspect_catalog_tree(&selected_root)?;
     let tree_digest = manifest.digest()?;
     let resources = inspect_source_resources(&selected_root)?;
     let skills = skill_items(&resources);
@@ -445,7 +444,7 @@ pub fn publish_staged_git_skill_source_binding(
         .as_ref()
         .map(|subdirectory| staged.operation_root.join("source").join(subdirectory))
         .unwrap_or_else(|| staged.operation_root.join("source"));
-    let staged_manifest = inspect_tree(&staged_selected, ArtifactLimits::default())?;
+    let staged_manifest = inspect_catalog_tree(&staged_selected)?;
     let staged_manifest_bytes = serde_json::to_vec(&staged_manifest)
         .map_err(|error| SkillArtifactError::Corrupt(error.to_string()))?;
     if staged_manifest.digest()? != staged.binding.tree_digest
@@ -463,7 +462,7 @@ pub fn publish_staged_git_skill_source_binding(
                 .as_ref()
                 .map(|subdirectory| generation_root.join(subdirectory))
                 .unwrap_or_else(|| generation_root.clone());
-            let manifest = inspect_tree(&selected, ArtifactLimits::default())?;
+            let manifest = inspect_catalog_tree(&selected)?;
             if manifest.digest()? != staged.binding.tree_digest {
                 return Err(SkillArtifactError::Corrupt(
                     "existing Git source generation differs from staged content".into(),
@@ -525,7 +524,7 @@ pub fn switch_git_skill_source_binding(
     validate_managed_git_binding_location(target)?;
     validate_managed_git_binding_location(current)?;
     let target_root = Path::new(&target.physical_root);
-    let manifest = inspect_tree(target_root, ArtifactLimits::default())?;
+    let manifest = inspect_catalog_tree(target_root)?;
     if manifest.digest()? != target.tree_digest {
         return Err(SkillArtifactError::Corrupt(
             "Git source rollback generation differs from its receipt".into(),

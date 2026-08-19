@@ -155,7 +155,7 @@ fn claude_and_codex_satisfy_the_same_required_user_journeys() {
             ),
             skills_availability: CapabilityAvailability::Available,
             plugins_availability: CapabilityAvailability::Degraded,
-            arbitrary_plugin_install_error: AgentErrorCode::Unsupported,
+            arbitrary_plugin_install_error: AgentErrorCode::InvalidPlan,
         },
     );
     assert_codex_snapshots_exclude_sensitive_runtime_files(
@@ -273,6 +273,7 @@ fn assert_required_journeys(
         plugins.operations(),
         &[
             CapabilityOperation::List,
+            CapabilityOperation::Install,
             CapabilityOperation::Enable,
             CapabilityOperation::Disable,
             CapabilityOperation::Preview,

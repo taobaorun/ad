@@ -6,7 +6,9 @@ use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::execution_confinement::ConfinedTarget;
-use super::execution_fs::{directory_tree_digest, render_content, TargetState};
+use super::execution_fs::{
+    directory_tree_digest, directory_tree_digest_filtered, render_content, TargetState,
+};
 use super::execution_recovery::{mark_repaired, MutationRecoveryLease};
 use super::execution_state::{ExecutionState, StateDirectory};
 use super::{
@@ -142,6 +144,8 @@ struct InverseMutationPlan {
 struct DirectoryMutationSource {
     path: String,
     digest: ContentDigest,
+    #[serde(default)]
+    exclude_agent_skill_projections: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1776,11 +1780,12 @@ fn mutation_ownership_artifact(
         },
         ResourceStorage::Directory => {
             let source = parse_directory_source(plan, mutation)?;
+            let catalog_binding = ownership_catalog_binding(&mutation.resource, &source.path)?;
             Ok(OwnershipArtifact {
                 id: source.path,
                 digest: source.digest,
                 source_binding: None,
-                catalog_binding: None,
+                catalog_binding,
             })
         }
         ResourceStorage::File => Err(ownership_plan_error(
@@ -1823,7 +1828,7 @@ fn validate_mutation_source(
                 Some(source) => source
                     .digest()
                     .map_err(|_| changed_error(plan, &mutation.resource))?,
-                None => directory_tree_digest(Path::new(&source.path))
+                None => directory_source_digest(&source)
                     .map_err(|_| changed_error(plan, &mutation.resource))?,
             };
             if actual != source.digest {
@@ -1936,6 +1941,18 @@ fn parse_directory_source(
     })
 }
 
+fn directory_source_digest(
+    source: &DirectoryMutationSource,
+) -> Result<ContentDigest, std::io::Error> {
+    if source.exclude_agent_skill_projections {
+        directory_tree_digest_filtered(Path::new(&source.path), |path| {
+            Ok(!super::resource_scanner::is_agent_skill_projection(path))
+        })
+    } else {
+        directory_tree_digest(Path::new(&source.path))
+    }
+}
+
 fn apply_mutation(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), AgentError> {
     match item.mutation.kind {
         MutationKind::Delete => item.confined_target.remove(),
@@ -1954,8 +1971,10 @@ fn apply_mutation(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), Ag
                     item.confined_target.write_directory_from(source)
                 } else {
                     let source = parse_directory_source(plan, &item.mutation)?;
-                    item.confined_target
-                        .write_directory_atomic(Path::new(&source.path))
+                    item.confined_target.write_directory_atomic_filtered(
+                        Path::new(&source.path),
+                        source.exclude_agent_skill_projections,
+                    )
                 }
             }
         },

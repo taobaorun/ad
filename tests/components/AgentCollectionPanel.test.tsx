@@ -215,6 +215,35 @@ function actionableInventory() {
   return next;
 }
 
+function availableCatalogPluginInventory() {
+  const next = inventory('catalog-plugin');
+  next.skills.resources = [];
+  next.skills.coverage.observed = 0;
+  next.skills.coverage.visible = 0;
+  const plugin = next.plugins.resources[0]!;
+  plugin.logicalId = 'ad-harness';
+  plugin.displayName = 'ad-harness';
+  plugin.description = 'Product-development engineering harness';
+  plugin.effectiveState = 'unconfigured';
+  plugin.provenance.declarations = [];
+  delete plugin.provenance.winner;
+  plugin.provenance.source = {
+    kind: 'catalog_local',
+    displayName: 'ad-harness',
+    location: '/Users/test/Workspace/ad-harness',
+  };
+  plugin.ownership = { kind: 'ad_managed' };
+  plugin.health = { status: 'healthy' };
+  plugin.management = {
+    status: 'managed',
+    actions: [
+      { action: 'inspect', intent: 'standard', availability: 'available' },
+      { action: 'install', intent: 'standard', availability: 'confirmation_required' },
+    ],
+  };
+  return next;
+}
+
 function conflictingSkillInventory() {
   const next = inventory('conflicting-skills');
   const personal = next.skills.resources[0]!;
@@ -471,6 +500,19 @@ describe('AgentCollectionPanel', () => {
     expect(screen.getByText('Local / Runtime layer declaration')).toBeInTheDocument();
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     expect(screen.queryByText('/Users/test/project')).not.toBeInTheDocument();
+  });
+
+  it('presents a detected managed Plugin as available instead of as zero declarations', async () => {
+    inspectProjectAgentWorkspace.mockResolvedValue(availableCatalogPluginInventory());
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+
+    const install = await screen.findByRole('button', { name: 'Install: ad-harness' });
+    const pluginCard = install.closest('li');
+    expect(pluginCard).not.toBeNull();
+    expect(within(pluginCard!).getByText('Available')).toBeInTheDocument();
+    expect(within(pluginCard!).getByText('Detected in managed source')).toBeInTheDocument();
+    expect(within(pluginCard!).queryByText('0 declarations')).not.toBeInTheDocument();
+    expect(install).toBeEnabled();
   });
 
   it('filters typed Skills and Plugins without inspecting raw snapshot content', async () => {

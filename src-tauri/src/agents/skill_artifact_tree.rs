@@ -84,6 +84,14 @@ pub(crate) fn inspect_tree(
     root: &Path,
     limits: ArtifactLimits,
 ) -> Result<TreeManifest, ArtifactTreeError> {
+    inspect_tree_filtered(root, limits, &|_| true)
+}
+
+pub(crate) fn inspect_tree_filtered(
+    root: &Path,
+    limits: ArtifactLimits,
+    include: &dyn Fn(&Path) -> bool,
+) -> Result<TreeManifest, ArtifactTreeError> {
     let metadata = std::fs::symlink_metadata(root).map_err(|source| io_error(root, source))?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return Err(ArtifactTreeError::Invalid(
@@ -98,7 +106,7 @@ pub(crate) fn inspect_tree(
         entries: Vec::new(),
         total_bytes: 0,
     };
-    inspect_directory(&mut state, Path::new(""), 0)?;
+    inspect_directory(&mut state, Path::new(""), 0, include)?;
     Ok(TreeManifest {
         schema_version: MANIFEST_SCHEMA_VERSION,
         entries: state.entries,
@@ -182,6 +190,7 @@ fn inspect_directory(
     state: &mut InspectionState<'_>,
     relative: &Path,
     depth: usize,
+    include: &dyn Fn(&Path) -> bool,
 ) -> Result<(), ArtifactTreeError> {
     if depth > state.limits.max_depth {
         return Err(ArtifactTreeError::Budget("maximum directory depth"));
@@ -201,6 +210,9 @@ fn inspect_directory(
             continue;
         }
         let child_relative = relative.join(name);
+        if !include(&child_relative) {
+            continue;
+        }
         let relative_text = normalized_relative(&child_relative)?;
         let path = child.path();
         let metadata =
@@ -228,7 +240,7 @@ fn inspect_directory(
                 content_digest: None,
                 symlink_target: None,
             });
-            inspect_directory(state, &child_relative, depth + 1)?;
+            inspect_directory(state, &child_relative, depth + 1, include)?;
         } else if metadata.is_file() {
             if metadata.nlink() != 1 {
                 return Err(ArtifactTreeError::Invalid(format!(

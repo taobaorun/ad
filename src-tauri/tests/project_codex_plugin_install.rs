@@ -54,7 +54,7 @@ fn restore_env(previous_home: Option<String>, previous_codex_home: Option<String
 
 #[test]
 #[serial_test::serial(home_env)]
-fn codex_plugin_capability_is_read_only_for_new_installation() {
+fn codex_plugin_capability_accepts_only_catalog_resources_for_new_installation() {
     let temp = tempfile::tempdir().unwrap();
     let previous_home = std::env::var("AD_HOME").ok();
     let previous_codex_home = std::env::var("CODEX_HOME").ok();
@@ -71,9 +71,9 @@ fn codex_plugin_capability_is_read_only_for_new_installation() {
         )
         .unwrap_err();
 
-    assert_eq!(error.code, AgentErrorCode::Unsupported);
-    assert!(error.message.contains("unsupported_agent_capability"));
-    assert!(!port.operations().contains(&CapabilityOperation::Install));
+    assert_eq!(error.code, AgentErrorCode::InvalidPlan);
+    assert!(error.message.contains("not found"));
+    assert!(port.operations().contains(&CapabilityOperation::Install));
     restore_env(previous_home, previous_codex_home);
 }
 
@@ -109,8 +109,8 @@ fn codex_plugin_adapter_rejects_legacy_staged_install_without_writing_runtime() 
         )
         .unwrap_err();
 
-    assert_eq!(error.code, AgentErrorCode::Unsupported);
-    assert!(error.message.contains("unsupported_agent_capability"));
+    assert_eq!(error.code, AgentErrorCode::InvalidPlan);
+    assert!(error.message.contains("catalog resource"));
     assert_eq!(
         std::fs::read(stage.join("package/original.txt")).unwrap(),
         source_before
