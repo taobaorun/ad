@@ -205,7 +205,7 @@ pub fn observe_skill_source_revision(source: &SkillSource) -> Result<String, Ski
                 ));
             }
             let selected = select_source_root(&canonical, source.subdirectory.as_deref())?;
-            let manifest = inspect_tree(&selected, ArtifactLimits::default())?;
+            let manifest = super::resource_scanner::inspect_catalog_tree(&selected)?;
             Ok(format!("local:{}", manifest.digest()?.as_str()))
         }
         SkillSourceType::Git => {

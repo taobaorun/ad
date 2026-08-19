@@ -70,6 +70,30 @@ fn write_plugin_named(source: &Path, name: &str) {
     std::fs::write(plugin.join("commands/demo.md"), "# Demo\n").unwrap();
 }
 
+fn write_codex_plugin_named(source: &Path, name: &str, marketplace: &str, version: &str) {
+    let plugin = source.join(name);
+    std::fs::create_dir_all(plugin.join(".codex-plugin")).unwrap();
+    std::fs::create_dir_all(plugin.join(".agents/plugins")).unwrap();
+    std::fs::create_dir_all(plugin.join("skills/demo")).unwrap();
+    std::fs::write(
+        plugin.join(".codex-plugin/plugin.json"),
+        format!(r#"{{"name":"{name}","version":"{version}"}}"#),
+    )
+    .unwrap();
+    std::fs::write(
+        plugin.join(".agents/plugins/marketplace.json"),
+        format!(
+            r#"{{"name":"{marketplace}","plugins":[{{"name":"{name}","source":{{"source":"local","path":"./"}}}}]}}"#
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        plugin.join("skills/demo/SKILL.md"),
+        "---\nname: demo\ndescription: Demo\n---\n",
+    )
+    .unwrap();
+}
+
 fn add_root_git_plugin_source() -> String {
     let source = SkillSource {
         id: format!("skill-source:{}", uuid::Uuid::new_v4()),
@@ -129,6 +153,15 @@ fn claude_installation() -> InstallationId {
         .discover()
         .into_iter()
         .find(|installation| installation.agent_id.as_str() == "claude-code")
+        .unwrap()
+        .id
+}
+
+fn codex_installation() -> InstallationId {
+    builtin_registry()
+        .discover()
+        .into_iter()
+        .find(|installation| installation.agent_id.as_str() == "codex")
         .unwrap()
         .id
 }
@@ -797,6 +830,193 @@ fn plugin_without_claude_descriptor_is_visible_but_not_installable_for_claude() 
                 .as_ref()
                 .is_some_and(|limitation| limitation.code == "unsupported_agent_capability")
     }));
+}
+
+#[test]
+#[serial(home_env)]
+fn catalog_codex_plugin_installs_toggles_and_removes_inside_the_project_runtime() {
+    let home = tempfile::tempdir().unwrap();
+    let _guard = EnvironmentGuard::isolated(home.path());
+    let codex_home = home.path().join(".codex");
+    let source = home.path().join("source");
+    let project = home.path().join("project");
+    std::fs::create_dir_all(&codex_home).unwrap();
+    std::fs::create_dir_all(&project).unwrap();
+    let inherited_marketplace = codex_home.join(".tmp/marketplaces/base-market");
+    let inherited_package = codex_home.join("plugins/cache/base-market/base-plugin/2.0.0");
+    let implicit_package = codex_home.join("plugins/cache/implicit-market/implicit-plugin/1.0.0");
+    std::fs::create_dir_all(&inherited_marketplace).unwrap();
+    std::fs::create_dir_all(inherited_package.join(".codex-plugin")).unwrap();
+    std::fs::create_dir_all(implicit_package.join(".codex-plugin")).unwrap();
+    std::fs::write(
+        inherited_package.join(".codex-plugin/plugin.json"),
+        r#"{"name":"base-plugin","version":"2.0.0"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        implicit_package.join(".codex-plugin/plugin.json"),
+        r#"{"name":"implicit-plugin","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        codex_home.join("config.toml"),
+        "model = \"test\"\n\n[marketplaces.base-market]\nsource_type = \"git\"\nsource = \"https://example.com/base-market.git\"\n\n[plugins.\"base-plugin@base-market\"]\nenabled = true\n\n[plugins.\"implicit-plugin@implicit-market\"]\nenabled = true\n",
+    )
+    .unwrap();
+    std::fs::write(codex_home.join("auth.json"), "{}\n").unwrap();
+    write_codex_plugin_named(&source, "native-plugin", "team", "1.2.3");
+    let external_skill = home.path().join("external-skill");
+    std::fs::create_dir_all(&external_skill).unwrap();
+    std::fs::write(
+        external_skill.join("SKILL.md"),
+        "---\nname: external-skill\n---\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(source.join("native-plugin/.agents/skills")).unwrap();
+    std::os::unix::fs::symlink(
+        &external_skill,
+        source.join("native-plugin/.agents/skills/external-skill"),
+    )
+    .unwrap();
+    let source_id = add_catalog_source_named(&source, "Codex Plugins");
+    let catalog = load_resource_catalog_snapshot().unwrap();
+    assert!(catalog
+        .resources
+        .values()
+        .find(|resource| resource.source_id == source_id && resource.install_id == "native-plugin")
+        .unwrap()
+        .compatible_agents
+        .contains("codex"));
+    let catalog_path = home.path().join(".ad/state/resource_catalog.json");
+    let mut catalog: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&catalog_path).unwrap()).unwrap();
+    for resource in catalog
+        .get_mut("resources")
+        .and_then(serde_json::Value::as_object_mut)
+        .unwrap()
+        .values_mut()
+    {
+        if resource
+            .get("installId")
+            .and_then(serde_json::Value::as_str)
+            == Some("native-plugin")
+        {
+            resource["compatibleAgents"] = serde_json::json!(["claude-code"]);
+        }
+    }
+    std::fs::write(&catalog_path, serde_json::to_vec_pretty(&catalog).unwrap()).unwrap();
+    let installation_id = codex_installation();
+    let plans = PlanStore::default();
+
+    let inventory = inspect_project_workspace_inventory(&installation_id, &project).unwrap();
+    let candidate = plugin(&inventory, "native-plugin");
+    assert!(action_is_available(candidate, ResourceAction::Install));
+
+    apply_action(
+        &installation_id,
+        &project,
+        &inventory,
+        candidate,
+        ResourceAction::Install,
+        &plans,
+    );
+
+    let runtime = project_runtime_for_base_project(&installation_id, &project).unwrap();
+    let package = runtime
+        .runtime_home
+        .join("plugins/cache/team/native-plugin/1.2.3");
+    assert!(package.join(".codex-plugin/plugin.json").is_file());
+    assert!(package.join("skills/demo/SKILL.md").is_file());
+    assert!(!package.join(".agents/skills").exists());
+    assert!(runtime
+        .runtime_home
+        .join("plugins/cache/base-market/base-plugin/2.0.0/.codex-plugin/plugin.json")
+        .is_file());
+    assert!(runtime
+        .runtime_home
+        .join("plugins/cache/implicit-market/implicit-plugin/1.0.0/.codex-plugin/plugin.json")
+        .is_file());
+    assert!(runtime
+        .runtime_home
+        .join(".tmp/marketplaces/base-market")
+        .is_dir());
+    let config = std::fs::read_to_string(runtime.runtime_home.join("config.toml")).unwrap();
+    let config = config.parse::<toml::Value>().unwrap();
+    assert_eq!(
+        config
+            .get("plugins")
+            .and_then(|plugins| plugins.get("native-plugin@team"))
+            .and_then(|plugin| plugin.get("enabled"))
+            .and_then(toml::Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        config
+            .get("marketplaces")
+            .and_then(|marketplaces| marketplaces.get("team"))
+            .and_then(|marketplace| marketplace.get("source"))
+            .and_then(toml::Value::as_str),
+        Some(
+            std::fs::canonicalize(source.join("native-plugin"))
+                .unwrap()
+                .to_string_lossy()
+                .as_ref()
+        )
+    );
+    let installations = list_resource_installations().unwrap();
+    assert_eq!(installations.len(), 1);
+    assert_eq!(installations[0].source_id, source_id);
+    assert_eq!(installations[0].adapter_contract, "codex-plugin-store-v1");
+
+    let installed = inspect_project_workspace_inventory(&installation_id, &project).unwrap();
+    let installed_plugin = plugin(&installed, "native-plugin");
+    assert_eq!(
+        installed_plugin.effective_state,
+        EffectiveResourceState::Enabled
+    );
+    assert!(action_is_available(
+        installed_plugin,
+        ResourceAction::Disable
+    ));
+    assert_eq!(
+        installed
+            .plugins
+            .resources
+            .iter()
+            .filter(|resource| resource.logical_id == "native-plugin")
+            .count(),
+        1
+    );
+
+    apply_action(
+        &installation_id,
+        &project,
+        &installed,
+        installed_plugin,
+        ResourceAction::Disable,
+        &plans,
+    );
+    let disabled = inspect_project_workspace_inventory(&installation_id, &project).unwrap();
+    assert_eq!(
+        plugin(&disabled, "native-plugin").effective_state,
+        EffectiveResourceState::Disabled
+    );
+
+    apply_action(
+        &installation_id,
+        &project,
+        &disabled,
+        plugin(&disabled, "native-plugin"),
+        ResourceAction::Remove,
+        &plans,
+    );
+    assert!(!package.exists());
+    assert!(list_resource_installations().unwrap().is_empty());
+    let removed = inspect_project_workspace_inventory(&installation_id, &project).unwrap();
+    assert_eq!(
+        plugin(&removed, "native-plugin").effective_state,
+        EffectiveResourceState::Unconfigured
+    );
 }
 
 #[test]

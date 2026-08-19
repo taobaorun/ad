@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::paths::projects_state_path;
 use chrono::{Duration, Utc};
+use semver::Version;
+use serde::Deserialize;
 
 use super::codex::discover_codex_candidates;
 use super::codex_ports::{
@@ -13,12 +15,97 @@ use super::{
     load_project_codex_runtime_manifest, render_project_codex_runtime_manifest,
     synthesize_project_codex_config_with_settings, AgentContext, AgentError, AgentErrorCode,
     AgentId, CapabilityAvailability, CapabilityLimitation, CapabilityOperation,
-    CollectionInstallRequest, ContentDigest, ManagedResourceTarget, MutationKind, MutationPlan,
-    PlanId, PlannedMutation, PluginInstallProgressReporter, PluginsPort,
-    ProjectCodexRuntimeManifest, ProjectPluginOverlay, ReadPrecondition, ResourceKind,
+    CollectionInstallRequest, ContentDigest, ManagedResourceTarget, MarketplaceOverlay,
+    MutationKind, MutationPlan, PlanId, PlannedMutation, PluginInstallProgressReporter,
+    PluginsPort, ProjectCodexRuntimeManifest, ProjectPluginOverlay, ReadPrecondition, ResourceKind,
     ResourceLocation, ResourceOrigin, ResourcePort, ResourceRef, ResourceScope, ResourceSnapshot,
-    SettingsEdit, SharedAuthBinding, WritePolicy, PROJECT_CODEX_RUNTIME_MANIFEST_SCHEMA_VERSION,
+    ResourceStateKind, SettingsEdit, SharedAuthBinding, WritePolicy,
+    PROJECT_CODEX_RUNTIME_MANIFEST_SCHEMA_VERSION,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct CodexCatalogPluginMetadata {
+    pub plugin_name: String,
+    pub marketplace_name: String,
+    pub version: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexPluginDescriptor {
+    name: String,
+    version: String,
+}
+
+pub(super) fn read_codex_catalog_plugin_metadata(
+    root: &Path,
+    expected_name: &str,
+) -> Result<CodexCatalogPluginMetadata, String> {
+    let descriptor_path = root.join(".codex-plugin/plugin.json");
+    let descriptor: CodexPluginDescriptor = serde_json::from_slice(
+        &std::fs::read(&descriptor_path)
+            .map_err(|error| format!("Failed to read {}: {error}", descriptor_path.display()))?,
+    )
+    .map_err(|error| format!("Invalid {}: {error}", descriptor_path.display()))?;
+    if descriptor.name != expected_name
+        || !valid_segment(&descriptor.name)
+        || !valid_segment(&descriptor.version)
+    {
+        return Err("Codex Plugin descriptor identity is invalid".into());
+    }
+
+    let marketplace_path = root.join(".agents/plugins/marketplace.json");
+    let marketplace: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&marketplace_path)
+            .map_err(|error| format!("Failed to read {}: {error}", marketplace_path.display()))?,
+    )
+    .map_err(|error| format!("Invalid {}: {error}", marketplace_path.display()))?;
+    let marketplace_name = marketplace
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .filter(|name| valid_segment(name))
+        .ok_or_else(|| "Codex marketplace has no valid name".to_string())?;
+    let plugin = marketplace
+        .get("plugins")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|plugins| {
+            plugins.iter().find(|plugin| {
+                plugin.get("name").and_then(serde_json::Value::as_str)
+                    == Some(descriptor.name.as_str())
+            })
+        })
+        .ok_or_else(|| "Codex marketplace does not declare this Plugin".to_string())?;
+    let source_is_root = match plugin.get("source") {
+        Some(serde_json::Value::String(path)) => matches!(path.as_str(), "." | "./"),
+        Some(serde_json::Value::Object(source)) => {
+            source.get("source").and_then(serde_json::Value::as_str) == Some("local")
+                && source
+                    .get("path")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|path| matches!(path, "." | "./"))
+        }
+        _ => false,
+    };
+    if !source_is_root {
+        return Err(
+            "Codex marketplace Plugin source must reference the managed resource root".into(),
+        );
+    }
+
+    Ok(CodexCatalogPluginMetadata {
+        plugin_name: descriptor.name,
+        marketplace_name: marketplace_name.to_owned(),
+        version: descriptor.version,
+    })
+}
+
+fn valid_segment(value: &str) -> bool {
+    !value.is_empty()
+        && value != "."
+        && value != ".."
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
+}
 
 #[derive(Debug, Default)]
 pub(crate) struct CodexPluginsPort;
@@ -57,9 +144,8 @@ pub(super) fn plan_project_runtime_bootstrap(
         )
     })?;
     let (auth_source, auth_target) = reusable_auth_paths(context, auth)?;
-    // Project runtime bootstrap may inherit ordinary Codex settings, but it
-    // must not copy Plugin packages. Plugins are managed only from the Resource
-    // Center and current Codex cannot load them by direct reference.
+    // Runtime bootstrap only synthesizes shared state. Catalog Plugin install
+    // plans add their own digest-protected package mutations.
     let config_resource = project_resource(context, "runtime-config");
     let config_target = ManagedResourceTarget::file(runtime.runtime_home.join("config.toml"));
     let config_state = observe_target(&config_target)?;
@@ -601,6 +687,7 @@ impl PluginsPort for CodexPluginsPort {
     fn operations(&self) -> BTreeSet<CapabilityOperation> {
         BTreeSet::from([
             CapabilityOperation::List,
+            CapabilityOperation::Install,
             CapabilityOperation::Enable,
             CapabilityOperation::Disable,
             CapabilityOperation::Preview,
@@ -615,7 +702,7 @@ impl PluginsPort for CodexPluginsPort {
 
     fn limitations(&self) -> Vec<CapabilityLimitation> {
         vec![CapabilityLimitation {
-            code: "unsupported_agent_capability".into(),
+            code: "user_install_requires_codex_marketplace_flow".into(),
             message_key: "agents.capabilities.codexPluginInstallRequiresMarketplace".into(),
         }]
     }
@@ -692,18 +779,18 @@ impl PluginsPort for CodexPluginsPort {
     fn plan_install(
         &self,
         context: &AgentContext,
-        _request: CollectionInstallRequest,
+        request: CollectionInstallRequest,
     ) -> Result<MutationPlan, AgentError> {
-        Err(codex_plugin_install_unsupported(context))
+        plan_catalog_plugin_install(context, request, &|_| {})
     }
 
     fn plan_install_with_progress(
         &self,
         context: &AgentContext,
-        _request: CollectionInstallRequest,
-        _report: &PluginInstallProgressReporter<'_>,
+        request: CollectionInstallRequest,
+        report: &PluginInstallProgressReporter<'_>,
     ) -> Result<MutationPlan, AgentError> {
-        Err(codex_plugin_install_unsupported(context))
+        plan_catalog_plugin_install(context, request, report)
     }
 
     fn plan_set_enabled(
@@ -712,6 +799,9 @@ impl PluginsPort for CodexPluginsPort {
         resource: &ResourceRef,
         enabled: bool,
     ) -> Result<MutationPlan, AgentError> {
+        if managed_catalog_identity(&resource.logical_id).is_some() {
+            return plan_managed_plugin_change(context, resource, Some(enabled));
+        }
         if let Some(runtime) = project_runtime_for_context(context)? {
             validate_project_plugin_resource(context, resource)?;
             return plan_project_override(context, resource, Some(enabled), &runtime);
@@ -816,6 +906,9 @@ impl PluginsPort for CodexPluginsPort {
         context: &AgentContext,
         resource: &ResourceRef,
     ) -> Result<MutationPlan, AgentError> {
+        if managed_catalog_identity(&resource.logical_id).is_some() {
+            return plan_managed_plugin_change(context, resource, None);
+        }
         let runtime = project_runtime_for_context(context)?.ok_or_else(|| {
             agent_error(
                 AgentErrorCode::Unsupported,
@@ -829,13 +922,746 @@ impl PluginsPort for CodexPluginsPort {
     }
 }
 
-fn codex_plugin_install_unsupported(context: &AgentContext) -> AgentError {
-    agent_error(
-        AgentErrorCode::Unsupported,
-        context,
-        None,
-        "unsupported_agent_capability: Codex cannot load a Resource Center Plugin by direct reference",
+fn plan_catalog_plugin_install(
+    requested_context: &AgentContext,
+    request: CollectionInstallRequest,
+    report: &PluginInstallProgressReporter<'_>,
+) -> Result<MutationPlan, AgentError> {
+    let (context, runtime) = effective_project_runtime(requested_context)?;
+    let resource_id = request
+        .source
+        .get("catalogResourceId")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                &context,
+                None,
+                "Project Plugin installation requires a catalog resource",
+            )
+        })?;
+    let resolved = super::resolve_catalog_resource(resource_id).map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            &context,
+            None,
+            error.to_string(),
+        )
+    })?;
+    if resolved.kind != ResourceKind::Plugins {
+        return Err(agent_error(
+            AgentErrorCode::InvalidPlan,
+            &context,
+            None,
+            "Catalog resource is not a Plugin",
+        ));
+    }
+    let metadata =
+        read_codex_catalog_plugin_metadata(&resolved.physical_path, &resolved.install_id)
+            .map_err(|error| agent_error(AgentErrorCode::Unsupported, &context, None, error))?;
+    let native_id = format!("{}@{}", metadata.plugin_name, metadata.marketplace_name);
+    validate_plugin_id(&context, &native_id)?;
+
+    let package_resource = ResourceRef {
+        installation_id: context.installation_id.clone(),
+        project_path: context.project_path.clone(),
+        kind: ResourceKind::Plugins,
+        scope: ResourceScope::Project,
+        logical_id: format!("{}/{}", resolved.source_id, resolved.install_id),
+    };
+    let package_target = resolve_project_resource(&context, &package_resource, &runtime)?;
+    let package_state = observe_target(&package_target)?;
+    if !matches!(package_state, TargetState::Missing) {
+        return Err(agent_error(
+            AgentErrorCode::PermissionDenied,
+            &context,
+            Some(package_resource),
+            "Codex Plugin package target is already occupied",
+        ));
+    }
+
+    let base_home = base_home(&context, &runtime.base_installation_id)?;
+    let base_config = read_optional(&base_home.join("config.toml"), &context, None)?;
+    let credential_store = base_config
+        .as_deref()
+        .map(|bytes| parse_credential_store(&context, bytes))
+        .transpose()?
+        .flatten();
+    let auth = SharedAuthBinding::detect(
+        &base_home,
+        &runtime.runtime_home,
+        credential_store.as_deref(),
     )
+    .map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            &context,
+            None,
+            error.to_string(),
+        )
+    })?;
+    let (auth_source, auth_target) = reusable_auth_paths(&context, auth)?;
+
+    let config_resource = project_resource(&context, "runtime-config");
+    let config_state = observe_target(&ManagedResourceTarget::file(
+        runtime.runtime_home.join("config.toml"),
+    ))?;
+    validate_runtime_config_state(&context, &runtime, &config_resource, &config_state)?;
+    let inherit_base_config = desired_inherit_base_config(&context, &runtime)?;
+    let (mut overlay, project_settings_keys) =
+        project_overlays_for_plan(&context, &runtime, &config_state, inherit_base_config)?;
+    let project_settings =
+        project_settings_from_config(&context, &config_state, &project_settings_keys)?;
+    let marketplace = MarketplaceOverlay {
+        source_type: "local".into(),
+        source: resolved.stable_path.to_string_lossy().into_owned(),
+        ref_name: None,
+        last_revision: None,
+    };
+    if overlay
+        .marketplaces
+        .get(&metadata.marketplace_name)
+        .is_some_and(|existing| existing != &marketplace)
+    {
+        return Err(agent_error(
+            AgentErrorCode::ResourceChanged,
+            &context,
+            None,
+            format!(
+                "Project marketplace {} already uses a different source",
+                metadata.marketplace_name
+            ),
+        ));
+    }
+    overlay
+        .marketplaces
+        .insert(metadata.marketplace_name.clone(), marketplace);
+    overlay.enabled_plugins.insert(native_id.clone(), true);
+    let inherited_config = inherit_base_config
+        .then_some(base_config.as_deref())
+        .flatten();
+    let synthesized = synthesize_project_codex_config_with_settings(
+        inherited_config,
+        &base_home,
+        &overlay,
+        &project_settings,
+    )
+    .map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            &context,
+            None,
+            error.to_string(),
+        )
+    })?;
+    let manifest = ProjectCodexRuntimeManifest {
+        schema_version: PROJECT_CODEX_RUNTIME_MANIFEST_SCHEMA_VERSION,
+        applied_inherit_base_config: inherit_base_config,
+        applied_profile_id: runtime.profile_id.clone(),
+        project_overlay: overlay,
+        project_settings_keys,
+    };
+
+    let auth_resource = project_resource(&context, "runtime-auth");
+    let auth_state = observe_target(&ManagedResourceTarget::symlink(auth_target))?;
+    if !matches!(auth_state, TargetState::Missing | TargetState::Symlink(_)) {
+        return Err(storage_conflict(&context, &auth_resource));
+    }
+    let manifest_resource = project_resource(&context, "runtime-manifest");
+    let manifest_state = observe_target(&ManagedResourceTarget::file(runtime.manifest_path()))?;
+    validate_runtime_manifest_state(&context, &runtime, &manifest_resource, &manifest_state)?;
+    let package_digest = catalog_plugin_tree_digest(&resolved.stable_path).map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            &context,
+            Some(package_resource.clone()),
+            error.to_string(),
+        )
+    })?;
+
+    let mut read_set = Vec::new();
+    if let Some(expected_digest) = base_config.as_deref().map(ContentDigest::sha256) {
+        read_set.push(ReadPrecondition {
+            resource: project_resource(&context, "base-config"),
+            expected_digest,
+            write_policy: WritePolicy::ReadOnly,
+        });
+    }
+    let mut mutations = Vec::new();
+    push_symlink_mutation(&mut mutations, auth_resource, &auth_state, &auth_source);
+    if inherit_base_config {
+        append_inherited_package_mutations(
+            &context,
+            &runtime,
+            &base_home,
+            base_config.as_deref(),
+            native_id,
+            report,
+            &mut mutations,
+        )?;
+    }
+    push_catalog_plugin_directory_mutation(
+        &mut mutations,
+        package_resource,
+        &package_state,
+        &resolved.stable_path,
+        package_digest,
+    );
+    push_manifest_mutation(
+        &context,
+        &mut mutations,
+        manifest_resource,
+        &manifest_state,
+        &manifest,
+    )?;
+    if config_state.digest().as_ref() != Some(&synthesized.generated_config_digest) {
+        mutations.push(PlannedMutation {
+            resource: config_resource,
+            kind: mutation_kind(&config_state),
+            expected_digest: config_state.digest(),
+            media_type: "application/toml".into(),
+            content: Some(serde_json::Value::String(synthesized.content)),
+        });
+    }
+
+    Ok(MutationPlan {
+        id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+        agent_id: AgentId::from("codex"),
+        context,
+        read_set,
+        mutations,
+        expires_at: Utc::now() + Duration::minutes(5),
+    })
+}
+
+fn append_inherited_package_mutations(
+    context: &AgentContext,
+    runtime: &super::ProjectCodexRuntime,
+    base_home: &Path,
+    base_config: Option<&[u8]>,
+    excluded_plugin_id: String,
+    report: &PluginInstallProgressReporter<'_>,
+    mutations: &mut Vec<PlannedMutation>,
+) -> Result<(), AgentError> {
+    let Some(base_config) = base_config else {
+        return Ok(());
+    };
+    let value = std::str::from_utf8(base_config)
+        .map_err(|error| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                None,
+                error.to_string(),
+            )
+        })?
+        .parse::<toml::Value>()
+        .map_err(|error| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                None,
+                error.to_string(),
+            )
+        })?;
+    let Some(plugins) = value.get("plugins").and_then(toml::Value::as_table) else {
+        return Ok(());
+    };
+    let enabled = plugins
+        .iter()
+        .filter(|(plugin_id, config)| {
+            plugin_id.as_str() != excluded_plugin_id
+                && config
+                    .get("enabled")
+                    .and_then(toml::Value::as_bool)
+                    .unwrap_or(true)
+        })
+        .collect::<Vec<_>>();
+    let marketplaces = enabled
+        .iter()
+        .filter_map(|(plugin_id, _)| {
+            plugin_id
+                .split_once('@')
+                .map(|(_, marketplace)| marketplace)
+        })
+        .collect::<BTreeSet<_>>();
+    let marketplace_configs = value.get("marketplaces").and_then(toml::Value::as_table);
+    for marketplace in marketplaces {
+        let Some(config) = marketplace_configs
+            .and_then(|marketplaces| marketplaces.get(marketplace))
+            .and_then(toml::Value::as_table)
+        else {
+            continue;
+        };
+        match config.get("source_type").and_then(toml::Value::as_str) {
+            Some("local") => {}
+            Some("git") => {
+                let source = base_home.join(".tmp/marketplaces").join(marketplace);
+                let digest = super::directory_tree_digest(&source).map_err(|error| {
+                    agent_error(
+                        AgentErrorCode::ResourceChanged,
+                        context,
+                        None,
+                        format!("Invalid base marketplace {marketplace}: {error}"),
+                    )
+                })?;
+                let resource = project_resource(context, format!("marketplace:{marketplace}"));
+                let target = resolve_project_resource(context, &resource, runtime)?;
+                let state = observe_target(&target)?;
+                match &state {
+                    TargetState::Missing => {
+                        push_directory_mutation(mutations, resource, &state, &source, digest)
+                    }
+                    TargetState::Directory(existing) if existing == &digest => {}
+                    TargetState::Directory(_) => {
+                        return Err(agent_error(
+                            AgentErrorCode::ResourceChanged,
+                            context,
+                            Some(resource),
+                            format!("Inherited Project marketplace {marketplace} has changed"),
+                        ))
+                    }
+                    _ => return Err(storage_conflict(context, &resource)),
+                }
+            }
+            Some(other) => {
+                return Err(agent_error(
+                    AgentErrorCode::Unsupported,
+                    context,
+                    None,
+                    format!("Unsupported base marketplace source type {other}"),
+                ))
+            }
+            None => {
+                return Err(agent_error(
+                    AgentErrorCode::InvalidPlan,
+                    context,
+                    None,
+                    format!("Base marketplace {marketplace} has no source type"),
+                ))
+            }
+        }
+    }
+    for (index, (plugin_id, _)) in enabled.iter().enumerate() {
+        report(super::PluginInstallProgress {
+            logical_id: (*plugin_id).clone(),
+            current: index + 1,
+            total: enabled.len(),
+        });
+        validate_plugin_id(context, plugin_id)?;
+        let (plugin, marketplace) = plugin_id.split_once('@').unwrap();
+        let source_base = base_home
+            .join("plugins/cache")
+            .join(marketplace)
+            .join(plugin);
+        let version = active_plugin_version(&source_base).ok_or_else(|| {
+            agent_error(
+                AgentErrorCode::ResourceChanged,
+                context,
+                None,
+                format!("Enabled base Plugin {plugin_id} has no installed package"),
+            )
+        })?;
+        let source = source_base.join(&version);
+        let digest = super::directory_tree_digest(&source).map_err(|error| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                None,
+                format!("Invalid base Plugin package {plugin_id}: {error}"),
+            )
+        })?;
+        let resource =
+            project_resource(context, format!("package:{marketplace}:{plugin}:{version}"));
+        let target = resolve_project_resource(context, &resource, runtime)?;
+        let state = observe_target(&target)?;
+        match &state {
+            TargetState::Missing => {
+                push_directory_mutation(mutations, resource, &state, &source, digest)
+            }
+            TargetState::Directory(existing) if existing == &digest => {}
+            TargetState::Directory(_) => {
+                return Err(agent_error(
+                    AgentErrorCode::ResourceChanged,
+                    context,
+                    Some(resource),
+                    format!("Inherited Project Plugin package {plugin_id} has changed"),
+                ))
+            }
+            _ => return Err(storage_conflict(context, &resource)),
+        }
+    }
+    Ok(())
+}
+
+fn active_plugin_version(package_base: &Path) -> Option<String> {
+    let mut versions = std::fs::read_dir(package_base)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().ok().is_some_and(|kind| kind.is_dir()))
+        .filter_map(|entry| {
+            let name = entry.file_name().to_str()?.to_owned();
+            Version::parse(&name).ok().map(|version| (version, name))
+        })
+        .collect::<Vec<_>>();
+    versions.sort_by(|left, right| left.0.cmp(&right.0));
+    versions.pop().map(|(_, name)| name)
+}
+
+struct InstalledCodexPlugin {
+    installation: super::ResourceInstallationRecord,
+    native_id: String,
+    marketplace_name: String,
+    package_target: PathBuf,
+}
+
+fn managed_codex_installation(
+    context: &AgentContext,
+    resource: &ResourceRef,
+    runtime: &super::ProjectCodexRuntime,
+) -> Result<InstalledCodexPlugin, AgentError> {
+    validate_project_resource(context, resource)?;
+    let (_, install_id) = managed_catalog_identity(&resource.logical_id).ok_or_else(|| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            Some(resource.clone()),
+            "Managed Codex Plugin identity is invalid",
+        )
+    })?;
+    let installation = super::list_resource_installations()
+        .map_err(|error| agent_error(AgentErrorCode::Io, context, None, error.to_string()))?
+        .into_iter()
+        .find(|record| {
+            record.effective_installation_id == context.installation_id
+                && record.canonical_project_path
+                    == context.project_path.as_deref().unwrap_or_default()
+                && record.resource_kind == ResourceKind::Plugins
+                && record.source_id
+                    == managed_catalog_identity(&resource.logical_id)
+                        .map(|identity| identity.0)
+                        .unwrap_or_default()
+                && record.install_id == install_id
+                && record.adapter_contract == "codex-plugin-store-v1"
+        })
+        .ok_or_else(|| {
+            agent_error(
+                AgentErrorCode::ResourceChanged,
+                context,
+                Some(resource.clone()),
+                "Managed Codex Plugin installation evidence is unavailable",
+            )
+        })?;
+    let package_target = managed_codex_package_target(context, resource, runtime)?;
+    let relative = package_target
+        .strip_prefix(runtime.runtime_home.join("plugins/cache"))
+        .map_err(|_| {
+            agent_error(
+                AgentErrorCode::PermissionDenied,
+                context,
+                Some(resource.clone()),
+                "Managed Codex Plugin target escapes the project runtime cache",
+            )
+        })?;
+    let components = relative
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(value) => value.to_str().map(str::to_owned),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if components.len() != 3 || components[1] != install_id {
+        return Err(agent_error(
+            AgentErrorCode::PermissionDenied,
+            context,
+            Some(resource.clone()),
+            "Managed Codex Plugin target identity is invalid",
+        ));
+    }
+    Ok(InstalledCodexPlugin {
+        installation,
+        native_id: format!("{}@{}", components[1], components[0]),
+        marketplace_name: components[0].clone(),
+        package_target,
+    })
+}
+
+fn plan_managed_plugin_change(
+    context: &AgentContext,
+    resource: &ResourceRef,
+    enabled: Option<bool>,
+) -> Result<MutationPlan, AgentError> {
+    let runtime = project_runtime_for_context(context)?.ok_or_else(|| {
+        agent_error(
+            AgentErrorCode::ResourceChanged,
+            context,
+            Some(resource.clone()),
+            "Managed Codex Plugin runtime is unavailable",
+        )
+    })?;
+    let installed = managed_codex_installation(context, resource, &runtime)?;
+    let config_resource = project_resource(context, "runtime-config");
+    let config_state = observe_target(&ManagedResourceTarget::file(
+        runtime.runtime_home.join("config.toml"),
+    ))?;
+    validate_runtime_config_state(context, &runtime, &config_resource, &config_state)?;
+    let snapshot = load_project_codex_runtime_manifest(&runtime)
+        .map_err(|error| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                Some(resource.clone()),
+                error.to_string(),
+            )
+        })?
+        .ok_or_else(|| {
+            agent_error(
+                AgentErrorCode::ResourceChanged,
+                context,
+                Some(resource.clone()),
+                "Managed Codex Plugin runtime manifest is unavailable",
+            )
+        })?;
+    let inherit_base_config = snapshot.manifest.applied_inherit_base_config;
+    let profile_id = snapshot.manifest.applied_profile_id;
+    let project_settings_keys = snapshot.manifest.project_settings_keys;
+    let project_settings =
+        project_settings_from_config(context, &config_state, &project_settings_keys)?;
+    let mut overlay = snapshot.manifest.project_overlay;
+    match enabled {
+        Some(enabled) => {
+            let current = overlay
+                .enabled_plugins
+                .get_mut(&installed.native_id)
+                .ok_or_else(|| {
+                    agent_error(
+                        AgentErrorCode::ResourceChanged,
+                        context,
+                        Some(resource.clone()),
+                        "Managed Codex Plugin declaration is unavailable",
+                    )
+                })?;
+            *current = enabled;
+        }
+        None => {
+            if overlay
+                .enabled_plugins
+                .remove(&installed.native_id)
+                .is_none()
+            {
+                return Err(agent_error(
+                    AgentErrorCode::ResourceChanged,
+                    context,
+                    Some(resource.clone()),
+                    "Managed Codex Plugin declaration is unavailable",
+                ));
+            }
+            if !overlay.enabled_plugins.keys().any(|plugin_id| {
+                plugin_id
+                    .split_once('@')
+                    .is_some_and(|(_, marketplace)| marketplace == installed.marketplace_name)
+            }) {
+                overlay.marketplaces.remove(&installed.marketplace_name);
+            }
+        }
+    }
+
+    let base_home = base_home(context, &runtime.base_installation_id)?;
+    let base_config = read_optional(&base_home.join("config.toml"), context, None)?;
+    let inherited_config = inherit_base_config
+        .then_some(base_config.as_deref())
+        .flatten();
+    let synthesized = synthesize_project_codex_config_with_settings(
+        inherited_config,
+        &base_home,
+        &overlay,
+        &project_settings,
+    )
+    .map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            Some(resource.clone()),
+            error.to_string(),
+        )
+    })?;
+    let manifest = ProjectCodexRuntimeManifest {
+        schema_version: PROJECT_CODEX_RUNTIME_MANIFEST_SCHEMA_VERSION,
+        applied_inherit_base_config: inherit_base_config,
+        applied_profile_id: profile_id,
+        project_overlay: overlay,
+        project_settings_keys,
+    };
+    let manifest_resource = project_resource(context, "runtime-manifest");
+    let manifest_state = observe_target(&ManagedResourceTarget::file(runtime.manifest_path()))?;
+    validate_runtime_manifest_state(context, &runtime, &manifest_resource, &manifest_state)?;
+
+    let control_resource = ResourceRef {
+        logical_id: format!("plugin-control:{}", installed.installation.id),
+        ..resource.clone()
+    };
+    let control_target = resolve_project_resource(context, &control_resource, &runtime)?;
+    let control_state = observe_target(&control_target)?;
+    if !matches!(control_state, TargetState::Missing | TargetState::File(_)) {
+        return Err(storage_conflict(context, &control_resource));
+    }
+    let mut mutations = Vec::new();
+    if let Some(enabled) = enabled {
+        mutations.push(PlannedMutation {
+            resource: control_resource,
+            kind: mutation_kind(&control_state),
+            expected_digest: control_state.digest(),
+            media_type: "application/json".into(),
+            content: Some(super::installation_control_content(enabled)),
+        });
+    } else {
+        let package_state =
+            observe_target(&ManagedResourceTarget::directory(installed.package_target))?;
+        if !matches!(package_state, TargetState::Directory(_)) {
+            return Err(storage_conflict(context, resource));
+        }
+        mutations.push(PlannedMutation {
+            resource: resource.clone(),
+            kind: MutationKind::Delete,
+            expected_digest: package_state.digest(),
+            media_type: "application/vnd.ad.directory".into(),
+            content: None,
+        });
+        if !matches!(control_state, TargetState::Missing) {
+            mutations.push(PlannedMutation {
+                resource: control_resource,
+                kind: MutationKind::Delete,
+                expected_digest: control_state.digest(),
+                media_type: "application/json".into(),
+                content: None,
+            });
+        }
+    }
+    push_manifest_mutation(
+        context,
+        &mut mutations,
+        manifest_resource,
+        &manifest_state,
+        &manifest,
+    )?;
+    if config_state.digest().as_ref() != Some(&synthesized.generated_config_digest) {
+        mutations.push(PlannedMutation {
+            resource: config_resource,
+            kind: mutation_kind(&config_state),
+            expected_digest: config_state.digest(),
+            media_type: "application/toml".into(),
+            content: Some(serde_json::Value::String(synthesized.content)),
+        });
+    }
+    let read_set = base_config
+        .as_deref()
+        .map(ContentDigest::sha256)
+        .filter(|_| inherit_base_config)
+        .map(|expected_digest| {
+            vec![ReadPrecondition {
+                resource: project_resource(context, "base-config"),
+                expected_digest,
+                write_policy: WritePolicy::ReadOnly,
+            }]
+        })
+        .unwrap_or_default();
+    Ok(MutationPlan {
+        id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+        agent_id: AgentId::from("codex"),
+        context: context.clone(),
+        read_set,
+        mutations,
+        expires_at: Utc::now() + Duration::minutes(5),
+    })
+}
+
+fn effective_project_runtime(
+    requested_context: &AgentContext,
+) -> Result<(AgentContext, super::ProjectCodexRuntime), AgentError> {
+    let project_path = requested_context.project_path.as_deref().ok_or_else(|| {
+        agent_error(
+            AgentErrorCode::Unsupported,
+            requested_context,
+            None,
+            "Codex user Plugin installation requires the Agent marketplace flow",
+        )
+    })?;
+    if let Some(runtime) = project_runtime_for_context(requested_context)? {
+        return Ok((requested_context.clone(), runtime));
+    }
+    let runtime = super::project_runtime_descriptor_for_base_project(
+        &requested_context.installation_id,
+        Path::new(project_path),
+    )
+    .map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            requested_context,
+            None,
+            error.to_string(),
+        )
+    })?
+    .ok_or_else(|| {
+        agent_error(
+            AgentErrorCode::Unsupported,
+            requested_context,
+            None,
+            "Codex project runtime is unavailable",
+        )
+    })?;
+    Ok((
+        AgentContext {
+            installation_id: runtime.runtime_installation_id.clone(),
+            project_path: requested_context.project_path.clone(),
+        },
+        runtime,
+    ))
+}
+
+fn desired_inherit_base_config(
+    context: &AgentContext,
+    runtime: &super::ProjectCodexRuntime,
+) -> Result<bool, AgentError> {
+    if let Some(snapshot) = load_project_codex_runtime_manifest(runtime).map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            None,
+            error.to_string(),
+        )
+    })? {
+        return Ok(snapshot.manifest.applied_inherit_base_config);
+    }
+    let path = projects_state_path()
+        .map_err(|error| agent_error(AgentErrorCode::Io, context, None, error.to_string()))?;
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(runtime.applied_inherit_base_config)
+        }
+        Err(error) => {
+            return Err(agent_error(
+                AgentErrorCode::Io,
+                context,
+                None,
+                error.to_string(),
+            ))
+        }
+    };
+    let projects: Vec<crate::models::Project> =
+        serde_json::from_slice(&bytes).map_err(|error| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                None,
+                format!("Invalid project registry: {error}"),
+            )
+        })?;
+    Ok(projects
+        .into_iter()
+        .find(|project| Some(project.path.as_str()) == context.project_path.as_deref())
+        .map(|project| project.inherit_base_config)
+        .unwrap_or(runtime.applied_inherit_base_config))
 }
 
 fn plan_project_override(
@@ -1110,6 +1936,24 @@ fn resolve_project_resource(
                 )
             });
     }
+    if managed_catalog_identity(logical_id).is_some() {
+        return managed_codex_package_target(context, resource, runtime)
+            .map(ManagedResourceTarget::directory);
+    }
+    if let Some(id) = logical_id.strip_prefix("plugin-control:") {
+        return super::installation_control_path(&super::ResourceInstallationId::from(
+            id.to_owned(),
+        ))
+        .map(ManagedResourceTarget::file)
+        .map_err(|error| {
+            agent_error(
+                AgentErrorCode::Io,
+                context,
+                Some(resource.clone()),
+                error.to_string(),
+            )
+        });
+    }
     if let Some(name) = logical_id.strip_prefix("marketplace:") {
         validate_segment(context, "marketplace", name)?;
         return Ok(ManagedResourceTarget::directory(
@@ -1137,6 +1981,127 @@ fn resolve_project_resource(
     Ok(ManagedResourceTarget::file(
         runtime.runtime_home.join("config.toml"),
     ))
+}
+
+fn managed_catalog_identity(logical_id: &str) -> Option<(&str, &str)> {
+    let (source_id, install_id) = logical_id.rsplit_once('/')?;
+    source_id
+        .starts_with("skill-source:")
+        .then_some((source_id, install_id))
+}
+
+fn managed_codex_package_target(
+    context: &AgentContext,
+    resource: &ResourceRef,
+    runtime: &super::ProjectCodexRuntime,
+) -> Result<PathBuf, AgentError> {
+    let (_, install_id) = managed_catalog_identity(&resource.logical_id)
+        .ok_or_else(|| unknown_project_resource(context, resource))?;
+    let state = super::execution_state::ExecutionState::open()
+        .map_err(|error| agent_error(AgentErrorCode::Io, context, None, error.to_string()))?;
+    if let Some(record) = super::load_ownership_record(&state, resource)? {
+        if record.target_kind != ResourceStateKind::Directory {
+            return Err(agent_error(
+                AgentErrorCode::PermissionDenied,
+                context,
+                Some(resource.clone()),
+                "Managed Codex Plugin ownership target is not a directory",
+            ));
+        }
+        let target = PathBuf::from(record.target_path);
+        validate_managed_package_target(context, resource, runtime, &target, install_id)?;
+        return Ok(target);
+    }
+
+    let (source_id, _) = managed_catalog_identity(&resource.logical_id).unwrap();
+    let catalog = super::load_resource_catalog_snapshot().map_err(|error| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            Some(resource.clone()),
+            error.to_string(),
+        )
+    })?;
+    let candidate = catalog
+        .resources
+        .values()
+        .find(|candidate| {
+            candidate.source_id == source_id
+                && candidate.install_id == install_id
+                && candidate.kind == ResourceKind::Plugins
+                && candidate.present
+                && candidate.lifecycle == super::ResourceLifecycle::Managed
+        })
+        .ok_or_else(|| {
+            agent_error(
+                AgentErrorCode::ResourceChanged,
+                context,
+                Some(resource.clone()),
+                "Managed Codex Plugin catalog resource is unavailable",
+            )
+        })?;
+    let resolved = super::resolve_catalog_resource(&candidate.id).map_err(|error| {
+        agent_error(
+            AgentErrorCode::ResourceChanged,
+            context,
+            Some(resource.clone()),
+            error.to_string(),
+        )
+    })?;
+    let metadata = read_codex_catalog_plugin_metadata(&resolved.physical_path, install_id)
+        .map_err(|error| {
+            agent_error(
+                AgentErrorCode::Unsupported,
+                context,
+                Some(resource.clone()),
+                error,
+            )
+        })?;
+    let target = runtime
+        .runtime_home
+        .join("plugins/cache")
+        .join(metadata.marketplace_name)
+        .join(metadata.plugin_name)
+        .join(metadata.version);
+    validate_managed_package_target(context, resource, runtime, &target, install_id)?;
+    Ok(target)
+}
+
+fn validate_managed_package_target(
+    context: &AgentContext,
+    resource: &ResourceRef,
+    runtime: &super::ProjectCodexRuntime,
+    target: &Path,
+    install_id: &str,
+) -> Result<(), AgentError> {
+    let cache = runtime.runtime_home.join("plugins/cache");
+    let relative = target.strip_prefix(&cache).map_err(|_| {
+        agent_error(
+            AgentErrorCode::PermissionDenied,
+            context,
+            Some(resource.clone()),
+            "Managed Codex Plugin target escapes the project runtime cache",
+        )
+    })?;
+    let components = relative
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(value) => value.to_str(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if components.len() != 3
+        || components[1] != install_id
+        || components.iter().any(|segment| !valid_segment(segment))
+    {
+        return Err(agent_error(
+            AgentErrorCode::PermissionDenied,
+            context,
+            Some(resource.clone()),
+            "Managed Codex Plugin target identity is invalid",
+        ));
+    }
+    Ok(())
 }
 
 fn unknown_project_resource(context: &AgentContext, resource: &ResourceRef) -> AgentError {
@@ -1387,6 +2352,51 @@ fn push_manifest_mutation(
         content: Some(content),
     });
     Ok(())
+}
+
+fn push_directory_mutation(
+    mutations: &mut Vec<PlannedMutation>,
+    resource: ResourceRef,
+    state: &TargetState,
+    source: &Path,
+    digest: ContentDigest,
+) {
+    mutations.push(PlannedMutation {
+        resource,
+        kind: mutation_kind(state),
+        expected_digest: state.digest(),
+        media_type: "application/vnd.ad.directory".into(),
+        content: Some(serde_json::json!({
+            "path": source.to_string_lossy(),
+            "digest": digest,
+        })),
+    });
+}
+
+fn push_catalog_plugin_directory_mutation(
+    mutations: &mut Vec<PlannedMutation>,
+    resource: ResourceRef,
+    state: &TargetState,
+    source: &Path,
+    digest: ContentDigest,
+) {
+    mutations.push(PlannedMutation {
+        resource,
+        kind: mutation_kind(state),
+        expected_digest: state.digest(),
+        media_type: "application/vnd.ad.directory".into(),
+        content: Some(serde_json::json!({
+            "path": source.to_string_lossy(),
+            "digest": digest,
+            "excludeAgentSkillProjections": true,
+        })),
+    });
+}
+
+fn catalog_plugin_tree_digest(source: &Path) -> Result<ContentDigest, std::io::Error> {
+    super::execution_fs::directory_tree_digest_filtered(source, |path| {
+        Ok(!super::resource_scanner::is_agent_skill_projection(path))
+    })
 }
 
 fn storage_conflict(context: &AgentContext, resource: &ResourceRef) -> AgentError {

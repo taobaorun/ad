@@ -562,7 +562,7 @@ function ResourceList({
             <div className="flex flex-wrap items-center gap-2">
               <span className="truncate text-sm font-medium">{resource.displayName}</span>
               <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-                {t(`agentCollections.state.${resource.effectiveState}`)}
+                {t(resourceStateMessageKey(resource))}
               </span>
               {resource.health.status !== 'healthy' && (
                 <AlertTriangle
@@ -591,11 +591,7 @@ function ResourceList({
             )}
             <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
               <Layers3 className="h-3 w-3" aria-hidden="true" />
-              <span>
-                {t('agentCollections.declarations', {
-                  count: resource.provenance.declarations.length,
-                })}
-              </span>
+              <span>{resourceEvidenceLabel(resource, t)}</span>
               <span>· {t(`agentCollections.management.${resource.management.status}`)}</span>
             </div>
             <ResourceActions resource={resource} busy={busy} t={t} onAction={onAction} />
@@ -728,7 +724,7 @@ function MergedSkillSourceCard({
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="truncate text-sm font-semibold">{resource.displayName}</h4>
             <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-              {t(`agentCollections.state.${resource.effectiveState}`)}
+              {t(resourceStateMessageKey(resource))}
             </span>
             {source && (
               <span className="rounded-full bg-muted/70 px-2 py-0.5 text-[10px] text-muted-foreground">
@@ -752,11 +748,7 @@ function MergedSkillSourceCard({
           )}
           <div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-[11px] text-muted-foreground">
             <Layers3 className="h-3 w-3" aria-hidden="true" />
-            <span>
-              {t('agentCollections.declarations', {
-                count: resource.provenance.declarations.length,
-              })}
-            </span>
+            <span>{resourceEvidenceLabel(resource, t)}</span>
             <span aria-hidden="true">·</span>
             <span>{t(`agentCollections.management.${resource.management.status}`)}</span>
           </div>
@@ -1086,6 +1078,32 @@ function actionLabel(
     return t('agentCollections.action.resetPluginOverride');
   }
   return t(`agentCollections.action.${action.action}`);
+}
+
+function isCatalogCandidate(resource: CollectionResourceView): boolean {
+  return (
+    resource.provenance.declarations.length === 0 &&
+    ['catalog_git', 'catalog_local'].includes(resource.provenance.source?.kind ?? '')
+  );
+}
+
+function resourceStateMessageKey(resource: CollectionResourceView): string {
+  if (isCatalogCandidate(resource) && actionIsAvailable(resource, 'install')) {
+    return 'agentCollections.state.available';
+  }
+  return `agentCollections.state.${resource.effectiveState}`;
+}
+
+function resourceEvidenceLabel(
+  resource: CollectionResourceView,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (isCatalogCandidate(resource)) {
+    return t('agentCollections.catalogCandidate');
+  }
+  return t('agentCollections.declarations', {
+    count: resource.provenance.declarations.length,
+  });
 }
 
 function matches(resource: CollectionResourceView, query: string): boolean {

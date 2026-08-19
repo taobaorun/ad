@@ -32,6 +32,7 @@ pub(super) fn write_directory_atomic(
     parent: &OwnedFd,
     name: &OsStr,
     source: &Path,
+    exclude_agent_skill_projections: bool,
 ) -> std::io::Result<()> {
     let metadata = std::fs::symlink_metadata(source)?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
@@ -45,15 +46,20 @@ pub(super) fn write_directory_atomic(
         DIRECTORY_FLAGS,
         Mode::empty(),
     )?;
-    let populated = copy_path_entries(source, Path::new(""), &temporary_fd)
-        .and_then(|()| {
-            fchmod(
-                &temporary_fd,
-                Mode::from_raw_mode(metadata.permissions().mode() as _),
-            )
-            .map_err(std::io::Error::from)
-        })
-        .and_then(|()| fsync(&temporary_fd).map_err(Into::into));
+    let populated = copy_path_entries(
+        source,
+        Path::new(""),
+        &temporary_fd,
+        exclude_agent_skill_projections,
+    )
+    .and_then(|()| {
+        fchmod(
+            &temporary_fd,
+            Mode::from_raw_mode(metadata.permissions().mode() as _),
+        )
+        .map_err(std::io::Error::from)
+    })
+    .and_then(|()| fsync(&temporary_fd).map_err(Into::into));
     drop(temporary_fd);
     if let Err(error) = populated {
         let _ = remove_entry(parent, temporary.as_os_str());
@@ -217,13 +223,23 @@ fn digest_entries(
     Ok(())
 }
 
-fn copy_path_entries(source: &Path, relative: &Path, destination: &OwnedFd) -> std::io::Result<()> {
+fn copy_path_entries(
+    source: &Path,
+    relative: &Path,
+    destination: &OwnedFd,
+    exclude_agent_skill_projections: bool,
+) -> std::io::Result<()> {
     let mut entries = std::fs::read_dir(source)?
         .map(|entry| entry.map(|entry| entry.file_name()))
         .collect::<Result<Vec<_>, _>>()?;
     entries.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
     for name in entries {
         let child_relative = relative.join(&name);
+        if exclude_agent_skill_projections
+            && super::resource_scanner::is_agent_skill_projection(&child_relative)
+        {
+            continue;
+        }
         let child = source.join(&name);
         let metadata = std::fs::symlink_metadata(&child)?;
         if metadata.file_type().is_symlink() {
@@ -238,7 +254,12 @@ fn copy_path_entries(source: &Path, relative: &Path, destination: &OwnedFd) -> s
                 DIRECTORY_FLAGS,
                 Mode::empty(),
             )?;
-            copy_path_entries(&child, &child_relative, &child_fd)?;
+            copy_path_entries(
+                &child,
+                &child_relative,
+                &child_fd,
+                exclude_agent_skill_projections,
+            )?;
             fchmod(
                 &child_fd,
                 Mode::from_raw_mode(metadata.permissions().mode() as _),

@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::skill_activation::inspect_skills;
-use super::skill_artifact_tree::{inspect_tree, ArtifactLimits, TreeEntryKind, TreeManifest};
+use super::skill_artifact_tree::{
+    inspect_tree_filtered, ArtifactLimits, ArtifactTreeError, TreeEntryKind, TreeManifest,
+};
 use super::{ContentDigest, ResourceKind, SkillArtifactError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,8 +32,29 @@ struct PluginCandidate {
 pub(crate) fn scan_catalog_resources(
     physical_root: &Path,
 ) -> Result<Vec<ScannedCatalogResource>, SkillArtifactError> {
-    let manifest = inspect_tree(physical_root, ArtifactLimits::default())?;
+    let manifest = inspect_catalog_tree(physical_root)?;
     scan_manifest_resources(physical_root, &manifest)
+}
+
+pub(super) fn inspect_catalog_tree(root: &Path) -> Result<TreeManifest, ArtifactTreeError> {
+    inspect_tree_filtered(root, ArtifactLimits::default(), &|path| {
+        !is_agent_skill_projection(path)
+    })
+}
+
+pub(super) fn is_agent_skill_projection(path: &Path) -> bool {
+    let mut previous_is_agent_root = false;
+    for component in path.components() {
+        let std::path::Component::Normal(name) = component else {
+            previous_is_agent_root = false;
+            continue;
+        };
+        if previous_is_agent_root && name == "skills" {
+            return true;
+        }
+        previous_is_agent_root = matches!(name.to_str(), Some(".agents" | ".claude" | ".codex"));
+    }
+    false
 }
 
 fn scan_manifest_resources(
@@ -119,10 +142,19 @@ fn scan_manifest_resources(
 
     let plugin_paths = plugin_roots.keys().map(PathBuf::from).collect::<Vec<_>>();
     let mut resources = Vec::new();
-    for (subpath, candidate) in plugin_roots {
+    for (subpath, mut candidate) in plugin_roots {
         let install_id = candidate
             .install_id
             .expect("validated Plugin candidate has an install ID");
+        if candidate.supported_agents.contains("codex")
+            && super::codex_plugins::read_codex_catalog_plugin_metadata(
+                &physical_root.join(&subpath),
+                &install_id,
+            )
+            .is_err()
+        {
+            candidate.supported_agents.remove("codex");
+        }
         let digest_input = candidate
             .descriptor_digests
             .iter()
@@ -292,5 +324,81 @@ mod tests {
         let error = scan_catalog_resources(source.path()).unwrap_err();
 
         assert!(error.to_string().contains("disagree"));
+    }
+
+    #[test]
+    fn codex_plugin_requires_a_root_local_marketplace_declaration() {
+        let source = tempfile::tempdir().unwrap();
+        let plugin = source.path().join("tool");
+        std::fs::create_dir_all(plugin.join(".codex-plugin")).unwrap();
+        std::fs::create_dir_all(plugin.join(".agents/plugins")).unwrap();
+        std::fs::write(
+            plugin.join(".codex-plugin/plugin.json"),
+            r#"{"name":"tool","version":"1.2.3"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            plugin.join(".agents/plugins/marketplace.json"),
+            r#"{"name":"team","plugins":[{"name":"tool","source":{"source":"local","path":"./"}}]}"#,
+        )
+        .unwrap();
+
+        let resources = scan_catalog_resources(source.path()).unwrap();
+        let tool = resources
+            .iter()
+            .find(|resource| resource.install_id == "tool")
+            .unwrap();
+        assert!(tool.supported_agents.contains("codex"));
+
+        std::fs::remove_file(plugin.join(".agents/plugins/marketplace.json")).unwrap();
+        let resources = scan_catalog_resources(source.path()).unwrap();
+        let tool = resources
+            .iter()
+            .find(|resource| resource.install_id == "tool")
+            .unwrap();
+        assert!(!tool.supported_agents.contains("codex"));
+    }
+
+    #[test]
+    fn ignores_agent_skill_projections_but_rejects_absolute_links_elsewhere() {
+        let source = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let plugin = source.path().join("tool");
+        std::fs::create_dir_all(plugin.join(".codex-plugin")).unwrap();
+        std::fs::create_dir_all(plugin.join(".agents/plugins")).unwrap();
+        std::fs::create_dir_all(plugin.join(".agents/skills")).unwrap();
+        std::fs::write(
+            plugin.join(".codex-plugin/plugin.json"),
+            r#"{"name":"tool","version":"1.2.3"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            plugin.join(".agents/plugins/marketplace.json"),
+            r#"{"name":"team","plugins":[{"name":"tool","source":{"source":"local","path":"./"}}]}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(external.path().join("external-skill")).unwrap();
+        std::fs::write(
+            external.path().join("external-skill/SKILL.md"),
+            "---\nname: external-skill\n---\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(
+            external.path().join("external-skill"),
+            plugin.join(".agents/skills/external-skill"),
+        )
+        .unwrap();
+
+        let resources = scan_catalog_resources(source.path()).unwrap();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].install_id, "tool");
+
+        std::os::unix::fs::symlink(
+            external.path().join("external-skill"),
+            plugin.join("unsafe-link"),
+        )
+        .unwrap();
+        let error = scan_catalog_resources(source.path()).unwrap_err();
+        assert!(error.to_string().contains("absolute symlink"));
     }
 }
