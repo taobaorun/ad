@@ -63,7 +63,7 @@ export const ResourceRemovalInstallationSchema = z
     installationId: z.string().min(1),
     workspaceKey: z.string().min(1),
     agentId: z.string().min(1),
-    projectPath: z.string().min(1),
+    projectPath: z.string().min(1).optional(),
     state: z.enum(['pending', 'running', 'succeeded', 'failed']),
     diagnosticCode: z.string().optional(),
   })

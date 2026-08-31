@@ -196,6 +196,23 @@ fn scan_manifest_resources(
             .then_with(|| left.install_id.cmp(&right.install_id))
             .then_with(|| left.subpath.cmp(&right.subpath))
     });
+    let preferred_roots = root_marketplace_local_plugin_roots(physical_root, manifest);
+    let preferred_ids = resources
+        .iter()
+        .filter(|resource| resource.kind == ResourceKind::Plugins)
+        .filter_map(|resource| {
+            let install_id = resource.install_id.to_ascii_lowercase();
+            preferred_roots
+                .get(&install_id)
+                .is_some_and(|subpath| subpath == &resource.subpath)
+                .then_some(install_id)
+        })
+        .collect::<BTreeSet<_>>();
+    resources.retain(|resource| {
+        resource.kind != ResourceKind::Plugins
+            || !resource.subpath.is_empty()
+            || !preferred_ids.contains(&resource.install_id.to_ascii_lowercase())
+    });
     let mut identities = BTreeSet::new();
     for resource in &resources {
         if !identities.insert((resource.kind, resource.install_id.to_ascii_lowercase())) {
@@ -211,6 +228,79 @@ fn scan_manifest_resources(
         ));
     }
     Ok(resources)
+}
+
+fn root_marketplace_local_plugin_roots(
+    physical_root: &Path,
+    manifest: &TreeManifest,
+) -> BTreeMap<String, String> {
+    const MARKETPLACE_PATH: &str = ".claude-plugin/marketplace.json";
+    if !manifest
+        .entries
+        .iter()
+        .any(|entry| entry.kind == TreeEntryKind::File && entry.path == MARKETPLACE_PATH)
+    {
+        return BTreeMap::new();
+    }
+    let Ok(bytes) = std::fs::read(physical_root.join(MARKETPLACE_PATH)) else {
+        return BTreeMap::new();
+    };
+    let Ok(marketplace) = serde_json::from_slice::<Value>(&bytes) else {
+        return BTreeMap::new();
+    };
+    let Some(plugins) = marketplace.get("plugins").and_then(Value::as_array) else {
+        return BTreeMap::new();
+    };
+    let mut roots = BTreeMap::new();
+    let mut ambiguous = BTreeSet::new();
+    for plugin in plugins {
+        let Some(install_id) = plugin
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|value| valid_install_id(value))
+        else {
+            continue;
+        };
+        let Some(subpath) = plugin
+            .get("source")
+            .and_then(marketplace_local_source_subpath)
+        else {
+            continue;
+        };
+        let key = install_id.to_ascii_lowercase();
+        if roots.get(&key).is_some_and(|current| current != &subpath) {
+            ambiguous.insert(key);
+        } else {
+            roots.insert(key, subpath);
+        }
+    }
+    for install_id in ambiguous {
+        roots.remove(&install_id);
+    }
+    roots
+}
+
+fn marketplace_local_source_subpath(source: &Value) -> Option<String> {
+    let value = match source {
+        Value::String(value) => value.as_str(),
+        Value::Object(value) if value.get("source").and_then(Value::as_str) == Some("local") => {
+            value.get("path")?.as_str()?
+        }
+        _ => return None,
+    };
+    let path = Path::new(value);
+    if path.is_absolute() {
+        return None;
+    }
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::Normal(value) => normalized.push(value),
+            _ => return None,
+        }
+    }
+    (!normalized.as_os_str().is_empty()).then(|| normalized.to_string_lossy().into_owned())
 }
 
 fn is_native_plugin_descriptor(path: &str) -> bool {
@@ -303,6 +393,55 @@ mod tests {
         let error = scan_catalog_resources(source.path()).unwrap_err();
 
         assert!(error.to_string().contains("duplicate"));
+    }
+
+    #[test]
+    fn prefers_marketplace_declared_package_over_duplicate_root_plugin() {
+        let source = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(source.path().join(".claude-plugin")).unwrap();
+        std::fs::create_dir_all(source.path().join("plugin/.claude-plugin")).unwrap();
+        for descriptor in [
+            source.path().join(".claude-plugin/plugin.json"),
+            source.path().join("plugin/.claude-plugin/plugin.json"),
+        ] {
+            std::fs::write(descriptor, r#"{"name":"impeccable"}"#).unwrap();
+        }
+        std::fs::write(
+            source.path().join(".claude-plugin/marketplace.json"),
+            r#"{"name":"impeccable","plugins":[{"name":"impeccable","source":"./plugin"}]}"#,
+        )
+        .unwrap();
+
+        let resources = scan_catalog_resources(source.path()).unwrap();
+
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].kind, ResourceKind::Plugins);
+        assert_eq!(resources[0].install_id, "impeccable");
+        assert_eq!(resources[0].subpath, "plugin");
+    }
+
+    #[test]
+    fn escaping_marketplace_source_does_not_suppress_duplicate_plugin() {
+        let source = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(source.path().join(".claude-plugin")).unwrap();
+        std::fs::create_dir_all(source.path().join("plugin/.claude-plugin")).unwrap();
+        for descriptor in [
+            source.path().join(".claude-plugin/plugin.json"),
+            source.path().join("plugin/.claude-plugin/plugin.json"),
+        ] {
+            std::fs::write(descriptor, r#"{"name":"impeccable"}"#).unwrap();
+        }
+        std::fs::write(
+            source.path().join(".claude-plugin/marketplace.json"),
+            r#"{"plugins":[{"name":"impeccable","source":"../plugin"}]}"#,
+        )
+        .unwrap();
+
+        let error = scan_catalog_resources(source.path()).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("duplicate Plugins install ID: impeccable"));
     }
 
     #[test]

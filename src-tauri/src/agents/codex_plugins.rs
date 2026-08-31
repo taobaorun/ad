@@ -697,14 +697,11 @@ impl PluginsPort for CodexPluginsPort {
     }
 
     fn availability(&self) -> CapabilityAvailability {
-        CapabilityAvailability::Degraded
+        CapabilityAvailability::Available
     }
 
     fn limitations(&self) -> Vec<CapabilityLimitation> {
-        vec![CapabilityLimitation {
-            code: "user_install_requires_codex_marketplace_flow".into(),
-            message_key: "agents.capabilities.codexPluginInstallRequiresMarketplace".into(),
-        }]
+        Vec::new()
     }
 
     fn list(&self, context: &AgentContext) -> Result<Vec<ResourceSnapshot>, AgentError> {
@@ -1334,8 +1331,7 @@ fn managed_codex_installation(
         .into_iter()
         .find(|record| {
             record.effective_installation_id == context.installation_id
-                && record.canonical_project_path
-                    == context.project_path.as_deref().unwrap_or_default()
+                && record.canonical_project_path.as_deref() == context.project_path.as_deref()
                 && record.resource_kind == ResourceKind::Plugins
                 && record.source_id
                     == managed_catalog_identity(&resource.logical_id)

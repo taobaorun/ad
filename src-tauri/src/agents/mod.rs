@@ -71,6 +71,9 @@ mod skill_source_bindings;
 #[cfg(test)]
 mod skill_source_bindings_tests;
 mod types;
+mod user_actions;
+mod user_inventory;
+mod user_plugins;
 mod workspace_contracts;
 
 pub use crate::models::SkillSourceType;
@@ -115,6 +118,9 @@ pub use skill_legacy_inventory::*;
 pub use skill_legacy_migration::*;
 pub use skill_source_bindings::*;
 pub use types::*;
+pub use user_actions::*;
+pub use user_inventory::*;
+pub use user_plugins::*;
 pub use workspace_contracts::*;
 
 pub fn builtin_registry() -> AdapterRegistry {

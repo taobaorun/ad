@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -93,8 +93,11 @@ pub(super) struct OwnershipRestore {
 }
 
 pub(super) fn ownership_managed(resource: &ResourceRef, storage: ResourceStorage) -> bool {
-    resource.scope == ResourceScope::Project
-        && resource.project_path.is_some()
+    let scope_matches = match resource.scope {
+        ResourceScope::User => resource.project_path.is_none(),
+        ResourceScope::Project => resource.project_path.is_some(),
+    };
+    scope_matches
         && (matches!(
             (resource.kind, storage),
             (ResourceKind::Skills, ResourceStorage::Symlink)
@@ -118,16 +121,23 @@ pub(super) fn ownership_workspace_key(resource: &ResourceRef) -> Result<Workspac
         ownership_error(
             AgentErrorCode::InvalidPlan,
             resource,
-            "Ownership-managed resources require a canonical project path",
+            "Invalid ownership context",
         )
     })
 }
 
 pub(super) fn workspace_key_for_context(context: &AgentContext) -> Option<WorkspaceKey> {
-    let project_path = context.project_path.as_deref()?;
-    super::resolve_project_agent_workspace(&context.installation_id, Path::new(project_path))
+    match context.project_path.as_deref() {
+        Some(project_path) => super::resolve_project_agent_workspace(
+            &context.installation_id,
+            Path::new(project_path),
+        )
         .ok()
-        .map(|workspace| workspace.key)
+        .map(|workspace| workspace.key),
+        None => super::resolve_user_agent_workspace(&context.installation_id)
+            .ok()
+            .map(|workspace| workspace.key),
+    }
 }
 
 pub(super) fn load_ownership_record(
@@ -341,6 +351,9 @@ pub(super) fn ownership_source_binding(
     if resource.kind != ResourceKind::Skills {
         return Ok(None);
     }
+    if resource.scope == ResourceScope::User {
+        return Ok(None);
+    }
     let Some((source_id, logical_id)) = resource.logical_id.rsplit_once('/') else {
         return Ok(None);
     };
@@ -428,7 +441,27 @@ pub(super) fn ownership_catalog_binding(
     let resolved = super::resolve_catalog_resource(&candidate.id).map_err(|error| {
         ownership_error(AgentErrorCode::InvalidPlan, resource, error.to_string())
     })?;
-    if resolved.stable_path != Path::new(artifact_id) {
+    let expected_artifact = if resource.kind == ResourceKind::Skills
+        && resource.scope == ResourceScope::User
+    {
+        let artifact = Path::new(artifact_id);
+        let artifacts_root = crate::fs::paths::skill_artifacts_dir()
+            .map_err(|error| ownership_error(AgentErrorCode::Io, resource, error.to_string()))?;
+        if !artifact.starts_with(artifacts_root)
+            || !artifact.is_dir()
+            || !artifact.join("SKILL.md").is_file()
+        {
+            return Err(ownership_error(
+                AgentErrorCode::InvalidPlan,
+                resource,
+                "User Skill artifact is outside the managed immutable store",
+            ));
+        }
+        artifact.to_path_buf()
+    } else {
+        resolved.stable_path.clone()
+    };
+    if expected_artifact != Path::new(artifact_id) {
         return Err(ownership_error(
             AgentErrorCode::InvalidPlan,
             resource,
@@ -452,20 +485,36 @@ pub(super) fn ownership_catalog_binding(
     if binding.binding_id.starts_with("skill-artifact:") {
         return Ok(None);
     }
-    let adapter_contract = match resource.kind {
-        ResourceKind::Skills => "project-skill-link-v1",
-        ResourceKind::Plugins if resource.installation_id.as_str().starts_with("codex:") => {
+    let adapter_contract = match (resource.kind, resource.scope) {
+        (ResourceKind::Skills, ResourceScope::User) => "user-skill-artifact-v1",
+        (ResourceKind::Skills, ResourceScope::Project) => "project-skill-link-v1",
+        (ResourceKind::Plugins, _) if resource.installation_id.as_str().starts_with("codex:") => {
             "codex-plugin-store-v1"
         }
-        ResourceKind::Plugins => "claude-plugin-dir-v1",
+        (ResourceKind::Plugins, _) => "claude-plugin-dir-v1",
         _ => unreachable!("catalog ownership only handles collections"),
+    };
+    let user_artifact_root = if adapter_contract == "user-skill-artifact-v1" {
+        Some(
+            user_artifact_root(artifact_id, &candidate.subpath).ok_or_else(|| {
+                ownership_error(
+                    AgentErrorCode::InvalidPlan,
+                    resource,
+                    "User Skill artifact path does not match its catalog subpath",
+                )
+            })?,
+        )
+    } else {
+        None
     };
     Ok(Some(CatalogOwnershipBinding {
         resource_id: candidate.id.clone(),
         source_id: source_id.to_owned(),
         install_id: install_id.to_owned(),
         resource_kind: resource.kind,
-        stable_root: binding.stable_root.clone(),
+        stable_root: user_artifact_root
+            .map(|root| root.to_string_lossy().into_owned())
+            .unwrap_or_else(|| binding.stable_root.clone()),
         resource_subpath: candidate.subpath.clone(),
         adapter_contract: adapter_contract.into(),
     }))
@@ -475,6 +524,46 @@ fn validate_owned_catalog_binding(
     record: &ResourceOwnershipRecord,
     owned: &CatalogOwnershipBinding,
 ) -> Result<(), AgentError> {
+    if owned.adapter_contract == "user-skill-artifact-v1" {
+        let artifact = Path::new(&record.artifact_id);
+        let artifacts_root = crate::fs::paths::skill_artifacts_dir().map_err(|error| {
+            ownership_error(AgentErrorCode::Io, &record.resource, error.to_string())
+        })?;
+        let digest = super::directory_tree_digest(artifact).map_err(|error| {
+            ownership_error(
+                AgentErrorCode::ResourceChanged,
+                &record.resource,
+                error.to_string(),
+            )
+        })?;
+        if record.resource.kind == ResourceKind::Skills
+            && record.resource.scope == ResourceScope::User
+            && artifact.starts_with(artifacts_root)
+            && owned.source_id
+                == record
+                    .resource
+                    .logical_id
+                    .rsplit_once('/')
+                    .map(|(source, _)| source)
+                    .unwrap_or_default()
+            && owned.install_id
+                == record
+                    .resource
+                    .logical_id
+                    .rsplit_once('/')
+                    .map(|(_, install)| install)
+                    .unwrap_or_default()
+            && Path::new(&owned.stable_root).join(&owned.resource_subpath) == artifact
+            && digest == record.artifact_digest
+        {
+            return Ok(());
+        }
+        return Err(ownership_error(
+            AgentErrorCode::PermissionDenied,
+            &record.resource,
+            "Owned user Skill artifact identity changed",
+        ));
+    }
     let resolved = super::resolve_catalog_resource(&owned.resource_id).map_err(|error| {
         ownership_error(
             AgentErrorCode::ResourceChanged,
@@ -494,6 +583,19 @@ fn validate_owned_catalog_binding(
         ));
     }
     Ok(())
+}
+
+fn user_artifact_root(artifact_id: &str, subpath: &str) -> Option<PathBuf> {
+    let mut root = PathBuf::from(artifact_id);
+    for component in Path::new(subpath).components().rev() {
+        let Component::Normal(expected) = component else {
+            return None;
+        };
+        if root.file_name()? != expected || !root.pop() {
+            return None;
+        }
+    }
+    (root.join(subpath) == Path::new(artifact_id)).then_some(root)
 }
 
 fn validate_owned_skill_binding(
@@ -750,8 +852,10 @@ fn validate_record_identity(
         && &record.id == expected_id
         && record.target_id == PhysicalTargetId::for_resource(&record.resource)
         && record.workspace_key == ownership_workspace_key(&record.resource)?
-        && record.resource.scope == ResourceScope::Project
-        && record.resource.project_path.is_some();
+        && match record.resource.scope {
+            ResourceScope::User => record.resource.project_path.is_none(),
+            ResourceScope::Project => record.resource.project_path.is_some(),
+        };
     if valid_identity && valid_kind && valid_paths {
         Ok(())
     } else {

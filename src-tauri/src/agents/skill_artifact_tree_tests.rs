@@ -2,9 +2,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::Path;
 
-use super::skill_artifact_tree::{
-    copy_tree_verified, inspect_tree, ArtifactLimits, ArtifactTreeError,
-};
+use super::skill_artifact_tree::{copy_tree_verified, inspect_tree, ArtifactLimits};
 
 fn write_skill(root: &Path, body: &str) {
     std::fs::create_dir_all(root.join("demo/scripts")).unwrap();
@@ -84,7 +82,7 @@ fn hostile_filesystem_entries_fail_closed() {
 }
 
 #[test]
-fn hardlinks_and_budget_overflow_are_rejected() {
+fn hardlinks_are_rejected() {
     let source = tempfile::tempdir().unwrap();
     write_skill(source.path(), "# Demo\n");
     std::fs::hard_link(
@@ -93,13 +91,18 @@ fn hardlinks_and_budget_overflow_are_rejected() {
     )
     .unwrap();
     assert!(inspect_tree(source.path(), ArtifactLimits::default()).is_err());
-    std::fs::remove_file(source.path().join("demo/COPY.md")).unwrap();
-    let limits = ArtifactLimits {
-        max_total_bytes: 1,
-        ..ArtifactLimits::default()
-    };
-    assert!(matches!(
-        inspect_tree(source.path(), limits),
-        Err(ArtifactTreeError::Budget("maximum total size"))
-    ));
+}
+
+#[test]
+fn aggregate_size_above_64_mib_is_accepted() {
+    let source = tempfile::tempdir().unwrap();
+    write_skill(source.path(), "# Demo\n");
+    for index in 0..5 {
+        std::fs::File::create(source.path().join(format!("asset-{index}.bin")))
+            .unwrap()
+            .set_len(13 * 1024 * 1024)
+            .unwrap();
+    }
+
+    inspect_tree(source.path(), ArtifactLimits::default()).unwrap();
 }

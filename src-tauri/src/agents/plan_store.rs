@@ -185,6 +185,45 @@ impl PlanStore {
         )
     }
 
+    pub fn insert_user_collection_action(
+        &self,
+        plan: MutationPlan,
+        workspace_key: &super::WorkspaceKey,
+        action_id: String,
+    ) -> Result<MutationPlanView, AgentError> {
+        let actual_workspace =
+            super::workspace_key_for_context(&plan.context).ok_or_else(|| {
+                plan_error(
+                    AgentErrorCode::InvalidPlan,
+                    Some(&plan),
+                    None,
+                    "User collection action plan has no user workspace identity",
+                    false,
+                )
+            })?;
+        if &actual_workspace != workspace_key || plan.context.project_path.is_some() {
+            return Err(plan_error(
+                AgentErrorCode::InvalidPlan,
+                Some(&plan),
+                None,
+                "User collection action plan identity changed during preview",
+                false,
+            ));
+        }
+        let mut intent = PlanExecutionIntent::apply(&plan)?;
+        intent.action_id = Some(action_id);
+        self.insert_with_intent_at(
+            plan,
+            Utc::now(),
+            vec![AcknowledgementRequirement {
+                code: PlanAcknowledgementCode::UserCollectionApply,
+                risk: PlanRiskLevel::Confirmation,
+            }],
+            intent,
+            None,
+        )
+    }
+
     fn insert_workspace_action_with_id(
         &self,
         plan: MutationPlan,

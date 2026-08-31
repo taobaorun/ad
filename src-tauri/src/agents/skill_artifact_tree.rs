@@ -15,7 +15,6 @@ pub(crate) struct ArtifactLimits {
     pub(crate) max_entries: usize,
     pub(crate) max_depth: usize,
     pub(crate) max_file_bytes: u64,
-    pub(crate) max_total_bytes: u64,
 }
 
 impl Default for ArtifactLimits {
@@ -24,7 +23,6 @@ impl Default for ArtifactLimits {
             max_entries: 4_096,
             max_depth: 32,
             max_file_bytes: 16 * 1024 * 1024,
-            max_total_bytes: 64 * 1024 * 1024,
         }
     }
 }
@@ -104,7 +102,6 @@ pub(crate) fn inspect_tree_filtered(
         canonical_root: &canonical_root,
         limits,
         entries: Vec::new(),
-        total_bytes: 0,
     };
     inspect_directory(&mut state, Path::new(""), 0, include)?;
     Ok(TreeManifest {
@@ -183,7 +180,6 @@ struct InspectionState<'a> {
     canonical_root: &'a Path,
     limits: ArtifactLimits,
     entries: Vec<TreeEntry>,
-    total_bytes: u64,
 }
 
 fn inspect_directory(
@@ -250,13 +246,6 @@ fn inspect_directory(
             }
             if metadata.len() > state.limits.max_file_bytes {
                 return Err(ArtifactTreeError::Budget("maximum file size"));
-            }
-            state.total_bytes = state
-                .total_bytes
-                .checked_add(metadata.len())
-                .ok_or(ArtifactTreeError::Budget("maximum total size"))?;
-            if state.total_bytes > state.limits.max_total_bytes {
-                return Err(ArtifactTreeError::Budget("maximum total size"));
             }
             let digest = digest_regular_file(&path, metadata.len())?;
             state.entries.push(TreeEntry {

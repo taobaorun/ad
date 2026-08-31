@@ -94,7 +94,17 @@ fn plan_inventory_collection_action(
                     port.plan_remove(&context, &installed)?
                 }
                 ResourceAction::Enable | ResourceAction::Disable => {
-                    let installed = owned_skill(&inventory.workspace, resource)?;
+                    let installed = if inherited_from_user(resource) {
+                        ResourceRef {
+                            installation_id: context.installation_id.clone(),
+                            project_path: None,
+                            kind: ResourceKind::Skills,
+                            scope: ResourceScope::User,
+                            logical_id: resource.logical_id.clone(),
+                        }
+                    } else {
+                        owned_skill(&inventory.workspace, resource)?
+                    };
                     port.plan_set_enabled(
                         &context,
                         &installed,
@@ -123,7 +133,19 @@ fn plan_inventory_collection_action(
                     port.plan_install(&context, CollectionInstallRequest::catalog(resource_id))?
                 }
                 ResourceAction::Enable | ResourceAction::Disable => {
-                    let target = owned_collection(&inventory.workspace, resource)?;
+                    let target = if let Some(record) =
+                        managed_user_plugin(&inventory.workspace, resource)?
+                    {
+                        ResourceRef {
+                            installation_id: context.installation_id.clone(),
+                            project_path: context.project_path.clone(),
+                            kind: ResourceKind::Plugins,
+                            scope: ResourceScope::Project,
+                            logical_id: record.native_id,
+                        }
+                    } else {
+                        owned_collection(&inventory.workspace, resource)?
+                    };
                     port.plan_set_enabled(
                         &context,
                         &target,
@@ -131,16 +153,18 @@ fn plan_inventory_collection_action(
                     )?
                 }
                 ResourceAction::Remove => {
-                    let target = if resource.ownership.record_id.is_some() {
-                        owned_collection(&inventory.workspace, resource)?
-                    } else {
+                    let target = if let Some(record) =
+                        managed_user_plugin(&inventory.workspace, resource)?
+                    {
                         ResourceRef {
                             installation_id: context.installation_id.clone(),
                             project_path: context.project_path.clone(),
                             kind: ResourceKind::Plugins,
                             scope: ResourceScope::Project,
-                            logical_id: resource.logical_id.clone(),
+                            logical_id: record.native_id,
                         }
+                    } else {
+                        owned_collection(&inventory.workspace, resource)?
                     };
                     port.plan_remove(&context, &target)?
                 }
@@ -164,6 +188,38 @@ fn plan_inventory_collection_action(
         workspace: inventory.workspace.clone(),
         plan,
     })
+}
+
+fn inherited_from_user(resource: &CollectionResourceView) -> bool {
+    resource
+        .provenance
+        .declarations
+        .iter()
+        .any(|declaration| declaration.scope == Some(ResourceScope::User))
+        && resource.management.actions.iter().any(|action| {
+            action.action == ResourceAction::Remove
+                && action
+                    .limitation
+                    .as_ref()
+                    .is_some_and(|limitation| limitation.code == "resource_inherited_from_user")
+        })
+}
+
+fn managed_user_plugin(
+    workspace: &WorkspaceDescriptor,
+    resource: &CollectionResourceView,
+) -> Result<Option<super::UserPluginManagementRecord>, AgentError> {
+    let Some(record_id) = resource.ownership.record_id.as_ref() else {
+        return Ok(None);
+    };
+    let user_workspace = super::resolve_user_agent_workspace(&workspace.base_installation_id)
+        .map_err(|error| {
+            action_error(
+                workspace,
+                format!("User Plugin workspace is unavailable: {error}"),
+            )
+        })?;
+    super::user_plugin_record_by_id(&user_workspace, record_id)
 }
 
 fn catalog_resource_for_key(

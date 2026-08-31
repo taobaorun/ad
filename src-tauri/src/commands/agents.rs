@@ -11,7 +11,9 @@ use crate::agents::{
     ProjectCollectionSourceInstallPreview, ProjectCollectionSourceInstallRequest,
     ProjectWorkspaceInventory, ReadPrecondition, ReceiptId, ResourceKind, ResourceLocation,
     ResourceOrigin, ResourceRef, ResourceScope, ResourceSnapshot, RiskFingerprint,
-    SettingsDocument, SettingsEdit, WorkspaceDescriptor, WorkspaceOperationReport, WritePolicy,
+    SettingsDocument, SettingsEdit, UserCollectionActionPreview, UserCollectionActionRequest,
+    UserCollectionSourceInstallPreview, UserCollectionSourceInstallRequest, UserPluginPlanStore,
+    UserResourceInventory, WorkspaceDescriptor, WorkspaceOperationReport, WritePolicy,
 };
 use crate::models::ProfileFile;
 use tauri::{ipc::Channel, Manager, State};
@@ -43,6 +45,13 @@ pub fn inspect_agent_settings(context: AgentContext) -> Result<Vec<ResourceSnaps
             .ok_or_else(|| context_error(&context, "Agent does not support settings inspection"))?
             .inspect(&context)
     })
+}
+
+#[tauri::command]
+pub fn inspect_user_agent_resources(
+    installation_id: InstallationId,
+) -> Result<UserResourceInventory, AgentError> {
+    crate::agents::inspect_user_resource_inventory(&installation_id)
 }
 
 #[tauri::command]
@@ -456,6 +465,50 @@ pub fn preview_project_collection_action(
         request,
         plans.inner(),
     )
+}
+
+#[tauri::command]
+pub fn preview_user_collection_action(
+    installation_id: InstallationId,
+    request: UserCollectionActionRequest,
+    plans: State<'_, PlanStore>,
+    plugin_plans: State<'_, UserPluginPlanStore>,
+) -> Result<UserCollectionActionPreview, AgentError> {
+    crate::agents::preview_user_collection_action(
+        &installation_id,
+        request,
+        plans.inner(),
+        plugin_plans.inner(),
+    )
+}
+
+#[tauri::command]
+pub fn preview_user_collection_source_install(
+    installation_id: InstallationId,
+    request: UserCollectionSourceInstallRequest,
+    plans: State<'_, PlanStore>,
+) -> Result<UserCollectionSourceInstallPreview, AgentError> {
+    crate::agents::preview_user_collection_source_install(&installation_id, request, plans.inner())
+}
+
+#[tauri::command(async)]
+pub async fn apply_user_collection_action(
+    plan_id: PlanId,
+    expected_context: AgentContext,
+    expected_risk_fingerprint: RiskFingerprint,
+    confirmed: bool,
+    plans: State<'_, PlanStore>,
+    plugin_plans: State<'_, UserPluginPlanStore>,
+) -> Result<WorkspaceOperationReport, AgentError> {
+    crate::agents::apply_user_collection_action_plan(
+        &plan_id,
+        &expected_context,
+        &expected_risk_fingerprint,
+        confirmed,
+        plans.inner(),
+        plugin_plans.inner(),
+    )
+    .await
 }
 
 #[tauri::command(async)]

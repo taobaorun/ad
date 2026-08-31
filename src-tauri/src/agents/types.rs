@@ -164,6 +164,18 @@ pub struct WorkspaceDescriptor {
     pub project_runtime: Option<ProjectRuntimeIdentity>,
 }
 
+/// Backend-created identity for one selected base Agent installation at user scope.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserWorkspaceDescriptor {
+    pub schema_version: u32,
+    pub key: WorkspaceKey,
+    pub revision: WorkspaceRevision,
+    pub agent_id: AgentId,
+    pub installation_id: InstallationId,
+    pub root_path: String,
+}
+
 impl WorkspaceDescriptor {
     pub fn for_installation(
         canonical_project_path: &str,

@@ -18,7 +18,7 @@ use super::super::{
     ReadPrecondition, ResourceKind, ResourceLocation, ResourceOrigin, ResourcePort, ResourceRef,
     ResourceScope, ResourceSnapshot, ResourceStateKind, SkillsPort, WritePolicy,
 };
-use super::common::{agent_error, resolve_claude_home, validate_project_path};
+use super::common::{agent_error, read_optional, resolve_claude_home, validate_project_path};
 
 #[derive(Debug, Default)]
 pub(crate) struct ClaudeSkillsPort;
@@ -115,22 +115,31 @@ impl SkillsPort for ClaudeSkillsPort {
         context: &AgentContext,
         request: CollectionInstallRequest,
     ) -> Result<MutationPlan, AgentError> {
-        if context.project_path.is_none() {
-            return Err(agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                "Skill installation requires a project",
-            ));
-        }
         let (logical_id, source) = install_source(context, &request)?;
-        plan_skill_toggle(
-            context,
-            &logical_id,
-            ResourceScope::Project,
-            Some(source),
-            true,
-        )
+        let scope = if context.project_path.is_some() {
+            ResourceScope::Project
+        } else {
+            ResourceScope::User
+        };
+        let mut plan = plan_skill_toggle(context, &logical_id, scope, Some(source), true)?;
+        if scope == ResourceScope::User {
+            let override_plan = plan_skill_override(
+                context,
+                &ResourceRef {
+                    installation_id: context.installation_id.clone(),
+                    project_path: None,
+                    kind: ResourceKind::Skills,
+                    scope: ResourceScope::User,
+                    logical_id,
+                },
+                true,
+            )?;
+            plan.read_set.extend(override_plan.read_set);
+            plan.mutations.extend(override_plan.mutations);
+            plan.expires_at = plan.expires_at.min(override_plan.expires_at);
+            plan.validate()?;
+        }
+        Ok(plan)
     }
 
     fn plan_set_enabled(
@@ -150,7 +159,11 @@ impl SkillsPort for ClaudeSkillsPort {
             ));
         }
         self.resolve(context, resource)?;
-        let source = if enabled {
+        if context.project_path.is_some()
+            && enabled
+            && std::fs::symlink_metadata(self.resolve(context, resource)?.path())
+                .is_err_and(|error| error.kind() == ErrorKind::NotFound)
+        {
             let snapshot = self
                 .list(context)?
                 .into_iter()
@@ -163,30 +176,28 @@ impl SkillsPort for ClaudeSkillsPort {
                         "Claude skill source is not available",
                     )
                 })?;
-            Some(PathBuf::from(
-                snapshot
-                    .content
-                    .get("path")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| {
-                        agent_error(
-                            AgentErrorCode::InvalidPlan,
-                            context,
-                            Some(resource.clone()),
-                            "Claude skill snapshot has no library source path",
-                        )
-                    })?,
-            ))
-        } else {
-            None
-        };
-        plan_skill_toggle(
-            context,
-            &resource.logical_id,
-            resource.scope,
-            source,
-            enabled,
-        )
+            let source = snapshot
+                .content
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .map(PathBuf::from)
+                .ok_or_else(|| {
+                    agent_error(
+                        AgentErrorCode::InvalidPlan,
+                        context,
+                        Some(resource.clone()),
+                        "Claude skill snapshot has no library source path",
+                    )
+                })?;
+            return plan_skill_toggle(
+                context,
+                &resource.logical_id,
+                ResourceScope::Project,
+                Some(source),
+                true,
+            );
+        }
+        plan_skill_override(context, resource, enabled)
     }
 
     fn plan_update(
@@ -220,7 +231,14 @@ impl SkillsPort for ClaudeSkillsPort {
         resource: &ResourceRef,
     ) -> Result<MutationPlan, AgentError> {
         self.resolve(context, resource)?;
-        plan_skill_toggle(context, &resource.logical_id, resource.scope, None, false)
+        let mut plan =
+            plan_skill_toggle(context, &resource.logical_id, resource.scope, None, false)?;
+        let override_plan = plan_skill_override_change(context, resource, None)?;
+        plan.read_set.extend(override_plan.read_set);
+        plan.mutations.extend(override_plan.mutations);
+        plan.expires_at = plan.expires_at.min(override_plan.expires_at);
+        plan.validate()?;
+        Ok(plan)
     }
 }
 
@@ -256,7 +274,12 @@ fn install_source(
             "Catalog resource is not a Skill",
         ));
     }
-    let lexical_source = resolved.stable_path;
+    let lexical_source = if context.project_path.is_none() {
+        super::super::user_inventory::publish_user_skill_artifact(resource_id)
+            .map_err(|error| agent_error(AgentErrorCode::InvalidPlan, context, None, error))?
+    } else {
+        resolved.stable_path
+    };
     let physical_source = std::fs::canonicalize(&lexical_source).map_err(|error| {
         agent_error(
             AgentErrorCode::InvalidPlan,
@@ -293,7 +316,7 @@ fn skill_snapshot(
     } else {
         ResourceScope::User
     };
-    let content = serde_json::to_value(&entry).map_err(|error| {
+    let mut content = serde_json::to_value(&entry).map_err(|error| {
         agent_error(
             AgentErrorCode::Io,
             context,
@@ -301,6 +324,12 @@ fn skill_snapshot(
             format!("Failed to serialize Claude skill {logical_id}: {error}"),
         )
     })?;
+    if let Some(object) = content.as_object_mut() {
+        object.insert(
+            "enabled".into(),
+            serde_json::Value::Bool(skill_enabled(context, &entry.name)?),
+        );
+    }
     let bytes = serde_json::to_vec(&content).map_err(|error| {
         agent_error(
             AgentErrorCode::Io,
@@ -334,6 +363,186 @@ fn skill_snapshot(
         digest: ContentDigest::sha256(&bytes),
         observed_at: Utc::now(),
     })
+}
+
+fn skill_enabled(context: &AgentContext, name: &str) -> Result<bool, AgentError> {
+    let claude_home = resolve_claude_home(context)?;
+    let mut enabled = true;
+    let mut locations = vec![claude_home.join("settings.json")];
+    if let Some(project_path) = context.project_path.as_deref() {
+        let project = validate_project_path(context, project_path)?;
+        locations.push(project.join(".claude/settings.json"));
+        locations.push(project.join(".claude/settings.local.json"));
+    }
+    for location in locations {
+        let Some(bytes) = read_optional(&location, context, None)? else {
+            continue;
+        };
+        let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                None,
+                format!(
+                    "Invalid Claude settings JSON at {}: {error}",
+                    location.display()
+                ),
+            )
+        })?;
+        if let Some(override_value) = value
+            .get("skillOverrides")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|overrides| overrides.get(name))
+            .and_then(serde_json::Value::as_str)
+        {
+            enabled = override_value != "off";
+        }
+    }
+    Ok(enabled)
+}
+
+fn plan_skill_override(
+    context: &AgentContext,
+    resource: &ResourceRef,
+    enabled: bool,
+) -> Result<MutationPlan, AgentError> {
+    plan_skill_override_change(context, resource, Some(enabled))
+}
+
+fn plan_skill_override_change(
+    context: &AgentContext,
+    resource: &ResourceRef,
+    enabled: Option<bool>,
+) -> Result<MutationPlan, AgentError> {
+    let name = skill_name(context, &resource.logical_id)?;
+    let (scope, project_path, logical_id, target) = match context.project_path.as_deref() {
+        Some(project_path) => {
+            let project = validate_project_path(context, project_path)?;
+            (
+                ResourceScope::Project,
+                Some(project_path.to_owned()),
+                "project-local",
+                project.join(".claude/settings.local.json"),
+            )
+        }
+        None => (
+            ResourceScope::User,
+            None,
+            "user-settings",
+            resolve_claude_home(context)?.join("settings.json"),
+        ),
+    };
+    let settings_resource = ResourceRef {
+        installation_id: context.installation_id.clone(),
+        project_path,
+        kind: ResourceKind::Settings,
+        scope,
+        logical_id: logical_id.into(),
+    };
+    let existing = read_optional(&target, context, Some(settings_resource.clone()))?;
+    let expected_digest = existing.as_deref().map(ContentDigest::sha256);
+    if existing.is_none() && enabled.is_none() {
+        return Ok(empty_override_plan(context));
+    }
+    let mut content = match existing.as_deref() {
+        Some(bytes) => serde_json::from_slice(bytes).map_err(|error| {
+            agent_error(
+                AgentErrorCode::InvalidPlan,
+                context,
+                Some(resource.clone()),
+                format!(
+                    "Invalid Claude settings JSON at {}: {error}",
+                    target.display()
+                ),
+            )
+        })?,
+        None => serde_json::json!({}),
+    };
+    let object = content.as_object_mut().ok_or_else(|| {
+        agent_error(
+            AgentErrorCode::InvalidPlan,
+            context,
+            Some(resource.clone()),
+            "Claude settings must be a JSON object",
+        )
+    })?;
+    match enabled {
+        Some(enabled) => {
+            let overrides = object
+                .entry("skillOverrides")
+                .or_insert_with(|| serde_json::json!({}))
+                .as_object_mut()
+                .ok_or_else(|| {
+                    agent_error(
+                        AgentErrorCode::InvalidPlan,
+                        context,
+                        Some(resource.clone()),
+                        "skillOverrides must be a JSON object",
+                    )
+                })?;
+            overrides.insert(
+                name.to_owned(),
+                serde_json::Value::String(if enabled { "on" } else { "off" }.into()),
+            );
+        }
+        None => {
+            let Some(overrides) = object.get_mut("skillOverrides") else {
+                return Ok(empty_override_plan(context));
+            };
+            let overrides = overrides.as_object_mut().ok_or_else(|| {
+                agent_error(
+                    AgentErrorCode::InvalidPlan,
+                    context,
+                    Some(resource.clone()),
+                    "skillOverrides must be a JSON object",
+                )
+            })?;
+            if overrides.remove(name).is_none() {
+                return Ok(empty_override_plan(context));
+            }
+            if overrides.is_empty() {
+                object.remove("skillOverrides");
+            }
+        }
+    }
+    Ok(MutationPlan {
+        id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+        agent_id: AgentId::from("claude-code"),
+        context: context.clone(),
+        read_set: expected_digest
+            .clone()
+            .map(|expected_digest| {
+                vec![ReadPrecondition {
+                    resource: settings_resource.clone(),
+                    expected_digest,
+                    write_policy: WritePolicy::Mutable,
+                }]
+            })
+            .unwrap_or_default(),
+        mutations: vec![PlannedMutation {
+            resource: settings_resource,
+            kind: if expected_digest.is_some() {
+                MutationKind::Replace
+            } else {
+                MutationKind::Create
+            },
+            expected_digest,
+            media_type: "application/json".into(),
+            content: Some(content),
+        }],
+        expires_at: Utc::now() + Duration::minutes(5),
+    })
+}
+
+fn empty_override_plan(context: &AgentContext) -> MutationPlan {
+    MutationPlan {
+        id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+        agent_id: AgentId::from("claude-code"),
+        context: context.clone(),
+        read_set: Vec::new(),
+        mutations: Vec::new(),
+        expires_at: Utc::now() + Duration::minutes(5),
+    }
 }
 
 fn plan_skill_toggle(
@@ -487,9 +696,6 @@ fn replacement_is_authorized(
 ) -> bool {
     if is_legacy_ad_managed_symlink(target) {
         return true;
-    }
-    if resource.scope != ResourceScope::Project {
-        return false;
     }
     let Ok(state) = ExecutionState::open() else {
         return false;

@@ -294,8 +294,8 @@ impl PluginsPort for ClaudePluginsPort {
                 .into_iter()
                 .find(|record| {
                     record.effective_installation_id == context.installation_id
-                        && record.canonical_project_path
-                            == context.project_path.as_deref().unwrap_or_default()
+                        && record.canonical_project_path.as_deref()
+                            == context.project_path.as_deref()
                         && format!("{}/{}", record.source_id, record.install_id)
                             == resource.logical_id
                 })
@@ -385,8 +385,8 @@ impl PluginsPort for ClaudePluginsPort {
                 .into_iter()
                 .find(|record| {
                     record.effective_installation_id == context.installation_id
-                        && record.canonical_project_path
-                            == context.project_path.as_deref().unwrap_or_default()
+                        && record.canonical_project_path.as_deref()
+                            == context.project_path.as_deref()
                         && format!("{}/{}", record.source_id, record.install_id)
                             == resource.logical_id
                 });
@@ -462,7 +462,7 @@ pub(crate) fn managed_claude_plugin_links(
         .into_iter()
         .filter(|record| {
             record.effective_installation_id == context.installation_id
-                && record.canonical_project_path == project_path
+                && record.canonical_project_path.as_deref() == Some(project_path)
                 && record.resource_kind == ResourceKind::Plugins
                 && record.adapter_contract == "claude-plugin-dir-v1"
         })

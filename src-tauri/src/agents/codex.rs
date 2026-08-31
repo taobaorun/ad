@@ -529,7 +529,7 @@ mod tests {
     fn skills_port_lists_scopes_and_plans_without_writing() {
         let temp = tempfile::tempdir().unwrap();
         let codex_home = temp.path().join(".codex");
-        let user_skill = temp.path().join(".agents/skills/user-demo");
+        let user_skill = codex_home.join("skills/user-demo");
         let project = temp.path().join("project");
         let project_skill = project.join(".agents/skills/project-demo");
         std::fs::create_dir_all(&codex_home).unwrap();
@@ -537,7 +537,7 @@ mod tests {
         std::fs::create_dir_all(&project_skill).unwrap();
         std::fs::write(
             codex_home.join("config.toml"),
-            "model = \"gpt-5.6\"\n\n[[skills.config]]\npath = \"../.agents/skills/user-demo/SKILL.md\"\nenabled = false\n",
+            "model = \"gpt-5.6\"\n\n[[skills.config]]\npath = \"skills/user-demo/SKILL.md\"\nenabled = false\n",
         )
         .unwrap();
         std::fs::write(user_skill.join("SKILL.md"), "---\nname: user-demo\n---\n").unwrap();
@@ -703,9 +703,9 @@ mod tests {
         );
         assert_eq!(
             port.availability(),
-            crate::agents::CapabilityAvailability::Degraded
+            crate::agents::CapabilityAvailability::Available
         );
-        assert!(!port.limitations().is_empty());
+        assert!(port.limitations().is_empty());
         let plan_id = plan.id.clone();
         let store = crate::agents::PlanStore::default();
         store.insert(plan).unwrap();

@@ -4,7 +4,7 @@ use serde_json::Value;
 use super::{
     AgentId, CapabilityLimitation, DeclarationKey, InventoryRevision, OwnershipRecordId,
     PhysicalTargetId, ResourceKey, ResourceKind, ResourceLayer, ResourceRef, ResourceScope,
-    WorkspaceDescriptor, WorkspaceKey,
+    UserWorkspaceDescriptor, WorkspaceDescriptor, WorkspaceKey,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -325,6 +325,19 @@ pub struct ProjectWorkspaceInventory {
     pub revision: InventoryRevision,
     pub discovery: AdapterDiscoveryContract,
     pub settings: SettingsEffectiveView,
+    pub skills: CollectionResourceInventory,
+    pub plugins: CollectionResourceInventory,
+    #[serde(default)]
+    pub diagnostics: Vec<ItemDiagnostic>,
+}
+
+/// One revision-bound read of a selected Agent installation's user resources.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserResourceInventory {
+    pub schema_version: u32,
+    pub workspace: UserWorkspaceDescriptor,
+    pub revision: InventoryRevision,
     pub skills: CollectionResourceInventory,
     pub plugins: CollectionResourceInventory,
     #[serde(default)]

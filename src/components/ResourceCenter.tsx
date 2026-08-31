@@ -1,8 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Boxes, GitBranch, Link2, Network, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import {
+  Boxes,
+  Download,
+  GitBranch,
+  Link2,
+  Network,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { formatAgentErrorMessage } from '@/lib/agentErrors';
+import type { ResourceSourceView } from '@/lib/agentResourceInventoryTypes';
+import type {
+  AgentContext,
+  AgentInstallation,
+  CapabilityDescriptor,
+  InstallationId,
+} from '@/lib/agentTypes';
 import type {
   CatalogSource,
   ResourceCatalogSnapshot,
@@ -15,16 +32,24 @@ import type {
   SkillSourceRequest,
 } from '@/lib/skillCatalogTypes';
 import { tauri } from '@/lib/tauri';
+import { useAgents } from '@/store/agents';
 
+import { AgentCollectionPanel } from './AgentCollectionPanel';
 import { SkillCatalogPlanDialog } from './SkillCatalogPlanDialog';
 import { SkillSourceAddDialog } from './SkillSourceAddDialog';
 import { SourceRemovalDialog } from './SourceRemovalDialog';
 import { Button } from './ui/button';
+import { Dialog } from './ui/dialog';
 
 type Filter = 'all' | 'skills' | 'plugins';
 
 export function ResourceCenter() {
   const { t } = useTranslation();
+  const agents = useAgents((state) => state.agents);
+  const installations = useAgents((state) => state.installations);
+  const activeContext = useAgents((state) => state.activeContext);
+  const activeAgentId = useAgents((state) => state.activeAgentId);
+  const capabilitiesByAgent = useAgents((state) => state.capabilitiesByAgent);
   const [catalog, setCatalog] = useState<ResourceCatalogSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +69,39 @@ export function ResourceCenter() {
     null,
   );
   const [sourceRemovalBusy, setSourceRemovalBusy] = useState(false);
+  const [resourceReloadKey, setResourceReloadKey] = useState(0);
+  const [installingSource, setInstallingSource] = useState<CatalogSource | null>(null);
+  const [installDialogBusy, setInstallDialogBusy] = useState(false);
+  const [installInstallationId, setInstallInstallationId] = useState<InstallationId | null>(null);
+
+  const baseInstallations = useMemo(
+    () =>
+      installations.filter(
+        (installation) => !installation.projectPath && !installation.baseInstallationId,
+      ),
+    [installations],
+  );
+  const defaultInstallation = useMemo(() => {
+    const selected = installations.find(
+      (installation) => installation.id === activeContext?.installationId,
+    );
+    const baseId = selected?.baseInstallationId ?? activeContext?.installationId;
+    return (
+      baseInstallations.find((installation) => installation.id === baseId) ??
+      baseInstallations.find((installation) => installation.agentId === activeAgentId) ??
+      baseInstallations[0]
+    );
+  }, [activeAgentId, activeContext?.installationId, baseInstallations, installations]);
+  const installInstallation = useMemo(
+    () =>
+      baseInstallations.find((installation) => installation.id === installInstallationId) ??
+      defaultInstallation,
+    [baseInstallations, defaultInstallation, installInstallationId],
+  );
+  const installContext = useMemo(
+    () => (installInstallation ? { installationId: installInstallation.id } : null),
+    [installInstallation],
+  );
 
   const load = useCallback(async () => {
     setError(null);
@@ -126,6 +184,7 @@ export function ResourceCenter() {
       await tauri.applySkillCatalogSourcePlan(sourcePlan);
       setSourcePlan(null);
       await load();
+      setResourceReloadKey((key) => key + 1);
     } catch (reason) {
       setError(formatAgentErrorMessage(reason));
     } finally {
@@ -173,6 +232,7 @@ export function ResourceCenter() {
         setSourceRemovalPlan(null);
         setSourceRemovalProgress(null);
         await load();
+        setResourceReloadKey((key) => key + 1);
       } else {
         setError(t('resourceCenter.sourceRemove.retryHint'));
         setSourceRemovalPlan(await tauri.previewRemoveCatalogSource(sourceRemovalPlan.sourceId));
@@ -279,7 +339,15 @@ export function ResourceCenter() {
                 </button>
               ))}
             </div>
-            <Button type="button" variant="ghost" size="sm" onClick={() => void load()}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setResourceReloadKey((key) => key + 1);
+                void load();
+              }}
+            >
               <RefreshCw className="h-3.5 w-3.5" /> {t('resourceCenter.refresh')}
             </Button>
           </div>
@@ -318,6 +386,12 @@ export function ResourceCenter() {
                   source={source}
                   busy={sourceActionId !== null}
                   updating={sourceActionId === source.id}
+                  installDisabled={baseInstallations.length === 0}
+                  onInstall={() => {
+                    setInstallDialogBusy(false);
+                    setInstallInstallationId(defaultInstallation?.id ?? null);
+                    setInstallingSource(source);
+                  }}
                   onUpdate={() => void previewSourceUpdate(source)}
                   onRemove={() => void previewSourceRemoval(source)}
                 />
@@ -356,6 +430,21 @@ export function ResourceCenter() {
         }}
         onConfirm={() => void applySourceRemoval()}
       />
+      <UserSourceInstallationDialog
+        source={installingSource}
+        context={installContext}
+        installation={installInstallation}
+        installations={baseInstallations}
+        agentNames={Object.fromEntries(agents.map((agent) => [agent.id, agent.displayName]))}
+        capabilities={
+          installInstallation ? (capabilitiesByAgent[installInstallation.agentId] ?? []) : []
+        }
+        onSelectInstallation={setInstallInstallationId}
+        reloadKey={`${catalog?.revision ?? 0}:${resourceReloadKey}`}
+        busy={installDialogBusy}
+        onBusyChange={setInstallDialogBusy}
+        onClose={() => !installDialogBusy && setInstallingSource(null)}
+      />
     </section>
   );
 }
@@ -364,12 +453,16 @@ function SourceCard({
   source,
   busy,
   updating,
+  installDisabled,
+  onInstall,
   onUpdate,
   onRemove,
 }: {
   source: CatalogSource;
   busy: boolean;
   updating: boolean;
+  installDisabled: boolean;
+  onInstall: () => void;
   onUpdate: () => void;
   onRemove: () => void;
 }) {
@@ -409,6 +502,17 @@ function SourceCard({
             </div>
           )}
           <div className="mt-4 flex justify-end gap-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="mr-auto h-7 px-2 text-xs"
+              disabled={busy || installDisabled}
+              title={installDisabled ? t('resourceCenter.installDialog.unavailable') : undefined}
+              onClick={onInstall}
+            >
+              <Download className="h-3.5 w-3.5" /> {t('resourceCenter.install')}
+            </Button>
             <button
               type="button"
               disabled={busy}
@@ -431,5 +535,103 @@ function SourceCard({
         </div>
       </div>
     </article>
+  );
+}
+
+function UserSourceInstallationDialog({
+  source,
+  context,
+  installation,
+  installations,
+  agentNames,
+  capabilities,
+  onSelectInstallation,
+  reloadKey,
+  busy,
+  onBusyChange,
+  onClose,
+}: {
+  source: CatalogSource | null;
+  context: AgentContext | null;
+  installation: AgentInstallation | undefined;
+  installations: AgentInstallation[];
+  agentNames: Record<string, string>;
+  capabilities: CapabilityDescriptor[];
+  onSelectInstallation: (installationId: InstallationId) => void;
+  reloadKey: string;
+  busy: boolean;
+  onBusyChange: (busy: boolean) => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const sourceFilter = useMemo<ResourceSourceView | undefined>(
+    () =>
+      source
+        ? {
+            kind: source.sourceType === 'git' ? 'catalog_git' : 'catalog_local',
+            displayName: source.displayName,
+            location: source.location,
+            branch: source.branch,
+            subdirectory: source.subdirectory,
+          }
+        : undefined,
+    [source],
+  );
+  return (
+    <Dialog
+      open={source !== null}
+      onOpenChange={(open) => !open && onClose()}
+      closeDisabled={busy}
+      size="lg"
+      title={t('resourceCenter.installDialog.title', { name: source?.displayName ?? '' })}
+      description={t('resourceCenter.installDialog.description')}
+    >
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2">
+        <label className="min-w-[220px] flex-1 text-xs font-medium text-foreground">
+          <span className="mb-1 block text-muted-foreground">
+            {t('resourceCenter.installDialog.agentLabel')}
+          </span>
+          <select
+            value={installation?.id ?? ''}
+            disabled={busy || installations.length === 0}
+            onChange={(event) => onSelectInstallation(event.target.value as InstallationId)}
+            className="h-9 w-full rounded-md border border-border bg-card px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {installations.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {agentNames[candidate.agentId] ?? candidate.agentId}
+                {installations.filter((item) => item.agentId === candidate.agentId).length > 1
+                  ? ` — ${candidate.rootPath}`
+                  : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        {installation && (
+          <p className="max-w-full truncate font-mono text-[10px] text-muted-foreground">
+            {installation.rootPath}
+          </p>
+        )}
+      </div>
+      <div className="h-[min(560px,calc(100vh-15rem))] min-h-[340px]">
+        {source && context && installation && sourceFilter ? (
+          <AgentCollectionPanel
+            key={`${installation.id}:${source.id}:${reloadKey}`}
+            context={context}
+            scope="user"
+            sourceFilter={sourceFilter}
+            capabilities={capabilities}
+            onBusyChange={onBusyChange}
+          />
+        ) : (
+          <div
+            role="status"
+            className="flex h-full items-center justify-center text-sm text-muted-foreground"
+          >
+            {t('resourceCenter.installDialog.unavailable')}
+          </div>
+        )}
+      </div>
+    </Dialog>
   );
 }

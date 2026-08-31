@@ -31,7 +31,14 @@ pub(super) fn inspect_skills(
     let port = adapter
         .skills()
         .ok_or_else(|| inventory_error(workspace, "Agent does not support Skill inspection"))?;
-    let ownership = project_ownership_records(workspace)?;
+    let mut ownership = project_ownership_records(workspace)?;
+    if let Ok(user_workspace) = super::resolve_user_agent_workspace(&workspace.base_installation_id)
+    {
+        ownership.extend(super::user_inventory::user_ownership_records_for(
+            &user_workspace,
+            ResourceKind::Skills,
+        )?);
+    }
     let mut observations = port
         .list(&context)?
         .into_iter()
@@ -122,6 +129,8 @@ fn skill_observation(
                 };
             }
         }
+    } else if snapshot.resource.scope == ResourceScope::User {
+        ownership_kind = ResourceOwnershipKind::External;
     }
     if ownership_kind == ResourceOwnershipKind::External {
         source = None;
@@ -140,6 +149,7 @@ fn skill_observation(
         artifact_id: ownership_record
             .as_ref()
             .map(|record| record.artifact_id.clone()),
+        management_record_id: ownership_record.as_ref().map(|record| record.id.clone()),
         ownership_record,
         health,
         configured: true,
@@ -219,6 +229,7 @@ fn scan_claude_project_skills(
             artifact_id: ownership_record
                 .as_ref()
                 .map(|record| record.artifact_id.clone()),
+            management_record_id: ownership_record.as_ref().map(|record| record.id.clone()),
             ownership_record,
             health: ResourceHealthView {
                 status: if healthy {
@@ -378,6 +389,7 @@ fn catalog_skill_observations(
             ownership: ResourceOwnershipKind::AdManaged,
             agent_supported: true,
             ownership_record: None,
+            management_record_id: None,
             health: ResourceHealthView {
                 status: ResourceHealthStatus::Healthy,
                 diagnostic: None,

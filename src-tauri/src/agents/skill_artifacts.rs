@@ -122,7 +122,7 @@ pub fn stage_skill_source(source: &SkillSource) -> Result<StagedSkillArtifact, S
     let limits = ArtifactLimits::default();
     let staging_parent = skill_acquisition_staging_dir().map_err(path_error)?;
     create_private_directory_all(&staging_parent)?;
-    ensure_disk_budget(&staging_parent, limits.max_total_bytes)?;
+    ensure_disk_budget(&staging_parent)?;
     let operation_id = uuid::Uuid::new_v4().to_string();
     let operation_root = staging_parent.join(&operation_id);
     std::fs::create_dir(&operation_root).map_err(|source| io_error(&operation_root, source))?;
@@ -460,10 +460,10 @@ fn safe_subdirectory(value: &str) -> Result<PathBuf, SkillArtifactError> {
     Ok(path.to_path_buf())
 }
 
-fn ensure_disk_budget(path: &Path, max_artifact_bytes: u64) -> Result<(), SkillArtifactError> {
+fn ensure_disk_budget(path: &Path) -> Result<(), SkillArtifactError> {
     let stats = rustix::fs::statvfs(path).map_err(|source| io_error(path, source.into()))?;
     let available = stats.f_bavail.saturating_mul(stats.f_frsize);
-    if available < MIN_FREE_SPACE_BYTES.saturating_add(max_artifact_bytes) {
+    if available < MIN_FREE_SPACE_BYTES {
         Err(SkillArtifactError::InsufficientDisk)
     } else {
         Ok(())

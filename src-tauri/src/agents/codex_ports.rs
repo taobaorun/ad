@@ -310,6 +310,24 @@ pub(super) fn resolve_codex_home(context: &AgentContext) -> Result<PathBuf, Agen
     Ok(home)
 }
 
+pub(super) fn resolve_codex_user_home(context: &AgentContext) -> Result<PathBuf, AgentError> {
+    if let Some(runtime) = project_runtime_for_context(context)? {
+        return discover_codex_candidates()
+            .into_iter()
+            .find(|candidate| candidate.installation().id == runtime.base_installation_id)
+            .map(|candidate| PathBuf::from(&candidate.installation().root_path))
+            .ok_or_else(|| {
+                agent_error(
+                    AgentErrorCode::InvalidPlan,
+                    context,
+                    None,
+                    "Project Codex runtime base installation is unavailable",
+                )
+            });
+    }
+    resolve_codex_home(context)
+}
+
 pub(super) fn project_runtime_for_context(
     context: &AgentContext,
 ) -> Result<Option<super::ProjectCodexRuntimeDescriptor>, AgentError> {

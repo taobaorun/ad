@@ -865,6 +865,7 @@ fn catalog_codex_plugin_installs_toggles_and_removes_inside_the_project_runtime(
     .unwrap();
     std::fs::write(codex_home.join("auth.json"), "{}\n").unwrap();
     write_codex_plugin_named(&source, "native-plugin", "team", "1.2.3");
+    write_codex_plugin_named(&source, "user-plugin", "user-market", "1.0.0");
     let external_skill = home.path().join("external-skill");
     std::fs::create_dir_all(&external_skill).unwrap();
     std::fs::write(
@@ -879,6 +880,9 @@ fn catalog_codex_plugin_installs_toggles_and_removes_inside_the_project_runtime(
     )
     .unwrap();
     let source_id = add_catalog_source_named(&source, "Codex Plugins");
+    let skill_source = home.path().join("skill-source");
+    write_skill(&skill_source, "user skill");
+    add_catalog_source_named(&skill_source, "Codex Skills");
     let catalog = load_resource_catalog_snapshot().unwrap();
     assert!(catalog
         .resources
@@ -887,6 +891,34 @@ fn catalog_codex_plugin_installs_toggles_and_removes_inside_the_project_runtime(
         .unwrap()
         .compatible_agents
         .contains("codex"));
+    let user_candidate = catalog
+        .resources
+        .values()
+        .find(|resource| resource.source_id == source_id && resource.install_id == "user-plugin")
+        .unwrap();
+    let user_workspace = resolve_user_agent_workspace(&codex_installation()).unwrap();
+    let user_record =
+        super::user_plugins::proposed_user_plugin_record(&user_workspace, &user_candidate.id)
+            .unwrap();
+    super::user_plugins::persist_user_plugin_record_for_test(&user_record).unwrap();
+    let user_package = codex_home
+        .join("plugins/cache")
+        .join(&user_record.marketplace_name)
+        .join(&user_record.install_id)
+        .join("1.0.0");
+    std::fs::create_dir_all(user_package.join(".codex-plugin")).unwrap();
+    std::fs::write(
+        user_package.join(".codex-plugin/plugin.json"),
+        r#"{"name":"user-plugin","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    let base_config_path = codex_home.join("config.toml");
+    let mut base_config = std::fs::read_to_string(&base_config_path).unwrap();
+    base_config.push_str(&format!(
+        "\n[plugins.\"{}\"]\nenabled = true\n",
+        user_record.native_id
+    ));
+    std::fs::write(&base_config_path, base_config).unwrap();
     let catalog_path = home.path().join(".ad/state/resource_catalog.json");
     let mut catalog: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&catalog_path).unwrap()).unwrap();
@@ -907,6 +939,16 @@ fn catalog_codex_plugin_installs_toggles_and_removes_inside_the_project_runtime(
     std::fs::write(&catalog_path, serde_json::to_vec_pretty(&catalog).unwrap()).unwrap();
     let installation_id = codex_installation();
     let plans = PlanStore::default();
+    let user_inventory = inspect_user_resource_inventory(&installation_id).unwrap();
+    apply_user_action(
+        &installation_id,
+        &user_inventory,
+        user_skill(&user_inventory, "review"),
+        ResourceAction::Install,
+        &PlanStore::default(),
+    );
+    let base_skill = codex_home.join("skills/review");
+    assert!(base_skill.is_symlink());
 
     let inventory = inspect_project_workspace_inventory(&installation_id, &project).unwrap();
     let candidate = plugin(&inventory, "native-plugin");
@@ -964,9 +1006,11 @@ fn catalog_codex_plugin_installs_toggles_and_removes_inside_the_project_runtime(
         )
     );
     let installations = list_resource_installations().unwrap();
-    assert_eq!(installations.len(), 1);
-    assert_eq!(installations[0].source_id, source_id);
-    assert_eq!(installations[0].adapter_contract, "codex-plugin-store-v1");
+    let plugin_installation = installations
+        .iter()
+        .find(|installation| installation.adapter_contract == "codex-plugin-store-v1")
+        .unwrap();
+    assert_eq!(plugin_installation.source_id, source_id);
 
     let installed = inspect_project_workspace_inventory(&installation_id, &project).unwrap();
     let installed_plugin = plugin(&installed, "native-plugin");
@@ -988,6 +1032,109 @@ fn catalog_codex_plugin_installs_toggles_and_removes_inside_the_project_runtime(
         1
     );
 
+    let inherited_skill = skill(&installed, "review");
+    assert!(inherited_skill
+        .provenance
+        .declarations
+        .iter()
+        .any(|declaration| declaration.scope == Some(ResourceScope::User)));
+    assert!(action_is_available(
+        inherited_skill,
+        ResourceAction::Disable
+    ));
+    assert!(!action_is_available(
+        inherited_skill,
+        ResourceAction::Install
+    ));
+    assert!(!action_is_available(
+        inherited_skill,
+        ResourceAction::Remove
+    ));
+    let base_config_before_skill_override = std::fs::read(&base_config_path).unwrap();
+    apply_action(
+        &installation_id,
+        &project,
+        &installed,
+        inherited_skill,
+        ResourceAction::Disable,
+        &PlanStore::default(),
+    );
+    let skill_disabled = inspect_project_workspace_inventory(&installation_id, &project).unwrap();
+    assert_eq!(
+        skill_disabled
+            .skills
+            .resources
+            .iter()
+            .filter(|resource| resource.logical_id == "review")
+            .count(),
+        1
+    );
+    assert_eq!(
+        skill(&skill_disabled, "review").effective_state,
+        EffectiveResourceState::Disabled
+    );
+    assert!(base_skill.is_symlink());
+    assert_eq!(
+        std::fs::read(&base_config_path).unwrap(),
+        base_config_before_skill_override
+    );
+
+    let installed = inspect_project_workspace_inventory(&installation_id, &project).unwrap();
+    let inherited_user_plugin = plugin(&installed, "user-plugin");
+    assert!(action_is_available(
+        inherited_user_plugin,
+        ResourceAction::Disable
+    ));
+    let base_config_before = std::fs::read(&base_config_path).unwrap();
+    apply_action(
+        &installation_id,
+        &project,
+        &installed,
+        inherited_user_plugin,
+        ResourceAction::Disable,
+        &PlanStore::default(),
+    );
+    let user_plugin_disabled =
+        inspect_project_workspace_inventory(&installation_id, &project).unwrap();
+    assert_eq!(
+        user_plugin_disabled
+            .plugins
+            .resources
+            .iter()
+            .filter(|resource| resource.logical_id == "user-plugin")
+            .count(),
+        1
+    );
+    let inherited_user_plugin = plugin(&user_plugin_disabled, "user-plugin");
+    assert_eq!(
+        inherited_user_plugin.effective_state,
+        EffectiveResourceState::Disabled
+    );
+    assert_eq!(
+        inherited_user_plugin.ownership.kind,
+        ResourceOwnershipKind::AdManaged
+    );
+    assert!(inherited_user_plugin
+        .provenance
+        .declarations
+        .iter()
+        .any(|declaration| declaration.scope == Some(ResourceScope::User)));
+    assert!(inherited_user_plugin
+        .provenance
+        .declarations
+        .iter()
+        .any(|declaration| declaration.scope == Some(ResourceScope::Project)));
+    assert_eq!(
+        std::fs::read(&base_config_path).unwrap(),
+        base_config_before
+    );
+    assert!(action_is_available(
+        inherited_user_plugin,
+        ResourceAction::Enable
+    ));
+
+    let installed = inspect_project_workspace_inventory(&installation_id, &project).unwrap();
+    let installed_plugin = plugin(&installed, "native-plugin");
     apply_action(
         &installation_id,
         &project,
@@ -1011,7 +1158,10 @@ fn catalog_codex_plugin_installs_toggles_and_removes_inside_the_project_runtime(
         &plans,
     );
     assert!(!package.exists());
-    assert!(list_resource_installations().unwrap().is_empty());
+    assert!(list_resource_installations()
+        .unwrap()
+        .iter()
+        .all(|installation| installation.adapter_contract != "codex-plugin-store-v1"));
     let removed = inspect_project_workspace_inventory(&installation_id, &project).unwrap();
     assert_eq!(
         plugin(&removed, "native-plugin").effective_state,
@@ -1830,6 +1980,7 @@ fn contradictory_source_metadata_fails_closed_without_hiding_resource() {
         ownership: ResourceOwnershipKind::AdManaged,
         agent_supported: true,
         ownership_record: None,
+        management_record_id: None,
         health: ResourceHealthView {
             status: ResourceHealthStatus::Healthy,
             diagnostic: None,
@@ -1933,7 +2084,7 @@ fn collection_action_receipt_supports_guarded_rollback() {
 
 #[test]
 #[serial(home_env)]
-fn plugin_override_actions_never_mutate_user_or_peer_project_state() {
+fn external_plugin_overrides_are_read_only_in_project_inventory() {
     let (home, _guard, _source, project_a, project_b) = setup();
     std::fs::write(
         home.path().join(".claude/settings.json"),
@@ -1965,6 +2116,10 @@ fn plugin_override_actions_never_mutate_user_or_peer_project_state() {
     ));
     assert!(!action_is_available(
         plugin(&inventory_a, "demo"),
+        ResourceAction::Disable
+    ));
+    assert!(!action_is_available(
+        plugin(&inventory_a, "demo"),
         ResourceAction::Remove
     ));
     assert!(!action_is_available(
@@ -1991,4 +2146,839 @@ fn plugin_override_actions_never_mutate_user_or_peer_project_state() {
         user_before
     );
     assert!(!project_b.join(".claude/settings.local.json").exists());
+}
+
+fn user_skill<'a>(inventory: &'a UserResourceInventory, name: &str) -> &'a CollectionResourceView {
+    inventory
+        .skills
+        .resources
+        .iter()
+        .find(|resource| resource.logical_id == name)
+        .unwrap()
+}
+
+fn apply_user_action(
+    installation_id: &InstallationId,
+    inventory: &UserResourceInventory,
+    resource: &CollectionResourceView,
+    action: ResourceAction,
+    plans: &PlanStore,
+) {
+    let plugin_plans = UserPluginPlanStore::default();
+    let preview = preview_user_collection_action(
+        installation_id,
+        UserCollectionActionRequest {
+            workspace_key: inventory.workspace.key.clone(),
+            inventory_revision: inventory.revision.clone(),
+            resource_key: resource.key.clone(),
+            action,
+        },
+        plans,
+        &plugin_plans,
+    )
+    .unwrap();
+    let report = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(apply_user_collection_action_plan(
+            &preview.plan.id,
+            &preview.plan.context,
+            &preview.plan.risk_fingerprint,
+            true,
+            plans,
+            &plugin_plans,
+        ))
+        .unwrap();
+    assert_eq!(report.outcome, WorkspaceOperationOutcome::Changed);
+}
+
+#[test]
+#[serial(home_env)]
+fn claude_user_skill_has_managed_lifecycle_without_removing_on_disable() {
+    let (home, _guard, source, _project_a, _project_b) = setup();
+    let source_id = add_catalog_source(&source);
+    let installation_id = claude_installation();
+    let plans = PlanStore::default();
+
+    let available = inspect_user_resource_inventory(&installation_id).unwrap();
+    let candidate = user_skill(&available, "review");
+    assert_eq!(
+        candidate.effective_state,
+        EffectiveResourceState::Unconfigured
+    );
+    apply_user_action(
+        &installation_id,
+        &available,
+        candidate,
+        ResourceAction::Install,
+        &plans,
+    );
+
+    let target = home.path().join(".claude/skills/review");
+    assert!(std::fs::symlink_metadata(&target)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    let installed = inspect_user_resource_inventory(&installation_id).unwrap();
+    assert_eq!(
+        user_skill(&installed, "review").ownership.kind,
+        ResourceOwnershipKind::AdManaged
+    );
+    let installed_artifact = std::fs::read_link(&target).unwrap();
+    assert!(std::fs::read_to_string(target.join("SKILL.md"))
+        .unwrap()
+        .contains("first revision"));
+    write_skill(&source, "second revision");
+    update_catalog_source(&source_id);
+    let outdated = inspect_user_resource_inventory(&installation_id).unwrap();
+    assert!(action_is_available(
+        user_skill(&outdated, "review"),
+        ResourceAction::Update
+    ));
+    assert_eq!(std::fs::read_link(&target).unwrap(), installed_artifact);
+    assert!(std::fs::read_to_string(target.join("SKILL.md"))
+        .unwrap()
+        .contains("first revision"));
+    apply_user_action(
+        &installation_id,
+        &outdated,
+        user_skill(&outdated, "review"),
+        ResourceAction::Update,
+        &plans,
+    );
+    assert_ne!(std::fs::read_link(&target).unwrap(), installed_artifact);
+    assert!(std::fs::read_to_string(target.join("SKILL.md"))
+        .unwrap()
+        .contains("second revision"));
+    let installed = inspect_user_resource_inventory(&installation_id).unwrap();
+    apply_user_action(
+        &installation_id,
+        &installed,
+        user_skill(&installed, "review"),
+        ResourceAction::Disable,
+        &plans,
+    );
+    assert!(target.exists());
+    let settings: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(home.path().join(".claude/settings.json")).unwrap())
+            .unwrap();
+    assert_eq!(settings["skillOverrides"]["review"], "off");
+    let disabled = inspect_user_resource_inventory(&installation_id).unwrap();
+    assert_eq!(
+        user_skill(&disabled, "review").effective_state,
+        EffectiveResourceState::Disabled
+    );
+
+    apply_user_action(
+        &installation_id,
+        &disabled,
+        user_skill(&disabled, "review"),
+        ResourceAction::Remove,
+        &plans,
+    );
+    assert!(std::fs::symlink_metadata(target).is_err());
+    let settings: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(home.path().join(".claude/settings.json")).unwrap())
+            .unwrap();
+    assert!(settings
+        .get("skillOverrides")
+        .and_then(serde_json::Value::as_object)
+        .is_none_or(|overrides| !overrides.contains_key("review")));
+    let removed = inspect_user_resource_inventory(&installation_id).unwrap();
+    assert_eq!(
+        user_skill(&removed, "review").effective_state,
+        EffectiveResourceState::Unconfigured
+    );
+    apply_user_action(
+        &installation_id,
+        &removed,
+        user_skill(&removed, "review"),
+        ResourceAction::Install,
+        &plans,
+    );
+    let reinstalled = inspect_user_resource_inventory(&installation_id).unwrap();
+    assert_eq!(
+        user_skill(&reinstalled, "review").effective_state,
+        EffectiveResourceState::Enabled
+    );
+}
+
+#[test]
+#[serial(home_env)]
+fn user_skill_target_without_ad_ownership_is_external_and_read_only() {
+    let (home, _guard, source, project_a, _project_b) = setup();
+    add_catalog_source(&source);
+    let target = home.path().join(".claude/skills/review");
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(source.join("review"), &target).unwrap();
+
+    let inventory = inspect_user_resource_inventory(&claude_installation()).unwrap();
+    let resource = user_skill(&inventory, "review");
+    assert_eq!(resource.ownership.kind, ResourceOwnershipKind::External);
+    for action in [
+        ResourceAction::Install,
+        ResourceAction::Update,
+        ResourceAction::Remove,
+        ResourceAction::Enable,
+        ResourceAction::Disable,
+    ] {
+        assert!(!action_is_available(resource, action));
+    }
+
+    let project_inventory =
+        inspect_project_workspace_inventory(&claude_installation(), &project_a).unwrap();
+    let inherited = project_inventory
+        .skills
+        .resources
+        .iter()
+        .find(|resource| {
+            resource.logical_id == "review"
+                && resource.ownership.kind == ResourceOwnershipKind::External
+        })
+        .unwrap();
+    assert_eq!(inherited.ownership.kind, ResourceOwnershipKind::External);
+    for action in [
+        ResourceAction::Enable,
+        ResourceAction::Disable,
+        ResourceAction::Update,
+        ResourceAction::Remove,
+    ] {
+        assert!(!action_is_available(inherited, action));
+    }
+}
+
+#[test]
+#[serial(home_env)]
+fn native_user_plugin_without_ad_record_is_external_and_read_only() {
+    let (home, _guard, source, _project_a, _project_b) = setup();
+    write_plugin(&source);
+    add_catalog_source(&source);
+    let installation_id = claude_installation();
+    std::fs::write(
+        home.path().join(".claude/settings.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "enabledPlugins": {"native-plugin@other-market": true}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let inventory = inspect_user_resource_inventory(&installation_id).unwrap();
+    let user_plugin = inventory
+        .plugins
+        .resources
+        .iter()
+        .find(|resource| resource.logical_id == "native-plugin")
+        .unwrap();
+    assert_eq!(
+        inventory
+            .plugins
+            .resources
+            .iter()
+            .filter(|resource| resource.logical_id == "native-plugin")
+            .count(),
+        1
+    );
+    assert_eq!(user_plugin.ownership.kind, ResourceOwnershipKind::External);
+    for action in [
+        ResourceAction::Install,
+        ResourceAction::Update,
+        ResourceAction::Remove,
+        ResourceAction::Enable,
+        ResourceAction::Disable,
+    ] {
+        assert!(!action_is_available(user_plugin, action));
+    }
+}
+
+#[test]
+#[serial(home_env)]
+fn user_plugin_install_preview_is_user_scoped_and_does_not_run_the_cli() {
+    let (home, _guard, source, _project_a, _project_b) = setup();
+    write_plugin(&source);
+    add_catalog_source(&source);
+    let installation_id = claude_installation();
+    let inventory = inspect_user_resource_inventory(&installation_id).unwrap();
+    let candidate = inventory
+        .plugins
+        .resources
+        .iter()
+        .find(|resource| resource.logical_id == "native-plugin")
+        .unwrap();
+    assert!(action_is_available(candidate, ResourceAction::Install));
+    let preview = preview_user_collection_action(
+        &installation_id,
+        UserCollectionActionRequest {
+            workspace_key: inventory.workspace.key.clone(),
+            inventory_revision: inventory.revision.clone(),
+            resource_key: candidate.key.clone(),
+            action: ResourceAction::Install,
+        },
+        &PlanStore::default(),
+        &UserPluginPlanStore::default(),
+    )
+    .unwrap();
+
+    assert_eq!(preview.plan.context.project_path, None);
+    assert_eq!(preview.plan.changes[0].scope, ResourceScope::User);
+    assert_eq!(
+        preview.plan.required_acknowledgements[0].code,
+        PlanAcknowledgementCode::UserCollectionApply
+    );
+    assert!(home
+        .path()
+        .join(".ad/state/user-plugin-marketplaces")
+        .read_dir()
+        .unwrap()
+        .next()
+        .is_none());
+}
+
+#[test]
+#[serial(home_env)]
+fn ad_recorded_native_user_plugin_exposes_managed_lifecycle() {
+    let (home, _guard, source, project_a, _project_b) = setup();
+    write_plugin(&source);
+    add_catalog_source(&source);
+    let installation_id = claude_installation();
+    let workspace = resolve_user_agent_workspace(&installation_id).unwrap();
+    let catalog = load_resource_catalog_snapshot().unwrap();
+    let candidate = catalog
+        .resources
+        .values()
+        .find(|resource| {
+            resource.kind == ResourceKind::Plugins && resource.install_id == "native-plugin"
+        })
+        .unwrap();
+    let record =
+        super::user_plugins::proposed_user_plugin_record(&workspace, &candidate.id).unwrap();
+    super::user_plugins::persist_user_plugin_record_for_test(&record).unwrap();
+    std::fs::write(
+        home.path().join(".claude/settings.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "enabledPlugins": {record.native_id: true}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let inventory = inspect_user_resource_inventory(&installation_id).unwrap();
+    let user_plugin = inventory
+        .plugins
+        .resources
+        .iter()
+        .find(|resource| resource.logical_id == "native-plugin")
+        .unwrap();
+    assert_eq!(user_plugin.ownership.kind, ResourceOwnershipKind::AdManaged);
+    assert!(user_plugin.ownership.record_id.is_some());
+    for action in [ResourceAction::Disable, ResourceAction::Remove] {
+        assert!(action_is_available(user_plugin, action));
+    }
+    assert!(!action_is_available(user_plugin, ResourceAction::Update));
+
+    let project_inventory =
+        inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    let inherited = plugin(&project_inventory, "native-plugin");
+    assert_eq!(
+        project_inventory
+            .plugins
+            .resources
+            .iter()
+            .filter(|resource| resource.logical_id == "native-plugin")
+            .count(),
+        1
+    );
+    assert!(inherited
+        .provenance
+        .declarations
+        .iter()
+        .any(|declaration| declaration.scope == Some(ResourceScope::User)));
+    assert!(action_is_available(inherited, ResourceAction::Disable));
+    assert!(!action_is_available(inherited, ResourceAction::Remove));
+
+    let user_settings_before = std::fs::read(home.path().join(".claude/settings.json")).unwrap();
+    apply_action(
+        &installation_id,
+        &project_a,
+        &project_inventory,
+        inherited,
+        ResourceAction::Disable,
+        &PlanStore::default(),
+    );
+    let disabled = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    assert_eq!(
+        disabled
+            .plugins
+            .resources
+            .iter()
+            .filter(|resource| resource.logical_id == "native-plugin")
+            .count(),
+        1
+    );
+    let disabled_plugin = plugin(&disabled, "native-plugin");
+    assert_eq!(
+        disabled_plugin.effective_state,
+        EffectiveResourceState::Disabled
+    );
+    assert_eq!(
+        disabled_plugin.ownership.kind,
+        ResourceOwnershipKind::AdManaged
+    );
+    assert!(disabled_plugin
+        .provenance
+        .declarations
+        .iter()
+        .any(|declaration| declaration.scope == Some(ResourceScope::User)));
+    assert!(disabled_plugin
+        .provenance
+        .declarations
+        .iter()
+        .any(|declaration| declaration.scope == Some(ResourceScope::Project)));
+    assert!(action_is_available(disabled_plugin, ResourceAction::Enable));
+    assert_eq!(
+        std::fs::read(home.path().join(".claude/settings.json")).unwrap(),
+        user_settings_before
+    );
+    apply_action(
+        &installation_id,
+        &project_a,
+        &disabled,
+        disabled_plugin,
+        ResourceAction::Enable,
+        &PlanStore::default(),
+    );
+    let enabled = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    assert_eq!(
+        enabled
+            .plugins
+            .resources
+            .iter()
+            .filter(|resource| resource.logical_id == "native-plugin")
+            .count(),
+        1
+    );
+    assert_eq!(
+        plugin(&enabled, "native-plugin").effective_state,
+        EffectiveResourceState::Enabled
+    );
+    let removal_error = ResourceRemovalPlanStore::default()
+        .preview(&candidate.id)
+        .unwrap_err();
+    assert!(removal_error.message.contains("user-level Plugin"));
+    let update = SkillCatalogPlanStore::default()
+        .preview_update(&record.source_id)
+        .unwrap();
+    assert_eq!(update.applicability, SkillCatalogPlanApplicability::Blocked);
+    assert!(update
+        .blocking_issues
+        .iter()
+        .any(|issue| { issue.code == "source_update_requires_user_plugin_removal" }));
+}
+
+#[test]
+#[serial(home_env)]
+fn project_inherits_user_skill_and_can_disable_only_its_local_view() {
+    let (home, _guard, source, project_a, project_b) = setup();
+    add_catalog_source(&source);
+    let installation_id = claude_installation();
+    let user_plans = PlanStore::default();
+    let available = inspect_user_resource_inventory(&installation_id).unwrap();
+    apply_user_action(
+        &installation_id,
+        &available,
+        user_skill(&available, "review"),
+        ResourceAction::Install,
+        &user_plans,
+    );
+
+    let project_inventory =
+        inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    assert_eq!(
+        project_inventory
+            .skills
+            .resources
+            .iter()
+            .filter(|resource| resource.logical_id == "review")
+            .count(),
+        1
+    );
+    let inherited = skill(&project_inventory, "review");
+    assert!(inherited
+        .provenance
+        .declarations
+        .iter()
+        .any(|declaration| declaration.scope == Some(ResourceScope::User)));
+    assert!(action_is_available(inherited, ResourceAction::Disable));
+    assert!(!action_is_available(inherited, ResourceAction::Install));
+    assert!(!action_is_available(inherited, ResourceAction::Remove));
+
+    apply_action(
+        &installation_id,
+        &project_a,
+        &project_inventory,
+        inherited,
+        ResourceAction::Disable,
+        &PlanStore::default(),
+    );
+    let local: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(project_a.join(".claude/settings.local.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(local["skillOverrides"]["review"], "off");
+    assert!(home.path().join(".claude/skills/review").exists());
+    assert!(!project_b.join(".claude/settings.local.json").exists());
+    assert_eq!(
+        user_skill(
+            &inspect_user_resource_inventory(&installation_id).unwrap(),
+            "review"
+        )
+        .effective_state,
+        EffectiveResourceState::Enabled
+    );
+}
+
+#[test]
+#[serial(home_env)]
+fn existing_project_skill_remains_the_override_after_user_install() {
+    let (home, _guard, source, project_a, _project_b) = setup();
+    add_catalog_source(&source);
+    let installation_id = claude_installation();
+    let project_available =
+        inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    apply_action(
+        &installation_id,
+        &project_a,
+        &project_available,
+        skill(&project_available, "review"),
+        ResourceAction::Install,
+        &PlanStore::default(),
+    );
+    let user_available = inspect_user_resource_inventory(&installation_id).unwrap();
+    apply_user_action(
+        &installation_id,
+        &user_available,
+        user_skill(&user_available, "review"),
+        ResourceAction::Install,
+        &PlanStore::default(),
+    );
+
+    let inventory = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    let resource = skill(&inventory, "review");
+    assert_eq!(
+        resource
+            .provenance
+            .declarations
+            .last()
+            .and_then(|declaration| declaration.scope),
+        Some(ResourceScope::Project)
+    );
+    assert!(action_is_available(resource, ResourceAction::Remove));
+
+    apply_action(
+        &installation_id,
+        &project_a,
+        &inventory,
+        resource,
+        ResourceAction::Disable,
+        &PlanStore::default(),
+    );
+    let disabled = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    apply_action(
+        &installation_id,
+        &project_a,
+        &disabled,
+        skill(&disabled, "review"),
+        ResourceAction::Remove,
+        &PlanStore::default(),
+    );
+    assert!(std::fs::symlink_metadata(project_a.join(".claude/skills/review")).is_err());
+    assert!(home.path().join(".claude/skills/review").exists());
+    let inherited = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    let inherited = skill(&inherited, "review");
+    assert_eq!(inherited.effective_state, EffectiveResourceState::Enabled);
+    assert_eq!(
+        inherited
+            .provenance
+            .declarations
+            .last()
+            .and_then(|declaration| declaration.scope),
+        Some(ResourceScope::User)
+    );
+    let local: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(project_a.join(".claude/settings.local.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(local
+        .get("skillOverrides")
+        .and_then(serde_json::Value::as_object)
+        .is_none_or(|overrides| !overrides.contains_key("review")));
+}
+
+#[test]
+#[serial(home_env)]
+fn same_named_user_skills_keep_ownership_bound_to_their_catalog_source() {
+    let (home, _guard, source, _project_a, _project_b) = setup();
+    let peer_source = home.path().join("peer-source");
+    write_skill(&peer_source, "peer revision");
+    add_catalog_source_named(&source, "Primary Skills");
+    add_catalog_source_named(&peer_source, "Peer Skills");
+    let installation_id = claude_installation();
+    let available = inspect_user_resource_inventory(&installation_id).unwrap();
+    let primary = available
+        .skills
+        .resources
+        .iter()
+        .find(|resource| resource_source(resource).display_name == "Primary Skills")
+        .unwrap();
+    apply_user_action(
+        &installation_id,
+        &available,
+        primary,
+        ResourceAction::Install,
+        &PlanStore::default(),
+    );
+
+    let installed = inspect_user_resource_inventory(&installation_id).unwrap();
+    let primary = installed
+        .skills
+        .resources
+        .iter()
+        .find(|resource| resource_source(resource).display_name == "Primary Skills")
+        .unwrap();
+    let peer = installed
+        .skills
+        .resources
+        .iter()
+        .find(|resource| resource_source(resource).display_name == "Peer Skills")
+        .unwrap();
+    assert_eq!(primary.ownership.kind, ResourceOwnershipKind::AdManaged);
+    assert_eq!(peer.ownership.kind, ResourceOwnershipKind::External);
+    assert!(primary.ownership.record_id.is_some());
+    assert!(peer.ownership.record_id.is_none());
+    assert!(action_is_available(primary, ResourceAction::Remove));
+    assert!(!action_is_available(peer, ResourceAction::Update));
+    assert!(!action_is_available(peer, ResourceAction::Remove));
+}
+
+#[test]
+#[serial(home_env)]
+fn claude_user_source_batch_merges_shared_skill_override_settings() {
+    let (home, _guard, source, _project_a, _project_b) = setup();
+    write_skill_named(&source, "format", "Format code", "format revision");
+    add_catalog_source(&source);
+    let installation_id = claude_installation();
+    let inventory = inspect_user_resource_inventory(&installation_id).unwrap();
+    let review = user_skill(&inventory, "review");
+    let plans = PlanStore::default();
+    let preview = preview_user_collection_source_install(
+        &installation_id,
+        UserCollectionSourceInstallRequest {
+            workspace_key: inventory.workspace.key.clone(),
+            inventory_revision: inventory.revision.clone(),
+            source_resource_key: review.key.clone(),
+        },
+        &plans,
+    )
+    .unwrap();
+    assert_eq!(preview.resource_keys.len(), 2);
+    assert_eq!(
+        preview
+            .plan
+            .changes
+            .iter()
+            .filter(|change| change.resource.kind == ResourceKind::Settings)
+            .count(),
+        1
+    );
+    let report = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(apply_user_collection_action_plan(
+            &preview.plan.id,
+            &preview.plan.context,
+            &preview.plan.risk_fingerprint,
+            true,
+            &plans,
+            &UserPluginPlanStore::default(),
+        ))
+        .unwrap();
+    assert_eq!(report.outcome, WorkspaceOperationOutcome::Changed);
+    assert!(home.path().join(".claude/skills/review").exists());
+    assert!(home.path().join(".claude/skills/format").exists());
+    let settings: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(home.path().join(".claude/settings.json")).unwrap())
+            .unwrap();
+    assert_eq!(settings["skillOverrides"]["review"], "on");
+    assert_eq!(settings["skillOverrides"]["format"], "on");
+}
+
+#[test]
+#[serial(home_env)]
+fn codex_user_skill_installs_and_toggles_in_user_scope() {
+    let (home, _guard, source, _project_a, _project_b) = setup();
+    std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+    add_catalog_source(&source);
+    let installation_id = codex_installation();
+    let available = inspect_user_resource_inventory(&installation_id).unwrap();
+    apply_user_action(
+        &installation_id,
+        &available,
+        user_skill(&available, "review"),
+        ResourceAction::Install,
+        &PlanStore::default(),
+    );
+    let target = home.path().join(".codex/skills/review");
+    assert!(target.is_symlink());
+
+    let installed = inspect_user_resource_inventory(&installation_id).unwrap();
+    apply_user_action(
+        &installation_id,
+        &installed,
+        user_skill(&installed, "review"),
+        ResourceAction::Disable,
+        &PlanStore::default(),
+    );
+    let disabled = inspect_user_resource_inventory(&installation_id).unwrap();
+    assert_eq!(
+        user_skill(&disabled, "review").effective_state,
+        EffectiveResourceState::Disabled
+    );
+    assert!(target.is_symlink());
+}
+
+#[test]
+#[serial(home_env)]
+fn codex_managed_user_plugin_toggle_uses_native_user_config() {
+    let (home, _guard, source, _project_a, _project_b) = setup();
+    std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+    write_codex_plugin_named(&source, "native-plugin", "source-market", "1.0.0");
+    add_catalog_source(&source);
+    let installation_id = codex_installation();
+    let workspace = resolve_user_agent_workspace(&installation_id).unwrap();
+    let catalog = load_resource_catalog_snapshot().unwrap();
+    let candidate = catalog
+        .resources
+        .values()
+        .find(|resource| {
+            resource.kind == ResourceKind::Plugins && resource.install_id == "native-plugin"
+        })
+        .unwrap();
+    let record =
+        super::user_plugins::proposed_user_plugin_record(&workspace, &candidate.id).unwrap();
+    super::user_plugins::persist_user_plugin_record_for_test(&record).unwrap();
+    std::fs::write(
+        home.path().join(".codex/config.toml"),
+        format!("[plugins.\"{}\"]\nenabled = true\n", record.native_id),
+    )
+    .unwrap();
+
+    let inventory = inspect_user_resource_inventory(&installation_id).unwrap();
+    let plugin = inventory
+        .plugins
+        .resources
+        .iter()
+        .find(|resource| resource.logical_id == "native-plugin")
+        .unwrap();
+    assert_eq!(
+        inventory
+            .plugins
+            .resources
+            .iter()
+            .filter(|resource| resource.logical_id == "native-plugin")
+            .count(),
+        1
+    );
+    assert_eq!(plugin.ownership.kind, ResourceOwnershipKind::AdManaged);
+    apply_user_action(
+        &installation_id,
+        &inventory,
+        plugin,
+        ResourceAction::Disable,
+        &PlanStore::default(),
+    );
+    let config = std::fs::read_to_string(home.path().join(".codex/config.toml"))
+        .unwrap()
+        .parse::<toml::Value>()
+        .unwrap();
+    assert_eq!(
+        config["plugins"][&record.native_id]["enabled"].as_bool(),
+        Some(false)
+    );
+}
+
+#[test]
+#[serial(home_env)]
+fn codex_external_same_name_plugin_in_another_marketplace_blocks_install() {
+    let (home, _guard, source, _project_a, _project_b) = setup();
+    std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+    write_codex_plugin_named(&source, "native-plugin", "source-market", "1.0.0");
+    add_catalog_source(&source);
+    std::fs::write(
+        home.path().join(".codex/config.toml"),
+        "[plugins.\"native-plugin@other-market\"]\nenabled = true\n",
+    )
+    .unwrap();
+
+    let inventory = inspect_user_resource_inventory(&codex_installation()).unwrap();
+    let plugin = inventory
+        .plugins
+        .resources
+        .iter()
+        .find(|resource| resource.logical_id == "native-plugin")
+        .unwrap();
+    assert_eq!(plugin.ownership.kind, ResourceOwnershipKind::External);
+    assert!(!action_is_available(plugin, ResourceAction::Install));
+    assert!(!action_is_available(plugin, ResourceAction::Remove));
+}
+
+#[test]
+#[serial(home_env)]
+fn codex_project_inherited_toggles_require_a_prepared_runtime() {
+    let (home, _guard, source, project_a, _project_b) = setup();
+    std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+    std::fs::write(
+        home.path().join(".codex/config.toml"),
+        "[plugins.\"external@market\"]\nenabled = true\n",
+    )
+    .unwrap();
+    add_catalog_source(&source);
+    let installation_id = codex_installation();
+    let user = inspect_user_resource_inventory(&installation_id).unwrap();
+    apply_user_action(
+        &installation_id,
+        &user,
+        user_skill(&user, "review"),
+        ResourceAction::Install,
+        &PlanStore::default(),
+    );
+    let user_config_before = std::fs::read(home.path().join(".codex/config.toml")).unwrap();
+
+    let project = inspect_project_workspace_inventory(&installation_id, &project_a).unwrap();
+    let inherited_skill = skill(&project, "review");
+    assert!(!action_is_available(
+        inherited_skill,
+        ResourceAction::Disable
+    ));
+    assert!(inherited_skill.management.actions.iter().any(|action| {
+        action.action == ResourceAction::Disable
+            && action
+                .limitation
+                .as_ref()
+                .is_some_and(|limitation| limitation.code == "codex_runtime_not_prepared")
+    }));
+    let external_plugin = plugin(&project, "external@market");
+    assert_eq!(
+        external_plugin.ownership.kind,
+        ResourceOwnershipKind::External
+    );
+    assert!(!action_is_available(
+        external_plugin,
+        ResourceAction::Disable
+    ));
+    assert!(!action_is_available(
+        external_plugin,
+        ResourceAction::Enable
+    ));
+    assert_eq!(
+        std::fs::read(home.path().join(".codex/config.toml")).unwrap(),
+        user_config_before
+    );
 }

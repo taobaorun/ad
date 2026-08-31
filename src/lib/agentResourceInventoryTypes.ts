@@ -15,7 +15,10 @@ import {
   WorkspaceKeySchema,
   ResourceRefSchema,
 } from '@/lib/agentTypes';
-import { WorkspaceDescriptorSchema } from '@/lib/agentWorkspaceTypes';
+import {
+  UserWorkspaceDescriptorSchema,
+  WorkspaceDescriptorSchema,
+} from '@/lib/agentWorkspaceTypes';
 
 export const CoverageStatusSchema = z.enum(['complete', 'partial', 'failed']);
 export const EffectiveResourceStateSchema = z.enum([
@@ -256,6 +259,21 @@ export const ProjectCollectionSourceInstallPreviewSchema = z
   })
   .strict();
 
+export const UserResourceInventorySchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    workspace: UserWorkspaceDescriptorSchema,
+    revision: InventoryRevisionSchema,
+    skills: CollectionResourceInventorySchema,
+    plugins: CollectionResourceInventorySchema,
+    diagnostics: z.array(ItemDiagnosticSchema).default([]),
+  })
+  .strict();
+export const UserCollectionActionRequestSchema = ProjectCollectionActionRequestSchema;
+export const UserCollectionActionPreviewSchema = ProjectCollectionActionPreviewSchema;
+export const UserCollectionSourceInstallRequestSchema = ProjectCollectionSourceInstallRequestSchema;
+export const UserCollectionSourceInstallPreviewSchema = ProjectCollectionSourceInstallPreviewSchema;
+
 export type CoverageStatus = z.infer<typeof CoverageStatusSchema>;
 export type ItemDiagnostic = z.infer<typeof ItemDiagnosticSchema>;
 export type CategoryCoverage = z.infer<typeof CategoryCoverageSchema>;
@@ -293,4 +311,13 @@ export type ProjectCollectionSourceInstallRequest = z.infer<
 >;
 export type ProjectCollectionSourceInstallPreview = z.infer<
   typeof ProjectCollectionSourceInstallPreviewSchema
+>;
+export type UserResourceInventory = z.infer<typeof UserResourceInventorySchema>;
+export type UserCollectionActionRequest = z.infer<typeof UserCollectionActionRequestSchema>;
+export type UserCollectionActionPreview = z.infer<typeof UserCollectionActionPreviewSchema>;
+export type UserCollectionSourceInstallRequest = z.infer<
+  typeof UserCollectionSourceInstallRequestSchema
+>;
+export type UserCollectionSourceInstallPreview = z.infer<
+  typeof UserCollectionSourceInstallPreviewSchema
 >;

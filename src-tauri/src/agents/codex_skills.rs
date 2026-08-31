@@ -4,9 +4,9 @@ use std::path::{Component, Path, PathBuf};
 
 use chrono::{Duration, Utc};
 
-use crate::fs::paths::home;
-
-use super::codex_ports::{agent_error, resolve_codex_home, validate_project_path};
+use super::codex_ports::{
+    agent_error, resolve_codex_home, resolve_codex_user_home, validate_project_path,
+};
 use super::codex_skill_config::{disabled_skill_paths, plan_skill_config};
 use super::execution_fs::directory_tree_digest;
 use super::{
@@ -68,21 +68,20 @@ impl SkillsPort for CodexSkillsPort {
         context: &AgentContext,
         request: CollectionInstallRequest,
     ) -> Result<MutationPlan, AgentError> {
-        if context.project_path.is_none() {
-            return Err(agent_error(
-                AgentErrorCode::InvalidPlan,
-                context,
-                None,
-                "Skill installation requires a project",
-            ));
-        }
         let (logical_id, source) = install_source(context, &request)?;
         skill_name(context, &logical_id)?;
+        let scope = if context.project_path.is_some() {
+            ResourceScope::Project
+        } else {
+            ResourceScope::User
+        };
         let resource = ResourceRef {
             installation_id: context.installation_id.clone(),
-            project_path: context.project_path.clone(),
+            project_path: (scope == ResourceScope::Project)
+                .then(|| context.project_path.clone())
+                .flatten(),
             kind: ResourceKind::Skills,
-            scope: ResourceScope::Project,
+            scope,
             logical_id,
         };
         plan_skill_link(context, resource, source, false)
@@ -212,7 +211,12 @@ fn install_source(
             "Catalog resource is not a Skill",
         ));
     }
-    let lexical_source = resolved.stable_path;
+    let lexical_source = if context.project_path.is_none() {
+        super::user_inventory::publish_user_skill_artifact(resource_id)
+            .map_err(|error| agent_error(AgentErrorCode::InvalidPlan, context, None, error))?
+    } else {
+        resolved.stable_path
+    };
     let physical_source = std::fs::canonicalize(&lexical_source).map_err(|error| {
         agent_error(
             AgentErrorCode::InvalidPlan,
@@ -393,9 +397,7 @@ fn scan_scope(
 
 fn skill_root(context: &AgentContext, scope: ResourceScope) -> Result<PathBuf, AgentError> {
     match scope {
-        ResourceScope::User => home()
-            .map(|home| home.join(".agents/skills"))
-            .map_err(|error| agent_error(AgentErrorCode::Io, context, None, error.to_string())),
+        ResourceScope::User => resolve_codex_user_home(context).map(|home| home.join("skills")),
         ResourceScope::Project => {
             validate_project_path(context, context.project_path.as_deref().unwrap_or_default())
                 .map(|project| project.join(".agents/skills"))

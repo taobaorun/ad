@@ -53,11 +53,19 @@ import {
   ProjectCollectionActionPreviewSchema,
   ProjectCollectionSourceInstallPreviewSchema,
   ProjectWorkspaceInventorySchema,
+  UserCollectionActionPreviewSchema,
+  UserCollectionSourceInstallPreviewSchema,
+  UserResourceInventorySchema,
   type ProjectCollectionActionPreview,
   type ProjectCollectionActionRequest,
   type ProjectCollectionSourceInstallPreview,
   type ProjectCollectionSourceInstallRequest,
   type ProjectWorkspaceInventory,
+  type UserCollectionActionPreview,
+  type UserCollectionActionRequest,
+  type UserCollectionSourceInstallPreview,
+  type UserCollectionSourceInstallRequest,
+  type UserResourceInventory,
 } from './agentResourceInventoryTypes';
 import {
   WorkspaceOperationReportSchema,
@@ -106,6 +114,25 @@ export interface AgentSettingsEdit {
   resource: ResourceRef;
   mediaType: string;
   content: unknown;
+}
+
+function notifyAgentWorkspaceChanged(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event('ad:agent-workspace-changed'));
+}
+
+function resourceRemovalChanged(report: ResourceRemovalReport): boolean {
+  return (
+    report.phase === 'complete' ||
+    report.installations.some((installation) => installation.state === 'succeeded')
+  );
+}
+
+function sourceRemovalChanged(report: SourceRemovalReport): boolean {
+  return (
+    report.phase === 'complete' ||
+    report.resources.some((resource) => resource.state === 'succeeded')
+  );
 }
 
 export interface ClaudeToCodexOptions {
@@ -162,6 +189,12 @@ export const tauri = {
     ProjectWorkspaceInventorySchema.parse(
       await invoke<unknown>('inspect_project_agent_workspace', { installationId, projectPath }),
     ),
+  inspectUserAgentResources: async (
+    installationId: InstallationId,
+  ): Promise<UserResourceInventory> =>
+    UserResourceInventorySchema.parse(
+      await invoke<unknown>('inspect_user_agent_resources', { installationId }),
+    ),
   previewProjectCollectionAction: async (
     installationId: InstallationId,
     projectPath: string,
@@ -193,6 +226,36 @@ export const tauri = {
   ): Promise<WorkspaceOperationReport> =>
     WorkspaceOperationReportSchema.parse(
       await invoke<unknown>('apply_project_collection_action', {
+        planId,
+        expectedContext,
+        expectedRiskFingerprint,
+        confirmed: true,
+      }),
+    ),
+  previewUserCollectionAction: async (
+    installationId: InstallationId,
+    request: UserCollectionActionRequest,
+  ): Promise<UserCollectionActionPreview> =>
+    UserCollectionActionPreviewSchema.parse(
+      await invoke<unknown>('preview_user_collection_action', { installationId, request }),
+    ),
+  previewUserCollectionSourceInstall: async (
+    installationId: InstallationId,
+    request: UserCollectionSourceInstallRequest,
+  ): Promise<UserCollectionSourceInstallPreview> =>
+    UserCollectionSourceInstallPreviewSchema.parse(
+      await invoke<unknown>('preview_user_collection_source_install', {
+        installationId,
+        request,
+      }),
+    ),
+  applyUserCollectionAction: async (
+    planId: PlanId,
+    expectedContext: AgentContext,
+    expectedRiskFingerprint: MutationPlanView['riskFingerprint'],
+  ): Promise<WorkspaceOperationReport> =>
+    WorkspaceOperationReportSchema.parse(
+      await invoke<unknown>('apply_user_collection_action', {
         planId,
         expectedContext,
         expectedRiskFingerprint,
@@ -407,7 +470,7 @@ export const tauri = {
   ): Promise<ResourceRemovalReport> => {
     const channel = new Channel<unknown>();
     channel.onmessage = (message) => onProgress(ResourceRemovalProgressSchema.parse(message));
-    return ResourceRemovalReportSchema.parse(
+    const report = ResourceRemovalReportSchema.parse(
       await invoke('apply_remove_catalog_resource', {
         planId: plan.planId,
         riskFingerprint: plan.riskFingerprint,
@@ -415,6 +478,8 @@ export const tauri = {
         onProgress: channel,
       }),
     );
+    if (resourceRemovalChanged(report)) notifyAgentWorkspaceChanged();
+    return report;
   },
   listResourceRemovalOperations: async (): Promise<ResourceRemovalOperation[]> =>
     (await invoke<unknown[]>('list_resource_removal_operations')).map((operation) =>
@@ -425,13 +490,25 @@ export const tauri = {
     onProgress: (progress: ResourceRemovalProgress) => void,
   ): Promise<ResourceRemovalReport> => {
     const channel = new Channel<unknown>();
-    channel.onmessage = (message) => onProgress(ResourceRemovalProgressSchema.parse(message));
-    return ResourceRemovalReportSchema.parse(
+    let changedDuringRetry = false;
+    channel.onmessage = (message) => {
+      const progress = ResourceRemovalProgressSchema.parse(message);
+      if (progress.item?.state === 'succeeded') changedDuringRetry = true;
+      onProgress(progress);
+    };
+    const report = ResourceRemovalReportSchema.parse(
       await invoke('retry_remove_catalog_resource', { operationId, onProgress: channel }),
     );
+    if (report.phase === 'complete' || changedDuringRetry) notifyAgentWorkspaceChanged();
+    return report;
   },
-  readdCatalogResource: async (resourceId: string): Promise<ResourceCatalogSnapshot> =>
-    ResourceCatalogSnapshotSchema.parse(await invoke('readd_catalog_resource', { resourceId })),
+  readdCatalogResource: async (resourceId: string): Promise<ResourceCatalogSnapshot> => {
+    const snapshot = ResourceCatalogSnapshotSchema.parse(
+      await invoke('readd_catalog_resource', { resourceId }),
+    );
+    notifyAgentWorkspaceChanged();
+    return snapshot;
+  },
   previewRemoveCatalogSource: async (sourceId: string): Promise<SourceRemovalPlan> =>
     SourceRemovalPlanSchema.parse(await invoke('preview_remove_catalog_source', { sourceId })),
   applyRemoveCatalogSource: async (
@@ -440,7 +517,7 @@ export const tauri = {
   ): Promise<SourceRemovalReport> => {
     const channel = new Channel<unknown>();
     channel.onmessage = (message) => onProgress(SourceRemovalProgressSchema.parse(message));
-    return SourceRemovalReportSchema.parse(
+    const report = SourceRemovalReportSchema.parse(
       await invoke('apply_remove_catalog_source', {
         planId: plan.planId,
         riskFingerprint: plan.riskFingerprint,
@@ -448,6 +525,8 @@ export const tauri = {
         onProgress: channel,
       }),
     );
+    if (sourceRemovalChanged(report)) notifyAgentWorkspaceChanged();
+    return report;
   },
   previewAddSkillCatalogSource: async (
     request: SkillSourceRequest,
@@ -475,8 +554,8 @@ export const tauri = {
     ),
   applySkillCatalogSourcePlan: async (
     plan: SkillCatalogPlanView,
-  ): Promise<SkillCatalogOperationReport> =>
-    SkillCatalogOperationReportSchema.parse(
+  ): Promise<SkillCatalogOperationReport> => {
+    const report = SkillCatalogOperationReportSchema.parse(
       await invoke('apply_skill_catalog_source_plan', {
         claim: {
           planId: plan.id,
@@ -484,7 +563,10 @@ export const tauri = {
           confirmed: true,
         },
       }),
-    ),
+    );
+    if (report.outcome === 'changed') notifyAgentWorkspaceChanged();
+    return report;
+  },
   cancelSkillCatalogSourcePlan: (planId: string) =>
     invoke<boolean>('cancel_skill_catalog_source_plan', { planId }),
 

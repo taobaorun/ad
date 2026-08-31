@@ -575,6 +575,49 @@ fn reference_impact(
             });
         }
     }
+    for record in super::list_all_user_plugin_management_records()
+        .map_err(|error| SkillCatalogError::Corrupt(error.to_string()))?
+        .into_iter()
+        .filter(|record| record.source_id == source_id)
+    {
+        workspaces.insert(record.workspace_key.clone());
+        let resource = ResourceRef {
+            installation_id: record.installation_id.clone(),
+            project_path: None,
+            kind: super::ResourceKind::Plugins,
+            scope: super::ResourceScope::User,
+            logical_id: format!("{}/{}", record.source_id, record.install_id),
+        };
+        impact.affected_resources.push(resource.clone());
+        let candidate_breaks_installation = candidate.is_some_and(|binding| {
+            !binding.resources.iter().any(|item| {
+                item.kind == super::ResourceKind::Plugins
+                    && item.install_id == record.install_id
+                    && candidate_supports_agent(binding, item, &record.installation_id)
+            })
+        });
+        if removing {
+            impact.blocking_issues.push(SkillCatalogBlockingIssue {
+                code: "source_has_installed_plugins".into(),
+                message: "Remove the user-level Plugins before removing this source".into(),
+                resource: Some(resource),
+            });
+        } else if candidate.is_some() {
+            impact.blocking_issues.push(SkillCatalogBlockingIssue {
+                code: if candidate_breaks_installation {
+                    "source_update_breaks_installation".into()
+                } else {
+                    "source_update_requires_user_plugin_removal".into()
+                },
+                message: if candidate_breaks_installation {
+                    "The candidate source revision removes an installed resource".into()
+                } else {
+                    "Remove user-level Plugins before updating this source".into()
+                },
+                resource: Some(resource),
+            });
+        }
+    }
     impact.affected_workspaces = workspaces.into_iter().collect();
     impact.affected_resources.sort_by(|left, right| {
         left.logical_id

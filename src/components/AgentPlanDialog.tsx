@@ -34,6 +34,11 @@ export function AgentPlanDialog({
   const acknowledgements = plan?.requiredAcknowledgements ?? [];
   const changes = plan?.changes ?? [];
   const dangerous = acknowledgements.some((requirement) => requirement.risk === 'dangerous');
+  const userScope = Boolean(
+    plan &&
+      plan.context.projectPath === undefined &&
+      changes.some((change) => change.scope === 'user'),
+  );
   const impacts = Array.from(
     new Map(
       changes
@@ -133,6 +138,18 @@ export function AgentPlanDialog({
                   })
                 : t('agentPlan.approvalBound')}
             </p>
+            <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+              <dt className="text-muted-foreground">{t('agentPlan.context.agent')}</dt>
+              <dd className="font-medium">{plan.agentId}</dd>
+              <dt className="text-muted-foreground">{t('agentPlan.context.installation')}</dt>
+              <dd className="truncate font-mono" title={plan.context.installationId}>
+                {plan.context.installationId}
+              </dd>
+              <dt className="text-muted-foreground">{t('agentPlan.context.scope')}</dt>
+              <dd className="font-medium">
+                {t(`agentPlan.context.${userScope ? 'userScope' : 'projectScope'}`)}
+              </dd>
+            </dl>
           </PlanSection>
 
           <PlanSection icon={<Target />} title={t('agentPlan.targets')}>

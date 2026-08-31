@@ -30,7 +30,8 @@ pub struct ResourceInstallationRecord {
     pub workspace_key: WorkspaceKey,
     pub agent_id: AgentId,
     pub effective_installation_id: InstallationId,
-    pub canonical_project_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_project_path: Option<String>,
     pub adapter_contract: String,
     pub target_claim_id: PhysicalTargetId,
     pub state: ResourceInstallationState,
@@ -131,13 +132,7 @@ pub(super) fn reconcile_installations(
                     workspace_key: record.workspace_key.clone(),
                     agent_id: agent_id_for(&record.resource),
                     effective_installation_id: record.resource.installation_id.clone(),
-                    canonical_project_path: record.resource.project_path.clone().ok_or_else(
-                        || {
-                            ResourceInstallationError::Corrupt(
-                                "managed installation has no project path".into(),
-                            )
-                        },
-                    )?,
+                    canonical_project_path: record.resource.project_path.clone(),
                     adapter_contract: catalog.adapter_contract.clone(),
                     target_claim_id: record.target_id.clone(),
                     state: ResourceInstallationState::Enabled,
@@ -248,11 +243,7 @@ fn project_legacy_skill_installations(
             workspace_key: ownership.workspace_key,
             agent_id: agent_id_for(&ownership.resource),
             effective_installation_id: ownership.resource.installation_id.clone(),
-            canonical_project_path: ownership.resource.project_path.clone().ok_or_else(|| {
-                ResourceInstallationError::Corrupt(
-                    "legacy managed Skill installation has no project path".into(),
-                )
-            })?,
+            canonical_project_path: ownership.resource.project_path.clone(),
             adapter_contract: "project-skill-link-v1".into(),
             target_claim_id: ownership.target_id,
             state: ResourceInstallationState::Enabled,
@@ -291,7 +282,7 @@ fn validate_installation(
         && record.id
             == resource_installation_id_for(
                 &record.effective_installation_id,
-                &record.canonical_project_path,
+                record.canonical_project_path.as_deref().unwrap_or_default(),
                 record.resource_kind,
                 &record.install_id,
             )
@@ -299,7 +290,10 @@ fn validate_installation(
         && !record.resource_id.is_empty()
         && !record.source_id.is_empty()
         && !record.install_id.is_empty()
-        && !record.canonical_project_path.is_empty()
+        && record
+            .canonical_project_path
+            .as_deref()
+            .map_or(true, |project_path| !project_path.is_empty())
         && !record.ownership_record_ids.is_empty()
         && record
             .ownership_record_ids
