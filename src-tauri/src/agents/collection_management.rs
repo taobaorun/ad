@@ -16,6 +16,8 @@ pub(super) struct CollectionManagementInput<'a> {
     pub owned_source_binding: bool,
     pub available_artifact: Option<&'a str>,
     pub has_resettable_declaration: bool,
+    pub has_user_declaration: bool,
+    pub owned_scope: Option<super::ResourceScope>,
 }
 
 pub(super) fn resource_management(input: CollectionManagementInput<'_>) -> ResourceManagementView {
@@ -33,6 +35,48 @@ pub(super) fn resource_management(input: CollectionManagementInput<'_>) -> Resou
                     ResourceActionAvailability::External,
                     "external_resource",
                     "agents.resources.externalResource",
+                ),
+            ],
+        };
+    }
+    if input.has_user_declaration
+        && input.state != EffectiveResourceState::Unconfigured
+        && input.owned_scope != Some(super::ResourceScope::Project)
+    {
+        let toggle = if input.state == EffectiveResourceState::Enabled {
+            ResourceAction::Disable
+        } else {
+            ResourceAction::Enable
+        };
+        let runtime_unavailable = codex_runtime_unavailable(input.workspace);
+        return ResourceManagementView {
+            status: if runtime_unavailable {
+                ResourceManagementStatus::ReadOnly
+            } else if input.ownership == ResourceOwnershipKind::External {
+                ResourceManagementStatus::External
+            } else {
+                ResourceManagementStatus::Managed
+            },
+            actions: vec![
+                inspect,
+                if runtime_unavailable {
+                    unavailable_action(
+                        toggle,
+                        "codex_runtime_not_prepared",
+                        "agents.resources.codexRuntimeNotPrepared",
+                    )
+                } else {
+                    confirmation_action(toggle)
+                },
+                unavailable_action(
+                    ResourceAction::Remove,
+                    "resource_inherited_from_user",
+                    "agents.resources.inheritedFromUser",
+                ),
+                unavailable_action(
+                    ResourceAction::Update,
+                    "resource_inherited_from_user",
+                    "agents.resources.inheritedFromUser",
                 ),
             ],
         };
@@ -344,6 +388,8 @@ mod tests {
             owned_source_binding: false,
             available_artifact: None,
             has_resettable_declaration: true,
+            has_user_declaration: false,
+            owned_scope: None,
         });
 
         assert_eq!(management.status, ResourceManagementStatus::ReadOnly);
@@ -355,6 +401,41 @@ mod tests {
                     .as_ref()
                     .is_some_and(|limitation| limitation.code == "codex_runtime_not_prepared")
         }));
+    }
+
+    #[test]
+    fn inherited_external_resource_never_exposes_a_project_toggle() {
+        let installation =
+            AgentInstallation::with_id("claude:test", "claude-code", "/Users/test/.claude");
+        let workspace =
+            WorkspaceDescriptor::for_installation("/Users/test/project", &installation, None);
+
+        for kind in [ResourceKind::Skills, ResourceKind::Plugins] {
+            let management = resource_management(CollectionManagementInput {
+                workspace: &workspace,
+                kind,
+                state: EffectiveResourceState::Enabled,
+                ownership: ResourceOwnershipKind::External,
+                agent_supported: true,
+                target_occupied: true,
+                has_health_error: false,
+                owned_artifact: None,
+                owned_source_binding: false,
+                available_artifact: None,
+                has_resettable_declaration: false,
+                has_user_declaration: true,
+                owned_scope: None,
+            });
+
+            assert_eq!(management.status, ResourceManagementStatus::External);
+            assert!(!management.actions.iter().any(|action| matches!(
+                action.action,
+                ResourceAction::Enable
+                    | ResourceAction::Disable
+                    | ResourceAction::Update
+                    | ResourceAction::Remove
+            )));
+        }
     }
 
     #[test]
@@ -375,6 +456,8 @@ mod tests {
             owned_source_binding: false,
             available_artifact: None,
             has_resettable_declaration: false,
+            has_user_declaration: false,
+            owned_scope: None,
         });
 
         assert_eq!(management.status, ResourceManagementStatus::Managed);
@@ -407,6 +490,8 @@ mod tests {
             owned_source_binding: false,
             available_artifact: Some("/Users/test/source/review"),
             has_resettable_declaration: false,
+            has_user_declaration: false,
+            owned_scope: Some(super::super::ResourceScope::Project),
         });
 
         assert!(management.actions.iter().any(|action| {
@@ -435,6 +520,8 @@ mod tests {
             owned_source_binding: true,
             available_artifact: None,
             has_resettable_declaration: false,
+            has_user_declaration: false,
+            owned_scope: Some(super::super::ResourceScope::Project),
         });
 
         assert!(management.actions.iter().any(|action| {

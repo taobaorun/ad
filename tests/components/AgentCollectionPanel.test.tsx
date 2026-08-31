@@ -1,9 +1,12 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentCollectionPanel } from '@/components/AgentCollectionPanel';
 import i18n from '@/i18n';
-import { ProjectWorkspaceInventorySchema } from '@/lib/agentResourceInventoryTypes';
+import {
+  ProjectWorkspaceInventorySchema,
+  UserResourceInventorySchema,
+} from '@/lib/agentResourceInventoryTypes';
 import {
   AgentContextSchema,
   CapabilityDescriptorSchema,
@@ -17,11 +20,19 @@ const {
   previewProjectCollectionAction,
   previewProjectCollectionSourceInstall,
   applyProjectCollectionAction,
+  inspectUserAgentResources,
+  previewUserCollectionAction,
+  previewUserCollectionSourceInstall,
+  applyUserCollectionAction,
 } = vi.hoisted(() => ({
   inspectProjectAgentWorkspace: vi.fn(),
   previewProjectCollectionAction: vi.fn(),
   previewProjectCollectionSourceInstall: vi.fn(),
   applyProjectCollectionAction: vi.fn(),
+  inspectUserAgentResources: vi.fn(),
+  previewUserCollectionAction: vi.fn(),
+  previewUserCollectionSourceInstall: vi.fn(),
+  applyUserCollectionAction: vi.fn(),
 }));
 
 vi.mock('@/lib/tauri', () => ({
@@ -30,6 +41,10 @@ vi.mock('@/lib/tauri', () => ({
     previewProjectCollectionAction,
     previewProjectCollectionSourceInstall,
     applyProjectCollectionAction,
+    inspectUserAgentResources,
+    previewUserCollectionAction,
+    previewUserCollectionSourceInstall,
+    applyUserCollectionAction,
   },
 }));
 
@@ -49,13 +64,8 @@ const capabilities = CapabilityDescriptorSchema.array().parse([
     kind: 'plugins',
     scopes: ['user', 'project'],
     operations: ['list'],
-    availability: 'degraded',
-    limitations: [
-      {
-        code: 'marketplace',
-        messageKey: 'agents.capabilities.codexPluginInstallRequiresMarketplace',
-      },
-    ],
+    availability: 'available',
+    limitations: [],
   },
 ]);
 
@@ -175,6 +185,49 @@ function inventory(model = 'current', key = 'workspace:sha256:project') {
         },
       ],
     },
+    diagnostics: [],
+  });
+}
+
+function userInventory() {
+  const project = inventory('user', 'workspace:sha256:user');
+  return UserResourceInventorySchema.parse({
+    schemaVersion: 1,
+    workspace: {
+      schemaVersion: 1,
+      key: 'workspace:sha256:user',
+      revision: 'workspace-revision:sha256:user',
+      agentId: 'codex',
+      installationId: 'codex:base',
+      rootPath: '/Users/test/.codex',
+    },
+    revision: 'inventory-revision:sha256:user',
+    skills: {
+      ...project.skills,
+      resources: project.skills.resources.map((resource) => ({
+        ...resource,
+        logicalId: 'review-user',
+        displayName: 'Review user',
+        effectiveState: 'unconfigured',
+        provenance: {
+          declarations: [],
+          source: {
+            kind: 'catalog_local',
+            displayName: 'Team Skills',
+            location: '/Users/test/source',
+          },
+        },
+        ownership: { kind: 'ad_managed' },
+        management: {
+          status: 'managed',
+          actions: [
+            { action: 'inspect', intent: 'standard', availability: 'available' },
+            { action: 'install', intent: 'standard', availability: 'confirmation_required' },
+          ],
+        },
+      })),
+    },
+    plugins: { ...project.plugins, workspaceKey: 'workspace:sha256:user', resources: [] },
     diagnostics: [],
   });
 }
@@ -427,6 +480,121 @@ describe('AgentCollectionPanel', () => {
     previewProjectCollectionAction.mockReset();
     previewProjectCollectionSourceInstall.mockReset();
     applyProjectCollectionAction.mockReset();
+    inspectUserAgentResources.mockReset().mockResolvedValue(userInventory());
+    previewUserCollectionAction.mockReset();
+    previewUserCollectionSourceInstall.mockReset();
+    applyUserCollectionAction.mockReset();
+  });
+
+  it('routes fixed user-scope install previews without a project scope switcher', async () => {
+    const preview = actionPreview();
+    previewUserCollectionAction.mockResolvedValue({
+      ...preview,
+      workspaceKey: 'workspace:sha256:user',
+      resourceKey: userInventory().skills.resources[0]!.key,
+      plan: {
+        ...preview.plan,
+        context: { installationId: 'codex:base' },
+        changes: preview.plan.changes.map((change) => ({
+          ...change,
+          scope: 'user' as const,
+          resource: { ...change.resource, scope: 'user' as const, projectPath: undefined },
+        })),
+      },
+    });
+    render(
+      <AgentCollectionPanel
+        context={AgentContextSchema.parse({ installationId: 'codex:base' })}
+        scope="user"
+        capabilities={capabilities}
+      />,
+    );
+
+    expect(await screen.findByText('Review user')).toBeInTheDocument();
+    expect(inspectUserAgentResources).toHaveBeenCalledWith('codex:base');
+    expect(screen.queryByRole('button', { name: 'All projects' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Current project' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Install: Review user' }));
+    expect(previewUserCollectionAction).toHaveBeenCalledWith(
+      'codex:base',
+      expect.objectContaining({ action: 'install', workspaceKey: 'workspace:sha256:user' }),
+    );
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('codex')).toBeInTheDocument();
+    expect(within(dialog).getByText('codex:base')).toBeInTheDocument();
+    expect(within(dialog).getByText('User · all projects')).toBeInTheDocument();
+  });
+
+  it('limits an embedded user inventory to the selected catalog source', async () => {
+    const current = userInventory();
+    current.skills.resources.push({
+      ...current.skills.resources[0]!,
+      key: ResourceKeySchema.parse('resource-key:sha256:other-source'),
+      logicalId: 'other-user',
+      displayName: 'Other user',
+      provenance: {
+        declarations: [],
+        source: {
+          kind: 'catalog_local',
+          displayName: 'Other Skills',
+          location: '/Users/test/other-source',
+        },
+      },
+    });
+    inspectUserAgentResources.mockResolvedValue(current);
+
+    render(
+      <AgentCollectionPanel
+        context={AgentContextSchema.parse({ installationId: 'codex:base' })}
+        scope="user"
+        sourceFilter={{
+          kind: 'catalog_local',
+          displayName: 'Team Skills',
+          location: '/Users/test/source',
+        }}
+        capabilities={capabilities}
+      />,
+    );
+
+    expect(await screen.findByText('Review user')).toBeInTheDocument();
+    expect(screen.queryByText('Other user')).not.toBeInTheDocument();
+  });
+
+  it('requires a fresh user-scope preview after a consumed plan fails', async () => {
+    const current = userInventory();
+    const preview = actionPreview();
+    previewUserCollectionAction.mockResolvedValue({
+      ...preview,
+      workspaceKey: current.workspace.key,
+      resourceKey: current.skills.resources[0]!.key,
+      plan: {
+        ...preview.plan,
+        context: { installationId: 'codex:base' },
+        changes: preview.plan.changes.map((change) => ({
+          ...change,
+          scope: 'user' as const,
+          resource: { ...change.resource, scope: 'user' as const, projectPath: undefined },
+        })),
+      },
+    });
+    applyUserCollectionAction.mockRejectedValue(new Error('Native Plugin removal failed'));
+    render(
+      <AgentCollectionPanel
+        context={AgentContextSchema.parse({ installationId: 'codex:base' })}
+        scope="user"
+        capabilities={capabilities}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Install: Review user' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
+
+    expect(await screen.findByText('Native Plugin removal failed')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Install: Review user' }));
+    expect(previewUserCollectionAction).toHaveBeenCalledTimes(2);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
   it('lists complete catalog source addresses and offers conflict recovery actions', async () => {
@@ -563,7 +731,10 @@ describe('AgentCollectionPanel', () => {
     });
     render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Install: Review available' }));
+    const install = await screen.findByRole('button', { name: 'Install: Review available' });
+    expect(screen.queryByRole('button', { name: 'All projects' })).not.toBeInTheDocument();
+    expect(inspectUserAgentResources).not.toHaveBeenCalled();
+    fireEvent.click(install);
     expect(previewProjectCollectionAction).toHaveBeenCalledWith(
       context.installationId,
       context.projectPath,
@@ -603,15 +774,38 @@ describe('AgentCollectionPanel', () => {
     expect(await screen.findByRole('heading', { name: 'Team Skills' })).toBeInTheDocument();
     expect(screen.getByText('https://github.com/example/team-skills.git')).not.toBeVisible();
     expect(screen.getByText('2 Skills')).toBeInTheDocument();
+    const sourceDisclosure = screen.getByRole('button', { name: /Team Skills/ });
+    expect(sourceDisclosure).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Review available')).not.toBeInTheDocument();
+    expect(screen.queryByText('Format available')).not.toBeInTheDocument();
+
+    fireEvent.click(sourceDisclosure);
+    expect(sourceDisclosure).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('Review available')).toBeInTheDocument();
     expect(screen.getByText('Format available')).toBeInTheDocument();
+
+    fireEvent.click(sourceDisclosure);
+    expect(sourceDisclosure).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Review available')).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'review' } });
+    expect(sourceDisclosure).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Review available')).toBeInTheDocument();
     expect(screen.queryByText('Format available')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Install all (2)' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Install all from this source (2)' }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(sourceDisclosure);
+    expect(sourceDisclosure).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Review available')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'format' } });
+    expect(sourceDisclosure).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Format available')).toBeInTheDocument();
+
     fireEvent.click(screen.getByText('Source details'));
     expect(screen.getByText('https://github.com/example/team-skills.git')).toBeVisible();
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Install all (2)' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Install all from this source (2)' }));
     });
 
     expect(previewProjectCollectionSourceInstall).toHaveBeenCalledWith(
@@ -633,6 +827,26 @@ describe('AgentCollectionPanel', () => {
       context,
       'risk:sha256:install-team-skills',
     );
+  });
+
+  it('preserves a manually expanded Skill source while its inventory refreshes', async () => {
+    const available = sourceGroupedInventory();
+    inspectProjectAgentWorkspace.mockResolvedValue(available);
+    render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
+
+    const sourceDisclosure = await screen.findByRole('button', { name: /Team Skills/ });
+    fireEvent.click(sourceDisclosure);
+    expect(sourceDisclosure).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Review available')).toBeInTheDocument();
+
+    act(() => window.dispatchEvent(new Event('ad:agent-workspace-changed')));
+    await waitFor(() => expect(inspectProjectAgentWorkspace).toHaveBeenCalledTimes(2));
+
+    expect(screen.getByRole('button', { name: /Team Skills/ })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(screen.getByText('Review available')).toBeInTheDocument();
   });
 
   it('merges a same-named installed Skill into one card and hides its path by default', async () => {
@@ -707,7 +921,7 @@ describe('AgentCollectionPanel', () => {
     render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Install: Review available' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
-    expect(await screen.findByText('Installing project resources…')).toBeInTheDocument();
+    expect(await screen.findByText('Installing resources…')).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     await act(async () =>
       apply.resolve({
@@ -716,7 +930,7 @@ describe('AgentCollectionPanel', () => {
         issues: [],
       }),
     );
-    expect(await screen.findByText('Refreshing project resources…')).toBeInTheDocument();
+    expect(await screen.findByText('Refreshing resources…')).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     await act(async () => refresh.resolve(inventory('installed')));
 
@@ -745,7 +959,7 @@ describe('AgentCollectionPanel', () => {
     const applyButton = await screen.findByRole('button', { name: 'Apply' });
     fireEvent.click(applyButton);
     fireEvent.click(applyButton);
-    expect(await screen.findByText('Installing project resources…')).toBeInTheDocument();
+    expect(await screen.findByText('Installing resources…')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
     expect(applyProjectCollectionAction).toHaveBeenCalledOnce();
 
@@ -786,7 +1000,7 @@ describe('AgentCollectionPanel', () => {
     inspectProjectAgentWorkspace.mockResolvedValueOnce(empty);
     const first = render(<AgentCollectionPanel context={context} capabilities={capabilities} />);
     expect(
-      await screen.findByText('No Skills or Plugins were observed in this project workspace.'),
+      await screen.findByText('No Skills or Plugins were observed in this scope.'),
     ).toBeInTheDocument();
     first.unmount();
 

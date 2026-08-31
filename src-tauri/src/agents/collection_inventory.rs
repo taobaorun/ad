@@ -22,6 +22,8 @@ pub(super) fn inspect_plugins(
     runtime_manifest: Option<&ProjectCodexRuntimeManifest>,
     version_diagnostic: &ItemDiagnostic,
 ) -> Result<CollectionResourceInventory, AgentError> {
+    let user_workspace = super::resolve_user_agent_workspace(&workspace.base_installation_id)?;
+    let user_plugin_records = super::list_user_plugin_management_records(&user_workspace)?;
     let mut observations = Vec::new();
     for layer in settings_layers {
         let Some(plugins) = layer.content.get("enabledPlugins").or_else(|| {
@@ -38,6 +40,7 @@ pub(super) fn inspect_plugins(
                 layer,
                 logical_id,
                 plugin_enabled(value),
+                &user_plugin_records,
             ));
         }
     }
@@ -47,7 +50,12 @@ pub(super) fn inspect_plugins(
             if managed_codex_plugins.contains(logical_id) {
                 continue;
             }
-            observations.push(runtime_plugin_observation(workspace, logical_id, *enabled));
+            observations.push(runtime_plugin_observation(
+                workspace,
+                logical_id,
+                *enabled,
+                &user_plugin_records,
+            ));
         }
     }
     let (catalog, catalog_diagnostics) = catalog_plugin_observations(workspace)?;
@@ -107,7 +115,8 @@ fn catalog_plugin_observations(
             .find(|installation| {
                 installation.resource_id == candidate.id
                     && installation.effective_installation_id == workspace.effective_installation_id
-                    && installation.canonical_project_path == workspace.canonical_project_path
+                    && installation.canonical_project_path.as_deref()
+                        == Some(workspace.canonical_project_path.as_str())
             })
             .map(super::installation_enabled)
             .transpose()
@@ -197,6 +206,7 @@ fn catalog_plugin_observations(
             enabled: enabled && configured,
             ownership: ownership_kind,
             agent_supported,
+            management_record_id: ownership_record.as_ref().map(|record| record.id.clone()),
             ownership_record,
             health,
             configured,
@@ -270,6 +280,7 @@ pub(super) struct CollectionObservation {
     pub ownership: ResourceOwnershipKind,
     pub agent_supported: bool,
     pub ownership_record: Option<ResourceOwnershipRecord>,
+    pub management_record_id: Option<super::OwnershipRecordId>,
     pub health: ResourceHealthView,
     pub configured: bool,
     pub artifact_id: Option<String>,
@@ -329,6 +340,7 @@ fn plugin_observation(
     layer: &SettingsLayerSemantic,
     logical_id: &str,
     enabled: bool,
+    user_plugin_records: &[super::UserPluginManagementRecord],
 ) -> CollectionObservation {
     let scope = if layer.layer == ResourceLayer::User {
         ResourceScope::User
@@ -347,18 +359,32 @@ fn plugin_observation(
         scope,
         logical_id: logical_id.to_owned(),
     };
+    let managed = user_plugin_records
+        .iter()
+        .find(|record| record.native_id == logical_id);
     CollectionObservation {
         resource,
         layer: layer.layer,
-        source_id: format!("agent-plugin:{logical_id}"),
+        source_id: managed
+            .map(|record| record.source_id.clone())
+            .unwrap_or_else(|| format!("agent-plugin:{logical_id}")),
         target_id: declaration_target_id(&workspace.key, &layer.declaration_key),
-        logical_id: logical_id.to_owned(),
-        display_name: logical_id.to_owned(),
+        logical_id: managed
+            .map(|record| record.install_id.clone())
+            .unwrap_or_else(|| logical_id.to_owned()),
+        display_name: managed
+            .map(|record| record.install_id.clone())
+            .unwrap_or_else(|| logical_id.to_owned()),
         description: None,
         enabled,
-        ownership: ResourceOwnershipKind::External,
+        ownership: if managed.is_some() {
+            ResourceOwnershipKind::AdManaged
+        } else {
+            ResourceOwnershipKind::External
+        },
         agent_supported: true,
         ownership_record: None,
+        management_record_id: managed.map(|record| record.id.clone()),
         health: ResourceHealthView {
             status: ResourceHealthStatus::Healthy,
             diagnostic: None,
@@ -374,6 +400,7 @@ fn runtime_plugin_observation(
     workspace: &WorkspaceDescriptor,
     logical_id: &str,
     enabled: bool,
+    user_plugin_records: &[super::UserPluginManagementRecord],
 ) -> CollectionObservation {
     let resource = ResourceRef {
         installation_id: workspace.effective_installation_id.clone(),
@@ -386,18 +413,32 @@ fn runtime_plugin_observation(
         "runtime-plugin-declaration",
         &[workspace.key.as_str(), logical_id],
     ));
+    let managed = user_plugin_records
+        .iter()
+        .find(|record| record.native_id == logical_id);
     CollectionObservation {
         resource,
         layer: ResourceLayer::Runtime,
-        source_id: format!("agent-plugin:{logical_id}"),
+        source_id: managed
+            .map(|record| record.source_id.clone())
+            .unwrap_or_else(|| format!("agent-plugin:{logical_id}")),
         target_id: declaration_target_id(&workspace.key, &declaration),
-        logical_id: logical_id.to_owned(),
-        display_name: logical_id.to_owned(),
+        logical_id: managed
+            .map(|record| record.install_id.clone())
+            .unwrap_or_else(|| logical_id.to_owned()),
+        display_name: managed
+            .map(|record| record.install_id.clone())
+            .unwrap_or_else(|| logical_id.to_owned()),
         description: None,
         enabled,
-        ownership: ResourceOwnershipKind::External,
+        ownership: if managed.is_some() {
+            ResourceOwnershipKind::AdManaged
+        } else {
+            ResourceOwnershipKind::External
+        },
         agent_supported: true,
         ownership_record: None,
+        management_record_id: managed.map(|record| record.id.clone()),
         health: ResourceHealthView {
             status: ResourceHealthStatus::Healthy,
             diagnostic: None,
@@ -507,6 +548,9 @@ pub(super) fn collection_inventory(
                 .all(|declaration| declaration.agent_supported);
             let ownership_record =
                 configured_winner.and_then(|declaration| declaration.ownership_record.as_ref());
+            let management_record_id = configured_winner
+                .and_then(|declaration| declaration.management_record_id.as_ref())
+                .or_else(|| ownership_record.map(|record| &record.id));
             let ownership = configured_winner
                 .map(|declaration| declaration.ownership)
                 .unwrap_or(winner.ownership);
@@ -521,6 +565,9 @@ pub(super) fn collection_inventory(
             };
             let has_resettable_declaration =
                 configured.iter().any(|declaration| declaration.resettable);
+            let has_user_declaration = configured
+                .iter()
+                .any(|declaration| declaration.resource.scope == ResourceScope::User);
             let management = resource_management(CollectionManagementInput {
                 workspace,
                 kind,
@@ -535,6 +582,9 @@ pub(super) fn collection_inventory(
                     .is_some_and(|record| record.source_binding.is_some()),
                 available_artifact,
                 has_resettable_declaration,
+                has_user_declaration,
+                owned_scope: management_record_id
+                    .and_then(|_| configured_winner.map(|winner| winner.resource.scope)),
             });
             Some(CollectionResourceView {
                 key: resource_key,
@@ -550,7 +600,7 @@ pub(super) fn collection_inventory(
                 },
                 ownership: ResourceOwnershipView {
                     kind: ownership,
-                    record_id: ownership_record.map(|record| record.id.clone()),
+                    record_id: management_record_id.cloned(),
                 },
                 health: configured_winner
                     .map(|winner| winner.health.clone())

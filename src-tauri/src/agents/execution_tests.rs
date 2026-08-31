@@ -1479,7 +1479,7 @@ fn unowned_project_skill_link_cannot_be_removed() {
         .unwrap()
         .skills()
         .unwrap()
-        .plan_set_enabled(&context, &resource, false)
+        .plan_remove(&context, &resource)
         .unwrap();
     let plan_id = plan.id.clone();
     let plans = PlanStore::default();

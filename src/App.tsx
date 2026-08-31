@@ -93,6 +93,7 @@ export function App() {
         onOpenPalette={() => openPalette()}
         dark={darkMode}
         onToggleDark={() => setDarkMode(!darkMode)}
+        resourceMode={workspaceMode === 'resources'}
       />
 
       <div className="flex min-w-0 flex-1 overflow-hidden">
@@ -180,14 +181,16 @@ function GatedImportDialog() {
   );
 }
 
-function Titlebar({
+export function Titlebar({
   onOpenPalette,
   dark,
   onToggleDark,
+  resourceMode = false,
 }: {
   onOpenPalette: () => void;
   dark: boolean;
   onToggleDark: () => void;
+  resourceMode?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -237,9 +240,13 @@ function Titlebar({
           </svg>
         </button>
         <AdvancedSettingsButton />
-        <AgentProfilesButton />
-        <AgentConversionButton />
-        <AgentSelector />
+        {!resourceMode && (
+          <>
+            <AgentProfilesButton />
+            <AgentConversionButton />
+            <AgentSelector />
+          </>
+        )}
         <button
           type="button"
           onClick={onToggleDark}

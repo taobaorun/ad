@@ -4,8 +4,58 @@ use super::{
     builtin_registry, opaque_contract_id, project_runtime_descriptor_for_base_project,
     project_runtime_descriptor_for_context, runtime_for_installation, AgentError, AgentErrorCode,
     AgentInstallation, ContentDigest, InstallationId, ProjectCodexRuntimeDescriptor,
-    ProjectRuntimeIdentity, WorkspaceDescriptor, WorkspaceRevision,
+    ProjectRuntimeIdentity, UserWorkspaceDescriptor, WorkspaceDescriptor, WorkspaceRevision,
 };
+
+pub fn resolve_user_agent_workspace(
+    installation_id: &InstallationId,
+) -> Result<UserWorkspaceDescriptor, AgentError> {
+    let installation = builtin_registry()
+        .discover()
+        .into_iter()
+        .find(|candidate| {
+            candidate.id == *installation_id
+                && candidate.project_path.is_none()
+                && candidate.base_installation_id.is_none()
+        })
+        .ok_or_else(|| workspace_error(installation_id, "Unknown base Agent installation"))?;
+    let root = std::fs::canonicalize(&installation.root_path).map_err(|error| {
+        workspace_error(
+            installation_id,
+            format!(
+                "Invalid Agent user root {}: {error}",
+                installation.root_path
+            ),
+        )
+    })?;
+    if !root.is_dir() {
+        return Err(workspace_error(
+            installation_id,
+            format!("Agent user root is not a directory: {}", root.display()),
+        ));
+    }
+    let root_path = root.to_string_lossy().into_owned();
+    let key = super::WorkspaceKey::from(opaque_contract_id(
+        "user-workspace",
+        &[
+            installation.agent_id.as_str(),
+            installation.id.as_str(),
+            &root_path,
+        ],
+    ));
+    let revision = WorkspaceRevision::from(opaque_contract_id(
+        "user-workspace-revision",
+        &[key.as_str(), installation.id.as_str(), &root_path],
+    ));
+    Ok(UserWorkspaceDescriptor {
+        schema_version: 1,
+        key,
+        revision,
+        agent_id: installation.agent_id,
+        installation_id: installation.id,
+        root_path,
+    })
+}
 
 pub fn resolve_project_agent_workspace(
     installation_id: &InstallationId,

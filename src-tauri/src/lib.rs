@@ -51,6 +51,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(agents::PlanStore::default())
+        .manage(agents::UserPluginPlanStore::default())
         .manage(agents::SkillCatalogPlanStore::default())
         .manage(agents::LegacySkillMigrationPlanStore::default())
         .manage(agents::ResourceRemovalPlanStore::default())
@@ -231,6 +232,7 @@ pub fn run() {
             commands::agents::resolve_agent_context,
             commands::agents::resolve_project_agent_workspace,
             commands::agents::inspect_project_agent_workspace,
+            commands::agents::inspect_user_agent_resources,
             commands::agents::inspect_agent_settings,
             commands::agents::list_agent_settings_documents,
             commands::agents::list_agent_skills,
@@ -245,6 +247,9 @@ pub fn run() {
             commands::agents::preview_project_collection_action,
             commands::agents::preview_project_collection_source_install,
             commands::agents::apply_project_collection_action,
+            commands::agents::preview_user_collection_action,
+            commands::agents::preview_user_collection_source_install,
+            commands::agents::apply_user_collection_action,
             commands::agents::apply_agent_plan,
             commands::agents::apply_conversion_plan,
             commands::agents::preview_agent_rollback,

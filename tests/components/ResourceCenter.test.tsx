@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResourceCenter } from '@/components/ResourceCenter';
 import i18n from '@/i18n';
+import { AgentContextSchema, AgentInstallationSchema, AgentMetadataSchema } from '@/lib/agentTypes';
+import { useAgents } from '@/store/agents';
 
 const mocks = vi.hoisted(() => ({
   listResourceCatalog: vi.fn(),
@@ -15,9 +17,13 @@ const mocks = vi.hoisted(() => ({
   previewUpdateSkillCatalogSource: vi.fn(),
   previewRemoveCatalogSource: vi.fn(),
   applyRemoveCatalogSource: vi.fn(),
+  agentCollectionPanel: vi.fn(),
 }));
 
 vi.mock('@/lib/tauri', () => ({ tauri: mocks }));
+vi.mock('@/components/AgentCollectionPanel', () => ({
+  AgentCollectionPanel: (props: unknown) => mocks.agentCollectionPanel(props),
+}));
 
 const sourceId = 'skill-source:11111111-1111-4111-8111-111111111111';
 const skillId = 'catalog-resource:sha256:skill';
@@ -91,13 +97,97 @@ const removalPlan = {
   expiresAt: '2026-08-13T12:00:00Z',
 };
 
+const sourceRemovalPlan = {
+  planId: 'source-remove-plan',
+  sourceId,
+  sourceName: 'Team tools',
+  expectedCatalogRevision: 2,
+  affectedProjectCount: 2,
+  affectedAgentCount: 2,
+  resources: [
+    {
+      resourceId: skillId,
+      resourceName: 'Review',
+      kind: 'skills',
+      affectedProjectCount: 2,
+      affectedAgentCount: 2,
+      state: 'pending',
+    },
+    {
+      resourceId: pluginId,
+      resourceName: 'Toolbox',
+      kind: 'plugins',
+      affectedProjectCount: 0,
+      affectedAgentCount: 0,
+      state: 'pending',
+    },
+  ],
+  riskFingerprint: 'risk:source-remove',
+  expiresAt: '2026-08-31T09:00:00Z',
+};
+
+function sourcePlan(action: 'add' | 'update') {
+  return {
+    schemaVersion: 1,
+    id: `skill-catalog-plan:${action}`,
+    action,
+    expectedCatalogRevision: 'sha256:catalog',
+    sourceId,
+    displayName: action === 'add' ? 'New tools' : 'Team tools',
+    applicability: 'applicable',
+    blockingIssues: [],
+    affectedResources: [],
+    affectedWorkspaces: [],
+    confirmationRequired: true,
+    riskFingerprint: `risk:${action}`,
+    expiresAt: '2026-08-31T09:00:00Z',
+  };
+}
+
 describe('ResourceCenter', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
     Object.values(mocks).forEach((mock) => mock.mockReset());
+    mocks.agentCollectionPanel.mockImplementation(() => <div>User resource inventory</div>);
+    const agents = AgentMetadataSchema.array().parse([
+      { id: 'codex', displayName: 'Codex', capabilities: [] },
+      { id: 'claude-code', displayName: 'Claude Code', capabilities: [] },
+    ]);
+    const installations = AgentInstallationSchema.array().parse([
+      { id: 'codex:base', agentId: 'codex', rootPath: '/Users/test/.codex' },
+      {
+        id: 'claude-code:base',
+        agentId: 'claude-code',
+        rootPath: '/Users/test/.claude',
+      },
+    ]);
+    useAgents.setState({
+      agents,
+      installations,
+      activeContext: AgentContextSchema.parse({ installationId: 'codex:base' }),
+      activeAgentId: 'codex',
+      capabilitiesByAgent: { codex: [], 'claude-code': [] },
+      activeCapabilities: [],
+      loading: false,
+    });
     mocks.listResourceCatalog.mockResolvedValue(catalog);
     mocks.listResourceRemovalOperations.mockResolvedValue([]);
     mocks.previewRemoveCatalogResource.mockResolvedValue(removalPlan);
+    mocks.previewAddSkillCatalogSource.mockResolvedValue(sourcePlan('add'));
+    mocks.previewUpdateSkillCatalogSource.mockResolvedValue(sourcePlan('update'));
+    mocks.previewRemoveCatalogSource.mockResolvedValue(sourceRemovalPlan);
+    mocks.applySkillCatalogSourcePlan.mockResolvedValue({
+      outcome: 'changed',
+      issues: [],
+    });
+    mocks.applyRemoveCatalogSource.mockResolvedValue({
+      operationId: 'operation:source-remove',
+      sourceId,
+      phase: 'complete',
+      completed: 2,
+      total: 2,
+      resources: sourceRemovalPlan.resources,
+    });
     mocks.applyRemoveCatalogResource.mockImplementation(async (_plan, onProgress) => {
       onProgress({
         operationId: 'operation:remove',
@@ -118,7 +208,47 @@ describe('ResourceCenter', () => {
     });
   });
 
-  it('shows only sources while keeping source-kind filtering', async () => {
+  it('opens source-scoped user installation from the existing source card', async () => {
+    render(<ResourceCenter />);
+
+    await screen.findByText('Team tools');
+    expect(
+      screen.queryByRole('heading', { name: 'User-level installation' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('User resource inventory')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Install' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Install from “Team tools”' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Choose a target Agent/)).toBeInTheDocument();
+    expect(screen.getByText('User resource inventory')).toBeInTheDocument();
+    expect(mocks.agentCollectionPanel.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        scope: 'user',
+        context: { installationId: 'codex:base' },
+        sourceFilter: expect.objectContaining({
+          kind: 'catalog_git',
+          displayName: 'Team tools',
+          location: 'https://example.com/team/tools.git',
+        }),
+      }),
+    );
+
+    const agentSelect = screen.getByRole('combobox', { name: 'Target Agent' });
+    expect(agentSelect).toHaveValue('codex:base');
+    fireEvent.change(agentSelect, { target: { value: 'claude-code:base' } });
+    await waitFor(() =>
+      expect(mocks.agentCollectionPanel.mock.calls.at(-1)?.[0]).toEqual(
+        expect.objectContaining({
+          scope: 'user',
+          context: { installationId: 'claude-code:base' },
+        }),
+      ),
+    );
+  });
+
+  it('shows sources while keeping source-kind filtering', async () => {
     render(<ResourceCenter />);
     expect(await screen.findByRole('heading', { name: 'Harness', level: 1 })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Skills & Plugins', level: 2 })).toBeInTheDocument();
@@ -158,36 +288,6 @@ describe('ResourceCenter', () => {
   });
 
   it('shows source lifecycle actions and previews aggregate removal impact', async () => {
-    const sourceRemoval = {
-      planId: 'source-remove-plan',
-      sourceId,
-      sourceName: 'Team tools',
-      expectedCatalogRevision: 2,
-      affectedProjectCount: 2,
-      affectedAgentCount: 2,
-      resources: [
-        {
-          resourceId: skillId,
-          resourceName: 'Review',
-          kind: 'skills',
-          affectedProjectCount: 2,
-          affectedAgentCount: 2,
-          state: 'pending',
-        },
-        {
-          resourceId: pluginId,
-          resourceName: 'Toolbox',
-          kind: 'plugins',
-          affectedProjectCount: 0,
-          affectedAgentCount: 0,
-          state: 'pending',
-        },
-      ],
-      riskFingerprint: 'risk:source-remove',
-      expiresAt: '2026-08-13T12:00:00Z',
-    };
-    mocks.previewRemoveCatalogSource.mockResolvedValue(sourceRemoval);
-
     render(<ResourceCenter />);
     await screen.findByText('Team tools');
     fireEvent.click(screen.getByRole('button', { name: 'Remove source Team tools' }));

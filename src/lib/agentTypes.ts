@@ -228,6 +228,7 @@ export const PlanAcknowledgementCodeSchema = z.enum([
   'conversion_apply',
   'dangerous_permission_expansion',
   'project_collection_apply',
+  'user_collection_apply',
   'rollback_apply',
 ]);
 export const PlanRiskLevelSchema = z.enum(['confirmation', 'dangerous']);

@@ -60,6 +60,7 @@ export function ProjectWorkspacePanels({
             <AgentCollectionPanel
               key={reloadKey}
               context={context}
+              scope="project"
               capabilities={capabilities}
               onOpenHistory={onOpenHistory}
             />

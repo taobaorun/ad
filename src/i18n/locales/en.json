@@ -69,9 +69,16 @@
       "mcpStatus": "Coming soon"
     },
     "sectionTitle": "Skills & Plugins",
-    "sectionSubtitle": "Manage reusable sources for Skills and Plugins installed into projects.",
+    "sectionSubtitle": "Manage Skill and Plugin sources and install them directly into the selected Agent's user scope.",
     "addSource": "Add source",
     "sources": "Sources",
+    "install": "Install",
+    "installDialog": {
+      "title": "Install from “{{name}}”",
+      "description": "Choose a target Agent and manage this source's user-level Skills and Plugins for every project.",
+      "agentLabel": "Target Agent",
+      "unavailable": "Select a base Agent installation first."
+    },
     "updateSource": "Update source {{name}}",
     "removeSource": "Remove source {{name}}",
     "duplicateSource": "“{{name}}” is already managed. Update or remove the existing source here.",
@@ -118,6 +125,7 @@
       "title": "Remove “{{name}}”",
       "description": "AD uninstalls this resource from every project before removing it from the library.",
       "projects": "Affected projects",
+      "userScope": "User scope",
       "agents": "Agent installs",
       "confirm": "Remove resource",
       "removing": "Removing…",
@@ -731,7 +739,7 @@
     "skills": "Skills",
     "plugins": "Plugins",
     "empty": "No matching Skills or Plugins were found.",
-    "workspaceEmpty": "No Skills or Plugins were observed in this project workspace.",
+    "workspaceEmpty": "No Skills or Plugins were observed in this scope.",
     "noMatches": "No Skills or Plugins match this filter.",
     "categoryEmpty": "No {{category}} were observed.",
     "coverageCount": "{{visible}} visible / {{observed}} declarations",
@@ -745,7 +753,7 @@
       "skillsCount_other": "{{count}} Skills",
       "fromSource": "Source: {{source}}",
       "details": "Source details",
-      "installAll": "Install all ({{count}})"
+      "installAll": "Install all from this source ({{count}})"
     },
     "declarations_one": "{{count}} declaration",
     "declarations_other": "{{count}} declarations",
@@ -831,11 +839,11 @@
   },
   "agentPlan": {
     "title": "Review changes",
-    "description": "AD will verify the resources again, create backups, and then apply this plan.",
+    "description": "AD will verify the selected Agent and scope again, then apply only the changes shown here.",
     "changes": "Planned resource changes",
     "risk": {
       "confirmation": "Confirmation required",
-      "confirmationDescription": "This operation is bound to the current project and will be revalidated before writing.",
+      "confirmationDescription": "This operation is bound to the selected Agent and installation scope and will be revalidated before writing.",
       "dangerous": "Dangerous permission change",
       "dangerousDescription": "This plan expands execution or permission boundaries. Review every impact before applying."
     },
@@ -844,7 +852,14 @@
     "approval": "Approval and permissions",
     "approvalRequired_one": "{{count}} explicit approval is required and bound to this plan.",
     "approvalRequired_other": "{{count}} explicit approvals are required and bound to this plan.",
-    "approvalBound": "Apply is bound to this project, plan revision, and risk fingerprint.",
+    "approvalBound": "Apply is bound to this Agent context, plan revision, and risk fingerprint.",
+    "context": {
+      "agent": "Agent",
+      "installation": "Installation",
+      "scope": "Scope",
+      "userScope": "User · all projects",
+      "projectScope": "Current project"
+    },
     "targets": "Targets",
     "technicalDetails": "Technical details",
     "operation": {
@@ -857,11 +872,11 @@
     "applying": "Applying…",
     "retry": "Retry",
     "progress": {
-      "installing": "Installing project resources…",
-      "removing": "Removing project resources…",
-      "updating": "Updating project resources…",
-      "applying": "Applying project changes…",
-      "refreshing": "Refreshing project resources…",
+      "installing": "Installing resources…",
+      "removing": "Removing resources…",
+      "updating": "Updating resources…",
+      "applying": "Applying resource changes…",
+      "refreshing": "Refreshing resources…",
       "hint": "Keep this dialog open until the operation finishes."
     }
   },

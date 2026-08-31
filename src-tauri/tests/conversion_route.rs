@@ -135,7 +135,7 @@ fn route_reports_artifact_dispositions_and_builds_a_target_only_plan() {
         .unwrap()
         .location
         .path
-        .ends_with("/.agents/skills/review"));
+        .ends_with("/.codex/skills/review"));
 
     let unresolved_permission = result
         .artifacts

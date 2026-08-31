@@ -140,6 +140,7 @@ pub enum PlanAcknowledgementCode {
     ConversionApply,
     DangerousPermissionExpansion,
     ProjectCollectionApply,
+    UserCollectionApply,
     RollbackApply,
 }
 
@@ -319,6 +320,41 @@ pub struct ProjectCollectionSourceInstallRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectCollectionSourceInstallPreview {
+    pub workspace_key: WorkspaceKey,
+    pub source: ResourceSourceView,
+    pub resource_keys: Vec<ResourceKey>,
+    pub plan: MutationPlanView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserCollectionActionRequest {
+    pub workspace_key: WorkspaceKey,
+    pub inventory_revision: InventoryRevision,
+    pub resource_key: ResourceKey,
+    pub action: ResourceAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserCollectionActionPreview {
+    pub workspace_key: WorkspaceKey,
+    pub resource_key: ResourceKey,
+    pub action: ResourceAction,
+    pub plan: MutationPlanView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserCollectionSourceInstallRequest {
+    pub workspace_key: WorkspaceKey,
+    pub inventory_revision: InventoryRevision,
+    pub source_resource_key: ResourceKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserCollectionSourceInstallPreview {
     pub workspace_key: WorkspaceKey,
     pub source: ResourceSourceView,
     pub resource_keys: Vec<ResourceKey>,

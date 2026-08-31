@@ -69,9 +69,16 @@
       "mcpStatus": "即将推出"
     },
     "sectionTitle": "Skills / Plugins",
-    "sectionSubtitle": "管理用于项目 Skill 与 Plugin 安装的可复用来源。",
+    "sectionSubtitle": "管理 Skill 与 Plugin 来源，并直接安装到当前 Agent 的用户级范围。",
     "addSource": "添加来源",
     "sources": "来源",
+    "install": "安装",
+    "installDialog": {
+      "title": "安装来源「{{name}}」",
+      "description": "选择目标 Agent，并管理此来源的用户级 Skill 与 Plugin，供所有项目使用。",
+      "agentLabel": "目标 Agent",
+      "unavailable": "请先选择一个基础 Agent installation。"
+    },
     "updateSource": "更新来源 {{name}}",
     "removeSource": "删除来源 {{name}}",
     "duplicateSource": "「{{name}}」已经处于管理中，可在这里更新或删除现有来源。",
@@ -118,6 +125,7 @@
       "title": "移除「{{name}}」",
       "description": "AD 会先从所有项目逐项卸载，全部成功后才从资源库移除。",
       "projects": "受影响项目",
+      "userScope": "用户级",
       "agents": "Agent 安装",
       "confirm": "确认移除",
       "removing": "正在移除…",
@@ -731,7 +739,7 @@
     "skills": "Skills",
     "plugins": "Plugins",
     "empty": "没有找到匹配的 Skill 或 Plugin。",
-    "workspaceEmpty": "当前项目工作区中未观察到 Skill 或 Plugin。",
+    "workspaceEmpty": "当前范围内未观察到 Skill 或 Plugin。",
     "noMatches": "没有符合当前筛选条件的 Skill 或 Plugin。",
     "categoryEmpty": "未观察到 {{category}}。",
     "coverageCount": "显示 {{visible}} 项 / 观察到 {{observed}} 个声明",
@@ -745,7 +753,7 @@
       "skillsCount_other": "{{count}} 个 Skill",
       "fromSource": "来源：{{source}}",
       "details": "来源信息",
-      "installAll": "全部安装（{{count}}）"
+      "installAll": "安装该来源全部（{{count}}）"
     },
     "declarations_one": "{{count}} 个声明",
     "declarations_other": "{{count}} 个声明",
@@ -831,11 +839,11 @@
   },
   "agentPlan": {
     "title": "检查变更",
-    "description": "AD 会再次校验资源、创建备份，然后应用此计划。",
+    "description": "AD 会再次校验所选 Agent 与安装范围，然后仅应用此处展示的变更。",
     "changes": "计划中的资源变更",
     "risk": {
       "confirmation": "需要确认",
-      "confirmationDescription": "此操作已绑定当前项目，写入前会再次校验。",
+      "confirmationDescription": "此操作已绑定所选 Agent 与安装范围，写入前会再次校验。",
       "dangerous": "危险权限变更",
       "dangerousDescription": "此计划会扩大执行或权限边界，应用前请检查每项影响。"
     },
@@ -844,7 +852,14 @@
     "approval": "批准与权限",
     "approvalRequired_one": "需要 {{count}} 项显式批准，且批准仅绑定此计划。",
     "approvalRequired_other": "需要 {{count}} 项显式批准，且批准仅绑定此计划。",
-    "approvalBound": "应用已绑定当前项目、计划版本和风险指纹。",
+    "approvalBound": "应用已绑定当前 Agent 上下文、计划版本和风险指纹。",
+    "context": {
+      "agent": "Agent",
+      "installation": "安装实例",
+      "scope": "范围",
+      "userScope": "用户级 · 所有项目",
+      "projectScope": "当前项目"
+    },
     "targets": "目标",
     "technicalDetails": "技术细节",
     "operation": {
@@ -857,11 +872,11 @@
     "applying": "应用中…",
     "retry": "重试",
     "progress": {
-      "installing": "正在安装项目资源…",
-      "removing": "正在移除项目资源…",
-      "updating": "正在更新项目资源…",
-      "applying": "正在应用项目变更…",
-      "refreshing": "正在刷新项目资源…",
+      "installing": "正在安装资源…",
+      "removing": "正在移除资源…",
+      "updating": "正在更新资源…",
+      "applying": "正在应用资源变更…",
+      "refreshing": "正在刷新资源…",
       "hint": "请保持此弹窗打开，操作完成后会自动关闭。"
     }
   },

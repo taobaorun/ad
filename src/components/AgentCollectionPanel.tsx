@@ -8,6 +8,9 @@ import type {
   ProjectCollectionActionPreview,
   ProjectCollectionSourceInstallPreview,
   ProjectWorkspaceInventory,
+  UserCollectionActionPreview,
+  UserCollectionSourceInstallPreview,
+  UserResourceInventory,
   ResourceAction,
   ResourceActionView,
   ResourceSourceView,
@@ -20,22 +23,39 @@ import { Button } from './ui/button';
 
 interface AgentCollectionPanelProps {
   context: AgentContext;
+  scope?: 'project' | 'user';
+  sourceFilter?: ResourceSourceView;
   capabilities: CapabilityDescriptor[];
   onOpenHistory?: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }
 
 export function AgentCollectionPanel({
   context,
+  scope = 'project',
+  sourceFilter,
   capabilities,
   onOpenHistory,
+  onBusyChange,
 }: AgentCollectionPanelProps) {
   const { t } = useTranslation();
-  const [inventory, setInventory] = useState<ProjectWorkspaceInventory | null>(null);
+  const userInstallationId = context.installationId;
+  const [inventory, setInventory] = useState<
+    ProjectWorkspaceInventory | UserResourceInventory | null
+  >(null);
   const [filter, setFilter] = useState('');
+  const [expandedSkillSources, setExpandedSkillSources] = useState<Set<string>>(() => new Set());
+  const [collapsedSearchSkillSources, setCollapsedSearchSkillSources] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionPreview, setActionPreview] = useState<
-    ProjectCollectionActionPreview | ProjectCollectionSourceInstallPreview | null
+    | ProjectCollectionActionPreview
+    | ProjectCollectionSourceInstallPreview
+    | UserCollectionActionPreview
+    | UserCollectionSourceInstallPreview
+    | null
   >(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionProgress, setActionProgress] = useState<AgentPlanProgress | null>(null);
@@ -47,21 +67,24 @@ export function AgentCollectionPanel({
   const loadRequestRef = useRef(0);
   const actionRequestRef = useRef(0);
   const actionBusyRef = useRef(false);
-  const contextKey = useMemo(() => JSON.stringify(context), [context]);
+  const contextKey = useMemo(() => JSON.stringify({ context, scope }), [context, scope]);
   const activeContextKeyRef = useRef(contextKey);
   activeContextKeyRef.current = contextKey;
 
   const load = useCallback(async () => {
     const requestId = ++loadRequestRef.current;
-    const requestContextKey = JSON.stringify(context);
+    const requestContextKey = contextKey;
     setLoading(true);
     setError(null);
     try {
-      if (!context.projectPath) throw new Error('Project resources require a project context');
-      const next = await tauri.inspectProjectAgentWorkspace(
-        context.installationId,
-        context.projectPath,
-      );
+      const next =
+        scope === 'user'
+          ? await tauri.inspectUserAgentResources(userInstallationId)
+          : context.projectPath
+            ? await tauri.inspectProjectAgentWorkspace(context.installationId, context.projectPath)
+            : (() => {
+                throw new Error('Project resources require a project context');
+              })();
       if (
         requestId !== loadRequestRef.current ||
         requestContextKey !== activeContextKeyRef.current
@@ -85,7 +108,7 @@ export function AgentCollectionPanel({
         setLoading(false);
       }
     }
-  }, [context]);
+  }, [context, contextKey, scope, userInstallationId]);
 
   useEffect(() => {
     void load();
@@ -106,27 +129,38 @@ export function AgentCollectionPanel({
     setActionError(null);
     setActionResult(null);
     setPendingApplyOutcome(null);
+    setExpandedSkillSources(new Set());
+    setCollapsedSearchSkillSources(new Set());
   }, [contextKey]);
+
+  useEffect(() => {
+    onBusyChange?.(actionBusy);
+    return () => onBusyChange?.(false);
+  }, [actionBusy, onBusyChange]);
 
   const previewAction = useCallback(
     async (resource: CollectionResourceView, action: ResourceAction) => {
-      if (!inventory || !context.projectPath) return;
+      if (!inventory || (scope === 'project' && !context.projectPath)) return;
       const requestId = ++actionRequestRef.current;
       const requestContextKey = contextKey;
       setActionBusy(true);
       setActionError(null);
       setActionResult(null);
       try {
-        const next = await tauri.previewProjectCollectionAction(
-          context.installationId,
-          context.projectPath,
-          {
-            workspaceKey: inventory.workspace.key,
-            inventoryRevision: inventory.revision,
-            resourceKey: resource.key,
-            action,
-          },
-        );
+        const request = {
+          workspaceKey: inventory.workspace.key,
+          inventoryRevision: inventory.revision,
+          resourceKey: resource.key,
+          action,
+        };
+        const next =
+          scope === 'user'
+            ? await tauri.previewUserCollectionAction(userInstallationId, request)
+            : await tauri.previewProjectCollectionAction(
+                context.installationId,
+                context.projectPath!,
+                request,
+              );
         if (
           requestId === actionRequestRef.current &&
           requestContextKey === activeContextKeyRef.current
@@ -149,27 +183,31 @@ export function AgentCollectionPanel({
         }
       }
     },
-    [context.installationId, context.projectPath, contextKey, inventory],
+    [context.installationId, context.projectPath, contextKey, inventory, userInstallationId, scope],
   );
 
   const previewSourceInstall = useCallback(
     async (sourceResource: CollectionResourceView) => {
-      if (!inventory || !context.projectPath) return;
+      if (!inventory || (scope === 'project' && !context.projectPath)) return;
       const requestId = ++actionRequestRef.current;
       const requestContextKey = contextKey;
       setActionBusy(true);
       setActionError(null);
       setActionResult(null);
       try {
-        const next = await tauri.previewProjectCollectionSourceInstall(
-          context.installationId,
-          context.projectPath,
-          {
-            workspaceKey: inventory.workspace.key,
-            inventoryRevision: inventory.revision,
-            sourceResourceKey: sourceResource.key,
-          },
-        );
+        const request = {
+          workspaceKey: inventory.workspace.key,
+          inventoryRevision: inventory.revision,
+          sourceResourceKey: sourceResource.key,
+        };
+        const next =
+          scope === 'user'
+            ? await tauri.previewUserCollectionSourceInstall(userInstallationId, request)
+            : await tauri.previewProjectCollectionSourceInstall(
+                context.installationId,
+                context.projectPath!,
+                request,
+              );
         if (
           requestId === actionRequestRef.current &&
           requestContextKey === activeContextKeyRef.current
@@ -192,7 +230,7 @@ export function AgentCollectionPanel({
         }
       }
     },
-    [context.installationId, context.projectPath, contextKey, inventory],
+    [context.installationId, context.projectPath, contextKey, inventory, userInstallationId, scope],
   );
 
   const applyAction = useCallback(async () => {
@@ -221,11 +259,18 @@ export function AgentCollectionPanel({
     setActionResult(null);
     try {
       if (!successfulOutcome) {
-        const report = await tauri.applyProjectCollectionAction(
-          preview.plan.id,
-          preview.plan.context,
-          preview.plan.riskFingerprint,
-        );
+        const report =
+          scope === 'user'
+            ? await tauri.applyUserCollectionAction(
+                preview.plan.id,
+                preview.plan.context,
+                preview.plan.riskFingerprint,
+              )
+            : await tauri.applyProjectCollectionAction(
+                preview.plan.id,
+                preview.plan.context,
+                preview.plan.riskFingerprint,
+              );
         if (
           requestId !== actionRequestRef.current ||
           requestContextKey !== activeContextKeyRef.current
@@ -248,10 +293,10 @@ export function AgentCollectionPanel({
         setActionProgress({ phase: 'refreshing', startedAt: Date.now() });
       }
 
-      const next = await tauri.inspectProjectAgentWorkspace(
-        context.installationId,
-        context.projectPath!,
-      );
+      const next =
+        scope === 'user'
+          ? await tauri.inspectUserAgentResources(userInstallationId)
+          : await tauri.inspectProjectAgentWorkspace(context.installationId, context.projectPath!);
       if (
         requestId !== actionRequestRef.current ||
         requestContextKey !== activeContextKeyRef.current
@@ -272,6 +317,11 @@ export function AgentCollectionPanel({
         requestContextKey === activeContextKeyRef.current
       ) {
         setActionError(formatAgentError(caught));
+        if (scope === 'user') {
+          setActionPreview(null);
+          setPendingApplyOutcome(null);
+          void load();
+        }
       }
     } finally {
       if (
@@ -288,8 +338,11 @@ export function AgentCollectionPanel({
     context.installationId,
     context.projectPath,
     contextKey,
+    load,
     pendingApplyOutcome,
+    scope,
     t,
+    userInstallationId,
   ]);
 
   const cancelAction = useCallback(() => {
@@ -301,17 +354,49 @@ export function AgentCollectionPanel({
   }, [actionBusy]);
 
   const query = filter.trim().toLocaleLowerCase();
+  const toggleSkillSource = useCallback(
+    (sourceKey: string, expanded: boolean) => {
+      const update = (current: Set<string>, include: boolean) => {
+        const next = new Set(current);
+        if (include) next.add(sourceKey);
+        else next.delete(sourceKey);
+        return next;
+      };
+      if (query) {
+        setCollapsedSearchSkillSources((current) => update(current, expanded));
+      } else {
+        setExpandedSkillSources((current) => update(current, !expanded));
+      }
+    },
+    [query],
+  );
+  const sourceSkills = useMemo(
+    () =>
+      inventory?.skills.resources.filter(
+        (resource) =>
+          !sourceFilter ||
+          sourceIdentity(resource.provenance.source) === sourceIdentity(sourceFilter),
+      ) ?? [],
+    [inventory, sourceFilter],
+  );
+  const sourcePlugins = useMemo(
+    () =>
+      inventory?.plugins.resources.filter(
+        (resource) =>
+          !sourceFilter ||
+          sourceIdentity(resource.provenance.source) === sourceIdentity(sourceFilter),
+      ) ?? [],
+    [inventory, sourceFilter],
+  );
   const filteredSkills = useMemo(
-    () => inventory?.skills.resources.filter((resource) => matches(resource, query)) ?? [],
-    [inventory, query],
+    () => sourceSkills.filter((resource) => matches(resource, query)),
+    [query, sourceSkills],
   );
   const filteredPlugins = useMemo(
-    () => inventory?.plugins.resources.filter((resource) => matches(resource, query)) ?? [],
-    [inventory, query],
+    () => sourcePlugins.filter((resource) => matches(resource, query)),
+    [query, sourcePlugins],
   );
-  const hasResources = Boolean(
-    inventory && inventory.skills.resources.length + inventory.plugins.resources.length > 0,
-  );
+  const hasResources = sourceSkills.length + sourcePlugins.length > 0;
   const limitations = capabilities.flatMap((capability) => capability.limitations);
 
   if (loading) {
@@ -347,7 +432,10 @@ export function AgentCollectionPanel({
           id="agent-resource-filter"
           type="search"
           value={filter}
-          onChange={(event) => setFilter(event.target.value)}
+          onChange={(event) => {
+            setFilter(event.target.value);
+            setCollapsedSearchSkillSources(new Set());
+          }}
           placeholder={t('agentCollections.filter')}
           className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
@@ -397,6 +485,7 @@ export function AgentCollectionPanel({
             <CollectionSection
               title={t('agentCollections.skills')}
               inventory={inventory.skills}
+              allResources={sourceSkills}
               resources={filteredSkills}
               t={t}
               busy={actionBusy}
@@ -404,11 +493,15 @@ export function AgentCollectionPanel({
               showEmptyState={hasResources}
               onAction={previewAction}
               onInstallSource={previewSourceInstall}
+              expandedSourceKeys={expandedSkillSources}
+              collapsedSearchSourceKeys={collapsedSearchSkillSources}
+              onToggleSource={toggleSkillSource}
               onReload={load}
             />
             <CollectionSection
               title={t('agentCollections.plugins')}
               inventory={inventory.plugins}
+              allResources={sourcePlugins}
               resources={filteredPlugins}
               t={t}
               busy={actionBusy}
@@ -444,7 +537,8 @@ export function AgentCollectionPanel({
 
 interface CollectionSectionProps {
   title: string;
-  inventory: ProjectWorkspaceInventory['skills'];
+  inventory: ProjectWorkspaceInventory['skills'] | UserResourceInventory['skills'];
+  allResources?: CollectionResourceView[];
   resources: CollectionResourceView[];
   t: ReturnType<typeof useTranslation>['t'];
   busy: boolean;
@@ -452,6 +546,9 @@ interface CollectionSectionProps {
   showEmptyState: boolean;
   onAction: (resource: CollectionResourceView, action: ResourceAction) => void;
   onInstallSource?: (sourceResource: CollectionResourceView) => void;
+  expandedSourceKeys?: ReadonlySet<string>;
+  collapsedSearchSourceKeys?: ReadonlySet<string>;
+  onToggleSource?: (sourceKey: string, expanded: boolean) => void;
   onOpenSkillSources?: () => Promise<void>;
   onReload: () => Promise<void>;
 }
@@ -459,6 +556,7 @@ interface CollectionSectionProps {
 function CollectionSection({
   title,
   inventory,
+  allResources = inventory.resources,
   resources,
   t,
   busy,
@@ -466,10 +564,13 @@ function CollectionSection({
   showEmptyState,
   onAction,
   onInstallSource,
+  expandedSourceKeys,
+  collapsedSearchSourceKeys,
+  onToggleSource,
   onOpenSkillSources,
   onReload,
 }: CollectionSectionProps) {
-  const conflicts = groupedConflicts(inventory.resources, resources);
+  const conflicts = groupedConflicts(allResources, resources);
   return (
     <section className="mb-5" aria-labelledby={`collection-${inventory.kind}`}>
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -510,23 +611,24 @@ function CollectionSection({
       {resources.length > 0 && inventory.kind === 'skills' && onInstallSource ? (
         <SkillSourceGroups
           resources={resources}
-          allResources={inventory.resources}
+          allResources={allResources}
           busy={busy}
           t={t}
           onAction={onAction}
           onInstallSource={onInstallSource}
+          queryActive={queryActive}
+          expandedSourceKeys={expandedSourceKeys ?? new Set()}
+          collapsedSearchSourceKeys={collapsedSearchSourceKeys ?? new Set()}
+          onToggleSource={onToggleSource ?? (() => {})}
         />
       ) : resources.length > 0 ? (
         <ResourceList resources={resources} busy={busy} t={t} onAction={onAction} showSource />
       ) : null}
-      {showEmptyState &&
-        resources.length === 0 &&
-        !queryActive &&
-        inventory.resources.length === 0 && (
-          <div className="rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
-            {t('agentCollections.categoryEmpty', { category: title })}
-          </div>
-        )}
+      {showEmptyState && resources.length === 0 && !queryActive && allResources.length === 0 && (
+        <div className="rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
+          {t('agentCollections.categoryEmpty', { category: title })}
+        </div>
+      )}
     </section>
   );
 }
@@ -615,9 +717,17 @@ function SkillSourceGroups({
   t,
   onAction,
   onInstallSource,
+  queryActive,
+  expandedSourceKeys,
+  collapsedSearchSourceKeys,
+  onToggleSource,
 }: Omit<ResourceListProps, 'showSource'> & {
   allResources: CollectionResourceView[];
   onInstallSource: (sourceResource: CollectionResourceView) => void;
+  queryActive: boolean;
+  expandedSourceKeys: ReadonlySet<string>;
+  collapsedSearchSourceKeys: ReadonlySet<string>;
+  onToggleSource: (sourceKey: string, expanded: boolean) => void;
 }) {
   return (
     <div className="space-y-3">
@@ -646,16 +756,40 @@ function SkillSourceGroups({
             />
           );
         }
+        const expanded = queryActive
+          ? !collapsedSearchSourceKeys.has(group.key)
+          : expandedSourceKeys.has(group.key);
+        const resourceListId = `skill-source-${sourceResource?.key.replace(/[^a-zA-Z0-9_-]/g, '-') ?? 'unknown'}`;
         return (
           <section
             key={group.key}
             className="overflow-hidden rounded-xl border border-border bg-card"
           >
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3">
+            <div
+              className={`flex flex-wrap items-start justify-between gap-3 bg-muted/20 px-4 py-3 ${
+                expanded ? 'border-b border-border' : ''
+              }`}
+            >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="truncate text-sm font-semibold">
-                    {group.source?.displayName ?? t('agentCollections.sourceGroup.unknown')}
+                  <h4 className="min-w-0 text-sm font-semibold">
+                    <button
+                      type="button"
+                      className="flex min-w-0 items-center gap-1.5 rounded text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-expanded={expanded}
+                      aria-controls={resourceListId}
+                      onClick={() => onToggleSource(group.key, expanded)}
+                    >
+                      <ChevronDown
+                        className={`h-3.5 w-3.5 shrink-0 transition-transform motion-reduce:transition-none ${
+                          expanded ? 'rotate-180' : ''
+                        }`}
+                        aria-hidden="true"
+                      />
+                      <span className="truncate">
+                        {group.source?.displayName ?? t('agentCollections.sourceGroup.unknown')}
+                      </span>
+                    </button>
                   </h4>
                   {group.source && (
                     <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -683,14 +817,18 @@ function SkillSourceGroups({
                 </Button>
               )}
             </div>
-            <ResourceList
-              resources={group.resources}
-              busy={busy}
-              t={t}
-              onAction={onAction}
-              showSource={false}
-              embedded
-            />
+            {expanded && (
+              <div id={resourceListId} className="ml-4 border-l border-border/70 bg-background/20">
+                <ResourceList
+                  resources={group.resources}
+                  busy={busy}
+                  t={t}
+                  onAction={onAction}
+                  showSource={false}
+                  embedded
+                />
+              </div>
+            )}
           </section>
         );
       })}

@@ -41,7 +41,8 @@ pub struct ResourceRemovalInstallationView {
     pub installation_id: ResourceInstallationId,
     pub workspace_key: WorkspaceKey,
     pub agent_id: super::AgentId,
-    pub project_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
     pub state: ResourceRemovalItemState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diagnostic_code: Option<String>,
@@ -186,6 +187,14 @@ pub struct SourceRemovalPlanStore {
 
 impl SourceRemovalPlanStore {
     pub fn preview(&self, source_id: &str) -> Result<SourceRemovalPlanView, AgentError> {
+        if super::list_all_user_plugin_management_records()?
+            .iter()
+            .any(|record| record.source_id == source_id)
+        {
+            return Err(lifecycle_error(
+                "Remove user-level Plugins before removing their source",
+            ));
+        }
         let catalog = load_resource_catalog_snapshot().map_err(lifecycle_error)?;
         let source = catalog
             .sources
@@ -207,7 +216,7 @@ impl SourceRemovalPlanStore {
                     kind: resource.kind,
                     affected_project_count: matching
                         .iter()
-                        .map(|item| &item.canonical_project_path)
+                        .filter_map(|item| item.canonical_project_path.as_ref())
                         .collect::<BTreeSet<_>>()
                         .len(),
                     affected_agent_count: matching
@@ -235,7 +244,7 @@ impl SourceRemovalPlanStore {
         let affected_project_count = installations
             .iter()
             .filter(|installation| installation.source_id == source_id)
-            .map(|installation| &installation.canonical_project_path)
+            .filter_map(|installation| installation.canonical_project_path.as_ref())
             .collect::<BTreeSet<_>>()
             .len();
         let affected_agent_count = installations
@@ -462,6 +471,14 @@ impl SourceRemovalPlanStore {
 
 impl ResourceRemovalPlanStore {
     pub fn preview(&self, resource_id: &str) -> Result<ResourceRemovalPlanView, AgentError> {
+        if super::list_all_user_plugin_management_records()?
+            .iter()
+            .any(|record| record.resource_id == resource_id)
+        {
+            return Err(lifecycle_error(
+                "Remove this user-level Plugin before removing it from the catalog",
+            ));
+        }
         let catalog = load_resource_catalog_snapshot().map_err(lifecycle_error)?;
         let resource = catalog
             .resources
@@ -479,7 +496,7 @@ impl ResourceRemovalPlanStore {
             .collect::<Vec<_>>();
         let affected_project_count = views
             .iter()
-            .map(|view| &view.project_path)
+            .filter_map(|view| view.project_path.as_ref())
             .collect::<std::collections::BTreeSet<_>>()
             .len();
         let affected_agent_count = views
@@ -908,13 +925,17 @@ fn uninstall_record(record: &ResourceInstallationRecord) -> Result<(), AgentErro
     }
     let context = AgentContext {
         installation_id: record.effective_installation_id.clone(),
-        project_path: Some(record.canonical_project_path.clone()),
+        project_path: record.canonical_project_path.clone(),
     };
     let resource = ResourceRef {
         installation_id: record.effective_installation_id.clone(),
-        project_path: Some(record.canonical_project_path.clone()),
+        project_path: record.canonical_project_path.clone(),
         kind: record.resource_kind,
-        scope: ResourceScope::Project,
+        scope: if record.canonical_project_path.is_some() {
+            ResourceScope::Project
+        } else {
+            ResourceScope::User
+        },
         logical_id: format!("{}/{}", record.source_id, record.install_id),
     };
     let registry = builtin_registry();

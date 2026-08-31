@@ -27,6 +27,9 @@ pub(super) struct ExecutionState {
     resource_installations: StateDirectory,
     resource_installation_controls: StateDirectory,
     resource_removal_operations: StateDirectory,
+    user_plugin_management: StateDirectory,
+    user_plugin_artifacts: StateDirectory,
+    user_plugin_marketplaces: StateDirectory,
     backups: StateDirectory,
     history: StateDirectory,
     skill_catalog_journals: StateDirectory,
@@ -63,6 +66,10 @@ impl ExecutionState {
             state.open_or_create_directory("resource-installation-controls")?;
         let resource_removal_operations =
             state.open_or_create_directory("resource-removal-operations")?;
+        let user_plugin_management = state.open_or_create_directory("user-plugin-management")?;
+        let user_plugin_artifacts = state.open_or_create_directory("user-plugin-artifacts")?;
+        let user_plugin_marketplaces =
+            state.open_or_create_directory("user-plugin-marketplaces")?;
         let backup_root = root.open_or_create_directory("backups")?;
         let backups = backup_root.open_or_create_directory("operations")?;
         let skill_catalog_backups = backup_root.open_or_create_directory("skill-catalog")?;
@@ -84,6 +91,9 @@ impl ExecutionState {
             resource_installations,
             resource_installation_controls,
             resource_removal_operations,
+            user_plugin_management,
+            user_plugin_artifacts,
+            user_plugin_marketplaces,
             backups,
             history,
             skill_catalog_journals,
@@ -122,6 +132,18 @@ impl ExecutionState {
 
     pub(super) fn resource_removal_operations(&self) -> &StateDirectory {
         &self.resource_removal_operations
+    }
+
+    pub(super) fn user_plugin_management(&self) -> &StateDirectory {
+        &self.user_plugin_management
+    }
+
+    pub(super) fn user_plugin_artifacts(&self) -> &StateDirectory {
+        &self.user_plugin_artifacts
+    }
+
+    pub(super) fn user_plugin_marketplaces(&self) -> &StateDirectory {
+        &self.user_plugin_marketplaces
     }
 
     pub(super) fn backups(&self) -> &StateDirectory {

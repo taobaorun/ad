@@ -154,7 +154,7 @@ fn claude_and_codex_satisfy_the_same_required_user_journeys() {
                 "model = \"gpt-5.4\"\n\n[plugins.demo]\nenabled = true\n".into(),
             ),
             skills_availability: CapabilityAvailability::Available,
-            plugins_availability: CapabilityAvailability::Degraded,
+            plugins_availability: CapabilityAvailability::Available,
             arbitrary_plugin_install_error: AgentErrorCode::InvalidPlan,
         },
     );

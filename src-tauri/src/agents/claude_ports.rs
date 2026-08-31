@@ -297,17 +297,28 @@ mod tests {
             .unwrap();
 
         assert_eq!(plan.mutations.len(), 1);
-        assert_eq!(plan.mutations[0].kind, MutationKind::Delete);
-        assert_eq!(plan.mutations[0].resource.scope, ResourceScope::User);
-        assert_eq!(plan.mutations[0].resource.project_path, None);
-        let expected_global_link = std::fs::canonicalize(global_link.parent().unwrap())
-            .unwrap()
-            .join("demo");
+        assert_eq!(plan.mutations[0].kind, MutationKind::Create);
+        assert_eq!(plan.mutations[0].resource.kind, ResourceKind::Settings);
+        assert_eq!(plan.mutations[0].resource.scope, ResourceScope::Project);
         assert_eq!(
-            port.resolve(&context, &plan.mutations[0].resource)
+            plan.mutations[0].resource.project_path,
+            context.project_path
+        );
+        assert_eq!(
+            plan.mutations[0].content.as_ref().unwrap()["skillOverrides"]["demo"],
+            "off"
+        );
+        assert_eq!(
+            registry
+                .adapter("claude-code")
+                .unwrap()
+                .settings()
+                .unwrap()
+                .resolve(&context, &plan.mutations[0].resource)
                 .unwrap()
                 .path(),
-            expected_global_link
+            std::path::Path::new(context.project_path.as_deref().unwrap())
+                .join(".claude/settings.local.json")
         );
         assert!(global_link.is_symlink());
         assert!(!project.join(".claude/skills/demo").exists());
@@ -315,7 +326,7 @@ mod tests {
 
     #[test]
     #[serial_test::serial(home_env)]
-    fn skills_port_refuses_to_replace_an_unmanaged_symlink() {
+    fn skills_port_project_override_does_not_replace_an_unmanaged_user_symlink() {
         let (temp, mut context, _) = setup();
         let skill = temp.path().join(".ad/skill-library/source/demo");
         let project = temp.path().join("project");
@@ -326,7 +337,7 @@ mod tests {
         std::fs::create_dir_all(&project).unwrap();
         std::fs::create_dir_all(&unmanaged).unwrap();
         std::fs::write(skill.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
-        std::os::unix::fs::symlink(&unmanaged, global_link).unwrap();
+        std::os::unix::fs::symlink(&unmanaged, &global_link).unwrap();
         context.project_path = Some(
             std::fs::canonicalize(&project)
                 .unwrap()
@@ -342,11 +353,14 @@ mod tests {
             .find(|snapshot| snapshot.resource.logical_id == "source/demo")
             .unwrap();
 
-        let error = port
+        let plan = port
             .plan_set_enabled(&context, &demo.resource, true)
-            .unwrap_err();
+            .unwrap();
 
-        assert_eq!(error.code, AgentErrorCode::PermissionDenied);
+        assert_eq!(plan.mutations[0].resource.kind, ResourceKind::Settings);
+        assert_eq!(plan.mutations[0].resource.scope, ResourceScope::Project);
+        assert!(global_link.is_symlink());
+        assert_eq!(std::fs::read_link(global_link).unwrap(), unmanaged);
     }
 
     #[test]
