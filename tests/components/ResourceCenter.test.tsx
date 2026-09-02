@@ -316,7 +316,7 @@ describe('ResourceCenter', () => {
       ),
     ).toBeInTheDocument();
     expect(mocks.previewAddSkillCatalogSource).not.toHaveBeenCalled();
-    expect(screen.getByDisplayValue('Team tools')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search sources…')).toHaveValue('Team tools');
   });
 
   it('shows source clone progress and keeps failures in the dialog for retry', async () => {

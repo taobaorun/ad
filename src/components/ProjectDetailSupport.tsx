@@ -67,7 +67,10 @@ export function ProjectCodexRuntimeCard({
         <div role={failed ? 'alert' : 'status'} aria-live="polite" className="min-w-0 text-xs">
           <div className="flex items-center gap-2 font-medium">
             {(checking || saving) && (
-              <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              <LoaderCircle
+                className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
             )}
             <span>{stateText}</span>
           </div>
@@ -229,7 +232,7 @@ export function TabButton({
       aria-controls={panelId}
       tabIndex={active ? 0 : -1}
       onClick={onClick}
-      className="-mb-px border-b-2 bg-transparent px-4 py-2 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="ad-motion-press-subtle -mb-px border-b-2 bg-transparent px-4 py-2 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       style={{
         color: active ? 'var(--ds-accent)' : 'var(--ds-fg-3)',
         borderBottomColor: active ? 'var(--ds-accent)' : 'transparent',

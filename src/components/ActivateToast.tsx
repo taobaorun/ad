@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useProfiles, type ToastPayload } from '@/store/profiles';
 import { Button } from './ui/button';
@@ -23,20 +23,46 @@ export function ActivateToast() {
 function ToastCard({ toast }: { toast: ToastPayload }) {
   const { t } = useTranslation();
   const dismiss = useProfiles((s) => s.dismissToast);
+  const [visible, setVisible] = useState(false);
+  const dismissingRef = useRef(false);
+  const frameRef = useRef<number | null>(null);
+  const exitTimerRef = useRef<number | null>(null);
+
+  const finishDismiss = useCallback(() => {
+    if (exitTimerRef.current !== null) window.clearTimeout(exitTimerRef.current);
+    dismiss(toast.id);
+  }, [dismiss, toast.id]);
+
+  const beginDismiss = useCallback(() => {
+    if (dismissingRef.current) return;
+    dismissingRef.current = true;
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    setVisible(false);
+    exitTimerRef.current = window.setTimeout(finishDismiss, 240);
+  }, [finishDismiss]);
 
   useEffect(() => {
     void notifyActivation(toast.profileName);
-    const t = setTimeout(() => dismiss(toast.id), TOAST_TTL_MS);
-    return () => clearTimeout(t);
-    // dismiss is a stable store action; toast.id and profileName drive identity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast.id]);
+    frameRef.current = requestAnimationFrame(() => setVisible(true));
+    const ttl = window.setTimeout(beginDismiss, TOAST_TTL_MS);
+    return () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      if (exitTimerRef.current !== null) window.clearTimeout(exitTimerRef.current);
+      window.clearTimeout(ttl);
+    };
+  }, [beginDismiss, toast.profileName]);
 
   return (
     <div
       role="status"
       aria-live="polite"
-      className="pointer-events-auto w-96 rounded-lg border border-border bg-card p-4 shadow-lg"
+      data-visible={visible ? 'true' : 'false'}
+      onTransitionEnd={(event) => {
+        if (event.currentTarget === event.target && !visible && dismissingRef.current) {
+          finishDismiss();
+        }
+      }}
+      className="ad-activation-toast pointer-events-auto w-96 rounded-lg border border-border bg-card p-4 shadow-lg"
     >
       <div className="flex items-start gap-3">
         <div className="flex-1">
@@ -65,7 +91,7 @@ function ToastCard({ toast }: { toast: ToastPayload }) {
         </div>
         <button
           type="button"
-          onClick={() => dismiss(toast.id)}
+          onClick={beginDismiss}
           aria-label={t('toast.dismiss')}
           className="rounded p-1 text-muted-foreground hover:bg-muted"
         >

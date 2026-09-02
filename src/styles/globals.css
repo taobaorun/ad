@@ -74,6 +74,13 @@
     --ring: var(--color-link);
     --radius: 0.5rem;
 
+    --motion-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --motion-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+    --motion-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+    --motion-duration-press: 160ms;
+    --motion-duration-fast: 150ms;
+    --motion-duration-panel: 200ms;
+
     /* Compatibility bridge for existing inline styles. New UI uses semantic classes. */
     --ds-line: rgb(var(--color-border-subtle));
     --ds-line-strong: rgb(var(--color-border-strong));
@@ -351,4 +358,132 @@ aside {
 }
 .cm-foldGutter .cm-gutterElement:hover {
   color: var(--ds-fg-2);
+}
+
+.ad-skill-toggle-thumb {
+  transition: transform 120ms var(--motion-ease-in-out);
+}
+
+.ad-motion-press {
+  transition:
+    background-color var(--motion-duration-press) var(--motion-ease-out),
+    border-color var(--motion-duration-press) var(--motion-ease-out),
+    color var(--motion-duration-press) var(--motion-ease-out),
+    transform var(--motion-duration-press) var(--motion-ease-out);
+}
+
+.ad-motion-press:active {
+  transform: scale(0.97);
+}
+
+.ad-motion-press.ad-motion-press-none:active {
+  transform: none;
+}
+
+.ad-motion-press-subtle {
+  transition:
+    background-color var(--motion-duration-press) var(--motion-ease-out),
+    transform var(--motion-duration-press) var(--motion-ease-out);
+}
+
+.ad-motion-press-subtle:active {
+  transform: scale(0.98);
+}
+
+.ad-motion-fast-colors {
+  transition:
+    background-color var(--motion-duration-fast) ease,
+    color var(--motion-duration-fast) ease;
+}
+
+.ad-motion-progress {
+  transition: transform var(--motion-duration-fast) var(--motion-ease-in-out);
+}
+
+.ad-profile-drawer {
+  transition: transform var(--motion-duration-panel) var(--motion-ease-drawer);
+}
+
+.ad-profile-drawer-scrim {
+  transition: opacity var(--motion-duration-panel) var(--motion-ease-out);
+}
+
+.ad-dialog-overlay {
+  opacity: 0;
+  transition: opacity var(--motion-duration-panel) var(--motion-ease-out);
+}
+
+.ad-dialog-overlay[data-open='true'] {
+  opacity: 1;
+}
+
+.ad-dialog-panel {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.97);
+  transition:
+    opacity var(--motion-duration-panel) var(--motion-ease-out),
+    transform var(--motion-duration-panel) var(--motion-ease-out);
+}
+
+.ad-dialog-panel[data-open='true'] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.ad-activation-toast {
+  opacity: 0;
+  transform: translateY(100%);
+  transition:
+    opacity 160ms var(--motion-ease-out),
+    transform 160ms var(--motion-ease-out);
+}
+
+.ad-activation-toast[data-visible='true'] {
+  opacity: 1;
+  transform: translateY(0);
+  transition-duration: 220ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ad-skill-toggle-thumb {
+    transition: none;
+  }
+
+  .ad-motion-press,
+  .ad-motion-press-subtle {
+    transform: none !important;
+    transition-property: background-color, border-color, color;
+  }
+
+  .ad-motion-progress {
+    transition: none;
+  }
+
+  .ad-profile-drawer {
+    transform: none !important;
+    transition: opacity var(--motion-duration-panel) ease;
+  }
+
+  .ad-profile-drawer[data-open='false'] {
+    opacity: 0;
+  }
+
+  .ad-profile-drawer-scrim {
+    transition-timing-function: ease;
+  }
+
+  .ad-dialog-overlay,
+  .ad-dialog-panel {
+    transition: opacity var(--motion-duration-panel) ease;
+  }
+
+  .ad-dialog-panel {
+    transform: none;
+  }
+
+  .ad-activation-toast,
+  .ad-activation-toast[data-visible='true'] {
+    transform: none;
+    transition: opacity var(--motion-duration-panel) ease;
+  }
 }

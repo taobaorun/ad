@@ -80,8 +80,8 @@ export function SourceRemovalDialog({
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full bg-primary transition-[width]"
-                  style={{ width: `${percentage}%` }}
+                  className="ad-motion-progress h-full origin-left rounded-full bg-primary"
+                  style={{ transform: `scaleX(${percentage / 100})` }}
                 />
               </div>
             </div>

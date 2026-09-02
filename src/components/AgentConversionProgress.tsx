@@ -52,7 +52,7 @@ export function AgentConversionProgress({ progress, startedAt }: AgentConversion
     >
       <div className="flex items-start gap-2.5">
         <LoaderCircle
-          className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary"
+          className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary motion-reduce:animate-none"
           aria-hidden="true"
         />
         <div className="min-w-0 flex-1">

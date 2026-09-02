@@ -63,17 +63,37 @@ export function CommandPalette() {
   const [term, setTerm] = useState<string>('');
   const [activeIdx, setActiveIdx] = useState<number>(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const focusTimerRef = useRef<number | null>(null);
 
   const addMode = term.startsWith('add ') && term.slice(4).length > 0;
   const addPath = addMode ? term.slice(4) : '';
   const { candidates: pathCandidates, completion: pathCompletion } = usePathAutocomplete(addPath);
 
   useEffect(() => {
-    if (open) {
-      setTerm(prefill);
-      setActiveIdx(0);
-      window.setTimeout(() => inputRef.current?.focus(), 30);
-    }
+    if (!open) return;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    return () => {
+      const activeElement = document.activeElement as HTMLElement | null;
+      const shouldRestoreFocus =
+        !activeElement ||
+        activeElement === document.body ||
+        dialog?.contains(activeElement) === true;
+      if (shouldRestoreFocus) previousFocusRef.current?.focus();
+      previousFocusRef.current = null;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setTerm(prefill);
+    setActiveIdx(0);
+    focusTimerRef.current = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => {
+      if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
+    };
   }, [open, prefill]);
 
   async function addProjectFromPath(rawPath: string) {
@@ -299,10 +319,22 @@ export function CommandPalette() {
   }, [filtered]);
 
   const navMax = addMode ? pathCandidates.length : grouped.flat.length;
+  const activeOptionId = addMode
+    ? pathCandidates[activeIdx]
+      ? `command-palette-path-${activeIdx}`
+      : undefined
+    : grouped.flat[activeIdx]
+      ? `command-palette-command-${activeIdx}`
+      : undefined;
 
   useEffect(() => {
     if (activeIdx >= navMax) setActiveIdx(Math.max(0, navMax - 1));
   }, [navMax, activeIdx]);
+
+  useEffect(() => {
+    if (!open || !activeOptionId) return;
+    document.getElementById(activeOptionId)?.scrollIntoView?.({ block: 'nearest' });
+  }, [activeOptionId, open]);
 
   if (!open) return null;
 
@@ -335,24 +367,57 @@ export function CommandPalette() {
       }
     } else if (e.key === 'Escape') {
       e.preventDefault();
+      e.stopPropagation();
       close();
+    }
+  }
+
+  function onDialogKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const focusable = focusableElements(dialogRef.current);
+    if (focusable.length === 0) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
     }
   }
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center bg-overlay/65 pt-20 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-start justify-center bg-overlay/65"
+      style={{ paddingTop: 'clamp(32px, 8vh, 72px)' }}
       onClick={(e) => {
         if (e.target === e.currentTarget) close();
       }}
     >
-      <div className="flex max-h-[500px] w-[560px] max-w-[calc(100%-48px)] flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
-        <div
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('palette.placeholder')}
+        onKeyDown={onDialogKeyDown}
+        className="flex w-[620px] max-w-[calc(100%-48px)] flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl"
+        style={{ maxHeight: 'min(510px, calc(100vh - 170px))' }}
+      >
+        <label
+          htmlFor="command-palette-search"
           data-input-shell=""
-          className="flex items-center gap-3 rounded-t-xl border-b border-border px-4 py-3"
+          className="grid h-[54px] shrink-0 grid-cols-[auto_1fr_auto] items-center gap-3 rounded-t-xl border-b border-border px-4"
         >
-          <span className="font-mono text-xs text-muted-foreground">⌘K</span>
+          <kbd className="font-mono text-xs text-muted-foreground">⌘K</kbd>
           <input
+            id="command-palette-search"
+            name="command-palette-search"
             ref={inputRef}
             value={term}
             onChange={(e) => {
@@ -360,12 +425,25 @@ export function CommandPalette() {
               setActiveIdx(0);
             }}
             onKeyDown={onKeyDown}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="true"
+            aria-controls="command-palette-results"
+            aria-activedescendant={activeOptionId}
+            aria-label={t('palette.placeholder')}
             placeholder={t('palette.placeholder')}
-            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            autoComplete="off"
+            className="min-w-0 bg-transparent text-base outline-none placeholder:text-muted-foreground"
           />
-        </div>
+          <kbd className="font-mono text-xs text-muted-foreground">esc</kbd>
+        </label>
 
-        <div className="overflow-y-auto">
+        <div
+          id="command-palette-results"
+          role="listbox"
+          aria-label={t('palette.placeholder')}
+          className="min-h-0 flex-1 overflow-y-auto p-1.5"
+        >
           {addMode ? (
             pathCandidates.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
@@ -375,7 +453,7 @@ export function CommandPalette() {
               </div>
             ) : (
               <div>
-                <div className="px-4 pb-1 pt-3 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                <div className="px-2.5 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                   {t('palette.addProjectHeader')}
                 </div>
                 {pathCandidates.map((cand, idx) => {
@@ -383,18 +461,22 @@ export function CommandPalette() {
                   return (
                     <button
                       key={cand}
+                      id={`command-palette-path-${idx}`}
                       type="button"
+                      role="option"
+                      aria-selected={active}
                       onClick={() => {
                         close();
                         void addProjectFromPath(cand);
                       }}
                       onMouseEnter={() => setActiveIdx(idx)}
-                      className={
-                        'flex w-full items-center gap-3 px-4 py-2 text-left font-mono text-sm ' +
-                        (active ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50')
-                      }
+                      className={`grid min-h-[45px] w-full grid-cols-[28px_1fr] items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-mono text-sm transition-[background-color,transform] duration-100 active:scale-[0.985] ${
+                        active ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
+                      }`}
                     >
-                      <span className="w-4 text-center text-xs text-muted-foreground">›</span>
+                      <span className="grid h-7 w-7 place-items-center rounded-md bg-primary/10 text-xs text-primary">
+                        ›
+                      </span>
                       <span className="flex-1 truncate">{cand}</span>
                     </button>
                   );
@@ -411,35 +493,46 @@ export function CommandPalette() {
               if (items.length === 0) return null;
               return (
                 <div key={g}>
-                  <div className="px-4 pb-1 pt-3 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <div className="px-2.5 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                     {t(`palette.groups.${g.toLowerCase()}`)}
                   </div>
                   {items.map((cmd) => {
                     const flatIdx = grouped.flat.indexOf(cmd);
                     const active = flatIdx === activeIdx;
+                    const shortcut = cmd.desc?.startsWith('⌘') ? cmd.desc : null;
+                    const detail = shortcut ? null : cmd.desc;
                     return (
                       <button
                         key={cmd.id}
+                        id={`command-palette-command-${flatIdx}`}
                         type="button"
+                        role="option"
+                        aria-selected={active}
                         onClick={() => {
                           close();
                           void cmd.run();
                         }}
                         onMouseEnter={() => setActiveIdx(flatIdx)}
-                        className={
-                          'flex w-full items-center gap-3 px-4 py-2 text-left text-sm ' +
-                          (active
-                            ? 'bg-muted text-foreground'
-                            : 'text-foreground hover:bg-muted/50')
-                        }
+                        className={`grid min-h-[45px] w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-[background-color,transform] duration-100 active:scale-[0.985] ${
+                          active ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
+                        }`}
                       >
-                        <span className="w-4 text-center font-mono text-xs text-muted-foreground">
+                        <span className="grid h-7 w-7 place-items-center rounded-md bg-primary/10 font-mono text-xs text-primary">
                           {cmd.icon}
                         </span>
-                        <span className="flex-1 truncate">{cmd.label}</span>
-                        {cmd.desc && (
-                          <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-                            {cmd.desc}
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <strong className="truncate text-[13px] font-semibold">
+                            {cmd.label}
+                          </strong>
+                          {detail && (
+                            <small className="truncate text-[11px] text-muted-foreground">
+                              {detail}
+                            </small>
+                          )}
+                        </span>
+                        {shortcut && (
+                          <span className="font-mono text-[11px] text-muted-foreground">
+                            {shortcut}
                           </span>
                         )}
                       </button>
@@ -451,7 +544,7 @@ export function CommandPalette() {
           )}
         </div>
 
-        <div className="flex items-center gap-4 border-t border-border bg-muted/30 px-4 py-1.5 font-mono text-[10px] text-muted-foreground">
+        <footer className="flex min-h-[34px] shrink-0 items-center gap-4 border-t border-border bg-muted/30 px-3.5 font-mono text-[10px] text-muted-foreground">
           <span>
             <kbd className="mr-1 rounded border border-border bg-background px-1">↑↓</kbd>
             {t('palette.kbd.navigate')}
@@ -470,8 +563,21 @@ export function CommandPalette() {
             <kbd className="mr-1 rounded border border-border bg-background px-1">esc</kbd>
             {t('palette.kbd.close')}
           </span>
-        </div>
+          <span className="ml-auto">
+            {activeAgentId}
+            {activeProject ? ` · ${activeProject.displayName}` : ''}
+          </span>
+        </footer>
       </div>
     </div>
   );
+}
+
+function focusableElements(root: HTMLElement | null): HTMLElement[] {
+  if (!root) return [];
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => !element.hasAttribute('hidden'));
 }

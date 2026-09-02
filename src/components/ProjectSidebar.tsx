@@ -288,7 +288,7 @@ function ProjectRow({
     <button
       type="button"
       onClick={onSelect}
-      className="block w-full rounded-lg text-left transition-colors"
+      className="ad-motion-press-subtle block w-full rounded-lg text-left"
       style={{
         position: 'relative',
         padding: '10px 12px',

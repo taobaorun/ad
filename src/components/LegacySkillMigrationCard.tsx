@@ -142,13 +142,21 @@ export function LegacySkillMigrationCard({ projectPath }: { projectPath: string 
         </div>
         {ready && (
           <ActionButton disabled={busy} onClick={() => void previewMigration()}>
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArchiveRestore />}
+            {busy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+            ) : (
+              <ArchiveRestore />
+            )}
             {t('legacySkillMigration.review')}
           </ActionButton>
         )}
         {!project && archive?.status === 'archived' && (
           <ActionButton disabled={busy} onClick={() => void restoreState()}>
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArchiveRestore />}
+            {busy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+            ) : (
+              <ArchiveRestore />
+            )}
             {t('legacySkillMigration.restore')}
           </ActionButton>
         )}
