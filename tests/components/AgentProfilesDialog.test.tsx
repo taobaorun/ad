@@ -151,7 +151,7 @@ describe('AgentProfilesButton', () => {
         'default',
       ),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
     await waitFor(() =>
       expect(applyAgentPlan).toHaveBeenCalledWith(
         'profile-plan',
