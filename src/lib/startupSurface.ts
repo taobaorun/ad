@@ -92,6 +92,13 @@ export async function revealStartup(
     root?.removeAttribute('aria-hidden');
     return;
   }
+  const quote = documentRef.getElementById('ad-splash-quote');
+  quote?.style.removeProperty('color');
+  const quoteCanvas = documentRef.getElementById('ad-splash-quote-canvas');
+  if (quoteCanvas) {
+    quoteCanvas.dataset.settled = 'true';
+    quoteCanvas.style.display = 'none';
+  }
   splash.classList.add('ad-splash-exit');
 
   await new Promise<void>((resolve) => {

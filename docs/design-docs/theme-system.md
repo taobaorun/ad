@@ -125,7 +125,7 @@ UI primitives       legacy inline UI    syntax theme     Tauri/WebKit
 
 ## 启动 Loading 生命周期
 
-主窗口在 WKWebView 开始导航时即显示主题匹配的原生底色，随后由 `index.html` 在 React bundle 执行前绘制启动内容。可见内容固定为现有 AD logo 与 “Be Water, My Friend”，不显示百分比、预计时间或第二行状态。真实 `<p>` 始终保留完整 localized 文案，负责布局与可访问性；其上覆盖一个 `aria-hidden` Canvas 视觉层。同步内联脚本读取 `<p>` 的字体、尺寸和主题色，以设备像素比创建画布，再把画布转交给 Web Worker 的 `OffscreenCanvas`。Worker 先绘制基础文字，再用宽度约为句宽 55% 的透明→高亮→透明渐变重复绘制同一句话，由独立的 16ms 定时器驱动 300ms 循环；因此 Tauri 启动命令即使阻塞 WebView 主线程，光带仍可连续扫过。初始化完成后立即揭幕，不为补足周期人为延迟。文字或尺寸变化时主线程向 Worker 同步配置，Canvas 断连后终止 Worker 和观察器。不支持 OffscreenCanvas 的旧 WKWebView 回退到主线程定时器；实现不得回退到 `background-clip`、多元素 stagger 或 animated `clip-path` 路径。`prefers-reduced-motion` 下只绘制静态基础文字，不启动循环；若 Canvas 不可用，真实 `<p>` 保持可见作为 fallback。
+主窗口在 WKWebView 开始导航时即显示主题匹配的原生底色，随后由 `index.html` 在 React bundle 执行前绘制启动内容。可见内容固定为静态 AD logo 与 “Be Water, My Friend”，不显示百分比、预计时间或第二行状态。真实 `<p>` 始终保留完整 localized 文案，负责布局与可访问性；其上覆盖一个 `aria-hidden` Canvas 视觉层。同步内联脚本读取 `<p>` 的字体、尺寸和主题色，以设备像素比创建画布，再把画布转交给 Web Worker 的 `OffscreenCanvas`。Worker 先绘制基础文字，再用宽度约为句宽 55% 的单条透明→高亮→透明渐变从文字左侧完整进入、在 600ms 内线性扫到右侧完整离开，随后保留 300ms 清晰静态文字再开始下一轮；因此 Tauri 启动命令即使阻塞 WebView 主线程，光带仍可连续扫过，又不会形成急促的无间隔闪烁。初始化完成后立即冻结视觉层、恢复真实文字，再执行 260ms 揭幕，不为补足周期人为延迟。文字、尺寸或主题变化时才重新测量并同步配置，Canvas 断连或进入 settled 状态后终止 Worker 和观察器。不支持 OffscreenCanvas 的旧 WKWebView 回退到主线程定时器，并复用同一节奏且缓存文字指标，不在每帧读取布局；实现不得回退到 `background-clip`、多元素 stagger 或 animated `clip-path` 路径。`prefers-reduced-motion` 下只绘制静态基础文字，不启动循环；若 Canvas 不可用，真实 `<p>` 保持可见作为 fallback。
 
 `src/lib/startup.ts` 是启动生命周期的唯一协调入口：Agent discovery 与 Projects 并行开始，Profiles 等 Agent attempt 结束后开始。三项 load 全部 settle 后揭幕；任一任务 rejection 会记录英文诊断信息但不阻断，其余任务永不返回时由 12 秒整体 deadline fail-open。超时不取消晚到的幂等 read，store 仍可在主界面出现后渐进更新。
 

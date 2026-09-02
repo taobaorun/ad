@@ -229,7 +229,11 @@ describe('startup surface helpers', () => {
   it('reveals the React root after two frames and removes the splash after its exit', async () => {
     vi.useFakeTimers();
     document.body.innerHTML = `
-      <div id="ad-splash"><div id="ad-splash-child"></div></div>
+      <div id="ad-splash">
+        <div id="ad-splash-child"></div>
+        <p id="ad-splash-quote" style="color: transparent">Be Water, My Friend</p>
+        <canvas id="ad-splash-quote-canvas"></canvas>
+      </div>
       <div id="root" inert aria-hidden="true"></div>
     `;
     const frames: Array<(timestamp: number) => void> = [];
@@ -254,6 +258,8 @@ describe('startup surface helpers', () => {
     expect(root.getAttribute('aria-hidden')).toBe('true');
     expect(root.classList.contains('ad-app-enter')).toBe(true);
     expect(splash.classList.contains('ad-splash-exit')).toBe(true);
+    expect(document.getElementById('ad-splash-quote')).not.toHaveStyle({ color: 'transparent' });
+    expect(document.getElementById('ad-splash-quote-canvas')).toHaveStyle({ display: 'none' });
     expect(document.getElementById('ad-splash')).toBe(splash);
 
     document

@@ -123,7 +123,25 @@ describe('theme contract', () => {
     expect(indexHtml).toContain("matchMedia('(prefers-reduced-motion: reduce)')");
     expect(indexHtml).toContain('if (!canvas.isConnected)');
     expect(indexHtml).toContain('window.clearInterval(frameTimer)');
-    expect(indexHtml).toContain('const sweepDurationMs = 300');
+    expect(indexHtml).toContain('const sweepDurationMs = 600');
+    expect(indexHtml).toContain('const sweepRestMs = 300');
+    expect(indexHtml).toContain('const cycleDurationMs = sweepDurationMs + sweepRestMs');
+    expect(indexHtml).toContain('function sweepProgressForElapsed');
+    expect(indexHtml).toContain(
+      'var center = -bandWidth / 2 + progress * (config.width + bandWidth)',
+    );
+    expect(indexHtml).not.toContain('center - config.width');
+    expect(indexHtml).not.toContain('center + config.width');
+    expect(indexHtml).not.toContain('var nextConfig = readFrameConfig()');
+    expect(indexHtml).toContain('function refreshFallbackConfig');
+    expect(indexHtml).not.toContain('ad-logo-breathe');
+    const fallbackSource = indexHtml.slice(
+      indexHtml.indexOf('function startMainThreadFallback'),
+      indexHtml.indexOf('if (!startWorkerAnimation())'),
+    );
+    expect(fallbackSource).toMatch(
+      /if \(!reduceMotion\) \{[\s\S]*?document\.addEventListener\('visibilitychange', handleVisibilityChange\);\s*\}\s*if \(typeof ResizeObserver/,
+    );
     expect(indexHtml).not.toContain('.ad-splash-quote-base');
     expect(indexHtml).not.toContain('.ad-splash-quote-spotlight');
     expect(indexHtml).not.toContain('.ad-splash-quote-character');
@@ -137,7 +155,6 @@ describe('theme contract', () => {
     expect(indexHtml).not.toContain('ad-splash-ambient');
     expect(indexHtml).not.toContain('@keyframes ad-ambient-sweep');
     expect(indexHtml).not.toContain('function adAnimateSpotlight');
-    expect(indexHtml).toContain('@media (prefers-reduced-motion: reduce)');
     expect(indexHtml).toContain('#ad-splash.ad-splash-exit');
     expect(indexHtml).toContain('transition: opacity 260ms ease');
     expect(indexHtml).toContain('#root.ad-app-enter');
