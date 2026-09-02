@@ -74,7 +74,6 @@
           height: 88px;
           object-fit: contain;
           filter: drop-shadow(0 12px 30px rgb(76 79 105 / 0.18));
-          animation: ad-logo-breathe 3.6s ease-in-out infinite;
         }
         .dark #ad-splash-logo {
           filter: drop-shadow(0 12px 30px rgb(17 17 27 / 0.42));
@@ -120,21 +119,6 @@
           white-space: nowrap;
           border: 0;
         }
-        @keyframes ad-logo-breathe {
-          0%,
-          100% {
-            transform: scale(1);
-          }
-          50% {
-            transform: scale(1.025);
-          }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          #ad-splash-logo,
-          #ad-splash-quote {
-            animation: none;
-          }
-        }
       </style>
       <div id="ad-splash-content">
         <img id="ad-splash-logo" src="/ad-logo.png" alt="" aria-hidden="true" draggable="false" />
@@ -149,7 +133,9 @@
             var canvas = document.getElementById('ad-splash-quote-canvas');
             if (!wrap || !quote || !(canvas instanceof HTMLCanvasElement)) return;
 
-            const sweepDurationMs = 300;
+            const sweepDurationMs = 600;
+            const sweepRestMs = 300;
+            const cycleDurationMs = sweepDurationMs + sweepRestMs;
             const frameIntervalMs = 16;
             var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -177,6 +163,7 @@
                 highlightColor: wrapStyle.getPropertyValue('--ad-quote-highlight').trim(),
                 reduceMotion: reduceMotion,
                 sweepDurationMs: sweepDurationMs,
+                cycleDurationMs: cycleDurationMs,
                 frameIntervalMs: frameIntervalMs,
               };
             }
@@ -234,12 +221,10 @@
               function paint(progress) {
                 context.clearRect(0, 0, config.width, config.height);
                 paintText(config.baseColor);
-                if (!config.reduceMotion) {
+                if (!config.reduceMotion && progress !== null) {
                   var bandWidth = config.width * 0.55;
-                  var center = progress * config.width;
+                  var center = -bandWidth / 2 + progress * (config.width + bandWidth);
                   paintBand(center, bandWidth);
-                  paintBand(center - config.width, bandWidth);
-                  paintBand(center + config.width, bandWidth);
                 }
                 if (!painted) {
                   painted = true;
@@ -247,11 +232,14 @@
                 }
               }
 
+              function sweepProgressForElapsed(elapsedMs) {
+                var cycleElapsed = elapsedMs % config.cycleDurationMs;
+                if (cycleElapsed >= config.sweepDurationMs) return null;
+                return cycleElapsed / config.sweepDurationMs;
+              }
+
               function drawFrame() {
-                var progress =
-                  ((performance.now() - startedAt) % config.sweepDurationMs) /
-                  config.sweepDurationMs;
-                paint(progress);
+                paint(sweepProgressForElapsed(performance.now() - startedAt));
               }
 
               self.onmessage = function (event) {
@@ -328,7 +316,9 @@
               }
 
               worker.onmessage = function (event) {
-                if (event.data.type === 'painted') quote.style.color = 'transparent';
+                if (event.data.type === 'painted' && canvas.dataset.settled !== 'true') {
+                  quote.style.color = 'transparent';
+                }
               };
               worker.onerror = function () {
                 quote.style.color = '';
@@ -347,9 +337,14 @@
               textObserver = new MutationObserver(updateWorker);
               textObserver.observe(quote, { childList: true, characterData: true, subtree: true });
               removalObserver = new MutationObserver(function () {
-                if (!canvas.isConnected) stopWorker();
+                if (!canvas.isConnected || canvas.dataset.settled === 'true') stopWorker();
               });
-              removalObserver.observe(document.body, { childList: true, subtree: true });
+              removalObserver.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['data-settled'],
+              });
               return true;
             }
 
@@ -361,6 +356,9 @@
               var textX = 0;
               var startedAt = performance.now();
               var frameTimer;
+              var resizeObserver;
+              var textObserver;
+              var themeObserver;
 
               function syncMetrics() {
                 config = readFrameConfig();
@@ -403,34 +401,42 @@
               function paint(progress) {
                 context.clearRect(0, 0, config.width, config.height);
                 paintText(config.baseColor);
-                if (reduceMotion) return;
+                if (reduceMotion || progress === null) return;
                 var bandWidth = config.width * 0.55;
-                var center = progress * config.width;
+                var center = -bandWidth / 2 + progress * (config.width + bandWidth);
                 paintBand(center, bandWidth);
-                paintBand(center - config.width, bandWidth);
-                paintBand(center + config.width, bandWidth);
               }
 
               function stopAnimation() {
                 window.clearInterval(frameTimer);
                 window.removeEventListener('focus', drawFrame);
                 document.removeEventListener('visibilitychange', handleVisibilityChange);
+                resizeObserver?.disconnect();
+                textObserver?.disconnect();
+                themeObserver?.disconnect();
+              }
+
+              function sweepProgressForElapsed(elapsedMs) {
+                var cycleElapsed = elapsedMs % cycleDurationMs;
+                if (cycleElapsed >= sweepDurationMs) return null;
+                return cycleElapsed / sweepDurationMs;
               }
 
               function drawFrame() {
-                if (!canvas.isConnected) {
+                if (!canvas.isConnected || canvas.dataset.settled === 'true') {
                   stopAnimation();
                   return;
                 }
-                var nextConfig = readFrameConfig();
-                if (
-                  config.text !== nextConfig.text ||
-                  config.width !== nextConfig.width ||
-                  config.height !== nextConfig.height
-                ) {
-                  syncMetrics();
+                paint(sweepProgressForElapsed(performance.now() - startedAt));
+              }
+
+              function refreshFallbackConfig() {
+                if (!canvas.isConnected || canvas.dataset.settled === 'true') {
+                  stopAnimation();
+                  return;
                 }
-                paint(((performance.now() - startedAt) % sweepDurationMs) / sweepDurationMs);
+                syncMetrics();
+                drawFrame();
               }
 
               function handleVisibilityChange() {
@@ -445,6 +451,21 @@
                 window.addEventListener('focus', drawFrame);
                 document.addEventListener('visibilitychange', handleVisibilityChange);
               }
+              if (typeof ResizeObserver === 'function') {
+                resizeObserver = new ResizeObserver(refreshFallbackConfig);
+                resizeObserver.observe(quote);
+              }
+              textObserver = new MutationObserver(refreshFallbackConfig);
+              textObserver.observe(quote, {
+                childList: true,
+                characterData: true,
+                subtree: true,
+              });
+              themeObserver = new MutationObserver(refreshFallbackConfig);
+              themeObserver.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ['class', 'style'],
+              });
             }
 
             if (!startWorkerAnimation()) startMainThreadFallback();
