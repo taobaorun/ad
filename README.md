@@ -1,21 +1,41 @@
 # AD
 
-AD 是一个 macOS 桌面应用，用于按项目管理本地 Coding Agent 配置。目前内置支持 Claude Code 与 Codex。
+[English](./README.md) | [简体中文](./README.zh-CN.md)
 
-AD 提供与项目并列的顶级 Harness，用于管理和分发给 Agent 使用的可复用能力。本期 Harness 开放 Skills / Plugins 子功能，统一纳管 Git 或本地来源；项目安装只能从该受管库选择资源，并明确选择当前项目的 Agent。选择项目和 Agent installation 后，AD 会把最终生效的 Settings、Skills、Plugins、来源、覆盖关系和管理状态集中到同一个 Project Agent Workspace。受支持的写操作统一经过 Preview → Apply → receipt，并提供受 digest 保护的 rollback。
+AD is a macOS desktop application for managing local coding-agent configuration and reusable agent capabilities. It currently includes built-in support for Claude Code and Codex.
 
-## 当前能力
+AD keeps configuration, resources, previews, receipts, and recovery scoped to the selected project and Agent installation. It exposes capability limits instead of silently claiming support for unknown versions, schemas, or locations.
 
-- Claude Code / Codex 的 user 与 project 配置盘点、编辑、历史和恢复；
-- Harness 中的 Skills / Plugins 管理、Local 原始目录链接、Git 共享受管 checkout，以及项目级安装/启停/卸载；
-- Skill 支持 Claude Code 与 Codex；Plugin 通过项目级 direct reference 支持 Claude Code，当前 Codex 明确显示不支持；
-- Claude Code 有效项目环境到 Codex 的 Settings 转换；外部 Skill / Plugin 只显示为“非 AD 托管”，必须先加入 Harness 受管库才能由 AD 安装；
-- 项目 A/B、Agent installation、operation receipt 与 history 的项目级隔离；
-- 对 external、degraded、unsupported、partial 和 conflict 状态如实呈现。
+## Highlights
 
-“支持全部资源”只表示 adapter 已验证版本和已知位置中的完整盘点。未知 Agent 版本、未知 schema 或新位置会把 coverage 降为 partial/failed。Agent 没有原生 direct-reference 能力时，AD 会明确显示不支持，不复制或转换资源内容来模拟支持。
+- **Project Agent Workspace** — inspect effective Settings, Skills, Plugins, sources, ownership, coverage, history, and rollback state for one project and one Agent installation.
+- **Harness** — manage reusable Skills and Plugins from Git repositories or local directories, then install compatible resources into supported project or user scopes.
+- **Multi-agent configuration** — inventory and edit Claude Code and Codex user/project settings with adapter-owned schemas and profiles.
+- **Safe mutations** — supported writes follow Preview → Apply → receipt, use digest preconditions, and provide guarded recovery or rollback where evidence is available.
+- **Claude Code → Codex conversion** — convert supported project Settings and prepare compatible resources without modifying the Claude Code source configuration.
+- **Honest coverage** — external, degraded, unsupported, partial, and conflicting states remain visible and are never reported as fully managed.
 
-## Quick start
+## Capability boundaries
+
+Harness is AD's managed source of reusable Skills and Plugins. Standard Skills are supported for Claude Code and Codex. Native Claude Code project Plugins can use direct project references. Unsupported Agent/scope combinations are blocked explicitly; AD does not rewrite or repackage resource content to simulate compatibility.
+
+Codex conversion workflows can use an AD-managed, project-isolated `CODEX_HOME` for compatible Plugin packages. That runtime is activated only when Codex is launched through AD for the selected project; it does not change the default `~/.codex` installation.
+
+"Complete inventory" means complete only for adapter-verified versions and known locations. Unknown Agent versions, schemas, or locations reduce coverage to `partial` or `failed`.
+
+## Download
+
+Download the latest signed macOS release from [GitHub Releases](https://github.com/taobaorun/ad/releases/latest).
+
+AD is currently macOS-only.
+
+## Development
+
+Requirements:
+
+- Node.js 20+
+- pnpm 9.15
+- Rust toolchain compatible with Rust 1.77+
 
 ```bash
 pnpm install
@@ -30,25 +50,33 @@ pnpm lint
 pnpm typecheck
 pnpm test
 cargo fmt --check --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml --all-features
 pnpm tauri build
 ```
 
-本地未签名构建输出为 `src-tauri/target/release/bundle/macos/AD.app` 与 DMG。签名和 notarization 使用：
+Unsigned local builds are written to `src-tauri/target/release/bundle/macos/AD.app` and the adjacent DMG directory.
+
+For signing and notarization:
 
 ```bash
 pnpm release:mac
 ```
 
-凭据配置见 [`docs/release.md`](./docs/release.md)。
+See [docs/release.md](./docs/release.md) for credential setup and the release procedure.
 
-## 数据边界
+## Data and security boundaries
 
-- AD 状态、Git Skill generations、legacy artifact、backup 和 receipt 位于 `~/.ad/`；
-- Agent 自有配置仍位于 `~/.claude/`、`~/.codex/` 或项目原生目录；
-- Project Codex Runtime 位于 `~/.ad/codex-homes/<project-name>/`，仅由 AD scoped launch 使用；
-- auth、token、session、chat/prompt history、logs、SQLite 和索引不进入配置快照、diff、backup 或日志；
-- 项目级配置隔离不等同于第三方 Skill、Plugin、hook 或 MCP 的运行时沙箱。
+- AD state, managed Git Skill generations, legacy artifacts, backups, and receipts live under `~/.ad/`.
+- Agent-owned configuration remains under `~/.claude/`, `~/.codex/`, or native project directories.
+- Project Codex runtimes live under `~/.ad/codex-homes/<project-name>/` and are used only by AD-scoped launches.
+- Authentication tokens, sessions, chat/prompt history, logs, SQLite databases, and indexes are excluded from configuration snapshots, diffs, backups, receipts, and logs.
+- Project-level configuration isolation is not a runtime sandbox for third-party Skills, Plugins, hooks, MCP servers, or scripts.
 
-Harness 中 Skills / Plugins 管理的产品契约与技术设计见 [`docs/product-specs/skill-plugin-resource-management.md`](./docs/product-specs/skill-plugin-resource-management.md) 和 [`docs/design-docs/skill-plugin-resource-management.md`](./docs/design-docs/skill-plugin-resource-management.md)；整体架构见 [`docs/design-docs/architecture.md`](./docs/design-docs/architecture.md)。
+## Architecture and product contracts
+
+- [System architecture](./docs/design-docs/architecture.md)
+- [Project Agent Workspace](./docs/product-specs/project-agent-workspace.md)
+- [Skill and Plugin resource management](./docs/product-specs/skill-plugin-resource-management.md)
+- [Resource-management technical design](./docs/design-docs/skill-plugin-resource-management.md)
+- [Multi-agent architecture](./docs/design-docs/multi-agent-architecture.md)
