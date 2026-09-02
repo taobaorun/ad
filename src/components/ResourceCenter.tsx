@@ -520,7 +520,9 @@ function SourceCard({
               aria-label={t('resourceCenter.updateSource', { name: source.displayName })}
               className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${updating ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${updating ? 'animate-spin motion-reduce:animate-none' : ''}`}
+              />
             </button>
             <button
               type="button"

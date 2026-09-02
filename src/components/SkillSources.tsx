@@ -216,7 +216,9 @@ export function SkillSourcesSection() {
                       disabled={previewing !== null}
                       onClick={() => void previewRollback(rollbackCandidate.receiptId)}
                     >
-                      <RotateCcw className={`h-3 w-3 ${rollingBack ? 'animate-spin' : ''}`} />
+                      <RotateCcw
+                        className={`h-3 w-3 ${rollingBack ? 'animate-spin motion-reduce:animate-none' : ''}`}
+                      />
                       {rollingBack
                         ? t('settings.skills.previewing')
                         : t('settings.skills.rollback')}
@@ -229,7 +231,9 @@ export function SkillSourcesSection() {
                     disabled={previewing !== null}
                     onClick={() => void previewExisting(source.sourceId, 'update')}
                   >
-                    <RefreshCw className={`h-3 w-3 ${updating ? 'animate-spin' : ''}`} />
+                    <RefreshCw
+                      className={`h-3 w-3 ${updating ? 'animate-spin motion-reduce:animate-none' : ''}`}
+                    />
                     {updating ? t('settings.skills.previewing') : t('settings.skills.update')}
                   </Button>
                   <Button
@@ -240,7 +244,9 @@ export function SkillSourcesSection() {
                     disabled={previewing !== null}
                     onClick={() => void previewExisting(source.sourceId, 'remove')}
                   >
-                    <Trash2 className={`h-3.5 w-3.5 ${removing ? 'animate-pulse' : ''}`} />
+                    <Trash2
+                      className={`h-3.5 w-3.5 ${removing ? 'animate-pulse motion-reduce:animate-none' : ''}`}
+                    />
                   </Button>
                 </div>
               </div>

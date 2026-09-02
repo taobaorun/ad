@@ -897,10 +897,15 @@ describe('AgentCollectionPanel', () => {
     install.focus();
     fireEvent.click(install);
     const cancel = await screen.findByRole('button', { name: 'Cancel' });
+    const dialog = screen.getByRole('dialog');
     expect(cancel).toHaveFocus();
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(install).not.toHaveFocus();
+    expect(within(dialog).getByText('Confirmation required')).toBeInTheDocument();
+    fireEvent.transitionEnd(dialog, { propertyName: 'transform' });
+    expect(dialog).not.toBeInTheDocument();
     expect(install).toHaveFocus();
   });
 
