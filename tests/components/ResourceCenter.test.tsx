@@ -308,7 +308,7 @@ describe('ResourceCenter', () => {
     fireEvent.change(screen.getByLabelText('Git URL'), {
       target: { value: 'https://example.com/team/tools.git' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Inspect & Preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(
       await screen.findByText(
@@ -338,7 +338,7 @@ describe('ResourceCenter', () => {
     fireEvent.change(screen.getByLabelText('Git URL'), {
       target: { value: 'https://example.com/new/tools.git' },
     });
-    const preview = screen.getByRole('button', { name: 'Inspect & Preview' });
+    const preview = screen.getByRole('button', { name: 'Continue' });
     fireEvent.click(preview);
     fireEvent.click(preview);
 
@@ -351,4 +351,27 @@ describe('ResourceCenter', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(mocks.previewAddSkillCatalogSource).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    ['compensated', 'The source operation did not finish. The previous state was restored.'],
+    ['partial_failure', 'Some source changes did not finish.'],
+  ])(
+    'keeps a %s source outcome visible after refresh without reusing its plan',
+    async (outcome, message) => {
+      mocks.applySkillCatalogSourcePlan.mockResolvedValue({
+        outcome,
+        issues: ['operation did not finish'],
+      });
+      render(<ResourceCenter />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Update source Team tools' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Confirm & Apply' }));
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(message));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(mocks.listResourceCatalog).toHaveBeenCalledTimes(2);
+      expect(mocks.applySkillCatalogSourcePlan).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      await waitFor(() => expect(mocks.listResourceCatalog).toHaveBeenCalledTimes(3));
+      expect(mocks.applySkillCatalogSourcePlan).toHaveBeenCalledTimes(1);
+    },
+  );
 });

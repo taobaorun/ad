@@ -647,7 +647,57 @@ fn preview_agent_settings_edit_inner(
         .settings()
         .ok_or_else(|| context_error(&context, "Agent does not support settings edits"))?;
     let plan = settings.plan_edit(&context, edit)?;
-    plans.insert(plan)
+    let (changed_settings_keys, direct_apply_eligible) = plan
+        .mutations
+        .first()
+        .and_then(|mutation| registry.resolve_resource(&context, &mutation.resource).ok())
+        .and_then(|target| std::fs::read(target.path()).ok())
+        .map(|before| settings_edit_review(&plan, &before))
+        .unwrap_or_default();
+    let mut view = plans.insert(plan)?;
+    view.direct_apply_eligible = direct_apply_eligible;
+    view.changed_settings_keys = changed_settings_keys;
+    Ok(view)
+}
+
+// Compare the actual bytes used by the sealed plan, not a potentially stale UI
+// draft. Any unrecognized or execution-related change keeps explicit review.
+fn settings_edit_review(plan: &crate::agents::MutationPlan, before: &[u8]) -> (Vec<String>, bool) {
+    use crate::agents::MutationKind;
+    if plan.agent_id.as_str() != "claude-code"
+        || plan.context.project_path.is_none()
+        || plan.mutations.len() != 1
+    {
+        return (Vec::new(), false);
+    }
+    let mutation = &plan.mutations[0];
+    if mutation.kind != MutationKind::Replace
+        || mutation.resource.kind != ResourceKind::Settings
+        || mutation.resource.scope != ResourceScope::Project
+        || mutation.expected_digest.as_ref() != Some(&ContentDigest::sha256(before))
+    {
+        return (Vec::new(), false);
+    }
+    let Ok(serde_json::Value::Object(previous)) = serde_json::from_slice(before) else {
+        return (Vec::new(), false);
+    };
+    let Some(serde_json::Value::Object(next)) = mutation.content.as_ref() else {
+        return (Vec::new(), false);
+    };
+    let changed: std::collections::BTreeSet<_> = previous
+        .keys()
+        .chain(next.keys())
+        .filter(|key| previous.get(*key) != next.get(*key))
+        .collect();
+    let direct = !changed.is_empty()
+        && changed.iter().all(|key| {
+            matches!(key.as_str(), "model" | "theme")
+                && previous
+                    .get(*key)
+                    .map_or(true, serde_json::Value::is_string)
+                && next.get(*key).map_or(true, serde_json::Value::is_string)
+        });
+    (changed.into_iter().cloned().collect(), direct)
 }
 
 fn preview_agent_profile_apply_inner(
@@ -1208,6 +1258,99 @@ mod tests {
 
         assert_eq!(view.agent_id.as_str(), "claude-code");
         assert_eq!(view.changes.len(), 1);
+        assert!(
+            !view.direct_apply_eligible,
+            "user-wide edits still require review"
+        );
+
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        let project = std::fs::canonicalize(project).unwrap();
+        let settings_path = project.join(".claude/settings.json");
+        let before = br#"{"model":"old","hooks":{"Stop":[]}}"#;
+        std::fs::write(&settings_path, before).unwrap();
+        let project_context = AgentContext {
+            installation_id: view.context.installation_id.clone(),
+            project_path: Some(project.to_string_lossy().into_owned()),
+        };
+        let edit = SettingsEdit {
+            resource: ResourceRef {
+                installation_id: project_context.installation_id.clone(),
+                project_path: project_context.project_path.clone(),
+                kind: ResourceKind::Settings,
+                scope: ResourceScope::Project,
+                logical_id: "project-shared".into(),
+            },
+            media_type: "application/json".into(),
+            content: serde_json::json!({"model":"new","hooks":{"Stop":[]}}),
+        };
+        let ordinary =
+            preview_agent_settings_edit_inner(project_context.clone(), edit.clone(), &store)
+                .unwrap();
+        assert!(ordinary.direct_apply_eligible);
+        assert_eq!(std::fs::read(&settings_path).unwrap(), before);
+        let applied = ExecutionEngine
+            .apply_bound(
+                &ordinary.id,
+                &ordinary.context,
+                &ordinary.risk_fingerprint,
+                &store,
+            )
+            .unwrap();
+        assert!(applied.rollback.available);
+        let undo = ExecutionEngine
+            .preview_rollback_bound(&applied.id, &ordinary.context, &store)
+            .unwrap();
+        ExecutionEngine
+            .apply_acknowledged(
+                &undo.id,
+                &store,
+                &[PlanAcknowledgement {
+                    code: PlanAcknowledgementCode::RollbackApply,
+                    accepted: true,
+                }],
+            )
+            .unwrap();
+        assert_eq!(std::fs::read(&settings_path).unwrap(), before);
+
+        // A stale editor must not automatically overwrite a permission change
+        // made on disk, even if the editor itself only changed its model field.
+        std::fs::write(
+            &settings_path,
+            br#"{"model":"old","hooks":{"Stop":[]},"permissions":{"deny":["Bash"]}}"#,
+        )
+        .unwrap();
+        let stale =
+            preview_agent_settings_edit_inner(project_context.clone(), edit.clone(), &store)
+                .unwrap();
+        assert!(!stale.direct_apply_eligible);
+        assert_eq!(stale.changed_settings_keys, vec!["model", "permissions"]);
+        let public_view = serde_json::to_value(&stale).unwrap();
+        assert_eq!(public_view["directApplyEligible"], false);
+        assert_eq!(
+            public_view["changedSettingsKeys"],
+            serde_json::json!(["model", "permissions"])
+        );
+        // A change after preview still fails the existing sealed-plan guard.
+        std::fs::write(&settings_path, before).unwrap();
+        assert!(ExecutionEngine
+            .apply_bound(&stale.id, &stale.context, &stale.risk_fingerprint, &store)
+            .is_err());
+        for content in [
+            serde_json::json!({"model":"old","hooks":{"Stop":[{"command":"echo demo"}]}}),
+            serde_json::json!({"model":"old","env":{"DEMO":"changed"}}),
+            serde_json::json!({"model":"old","unknownOption":true}),
+            serde_json::json!({"model":{"unexpected":"object"},"hooks":{"Stop":[]}}),
+        ] {
+            let mut changed = edit.clone();
+            changed.content = content;
+            assert!(
+                !preview_agent_settings_edit_inner(project_context.clone(), changed, &store)
+                    .unwrap()
+                    .direct_apply_eligible
+            );
+        }
+
         assert_eq!(
             std::fs::read(claude_home.join("settings.json")).unwrap(),
             original

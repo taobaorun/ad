@@ -86,15 +86,25 @@
     "sourceSubdirectory": "Subdirectory: {{subdirectory}}",
     "search": "Search sources…",
     "filterLabel": "Resource type",
-    "filter": { "all": "All", "skills": "Skills", "plugins": "Plugins" },
+    "filter": {
+      "all": "All",
+      "skills": "Skills",
+      "plugins": "Plugins"
+    },
     "refresh": "Refresh",
     "loading": "Loading sources…",
     "empty": "No matching sources",
     "emptyHint": "Add a Git repository or local directory to manage it here.",
     "noManaged": "No managed resources match this view",
     "removedResources": "Removed resources ({{count}})",
-    "kind": { "skills": "Skill", "plugins": "Plugin" },
-    "agent": { "claude-code": "Claude Code", "codex": "Codex" },
+    "kind": {
+      "skills": "Skill",
+      "plugins": "Plugin"
+    },
+    "agent": {
+      "claude-code": "Claude Code",
+      "codex": "Codex"
+    },
     "unsupported": "No supported Agent",
     "suppressed": "Removed",
     "readd": "Re-add",
@@ -108,7 +118,7 @@
     },
     "sourceRemove": {
       "title": "Remove source “{{name}}”",
-      "description": "AD first uninstalls every resource from its projects. It then removes only the source record, never the local directory or original Git content.",
+      "description": "Uninstall this source’s resources across projects and remove the source. Local directories and Git repositories are kept.",
       "resources": "Source resources",
       "confirm": "Remove source",
       "removing": "Removing…",
@@ -144,6 +154,10 @@
         "succeeded": "Uninstalled",
         "failed": "Failed"
       }
+    },
+    "sourceOutcome": {
+      "compensated": "The source operation did not finish. The previous state was restored. Try the operation again.",
+      "partial_failure": "Some source changes did not finish. Refresh to check the current result before retrying."
     }
   },
   "detail": {
@@ -423,7 +437,7 @@
       "skillCount": "{{count}} skills",
       "addDialog": {
         "title": "Add Skill Source",
-        "description": "AD inspects the full tree and execution impact before writing the source catalog.",
+        "description": "Choose a Git repository or local directory to see its Skills.",
         "name": "Name",
         "namePlaceholder": "e.g. my-team-skills",
         "type": "Type",
@@ -444,7 +458,7 @@
         "cloningGit": "Cloning repository…",
         "addingSource": "Adding source…",
         "inspecting": "Inspecting…",
-        "preview": "Inspect & Preview",
+        "preview": "Continue",
         "retry": "Retry",
         "progress": {
           "preparing": "Preparing source inspection…",
@@ -458,28 +472,28 @@
       "plan": {
         "add": {
           "title": "Confirm Skill source addition",
-          "description": "Register the inspected Local source or publish a managed Git checkout."
+          "description": "Add this source, then choose which resources to install."
         },
         "update": {
           "title": "Confirm Skill source update",
-          "description": "Refresh the shared source binding. Linked projects observe the updated source together."
+          "description": "Update this source and its installed resources."
         },
         "rollback": {
           "title": "Confirm Skill source rollback",
-          "description": "Switch the shared Git source back to its previous managed checkout. Every linked project observes the rollback together."
+          "description": "Restore the previous version of this source."
         },
         "remove": {
           "title": "Confirm Skill source removal",
-          "description": "Remove the catalog entry only after all installed references are removed."
+          "description": "Uninstall its resources before removing this source."
         },
-        "sourceBinding": "Source binding",
+        "sourceBinding": "Resources",
         "skills": "Contains {{count}} Skills",
         "executionTitle": "Includes execution capabilities",
-        "executionDescription": "Detected {{count}} hook, MCP, command, script, or binary entry points. Verify that you trust the source before activation.",
+        "executionDescription": "Includes {{count}} commands or executable items that the Agent may run after installation. Only proceed if you trust this source.",
         "sharedImpact": "This source is linked from {{count}} project workspaces.",
         "blocked": "This operation is blocked",
         "sharedSource": "Local edits are visible immediately. Git updates atomically switch the shared managed checkout for every linked project.",
-        "removeReferences": "Source removal is allowed only when no AD-owned project links reference it.",
+        "removeReferences": "Uninstall resources from this source first.",
         "applying": "Applying…",
         "confirm": "Confirm & Apply"
       }
@@ -710,8 +724,8 @@
     "readOnly": "read-only",
     "discardDraftConfirm": "Discard the unsaved Settings draft and switch workspace?",
     "coverage": {
-      "partial": "AD can show verified observations, but the installed Agent version is not verified for complete coverage.",
-      "failed": "AD could not inspect this Settings category. Editing is unavailable."
+      "partial": "Showing recognized settings. Other settings may not be listed.",
+      "failed": "Settings could not be read. Refresh to try editing again."
     },
     "layer": {
       "system": "System",
@@ -725,13 +739,23 @@
     },
     "unsaved": "unsaved",
     "preview": "Preview changes",
-    "invalidJson": "Settings must be valid JSON before preview.",
-    "applySuccess": "Applied",
+    "invalidJson": "Fix the JSON format before saving.",
+    "applySuccess": "Saved",
     "compensated": "Apply failed; all changes were restored.",
-    "partialFailure": "Apply only completed partially; rollback is available.",
-    "rollback": "Rollback",
+    "partialFailure": "Some settings were not saved. Check the current content; use Undo if available to restore this change.",
+    "rollback": "Undo",
     "rollbackConfirm": "Rollback the last settings change? This will only proceed if the resource has not changed since apply.",
-    "rollbackSuccess": "Rolled back"
+    "rollbackSuccess": "Undone",
+    "save": "Save",
+    "saving": "Working…",
+    "undoCompensated": "Undo did not finish. Settings remain as they were before undo.",
+    "undoPartialFailure": "Only some changes were undone. Check the current settings and operation history before continuing.",
+    "refreshFailed": "The change finished, but the display could not refresh. Refresh to see the latest settings.",
+    "undoFailed": "Could not undo: {{error}}. Refresh to check the current settings.",
+    "undoDirtyHint": "Save or resolve your unsaved edits before undoing the last change.",
+    "refresh": "Refresh",
+    "reviewFields": "Will change: {{fields}}.",
+    "reviewReplacement": "This replaces the selected settings file. Make sure your edit includes the settings you want to keep; cancel and refresh if unsure."
   },
   "agentCollections": {
     "loading": "Loading Skills and Plugins…",
@@ -744,8 +768,8 @@
     "categoryEmpty": "No {{category}} were observed.",
     "coverageCount": "{{visible}} visible / {{observed}} declarations",
     "coverage": {
-      "partial": "This is a partial inventory. Verified resources remain visible; unverified locations are not claimed as complete.",
-      "failed": "This category could not be inspected. No write actions are available."
+      "partial": "Showing recognized resources. This list may be incomplete.",
+      "failed": "These resources could not be read. Refresh to try again."
     },
     "sourceGroup": {
       "unknown": "Unidentified source",
@@ -821,7 +845,7 @@
     "applyFailed": "The operation failed. Review the error before retrying.",
     "applyDetached": "Apply is running for this project. You can leave this view; the result will remain in History.",
     "viewHistory": "View History",
-    "viewReceipt": "View receipt",
+    "viewReceipt": "View history",
     "noChange": "No changes were needed.",
     "outcome": {
       "external": "This action must be completed outside AD; no project resource was changed.",
@@ -829,10 +853,11 @@
       "conflict": "The action stopped because the project resource is in conflict."
     },
     "compensated": "Apply failed; all collection changes were restored.",
-    "partialFailure": "Apply only completed partially; rollback is available.",
+    "partialFailure": "Some changes did not finish. Check the operation history before continuing.",
     "rollback": "Rollback",
     "rollbackConfirm": "Rollback the last collection change? This will only proceed if its resources have not changed since Apply.",
-    "rollbackSuccess": "Rolled back"
+    "rollbackSuccess": "Rolled back",
+    "availabilityDetails": "Supported features"
   },
   "operationProgress": {
     "elapsed": "{{seconds}}s elapsed"

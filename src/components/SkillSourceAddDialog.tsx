@@ -109,7 +109,6 @@ export function SkillSourceAddDialog({
         <OperationProgress
           label={t(`settings.skills.addDialog.progress.${progress.phase}`)}
           startedAt={startedAt}
-          hint={t('settings.skills.addDialog.progress.hint')}
         />
       ) : (
         <>
@@ -164,11 +163,6 @@ export function SkillSourceAddDialog({
               className={inputClass}
             />
           </Field>
-          {!resourceMode && (
-            <p className="text-[11px] text-muted-foreground">
-              {t('settings.skills.addDialog.backendIdHint')}
-            </p>
-          )}
           {error && (
             <div role="alert" className="mt-3 text-xs text-destructive">
               {error}

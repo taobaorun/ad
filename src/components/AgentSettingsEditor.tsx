@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { CheckCircle2, Eye, RotateCcw, Save, ShieldAlert } from 'lucide-react';
+import { CheckCircle2, Eye, RotateCcw, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { formatAgentError } from '@/lib/agentErrors';
-import type { AgentContext, MutationPlanView, OperationReceipt } from '@/lib/agentTypes';
+import type {
+  AgentContext,
+  MutationPlanView,
+  OperationReceipt,
+  ResourceRef,
+} from '@/lib/agentTypes';
 import type {
   ProjectWorkspaceInventory,
   SettingsLayerView,
@@ -21,6 +26,33 @@ interface AgentSettingsEditorProps {
 }
 
 const EFFECTIVE_KEY = 'effective';
+
+type SettingsOperation =
+  | { kind: 'save'; draftKey: string; text: string; direct: boolean }
+  | { kind: 'undo'; draftKey: string; text: string };
+
+// The backend compares real file contents and defaults this hint to false.
+// Keep the UI intent bound to the exact context and target the user selected.
+function isDirectSettingsSave(
+  plan: MutationPlanView,
+  context: AgentContext,
+  resource: ResourceRef,
+): boolean {
+  const change = plan.changes[0];
+  return (
+    plan.directApplyEligible &&
+    plan.requiredAcknowledgements.length === 0 &&
+    plan.changes.length === 1 &&
+    !!change &&
+    plan.context.installationId === context.installationId &&
+    plan.context.projectPath === context.projectPath &&
+    change.resource.installationId === resource.installationId &&
+    change.resource.projectPath === resource.projectPath &&
+    change.resource.logicalId === resource.logicalId &&
+    change.resource.scope === 'project' &&
+    change.resource.kind === 'settings'
+  );
+}
 
 function layerText(layer: SettingsLayerView): string {
   return JSON.stringify(layer.content, null, 2);
@@ -41,7 +73,16 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
   const [plan, setPlan] = useState<MutationPlanView | null>(null);
   const [planBusy, setPlanBusy] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
-  const [lastReceipt, setLastReceipt] = useState<OperationReceipt | null>(null);
+  const [lastSave, setLastSave] = useState<{
+    receipt: OperationReceipt;
+    draftKey: string;
+    direct: boolean;
+  } | null>(null);
+  const pendingOperationRef = useRef<SettingsOperation | null>(null);
+  const operationBusyRef = useRef(false);
+  const pendingRefreshRef = useRef<{ key: string; text: string; saved: boolean } | undefined>(
+    undefined,
+  );
   const [status, setStatus] = useState<string | null>(null);
   const inventoryRef = useRef<ProjectWorkspaceInventory | null>(null);
   const draftsRef = useRef<Record<string, string>>({});
@@ -52,7 +93,7 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
   activeContextKeyRef.current = contextKey;
 
   const load = useCallback(
-    async (discardDraftKey?: string) => {
+    async (savedDraft = pendingRefreshRef.current) => {
       const requestId = ++loadRequestRef.current;
       const requestContextKey = JSON.stringify(context);
       setLoading(true);
@@ -77,7 +118,11 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
           next.settings.layers.map((layer) => {
             const key = layerKey(layer);
             const baseline = layerText(layer);
-            if (!sameWorkspace || key === discardDraftKey) return [key, baseline];
+            if (!sameWorkspace) return [key, baseline];
+            if (key === savedDraft?.key) {
+              const currentDraft = draftsRef.current[key] ?? baseline;
+              return [key, currentDraft === savedDraft.text ? baseline : currentDraft];
+            }
             const previousLayer = previous?.settings.layers.find(
               (candidate) => layerKey(candidate) === key,
             );
@@ -95,6 +140,8 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
           if (next.settings.layers.some((layer) => layerKey(layer) === current)) return current;
           return next.settings.editableTargets[0]?.declarationKey ?? EFFECTIVE_KEY;
         });
+        if (pendingRefreshRef.current === savedDraft) pendingRefreshRef.current = undefined;
+        return true;
       } catch (caught) {
         if (
           requestId !== loadRequestRef.current ||
@@ -103,6 +150,7 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
           return;
         }
         setError(formatAgentError(caught));
+        return false;
       } finally {
         if (
           requestId === loadRequestRef.current &&
@@ -129,8 +177,21 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
     previewRequestRef.current += 1;
     setPlan(null);
     setPlanError(null);
-    setLastReceipt(null);
+    setLastSave(null);
     setStatus(null);
+    setPlanBusy(false);
+    operationBusyRef.current = false;
+    pendingOperationRef.current = null;
+    pendingRefreshRef.current = undefined;
+    setInventory(null);
+  }, [contextKey]);
+
+  useEffect(() => {
+    activeContextKeyRef.current = contextKey;
+    return () => {
+      previewRequestRef.current += 1;
+      activeContextKeyRef.current = '';
+    };
   }, [contextKey]);
 
   const selectedLayer = useMemo(
@@ -160,16 +221,27 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
   const selectedText =
     selectedKey === EFFECTIVE_KEY ? effectiveText : (drafts[selectedKey] ?? '{}');
   const selectedBaseline = selectedLayer ? layerText(selectedLayer) : effectiveText;
-  const dirty = selectedTarget !== null && selectedText !== selectedBaseline;
+  const savedAwaitingRefresh = pendingRefreshRef.current?.saved
+    ? pendingRefreshRef.current
+    : undefined;
+  const selectedComparison =
+    savedAwaitingRefresh?.key === selectedKey ? savedAwaitingRefresh.text : selectedBaseline;
+  const dirty = selectedTarget !== null && selectedText !== selectedComparison;
   const hasDirtyDraft = useMemo(
     () =>
       inventory?.settings.editableTargets.some((target) => {
         const layer = inventory.settings.layers.find(
           (candidate) => layerKey(candidate) === target.declarationKey,
         );
-        return layer !== undefined && drafts[target.declarationKey] !== layerText(layer);
+        const baseline =
+          savedAwaitingRefresh?.key === target.declarationKey
+            ? savedAwaitingRefresh.text
+            : layer
+              ? layerText(layer)
+              : undefined;
+        return layer !== undefined && drafts[target.declarationKey] !== baseline;
       }) ?? false,
-    [drafts, inventory],
+    [drafts, inventory, savedAwaitingRefresh],
   );
 
   useEffect(() => {
@@ -189,14 +261,95 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
     };
   }, [hasDirtyDraft, t]);
 
+  async function executePlan(nextPlan: MutationPlanView, operation: SettingsOperation) {
+    const requestContextKey = contextKey;
+    const requestId = previewRequestRef.current;
+    const receipt =
+      operation.kind === 'undo'
+        ? await tauri.applyAgentRollbackPlan(
+            nextPlan.id,
+            nextPlan.context,
+            nextPlan.riskFingerprint,
+            true,
+          )
+        : await tauri.applyAgentPlan(nextPlan.id, nextPlan.context, nextPlan.riskFingerprint);
+    if (
+      requestContextKey !== activeContextKeyRef.current ||
+      requestId !== previewRequestRef.current
+    )
+      return;
+    setPlan(null);
+    pendingOperationRef.current = null;
+    const savedDraft = {
+      key: operation.draftKey,
+      text: operation.text,
+      saved: operation.kind === 'save' && receipt.status === 'complete',
+    };
+    if (operation.kind === 'save') {
+      setLastSave(
+        receipt.rollback.available
+          ? {
+              receipt,
+              draftKey: operation.draftKey,
+              direct: operation.direct,
+            }
+          : null,
+      );
+    } else if (receipt.status !== 'compensated') {
+      setLastSave(null);
+    }
+    if (receipt.status === 'compensated') {
+      setError(
+        t(
+          operation.kind === 'undo' ? 'agentSettings.undoCompensated' : 'agentSettings.compensated',
+        ),
+      );
+      return;
+    }
+    // Refresh never reapplies an already completed mutation. Preserve any draft
+    // typed after the submitted snapshot while waiting for the backend.
+    pendingRefreshRef.current = savedDraft;
+    const refreshed = await load(savedDraft);
+    if (
+      requestContextKey !== activeContextKeyRef.current ||
+      requestId !== previewRequestRef.current
+    )
+      return;
+    if (receipt.status === 'partial_failure') {
+      setStatus(null);
+      setError(
+        t(
+          operation.kind === 'undo'
+            ? 'agentSettings.undoPartialFailure'
+            : 'agentSettings.partialFailure',
+        ),
+      );
+    } else {
+      setStatus(
+        t(
+          operation.kind === 'undo'
+            ? 'agentSettings.rollbackSuccess'
+            : 'agentSettings.applySuccess',
+        ),
+      );
+      if (!refreshed) setError(t('agentSettings.refreshFailed'));
+    }
+  }
+
   async function preview() {
-    if (!selectedTarget || !dirty) return;
+    if (!selectedTarget || !selectedLayer || !dirty || operationBusyRef.current) return;
+    operationBusyRef.current = true;
     const requestId = ++previewRequestRef.current;
     const requestContextKey = contextKey;
+    const submittedText = selectedText;
+    setPlanBusy(true);
     setError(null);
     setStatus(null);
+    setPlanError(null);
     try {
-      const content = JSON.parse(selectedText) as unknown;
+      const content = JSON.parse(submittedText) as unknown;
+      if (!content || typeof content !== 'object' || Array.isArray(content))
+        throw new SyntaxError('Settings must be an object');
       const nextPlan = await tauri.previewAgentSettingsEdit(workspaceContext, {
         resource: selectedTarget.resource,
         mediaType: selectedTarget.mediaType,
@@ -205,83 +358,120 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
       if (
         requestId !== previewRequestRef.current ||
         requestContextKey !== activeContextKeyRef.current
-      ) {
+      )
         return;
+      const operation: SettingsOperation = {
+        kind: 'save',
+        draftKey: selectedTarget.declarationKey,
+        text: submittedText,
+        direct: isDirectSettingsSave(nextPlan, workspaceContext, selectedTarget.resource),
+      };
+      if (operation.direct) {
+        await executePlan(nextPlan, operation);
+      } else {
+        pendingOperationRef.current = operation;
+        setPlan(nextPlan);
       }
-      setPlan(nextPlan);
-      setPlanError(null);
     } catch (caught) {
       if (
         requestId !== previewRequestRef.current ||
         requestContextKey !== activeContextKeyRef.current
-      ) {
+      )
         return;
-      }
       setError(
         caught instanceof SyntaxError ? t('agentSettings.invalidJson') : formatAgentError(caught),
       );
+    } finally {
+      if (
+        requestId === previewRequestRef.current &&
+        requestContextKey === activeContextKeyRef.current
+      ) {
+        operationBusyRef.current = false;
+        setPlanBusy(false);
+      }
     }
   }
 
   async function applyPlan() {
-    if (!plan || !selectedTarget) return;
+    if (!plan || !pendingOperationRef.current || operationBusyRef.current) return;
+    operationBusyRef.current = true;
+    const requestId = previewRequestRef.current;
     const requestContextKey = contextKey;
-    const appliedDraftKey = selectedTarget.declarationKey;
     setPlanBusy(true);
     setPlanError(null);
     try {
-      const receipt = await tauri.applyAgentPlan(plan.id, plan.context, plan.riskFingerprint);
-      if (requestContextKey !== activeContextKeyRef.current) return;
-      setLastReceipt(receipt);
-      setPlan(null);
-      if (receipt.status === 'complete') {
-        setStatus(t('agentSettings.applySuccess'));
-        await load(appliedDraftKey);
-      } else if (receipt.status === 'compensated') {
-        setLastReceipt(null);
-        setError(t('agentSettings.compensated'));
-      } else {
-        await load(appliedDraftKey);
-        if (requestContextKey !== activeContextKeyRef.current) return;
-        setError(t('agentSettings.partialFailure'));
-      }
+      await executePlan(plan, pendingOperationRef.current);
     } catch (caught) {
-      if (requestContextKey !== activeContextKeyRef.current) return;
-      setPlanError(formatAgentError(caught));
+      if (
+        requestId === previewRequestRef.current &&
+        requestContextKey === activeContextKeyRef.current
+      ) {
+        setPlanError(formatAgentError(caught));
+      }
     } finally {
-      setPlanBusy(false);
+      if (
+        requestId === previewRequestRef.current &&
+        requestContextKey === activeContextKeyRef.current
+      ) {
+        operationBusyRef.current = false;
+        setPlanBusy(false);
+      }
     }
   }
 
   async function rollback() {
-    if (!lastReceipt) return;
+    if (!lastSave?.receipt.rollback.available || hasDirtyDraft || operationBusyRef.current) return;
+    operationBusyRef.current = true;
+    const requestId = ++previewRequestRef.current;
     const requestContextKey = contextKey;
+    const undoText = draftsRef.current[lastSave.draftKey] ?? '';
     setPlanBusy(true);
     setError(null);
+    setStatus(null);
+    setPlanError(null);
     try {
-      const rollbackContext = lastReceipt.context ?? workspaceContext;
-      const rollbackPlan = await tauri.previewAgentRollback(lastReceipt.id, rollbackContext);
-      if (requestContextKey !== activeContextKeyRef.current) return;
-      if (!window.confirm(t('agentSettings.rollbackConfirm'))) return;
-      await tauri.applyAgentRollbackPlan(
-        rollbackPlan.id,
-        rollbackContext,
-        rollbackPlan.riskFingerprint,
-        true,
-      );
-      if (requestContextKey !== activeContextKeyRef.current) return;
-      setLastReceipt(null);
-      setStatus(t('agentSettings.rollbackSuccess'));
-      await load(selectedTarget?.declarationKey);
+      const rollbackContext = lastSave.receipt.context ?? workspaceContext;
+      const rollbackPlan = await tauri.previewAgentRollback(lastSave.receipt.id, rollbackContext);
+      if (
+        requestId !== previewRequestRef.current ||
+        requestContextKey !== activeContextKeyRef.current
+      )
+        return;
+      const operation: SettingsOperation = {
+        kind: 'undo',
+        draftKey: lastSave.draftKey,
+        text: undoText,
+      };
+      if (
+        lastSave.direct &&
+        rollbackPlan.requiredAcknowledgements.every(
+          (item) => item.code === 'rollback_apply' && item.risk === 'confirmation',
+        )
+      ) {
+        await executePlan(rollbackPlan, operation);
+      } else {
+        pendingOperationRef.current = operation;
+        setPlan(rollbackPlan);
+      }
     } catch (caught) {
-      if (requestContextKey !== activeContextKeyRef.current) return;
-      setError(formatAgentError(caught));
+      if (
+        requestId === previewRequestRef.current &&
+        requestContextKey === activeContextKeyRef.current
+      ) {
+        setError(t('agentSettings.undoFailed', { error: formatAgentError(caught) }));
+      }
     } finally {
-      setPlanBusy(false);
+      if (
+        requestId === previewRequestRef.current &&
+        requestContextKey === activeContextKeyRef.current
+      ) {
+        operationBusyRef.current = false;
+        setPlanBusy(false);
+      }
     }
   }
 
-  if (loading) {
+  if (loading && !inventory) {
     return (
       <div
         className="flex h-full items-center justify-center text-sm text-muted-foreground"
@@ -315,10 +505,13 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
     <div className="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card">
       {inventory.settings.coverage.status !== 'complete' && (
         <div
-          className="flex shrink-0 items-center gap-2 border-b border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground"
+          className={`shrink-0 border-b px-3 py-2 text-xs ${
+            inventory.settings.coverage.status === 'failed'
+              ? 'border-warning/40 bg-warning/10 text-foreground'
+              : 'border-border bg-muted/30 text-muted-foreground'
+          }`}
           role="status"
         >
-          <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
           {t(`agentSettings.coverage.${inventory.settings.coverage.status}`)}
         </div>
       )}
@@ -353,15 +546,27 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
             {status}
           </span>
         )}
-        {lastReceipt && (
-          <Button type="button" size="sm" variant="outline" onClick={() => void rollback()}>
+        {lastSave?.receipt.rollback.available && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => void rollback()}
+            disabled={planBusy || hasDirtyDraft}
+            title={hasDirtyDraft ? t('agentSettings.undoDirtyHint') : undefined}
+          >
             <RotateCcw className="h-3.5 w-3.5" />
             {t('agentSettings.rollback')}
           </Button>
         )}
-        <Button type="button" size="sm" onClick={() => void preview()} disabled={!dirty}>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => void preview()}
+          disabled={!dirty || planBusy || loading}
+        >
           <Save className="h-3.5 w-3.5" />
-          {t('agentSettings.preview')}
+          {t(planBusy ? 'agentSettings.saving' : 'agentSettings.save')}
         </Button>
       </div>
 
@@ -379,6 +584,15 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
           className="shrink-0 border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
         >
           {error}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={planBusy || loading}
+            onClick={() => void load()}
+          >
+            {t('agentSettings.refresh')}
+          </Button>
         </div>
       )}
       <div className="min-h-0 flex-1">
@@ -401,9 +615,22 @@ export function AgentSettingsEditor({ context }: AgentSettingsEditorProps) {
 
       <AgentPlanDialog
         plan={plan}
+        description={
+          pendingOperationRef.current?.kind === 'save'
+            ? plan?.changedSettingsKeys.length
+              ? t('agentSettings.reviewFields', {
+                  fields: plan.changedSettingsKeys.map((key) => key || '""').join(', '),
+                })
+              : t('agentSettings.reviewReplacement')
+            : undefined
+        }
         busy={planBusy}
         error={planError}
-        onCancel={() => setPlan(null)}
+        onCancel={() => {
+          setPlan(null);
+          setPlanError(null);
+          pendingOperationRef.current = null;
+        }}
         onConfirm={() => void applyPlan()}
       />
     </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ChevronDown, Layers3, Search, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Layers3, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { formatAgentError } from '@/lib/agentErrors';
@@ -397,7 +397,13 @@ export function AgentCollectionPanel({
     [query, sourcePlugins],
   );
   const hasResources = sourceSkills.length + sourcePlugins.length > 0;
-  const limitations = capabilities.flatMap((capability) => capability.limitations);
+  const limitations = Array.from(
+    new Map(
+      capabilities
+        .flatMap((capability) => capability.limitations)
+        .map((item) => [item.messageKey, item]),
+    ).values(),
+  );
 
   if (loading) {
     return (
@@ -472,11 +478,14 @@ export function AgentCollectionPanel({
         </div>
       )}
       {limitations.length > 0 && (
-        <ul className="shrink-0 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-foreground">
-          {limitations.map((limitation) => (
-            <li key={limitation.code}>{t(limitation.messageKey)}</li>
-          ))}
-        </ul>
+        <details className="shrink-0 border-b border-border px-3 py-2 text-xs text-muted-foreground">
+          <summary className="cursor-pointer">{t('agentCollections.availabilityDetails')}</summary>
+          <ul className="mt-2 space-y-1">
+            {limitations.map((limitation) => (
+              <li key={limitation.messageKey}>{t(limitation.messageKey)}</li>
+            ))}
+          </ul>
+        </details>
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -589,10 +598,13 @@ function CollectionSection({
       </div>
       {inventory.coverage.status !== 'complete' && (
         <div
-          className="mb-2 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground"
+          className={`mb-2 rounded-md px-3 py-2 text-xs ${
+            inventory.coverage.status === 'failed'
+              ? 'border border-warning/40 bg-warning/10 text-foreground'
+              : 'bg-muted/30 text-muted-foreground'
+          }`}
           role="status"
         >
-          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           {t(`agentCollections.coverage.${inventory.coverage.status}`)}
         </div>
       )}
