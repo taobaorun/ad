@@ -522,7 +522,7 @@ describe('AgentCollectionPanel', () => {
     );
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('codex')).toBeInTheDocument();
-    expect(within(dialog).getByText('codex:base')).toBeInTheDocument();
+    expect(within(dialog).getByText(/Installation: codex:base/)).toBeInTheDocument();
     expect(within(dialog).getByText('User · all projects')).toBeInTheDocument();
   });
 
@@ -663,7 +663,7 @@ describe('AgentCollectionPanel', () => {
     expect(screen.getByText('Conflict')).toBeInTheDocument();
     expect(screen.getAllByText(/Read-only/)).toHaveLength(2);
     expect(screen.getByLabelText('Degraded resource')).toBeInTheDocument();
-    expect(screen.getAllByText(/partial inventory/i)).toHaveLength(2);
+    expect(screen.getAllByText(/list may be incomplete/i)).toHaveLength(2);
     expect(screen.getByText('User layer declaration')).toBeInTheDocument();
     expect(screen.getByText('Local / Runtime layer declaration')).toBeInTheDocument();
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
@@ -903,7 +903,7 @@ describe('AgentCollectionPanel', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(install).not.toHaveFocus();
-    expect(within(dialog).getByText('Confirmation required')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Confirmation required')).not.toBeInTheDocument();
     fireEvent.transitionEnd(dialog, { propertyName: 'transform' });
     expect(dialog).not.toBeInTheDocument();
     expect(install).toHaveFocus();

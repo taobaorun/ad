@@ -252,6 +252,8 @@ export const MutationPlanViewSchema = z
     context: AgentContextSchema,
     changes: z.array(MutationPlanChangeViewSchema).default([]),
     requiredAcknowledgements: z.array(AcknowledgementRequirementSchema).default([]),
+    directApplyEligible: z.boolean().default(false),
+    changedSettingsKeys: z.array(z.string()).default([]),
     riskFingerprint: RiskFingerprintSchema,
     expiresAt: z.string().datetime({ offset: true }),
   })

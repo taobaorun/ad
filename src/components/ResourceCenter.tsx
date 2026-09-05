@@ -181,10 +181,13 @@ export function ResourceCenter() {
     if (!sourcePlan) return;
     setSourceBusy(true);
     try {
-      await tauri.applySkillCatalogSourcePlan(sourcePlan);
+      const report = await tauri.applySkillCatalogSourcePlan(sourcePlan);
       setSourcePlan(null);
       await load();
       setResourceReloadKey((key) => key + 1);
+      if (report.outcome === 'compensated' || report.outcome === 'partial_failure') {
+        setError(t(`resourceCenter.sourceOutcome.${report.outcome}`));
+      }
     } catch (reason) {
       setError(formatAgentErrorMessage(reason));
     } finally {
@@ -360,7 +363,7 @@ export function ResourceCenter() {
               {notice}
             </div>
           )}
-          {error && (
+          {error && !removingSource && !sourcePlan && (
             <div
               role="alert"
               className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
@@ -412,9 +415,13 @@ export function ResourceCenter() {
       />
       <SkillCatalogPlanDialog
         plan={sourcePlan}
+        error={error}
         busy={sourceBusy}
         resourceMode
-        onCancel={() => setSourcePlan(null)}
+        onCancel={() => {
+          setSourcePlan(null);
+          setError(null);
+        }}
         onConfirm={() => void applySourcePlan()}
       />
       <SourceRemovalDialog

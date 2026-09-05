@@ -169,6 +169,12 @@ pub struct PlanAcknowledgement {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MutationPlanView {
+    /// UI may omit review only for a backend-proven ordinary settings edit.
+    #[serde(default)]
+    pub direct_apply_eligible: bool,
+    /// Changed top-level settings keys, compared against the sealed before-state.
+    #[serde(default)]
+    pub changed_settings_keys: Vec<String>,
     pub id: PlanId,
     pub agent_id: AgentId,
     pub context: AgentContext,
@@ -183,6 +189,8 @@ pub struct MutationPlanView {
 impl From<&MutationPlan> for MutationPlanView {
     fn from(plan: &MutationPlan) -> Self {
         Self {
+            direct_apply_eligible: false,
+            changed_settings_keys: Vec::new(),
             id: plan.id.clone(),
             agent_id: plan.agent_id.clone(),
             context: plan.context.clone(),

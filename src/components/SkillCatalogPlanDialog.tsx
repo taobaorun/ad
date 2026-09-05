@@ -7,6 +7,7 @@ import { Dialog } from './ui/dialog';
 interface SkillCatalogPlanDialogProps {
   plan: SkillCatalogPlanView | null;
   busy: boolean;
+  error?: string | null;
   resourceMode?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -15,6 +16,7 @@ interface SkillCatalogPlanDialogProps {
 export function SkillCatalogPlanDialog({
   plan,
   busy,
+  error,
   resourceMode = false,
   onCancel,
   onConfirm,
@@ -54,24 +56,30 @@ export function SkillCatalogPlanDialog({
         </div>
       }
     >
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
       {plan && (
         <div className="space-y-3 text-xs">
           <div className="rounded-md border border-border bg-muted/30 p-3">
             <div className="font-medium">{plan.displayName}</div>
             {!resourceMode && (
-              <div className="mt-1 break-all font-mono text-[10px] text-muted-foreground">
-                {plan.sourceId}
-              </div>
+              <details className="mt-2 text-muted-foreground">
+                <summary className="cursor-pointer">{t('agentPlan.technicalDetails')}</summary>
+                <p className="mt-1 break-all font-mono text-[10px]">{plan.sourceId}</p>
+                {payload && (
+                  <p className="mt-1 break-all font-mono text-[10px]">
+                    {'stableRoot' in payload ? payload.stableRoot : payload.artifactId}
+                  </p>
+                )}
+              </details>
             )}
           </div>
           {payload && (
             <div>
               <div className="font-medium">{t('settings.skills.plan.sourceBinding')}</div>
-              {!resourceMode && (
-                <div className="mt-1 font-mono text-[10px] text-muted-foreground">
-                  {'stableRoot' in payload ? payload.stableRoot : payload.artifactId}
-                </div>
-              )}
               <div className="mt-1 text-muted-foreground">
                 {resourceMode && 'resources' in payload
                   ? t('resourceCenter.plan.resources', { count: payload.resources.length })
@@ -105,11 +113,9 @@ export function SkillCatalogPlanDialog({
               </div>
             </div>
           )}
-          <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-muted-foreground">
-            {plan.action === 'remove'
-              ? t('settings.skills.plan.removeReferences')
-              : t('settings.skills.plan.sharedSource')}
-          </div>
+          {plan.action === 'remove' && (
+            <p className="text-muted-foreground">{t('settings.skills.plan.removeReferences')}</p>
+          )}
         </div>
       )}
     </Dialog>

@@ -86,15 +86,25 @@
     "sourceSubdirectory": "子目录：{{subdirectory}}",
     "search": "搜索来源…",
     "filterLabel": "资源类型",
-    "filter": { "all": "全部", "skills": "Skill", "plugins": "Plugin" },
+    "filter": {
+      "all": "全部",
+      "skills": "Skill",
+      "plugins": "Plugin"
+    },
     "refresh": "刷新",
     "loading": "正在加载来源…",
     "empty": "暂无匹配来源",
     "emptyHint": "添加 Git 仓库或本地目录后，可在这里统一管理。",
     "noManaged": "当前视图没有已纳管资源",
     "removedResources": "已移除资源（{{count}}）",
-    "kind": { "skills": "Skill", "plugins": "Plugin" },
-    "agent": { "claude-code": "Claude Code", "codex": "Codex" },
+    "kind": {
+      "skills": "Skill",
+      "plugins": "Plugin"
+    },
+    "agent": {
+      "claude-code": "Claude Code",
+      "codex": "Codex"
+    },
     "unsupported": "当前 Agent 均不支持",
     "suppressed": "已移除",
     "readd": "重新添加",
@@ -108,7 +118,7 @@
     },
     "sourceRemove": {
       "title": "删除来源「{{name}}」",
-      "description": "AD 会先逐项卸载该来源在所有项目中的资源；全部成功后仅删除来源记录，不删除本地目录或 Git 原始内容。",
+      "description": "卸载此来源在各项目中的资源，并移除来源。本地目录和 Git 仓库会保留。",
       "resources": "来源资源",
       "confirm": "确认删除来源",
       "removing": "正在删除…",
@@ -144,6 +154,10 @@
         "succeeded": "已卸载",
         "failed": "失败"
       }
+    },
+    "sourceOutcome": {
+      "compensated": "来源操作未完成，已恢复原状态。请重试该操作。",
+      "partial_failure": "部分来源变更未完成。请刷新查看当前结果，再重试。"
     }
   },
   "detail": {
@@ -423,7 +437,7 @@
       "skillCount": "{{count}} 个 skill",
       "addDialog": {
         "title": "添加 Skill Source",
-        "description": "AD 会先检查完整目录和执行影响，确认前不会写入 Source Catalog。",
+        "description": "选择 Git 仓库或本地目录，查看其中的 Skills。",
         "name": "名称",
         "namePlaceholder": "例如 my-team-skills",
         "type": "类型",
@@ -444,7 +458,7 @@
         "cloningGit": "正在克隆仓库…",
         "addingSource": "正在添加 source…",
         "inspecting": "正在检查…",
-        "preview": "检查并预览",
+        "preview": "继续",
         "retry": "重试",
         "progress": {
           "preparing": "正在准备来源检查…",
@@ -458,28 +472,28 @@
       "plan": {
         "add": {
           "title": "确认添加 Skill Source",
-          "description": "登记已检查的 Local Source，或发布受管 Git checkout。"
+          "description": "添加此来源，之后可选择要安装的资源。"
         },
         "update": {
           "title": "确认更新 Skill Source",
-          "description": "刷新共享 Source binding；所有已链接项目会共同读取更新后的 Source。"
+          "description": "更新此来源及其已安装的资源。"
         },
         "rollback": {
           "title": "确认回滚 Skill Source",
-          "description": "把共享 Git Source 切回上一个受管 checkout；所有已链接项目会共同读取回滚后的内容。"
+          "description": "恢复此来源的上一个版本。"
         },
         "remove": {
           "title": "确认移除 Skill Source",
-          "description": "仅当全部已安装引用移除后，才移除 Catalog 入口。"
+          "description": "移除此来源前，需要先卸载已安装的资源。"
         },
-        "sourceBinding": "Source Binding",
+        "sourceBinding": "资源",
         "skills": "包含 {{count}} 个 Skill",
         "executionTitle": "包含执行能力",
-        "executionDescription": "检测到 {{count}} 个 hook、MCP、command、script 或 binary 入口。启用前请确认来源可信。",
+        "executionDescription": "包含 {{count}} 项命令或可执行内容，安装后可能由 Agent 运行。请确认信任此来源。",
         "sharedImpact": "该 Source 当前被 {{count}} 个项目工作区链接。",
         "blocked": "当前操作已被阻止",
         "sharedSource": "Local 修改会立即可见；Git 更新会原子切换共享的受管 checkout，并同时影响所有已链接项目。",
-        "removeReferences": "只有不存在 AD-owned 项目链接引用时，才能移除 Source。",
+        "removeReferences": "请先卸载此来源已安装的资源。",
         "applying": "正在应用…",
         "confirm": "确认应用"
       }
@@ -710,8 +724,8 @@
     "readOnly": "只读",
     "discardDraftConfirm": "放弃未保存的配置草稿并切换工作区？",
     "coverage": {
-      "partial": "AD 已展示可验证的观察结果，但当前 Agent 版本尚未通过完整覆盖验证。",
-      "failed": "AD 无法检查此配置类别，编辑功能已停用。"
+      "partial": "仅显示已识别的配置，其他设置可能未列出。",
+      "failed": "无法读取配置，暂时无法编辑。请刷新重试。"
     },
     "layer": {
       "system": "系统级",
@@ -725,13 +739,23 @@
     },
     "unsaved": "未保存",
     "preview": "预览变更",
-    "invalidJson": "预览前请修复 JSON 格式。",
-    "applySuccess": "已应用",
+    "invalidJson": "JSON 格式有误，请修正后保存。",
+    "applySuccess": "已保存",
     "compensated": "应用失败；所有变更均已恢复。",
-    "partialFailure": "应用仅部分完成；可执行回滚。",
-    "rollback": "回滚",
+    "partialFailure": "部分配置未保存。请检查当前内容；如有撤销入口，可恢复这次变更。",
+    "rollback": "撤销",
     "rollbackConfirm": "回滚上一次配置变更？仅当应用后资源未被再次修改时才会执行。",
-    "rollbackSuccess": "已回滚"
+    "rollbackSuccess": "已撤销",
+    "save": "保存",
+    "saving": "处理中…",
+    "undoCompensated": "撤销未完成，配置仍保持撤销前的状态。",
+    "undoPartialFailure": "仅撤销了部分变更。请检查当前配置和操作记录后再继续。",
+    "refreshFailed": "变更已完成，但未能刷新显示。请刷新查看最新配置。",
+    "undoFailed": "无法撤销：{{error}}。请刷新查看当前配置。",
+    "undoDirtyHint": "请先保存或处理未保存的编辑，再撤销上次变更。",
+    "refresh": "刷新",
+    "reviewFields": "将修改：{{fields}}。",
+    "reviewReplacement": "将替换所选配置文件。请确认当前编辑包含需要保留的设置；不确定时请取消并刷新。"
   },
   "agentCollections": {
     "loading": "正在加载 Skills 与 Plugins…",
@@ -744,8 +768,8 @@
     "categoryEmpty": "未观察到 {{category}}。",
     "coverageCount": "显示 {{visible}} 项 / 观察到 {{observed}} 个声明",
     "coverage": {
-      "partial": "当前为部分清单。已验证资源仍会显示，但不会把未知位置宣称为完整覆盖。",
-      "failed": "无法检查此类别，所有写操作均已停用。"
+      "partial": "仅显示已识别的资源，列表可能不完整。",
+      "failed": "无法读取此类资源，暂时无法操作。请刷新重试。"
     },
     "sourceGroup": {
       "unknown": "未标识来源",
@@ -821,7 +845,7 @@
     "applyFailed": "操作失败，请检查错误后重试。",
     "applyDetached": "正在为当前项目应用。你可以离开此页面，结果仍会保存在历史中。",
     "viewHistory": "查看历史",
-    "viewReceipt": "查看回执",
+    "viewReceipt": "查看操作记录",
     "noChange": "无需变更。",
     "outcome": {
       "external": "此操作需要在 AD 外部完成，项目资源未发生变更。",
@@ -829,10 +853,11 @@
       "conflict": "项目资源存在冲突，操作已停止。"
     },
     "compensated": "应用失败；所有集合变更均已恢复。",
-    "partialFailure": "应用仅部分完成；可执行回滚。",
+    "partialFailure": "部分变更未完成。请查看操作记录，确认结果后再继续。",
     "rollback": "回滚",
     "rollbackConfirm": "回滚上一次集合变更？仅当应用后相关资源未再变化时才会继续。",
-    "rollbackSuccess": "已回滚"
+    "rollbackSuccess": "已回滚",
+    "availabilityDetails": "支持范围"
   },
   "operationProgress": {
     "elapsed": "已用时 {{seconds}} 秒"

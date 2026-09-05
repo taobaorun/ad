@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Activity, Braces, LockKeyhole, ShieldAlert, Target } from 'lucide-react';
+import { Activity, Braces, ShieldAlert, Target } from 'lucide-react';
 import type { ReactElement, ReactNode } from 'react';
 
 import type { MutationPlanView } from '@/lib/agentTypes';
@@ -15,6 +15,7 @@ export interface AgentPlanProgress {
 
 interface AgentPlanDialogProps {
   plan: MutationPlanView | null;
+  description?: string;
   busy: boolean;
   error: string | null;
   progress?: AgentPlanProgress | null;
@@ -24,6 +25,7 @@ interface AgentPlanDialogProps {
 
 export function AgentPlanDialog({
   plan,
+  description,
   busy,
   error,
   progress = null,
@@ -34,11 +36,7 @@ export function AgentPlanDialog({
   const acknowledgements = plan?.requiredAcknowledgements ?? [];
   const changes = plan?.changes ?? [];
   const dangerous = acknowledgements.some((requirement) => requirement.risk === 'dangerous');
-  const userScope = Boolean(
-    plan &&
-      plan.context.projectPath === undefined &&
-      changes.some((change) => change.scope === 'user'),
-  );
+  const userScope = Boolean(plan && changes.some((change) => change.scope === 'user'));
   const impacts = Array.from(
     new Map(
       changes
@@ -54,7 +52,7 @@ export function AgentPlanDialog({
         if (!open && !busy) onCancel();
       }}
       title={t('agentPlan.title')}
-      description={t('agentPlan.description')}
+      description={description}
       size="lg"
       closeDisabled={busy}
       footer={
@@ -93,64 +91,43 @@ export function AgentPlanDialog({
         <OperationProgress
           label={t(`agentPlan.progress.${progress.phase}`)}
           startedAt={progress.startedAt}
-          hint={t('agentPlan.progress.hint')}
         />
       ) : plan ? (
         <div className="space-y-4 text-sm">
-          <section
-            aria-labelledby="agent-plan-risk"
-            className={`flex gap-3 rounded-md border p-3 ${
-              dangerous
-                ? 'border-destructive/50 bg-destructive/10'
-                : 'border-warning/40 bg-warning/10'
-            }`}
-          >
-            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            <div>
-              <h3 id="agent-plan-risk" className="font-medium">
-                {dangerous ? t('agentPlan.risk.dangerous') : t('agentPlan.risk.confirmation')}
-              </h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {dangerous
-                  ? t('agentPlan.risk.dangerousDescription')
-                  : t('agentPlan.risk.confirmationDescription')}
-              </p>
-            </div>
-          </section>
+          {dangerous && (
+            <section
+              aria-labelledby="agent-plan-risk"
+              className="flex gap-3 rounded-md border border-destructive/50 bg-destructive/10 p-3"
+            >
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <div>
+                <h3 id="agent-plan-risk" className="font-medium">
+                  {t('agentPlan.risk.dangerous')}
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t('agentPlan.risk.dangerousDescription')}
+                </p>
+              </div>
+            </section>
+          )}
 
-          <PlanSection icon={<Activity />} title={t('agentPlan.impact')}>
-            {impacts.length === 0 ? (
-              <p className="text-xs text-muted-foreground">{t('agentPlan.noActivationImpact')}</p>
-            ) : (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">{plan.agentId}</span>
+            <span>{t(`agentPlan.context.${userScope ? 'userScope' : 'projectScope'}`)}</span>
+            {plan.context.projectPath && (
+              <span className="break-all">{plan.context.projectPath}</span>
+            )}
+          </div>
+
+          {impacts.length > 0 && (
+            <PlanSection icon={<Activity />} title={t('agentPlan.impact')}>
               <ul className="list-disc space-y-1 pl-4 text-xs">
                 {impacts.map((impact) => (
                   <li key={`${impact.kind}:${impact.summaryKey}`}>{t(impact.summaryKey)}</li>
                 ))}
               </ul>
-            )}
-          </PlanSection>
-
-          <PlanSection icon={<LockKeyhole />} title={t('agentPlan.approval')}>
-            <p className="text-xs text-muted-foreground">
-              {acknowledgements.length > 0
-                ? t('agentPlan.approvalRequired', {
-                    count: acknowledgements.length,
-                  })
-                : t('agentPlan.approvalBound')}
-            </p>
-            <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
-              <dt className="text-muted-foreground">{t('agentPlan.context.agent')}</dt>
-              <dd className="font-medium">{plan.agentId}</dd>
-              <dt className="text-muted-foreground">{t('agentPlan.context.installation')}</dt>
-              <dd className="truncate font-mono" title={plan.context.installationId}>
-                {plan.context.installationId}
-              </dd>
-              <dt className="text-muted-foreground">{t('agentPlan.context.scope')}</dt>
-              <dd className="font-medium">
-                {t(`agentPlan.context.${userScope ? 'userScope' : 'projectScope'}`)}
-              </dd>
-            </dl>
-          </PlanSection>
+            </PlanSection>
+          )}
 
           <PlanSection icon={<Target />} title={t('agentPlan.targets')}>
             <ul className="divide-y divide-border" aria-label={t('agentPlan.changes')}>
@@ -177,6 +154,9 @@ export function AgentPlanDialog({
               <Braces className="h-4 w-4" aria-hidden="true" />
               {t('agentPlan.technicalDetails')}
             </summary>
+            <p className="mt-3 break-all text-xs text-muted-foreground">
+              {t('agentPlan.context.installation')}: {plan.context.installationId}
+            </p>
             <ul className="mt-3 space-y-2">
               {changes.map((change) => (
                 <li

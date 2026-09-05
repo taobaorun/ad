@@ -141,6 +141,8 @@ impl UserPluginPlanStore {
             ],
         ));
         let view = MutationPlanView {
+            direct_apply_eligible: false,
+            changed_settings_keys: Vec::new(),
             id: id.clone(),
             agent_id: workspace.agent_id.clone(),
             context,
@@ -1248,6 +1250,8 @@ mod tests {
         };
         StoredUserPluginPlan {
             view: MutationPlanView {
+                direct_apply_eligible: false,
+                changed_settings_keys: Vec::new(),
                 id: PlanId::from("plan:test"),
                 agent_id: record.agent_id.clone(),
                 context,

@@ -145,7 +145,7 @@ describe('SkillSourcesSection', () => {
 
     expect(await screen.findByText('Confirm Skill source update')).toBeInTheDocument();
     expect(previewUpdateSkillCatalogSource).toHaveBeenCalledWith(source.sourceId);
-    expect(screen.getByText(/Git updates atomically switch/i)).toBeInTheDocument();
+    expect(screen.getByText(/Update this source and its installed resources/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm & Apply' }));
 
     await waitFor(() => expect(applySkillCatalogSourcePlan).toHaveBeenCalledWith(plan('update')));
@@ -162,7 +162,7 @@ describe('SkillSourcesSection', () => {
     fireEvent.change(screen.getByLabelText('Git URL'), {
       target: { value: 'git@example.com:team/skills.git' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Inspect & Preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     await waitFor(() =>
       expect(previewAddSkillCatalogSource).toHaveBeenCalledWith(
@@ -229,9 +229,7 @@ describe('SkillSourcesSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove source: Review tools' }));
 
     expect(await screen.findByText('Confirm Skill source removal')).toBeInTheDocument();
-    expect(
-      screen.getByText(/only when no AD-owned project links reference it/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Uninstall resources from this source first/i)).toBeInTheDocument();
     expect(previewRemoveSkillCatalogSource).toHaveBeenCalledWith(source.sourceId);
   });
 
