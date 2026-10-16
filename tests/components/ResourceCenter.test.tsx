@@ -136,6 +136,7 @@ function sourcePlan(action: 'add' | 'update') {
     displayName: action === 'add' ? 'New tools' : 'Team tools',
     applicability: 'applicable',
     blockingIssues: [],
+    warnings: [],
     affectedResources: [],
     affectedWorkspaces: [],
     confirmationRequired: true,
@@ -248,6 +249,65 @@ describe('ResourceCenter', () => {
     );
   });
 
+  it('shows declared resource versions beside their names and respects the kind filter', async () => {
+    mocks.listResourceCatalog.mockResolvedValue({
+      ...catalog,
+      resources: {
+        [skillId]: { ...catalog.resources[skillId], version: '1.8.5' },
+        [pluginId]: { ...catalog.resources[pluginId], version: '2.0.0-beta.1' },
+      },
+    });
+    render(<ResourceCenter />);
+
+    expect(await screen.findByText('1.8.5')).toBeInTheDocument();
+    expect(screen.getByText('1.8.5').closest('li')).toHaveTextContent('Review');
+    expect(screen.getByText('2.0.0-beta.1').closest('li')).toHaveTextContent('Toolbox');
+    expect(screen.getByLabelText('Version 1.8.5')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Plugins' }));
+    expect(screen.queryByText('1.8.5')).not.toBeInTheDocument();
+    expect(screen.getByText('2.0.0-beta.1')).toBeInTheDocument();
+  });
+
+  it('replaces changed versions and removes the label when a declaration disappears on refresh', async () => {
+    const versionedCatalog = (version: string) => ({
+      ...catalog,
+      resources: {
+        ...catalog.resources,
+        [skillId]: { ...catalog.resources[skillId], version },
+      },
+    });
+    mocks.listResourceCatalog
+      .mockResolvedValueOnce(versionedCatalog('1.0.0'))
+      .mockResolvedValueOnce(versionedCatalog('2.0.0'))
+      .mockResolvedValue(catalog);
+    render(<ResourceCenter />);
+    expect(await screen.findByText('1.0.0')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText('2.0.0')).toBeInTheDocument();
+    expect(screen.queryByText('1.0.0')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.queryByText('2.0.0')).not.toBeInTheDocument());
+    expect(screen.queryByRole('list', { name: 'Resource versions' })).not.toBeInTheDocument();
+    expect(screen.getByText('Team tools')).toBeInTheDocument();
+  });
+
+  it('omits versions for unversioned, removed and missing resources', async () => {
+    mocks.listResourceCatalog.mockResolvedValue({
+      ...catalog,
+      resources: {
+        [skillId]: { ...catalog.resources[skillId], version: '1.0.0', present: false },
+        [pluginId]: { ...catalog.resources[pluginId], version: '2.0.0', lifecycle: 'suppressed' },
+        unversioned: { ...catalog.resources[skillId], id: 'unversioned', version: ' ' },
+      },
+    });
+    render(<ResourceCenter />);
+    await screen.findByText('Team tools');
+    expect(screen.queryByRole('list', { name: 'Resource versions' })).not.toBeInTheDocument();
+    expect(screen.queryByText('1.0.0')).not.toBeInTheDocument();
+    expect(screen.queryByText('2.0.0')).not.toBeInTheDocument();
+  });
+
   it('shows sources while keeping source-kind filtering', async () => {
     render(<ResourceCenter />);
     expect(await screen.findByRole('heading', { name: 'Harness', level: 1 })).toBeInTheDocument();
@@ -278,6 +338,16 @@ describe('ResourceCenter', () => {
     expect(screen.getByText('No matching sources')).toBeInTheDocument();
   });
 
+  it('shows a concise missing-installation count on the source card', async () => {
+    mocks.listResourceCatalog.mockResolvedValue({
+      ...catalog,
+      missingInstallationsBySource: { [sourceId]: 3 },
+    });
+    render(<ResourceCenter />);
+
+    expect(await screen.findByText('3 installed resources missing')).toBeInTheDocument();
+  });
+
   it('updates a source directly from its card', async () => {
     render(<ResourceCenter />);
     await screen.findByText('Team tools');
@@ -285,6 +355,20 @@ describe('ResourceCenter', () => {
     await waitFor(() =>
       expect(mocks.previewUpdateSkillCatalogSource).toHaveBeenCalledWith(sourceId),
     );
+  });
+
+  it('shows one concise warning when an update will leave installations missing', async () => {
+    mocks.previewUpdateSkillCatalogSource.mockResolvedValue({
+      ...sourcePlan('update'),
+      warnings: [{ code: 'source_update_missing_installations', count: 2 }],
+    });
+    render(<ResourceCenter />);
+    await screen.findByText('Team tools');
+    fireEvent.click(screen.getByRole('button', { name: 'Update source Team tools' }));
+
+    expect(
+      await screen.findByText('2 installed resources will be missing from the source.'),
+    ).toBeInTheDocument();
   });
 
   it('shows source lifecycle actions and previews aggregate removal impact', async () => {

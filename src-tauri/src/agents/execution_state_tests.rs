@@ -1,6 +1,33 @@
 use super::execution_state::ExecutionState;
 
 #[test]
+fn concurrent_state_open_creates_and_validates_one_shared_directory() {
+    for _ in 0..4 {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join(".ad");
+        let gate = std::sync::Arc::new(std::sync::Barrier::new(16));
+        let threads = (0..16)
+            .map(|_| {
+                let root = root.clone();
+                let gate = gate.clone();
+                std::thread::spawn(move || {
+                    gate.wait();
+                    ExecutionState::open_at(&root)
+                        .map(|state| state.user_plugin_management().display_path().to_path_buf())
+                })
+            })
+            .collect::<Vec<_>>();
+        let results = threads
+            .into_iter()
+            .map(|thread| thread.join().unwrap())
+            .collect::<Vec<_>>();
+        for result in results {
+            assert_eq!(result.unwrap(), root.join("state/user-plugin-management"));
+        }
+    }
+}
+
+#[test]
 fn held_state_directories_prevent_root_swap_escape() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join(".ad");

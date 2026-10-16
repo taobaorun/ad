@@ -211,12 +211,7 @@ fn install_source(
             "Catalog resource is not a Skill",
         ));
     }
-    let lexical_source = if context.project_path.is_none() {
-        super::user_inventory::publish_user_skill_artifact(resource_id)
-            .map_err(|error| agent_error(AgentErrorCode::InvalidPlan, context, None, error))?
-    } else {
-        resolved.stable_path
-    };
+    let lexical_source = resolved.stable_path;
     let physical_source = std::fs::canonicalize(&lexical_source).map_err(|error| {
         agent_error(
             AgentErrorCode::InvalidPlan,

@@ -486,6 +486,94 @@ describe('AgentCollectionPanel', () => {
     applyUserCollectionAction.mockReset();
   });
 
+  it('shows live user Plugin version and labels its removal as Uninstall', async () => {
+    const current = userInventory();
+    const plugin = inventory('live').plugins.resources[0]!;
+    plugin.effectiveState = 'enabled';
+    plugin.ownership = { kind: 'ad_managed' };
+    plugin.health = { status: 'healthy' };
+    plugin.sourceTracking = { current: true, version: '1.8.7', sourceVersion: '1.8.7' };
+    plugin.management = {
+      status: 'managed',
+      actions: [{ action: 'remove', intent: 'standard', availability: 'confirmation_required' }],
+    };
+    current.plugins.resources = [plugin];
+    inspectUserAgentResources.mockResolvedValue(current);
+    render(
+      <AgentCollectionPanel
+        context={AgentContextSchema.parse({ installationId: 'codex:base' })}
+        scope="user"
+        capabilities={capabilities}
+      />,
+    );
+    expect(await screen.findByText('v1.8.7')).toBeInTheDocument();
+    expect(screen.getByText('Synced')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Uninstall: Demo live' })).toBeEnabled();
+    expect(
+      screen.queryByRole('button', { name: /Reset project override/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Update:/ })).not.toBeInTheDocument();
+  });
+
+  it('shows installed and source versions and routes Plugin repair to user update', async () => {
+    const current = userInventory();
+    const plugin = inventory('drifted').plugins.resources[0]!;
+    plugin.effectiveState = 'enabled';
+    plugin.ownership = { kind: 'ad_managed' };
+    plugin.sourceTracking = { current: false, version: '1.8.5', sourceVersion: '1.8.7' };
+    plugin.management = {
+      status: 'managed',
+      actions: [{ action: 'update', intent: 'repair', availability: 'confirmation_required' }],
+    };
+    current.plugins.resources = [plugin];
+    inspectUserAgentResources.mockResolvedValue(current);
+    previewUserCollectionAction.mockImplementation(() => new Promise(() => {}));
+    render(
+      <AgentCollectionPanel
+        context={AgentContextSchema.parse({ installationId: 'codex:base' })}
+        scope="user"
+        capabilities={capabilities}
+      />,
+    );
+    expect(await screen.findByText('v1.8.5')).toBeInTheDocument();
+    expect(screen.getByText(/Source 1.8.7/)).toBeInTheDocument();
+    expect(screen.queryByText('Synced')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Repair: Demo drifted' }));
+    expect(previewUserCollectionAction).toHaveBeenCalledWith(
+      'codex:base',
+      expect.objectContaining({ action: 'update', resourceKey: plugin.key }),
+    );
+  });
+
+  it('offers a standard update for an owned Plugin with newer source content', async () => {
+    const current = userInventory();
+    const plugin = inventory('update').plugins.resources[0]!;
+    plugin.effectiveState = 'enabled';
+    plugin.ownership = { kind: 'ad_managed' };
+    plugin.health = { status: 'healthy' };
+    plugin.sourceTracking = { current: false, version: '1.8.5', sourceVersion: '1.8.7' };
+    plugin.management = {
+      status: 'managed',
+      actions: [
+        { action: 'update', intent: 'standard', availability: 'confirmation_required' },
+        { action: 'remove', intent: 'standard', availability: 'confirmation_required' },
+      ],
+    };
+    current.plugins.resources = [plugin];
+    inspectUserAgentResources.mockResolvedValue(current);
+    render(
+      <AgentCollectionPanel
+        context={AgentContextSchema.parse({ installationId: 'codex:base' })}
+        scope="user"
+        capabilities={capabilities}
+      />,
+    );
+    expect(await screen.findByText(/Source changed/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Update: Demo update' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Uninstall: Demo update' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /Repair:/ })).not.toBeInTheDocument();
+  });
+
   it('routes fixed user-scope install previews without a project scope switcher', async () => {
     const preview = actionPreview();
     previewUserCollectionAction.mockResolvedValue({
@@ -518,7 +606,10 @@ describe('AgentCollectionPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Install: Review user' }));
     expect(previewUserCollectionAction).toHaveBeenCalledWith(
       'codex:base',
-      expect.objectContaining({ action: 'install', workspaceKey: 'workspace:sha256:user' }),
+      expect.objectContaining({
+        action: 'install',
+        workspaceKey: 'workspace:sha256:user',
+      }),
     );
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('codex')).toBeInTheDocument();

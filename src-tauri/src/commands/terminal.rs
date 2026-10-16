@@ -105,6 +105,9 @@ fn resolve_launch_recipe(context: &AgentContext) -> Result<LaunchRecipe, AgentEr
             "Agent does not support terminal launch",
         )
     })?;
+    if installation.agent_id.as_str() == "codex" {
+        crate::agents::synchronize_inherited_plugin_packages(&effective_context)?;
+    }
     launcher.recipe(&effective_context)
 }
 

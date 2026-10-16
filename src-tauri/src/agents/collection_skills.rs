@@ -110,23 +110,42 @@ fn skill_observation(
         diagnostic: None,
     };
     if let Some(record) = ownership_record.as_ref() {
-        match validate_record_for_inventory(record) {
-            Ok(()) => {
-                ownership_kind = ResourceOwnershipKind::AdManaged;
-                source_id = record
-                    .resource
-                    .logical_id
-                    .rsplit_once('/')
-                    .map(|(source, _)| source.to_owned())
-                    .unwrap_or_else(|| source_id.clone());
-            }
-            Err(diagnostic) => {
-                ownership_kind = ResourceOwnershipKind::Unknown;
-                ownership_record = None;
-                health = ResourceHealthView {
-                    status: ResourceHealthStatus::Error,
-                    diagnostic: Some(diagnostic),
-                };
+        if catalog_binding_is_missing(record) {
+            ownership_kind = ResourceOwnershipKind::AdManaged;
+            source_id = record
+                .resource
+                .logical_id
+                .rsplit_once('/')
+                .map(|(source, _)| source.to_owned())
+                .unwrap_or_else(|| source_id.clone());
+            health = ResourceHealthView {
+                status: ResourceHealthStatus::Degraded,
+                diagnostic: Some(ItemDiagnostic {
+                    code: "source_missing".into(),
+                    message_key: "agents.inventory.sourceMissing".into(),
+                    retryable: false,
+                    resource_key: None,
+                }),
+            };
+        } else {
+            match validate_record_for_inventory(record) {
+                Ok(()) => {
+                    ownership_kind = ResourceOwnershipKind::AdManaged;
+                    source_id = record
+                        .resource
+                        .logical_id
+                        .rsplit_once('/')
+                        .map(|(source, _)| source.to_owned())
+                        .unwrap_or_else(|| source_id.clone());
+                }
+                Err(diagnostic) => {
+                    ownership_kind = ResourceOwnershipKind::Unknown;
+                    ownership_record = None;
+                    health = ResourceHealthView {
+                        status: ResourceHealthStatus::Error,
+                        diagnostic: Some(diagnostic),
+                    };
+                }
             }
         }
     } else if snapshot.resource.scope == ResourceScope::User {
@@ -189,7 +208,7 @@ fn scan_claude_project_skills(
         };
         let canonical_source = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
         let healthy = canonical_source.join("SKILL.md").is_file();
-        let diagnostic = (!healthy).then(|| ItemDiagnostic {
+        let mut diagnostic = (!healthy).then(|| ItemDiagnostic {
             code: "invalid_skill_directory".into(),
             message_key: "agents.inventory.invalidSkillDirectory".into(),
             retryable: false,
@@ -199,10 +218,22 @@ fn scan_claude_project_skills(
             .iter()
             .find(|record| record.target_path == path.to_string_lossy())
             .cloned();
-        let ownership_kind = if ownership_record
+        let source_missing = ownership_record
             .as_ref()
-            .is_some_and(|record| validate_record_for_inventory(record).is_ok())
+            .is_some_and(catalog_binding_is_missing);
+        let ownership_kind = if source_missing
+            || ownership_record
+                .as_ref()
+                .is_some_and(|record| validate_record_for_inventory(record).is_ok())
         {
+            if source_missing {
+                diagnostic = Some(ItemDiagnostic {
+                    code: "source_missing".into(),
+                    message_key: "agents.inventory.sourceMissing".into(),
+                    retryable: false,
+                    resource_key: None,
+                });
+            }
             ResourceOwnershipKind::AdManaged
         } else {
             ownership_record = None;
@@ -245,6 +276,18 @@ fn scan_claude_project_skills(
         });
     }
     Ok(observations)
+}
+
+fn catalog_binding_is_missing(record: &ResourceOwnershipRecord) -> bool {
+    let Some(binding) = record.catalog_binding.as_ref() else {
+        return false;
+    };
+    load_resource_catalog_snapshot()
+        .ok()
+        .and_then(|catalog| catalog.resources.get(&binding.resource_id).cloned())
+        .is_some_and(|resource| {
+            !resource.present && resource.lifecycle == ResourceLifecycle::Managed
+        })
 }
 
 pub(super) fn project_ownership_records(
@@ -329,13 +372,22 @@ fn catalog_skill_observations(
             )
         }
     };
+    let installations = super::list_resource_installations().unwrap_or_default();
+    let ownership = project_ownership_records(workspace).unwrap_or_default();
     let mut observations = Vec::new();
     let mut diagnostics = Vec::new();
     for candidate in catalog.resources.values().filter(|resource| {
-        resource.kind == ResourceKind::Skills
-            && resource.present
-            && resource.lifecycle == ResourceLifecycle::Managed
+        resource.kind == ResourceKind::Skills && resource.lifecycle == ResourceLifecycle::Managed
     }) {
+        let installation = installations.iter().find(|installation| {
+            installation.resource_id == candidate.id
+                && installation.effective_installation_id == workspace.effective_installation_id
+                && installation.canonical_project_path.as_deref()
+                    == Some(workspace.canonical_project_path.as_str())
+        });
+        if !candidate.present && installation.is_none() {
+            continue;
+        }
         let Some(entry) = catalog.sources.get(&candidate.source_id) else {
             diagnostics.push(ItemDiagnostic {
                 code: "resource_catalog_source_missing".into(),
@@ -358,24 +410,51 @@ fn catalog_skill_observations(
                     subdirectory: entry.subdirectory.clone(),
                 }
             });
-        let resolved = match super::resolve_catalog_resource(&candidate.id) {
-            Ok(resolved) => resolved,
-            Err(_) => {
-                diagnostics.push(ItemDiagnostic {
-                    code: "resource_catalog_binding_invalid".into(),
-                    message_key: "agents.inventory.skillArtifactInvalid".into(),
-                    retryable: false,
-                    resource_key: None,
-                });
-                continue;
+        let resolved = super::resolve_catalog_resource(&candidate.id).ok();
+        if candidate.present && resolved.is_none() {
+            diagnostics.push(ItemDiagnostic {
+                code: "resource_catalog_binding_invalid".into(),
+                message_key: "agents.inventory.skillArtifactInvalid".into(),
+                retryable: false,
+                resource_key: None,
+            });
+            continue;
+        }
+        let owned = ownership.iter().find(|record| {
+            record.catalog_binding.as_ref().is_some_and(|binding| {
+                binding.resource_id == candidate.id
+                    && record.resource.installation_id == workspace.effective_installation_id
+                    && record.resource.project_path.as_deref()
+                        == Some(workspace.canonical_project_path.as_str())
+            })
+        });
+        let resource = owned
+            .map(|record| record.resource.clone())
+            .unwrap_or_else(|| ResourceRef {
+                installation_id: workspace.effective_installation_id.clone(),
+                project_path: Some(workspace.canonical_project_path.clone()),
+                kind: ResourceKind::Skills,
+                scope: ResourceScope::Project,
+                logical_id: format!("{}/{}", candidate.source_id, candidate.install_id),
+            });
+        let source_missing = !candidate.present && installation.is_some();
+        let health = if source_missing {
+            let diagnostic = ItemDiagnostic {
+                code: "source_missing".into(),
+                message_key: "agents.inventory.sourceMissing".into(),
+                retryable: false,
+                resource_key: None,
+            };
+            diagnostics.push(diagnostic.clone());
+            ResourceHealthView {
+                status: ResourceHealthStatus::Degraded,
+                diagnostic: Some(diagnostic),
             }
-        };
-        let resource = ResourceRef {
-            installation_id: workspace.effective_installation_id.clone(),
-            project_path: Some(workspace.canonical_project_path.clone()),
-            kind: ResourceKind::Skills,
-            scope: ResourceScope::Project,
-            logical_id: format!("{}/{}", candidate.source_id, candidate.install_id),
+        } else {
+            ResourceHealthView {
+                status: ResourceHealthStatus::Healthy,
+                diagnostic: None,
+            }
         };
         observations.push(CollectionObservation {
             target_id: PhysicalTargetId::for_resource(&resource),
@@ -385,17 +464,18 @@ fn catalog_skill_observations(
             logical_id: candidate.install_id.clone(),
             display_name: candidate.display_name.clone(),
             description: candidate.description.clone(),
-            enabled: false,
+            enabled: installation
+                .and_then(|record| super::installation_enabled(record).ok())
+                .unwrap_or(false),
             ownership: ResourceOwnershipKind::AdManaged,
             agent_supported: true,
-            ownership_record: None,
-            management_record_id: None,
-            health: ResourceHealthView {
-                status: ResourceHealthStatus::Healthy,
-                diagnostic: None,
-            },
-            configured: false,
-            artifact_id: Some(resolved.stable_path.to_string_lossy().into_owned()),
+            ownership_record: owned.cloned(),
+            management_record_id: owned.map(|record| record.id.clone()),
+            health,
+            configured: source_missing,
+            artifact_id: resolved
+                .map(|resolved| resolved.stable_path.to_string_lossy().into_owned())
+                .or_else(|| owned.map(|record| record.artifact_id.clone())),
             resettable: false,
             source,
         });

@@ -51,6 +51,7 @@ mod resource_inventory;
 mod resource_lifecycle;
 mod resource_ownership;
 mod resource_scanner;
+mod resource_version;
 mod runtime;
 mod settings_inventory;
 mod skill_activation;
@@ -81,6 +82,7 @@ pub use capabilities::*;
 pub use claude::ClaudeAdapter;
 pub use codex::CodexAdapter;
 pub(crate) use codex_plugins::plan_project_runtime_profile_apply;
+pub(crate) use codex_plugins::synchronize_inherited_plugin_packages;
 pub use collection_actions::*;
 pub use conversion::{
     convert_claude_profile_to_codex, ArtifactDisposition, ConversionArtifact, ConversionEndpoint,

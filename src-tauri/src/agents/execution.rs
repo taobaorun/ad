@@ -146,13 +146,20 @@ struct DirectoryMutationSource {
     digest: ContentDigest,
     #[serde(default)]
     exclude_agent_skill_projections: bool,
+    #[serde(default)]
+    tracked_source: bool,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum SymlinkMutationSource {
     Legacy(String),
-    Checked { path: String, digest: ContentDigest },
+    Checked {
+        path: String,
+        digest: ContentDigest,
+        #[serde(default, rename = "mutableSource")]
+        mutable_source: bool,
+    },
 }
 
 impl SymlinkMutationSource {
@@ -167,6 +174,16 @@ impl SymlinkMutationSource {
             Self::Legacy(_) => None,
             Self::Checked { digest, .. } => Some(digest),
         }
+    }
+
+    fn mutable_source(&self) -> bool {
+        matches!(
+            self,
+            Self::Checked {
+                mutable_source: true,
+                ..
+            }
+        )
     }
 }
 
@@ -1762,7 +1779,7 @@ fn mutation_ownership_artifact(
 ) -> Result<OwnershipArtifact, AgentError> {
     match storage {
         ResourceStorage::Symlink => match parse_symlink_source(plan, mutation)? {
-            SymlinkMutationSource::Checked { path, digest } => {
+            SymlinkMutationSource::Checked { path, digest, .. } => {
                 let source_binding = ownership_source_binding(&mutation.resource, &path)?;
                 let catalog_binding = ownership_catalog_binding(&mutation.resource, &path)?;
                 Ok(OwnershipArtifact {
@@ -1824,6 +1841,32 @@ fn validate_mutation_source(
     match storage {
         ResourceStorage::Directory => {
             let source = parse_directory_source(plan, mutation)?;
+            if source.tracked_source {
+                let catalog = super::load_resource_catalog_snapshot()
+                    .map_err(|_| changed_error(plan, &mutation.resource))?;
+                let known_source = catalog
+                    .resources
+                    .values()
+                    .filter(|resource| {
+                        resource.kind == ResourceKind::Plugins
+                            && resource.present
+                            && resource.lifecycle == super::ResourceLifecycle::Managed
+                    })
+                    .any(|resource| {
+                        super::resolve_catalog_resource(&resource.id)
+                            .is_ok_and(|resolved| resolved.stable_path == Path::new(&source.path))
+                    });
+                if mutation.resource.kind != ResourceKind::Plugins
+                    || plan.agent_id.as_str() != "codex"
+                    || !known_source
+                {
+                    return Err(ownership_plan_error(
+                        plan,
+                        &mutation.resource,
+                        "Source link projections require a managed Codex Plugin source",
+                    ));
+                }
+            }
             let actual = match directory_source {
                 Some(source) => source
                     .digest()
@@ -1841,7 +1884,12 @@ fn validate_mutation_source(
                 let path = Path::new(source.path());
                 let metadata = std::fs::symlink_metadata(path)
                     .map_err(|_| changed_error(plan, &mutation.resource))?;
-                let actual = if metadata.file_type().is_symlink() {
+                let actual = if source.mutable_source() {
+                    if !metadata.is_dir() && !metadata.is_file() {
+                        return Err(changed_error(plan, &mutation.resource));
+                    }
+                    ContentDigest::sha256(source.path().as_bytes())
+                } else if metadata.file_type().is_symlink() {
                     return Err(changed_error(plan, &mutation.resource));
                 } else if metadata.is_dir() {
                     directory_tree_digest(path)
@@ -1944,7 +1992,9 @@ fn parse_directory_source(
 fn directory_source_digest(
     source: &DirectoryMutationSource,
 ) -> Result<ContentDigest, std::io::Error> {
-    if source.exclude_agent_skill_projections {
+    if source.tracked_source {
+        super::execution_tree::tracked_source_digest(Path::new(&source.path))
+    } else if source.exclude_agent_skill_projections {
         directory_tree_digest_filtered(Path::new(&source.path), |path| {
             Ok(!super::resource_scanner::is_agent_skill_projection(path))
         })
@@ -1971,10 +2021,15 @@ fn apply_mutation(plan: &MutationPlan, item: &ResolvedMutation) -> Result<(), Ag
                     item.confined_target.write_directory_from(source)
                 } else {
                     let source = parse_directory_source(plan, &item.mutation)?;
-                    item.confined_target.write_directory_atomic_filtered(
-                        Path::new(&source.path),
-                        source.exclude_agent_skill_projections,
-                    )
+                    if source.tracked_source {
+                        item.confined_target
+                            .write_tracked_source_atomic(Path::new(&source.path), &source.digest)
+                    } else {
+                        item.confined_target.write_directory_atomic_filtered(
+                            Path::new(&source.path),
+                            source.exclude_agent_skill_projections,
+                        )
+                    }
                 }
             }
         },

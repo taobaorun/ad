@@ -1,6 +1,8 @@
 use std::ffi::OsString;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Component, Path, PathBuf};
+#[cfg(test)]
+use std::path::Component;
+use std::path::{Path, PathBuf};
 
 use super::{
     AgentError, AgentErrorCode, ContentDigest, ManagedResourceTarget, PlannedMutation,
@@ -211,7 +213,8 @@ fn digest_directory_entries(
         })?;
         if metadata.file_type().is_symlink() {
             let link = std::fs::read_link(&child)?;
-            validate_contained_link(&child_relative, &link)?;
+            // Hash link text without following Source projections. Copying still
+            // validates containment before publishing untrusted source trees.
             append_digest_record(
                 encoded,
                 b'L',
@@ -293,6 +296,7 @@ fn sorted_entry_names(directory: &Path) -> Result<Vec<OsString>, std::io::Error>
     Ok(names)
 }
 
+#[cfg(test)]
 fn validate_contained_link(relative: &Path, target: &Path) -> Result<(), std::io::Error> {
     if target.is_absolute() {
         return Err(unsafe_link_error(relative, target));
@@ -314,6 +318,7 @@ fn validate_contained_link(relative: &Path, target: &Path) -> Result<(), std::io
     Ok(())
 }
 
+#[cfg(test)]
 fn unsafe_link_error(relative: &Path, target: &Path) -> std::io::Error {
     std::io::Error::new(
         std::io::ErrorKind::PermissionDenied,
@@ -429,7 +434,7 @@ mod tests {
         );
 
         std::os::unix::fs::symlink("../../outside", source.join("nested/escape")).unwrap();
-        let error = directory_tree_digest(&source).unwrap_err();
+        let error = copy_directory_tree(&source, &temp.path().join("rejected-copy")).unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
     }
 

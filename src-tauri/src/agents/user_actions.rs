@@ -210,10 +210,10 @@ fn plan_user_action(
                 .skills()
                 .ok_or_else(|| action_error(&inventory.workspace, "Agent has no Skill port"))?;
             match action {
-                ResourceAction::Install => port.plan_install(
-                    &context,
-                    CollectionInstallRequest::catalog(catalog_resource_id(inventory, resource)?),
-                ),
+                ResourceAction::Install => {
+                    let resource_id = catalog_resource_id(inventory, resource)?;
+                    port.plan_install(&context, CollectionInstallRequest::catalog(resource_id))
+                }
                 ResourceAction::Update => {
                     let owned = owned_skill(&inventory.workspace, resource)?;
                     port.plan_update(

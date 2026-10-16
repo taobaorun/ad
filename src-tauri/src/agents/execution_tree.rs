@@ -7,7 +7,7 @@ use std::path::{Component, Path};
 
 use rustix::fd::OwnedFd;
 use rustix::fs::{
-    fchmod, fstat, fsync, mkdirat, openat, readlinkat, renameat, statat, symlinkat, unlinkat,
+    fchmod, fstat, fsync, mkdirat, open, openat, readlinkat, renameat, statat, symlinkat, unlinkat,
     AtFlags, Dir, FileType, Mode, OFlags,
 };
 
@@ -28,7 +28,129 @@ pub(super) fn directory_digest_fd(root: &OwnedFd) -> std::io::Result<ContentDige
     Ok(ContentDigest::sha256(&encoded))
 }
 
+pub(super) fn source_link_entries(source: &Path) -> std::io::Result<Vec<String>> {
+    let mut entries = std::fs::read_dir(source)?
+        .map(|entry| {
+            entry?
+                .file_name()
+                .into_string()
+                .map_err(|_| invalid_data("Non-UTF-8 source entry"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    entries.retain(|entry| entry != ".git");
+    entries.sort();
+    Ok(entries)
+}
+
+/// Codex discovers physical version directories. Only their children point to Source.
+pub(super) fn write_source_links_atomic(
+    parent: &OwnedFd,
+    name: &OsStr,
+    source: &Path,
+) -> std::io::Result<Vec<String>> {
+    let entries = source_link_entries(source)?;
+    write_source_links_entries_atomic(parent, name, source, &entries)?;
+    Ok(entries)
+}
+
+pub(super) fn write_source_links_entries_atomic(
+    parent: &OwnedFd,
+    name: &OsStr,
+    source: &Path,
+    entries: &[String],
+) -> std::io::Result<()> {
+    if entries.iter().any(|entry| {
+        Path::new(entry).components().count() != 1
+            || !matches!(
+                Path::new(entry).components().next(),
+                Some(Component::Normal(_))
+            )
+    }) {
+        return Err(invalid_data("Invalid projection entry name"));
+    }
+    let temporary = sibling_name(name, "tmp");
+    mkdirat(parent, temporary.as_os_str(), Mode::RWXU)?;
+    let result = (|| {
+        let fd = openat(
+            parent,
+            temporary.as_os_str(),
+            DIRECTORY_FLAGS,
+            Mode::empty(),
+        )?;
+        for entry in entries {
+            symlinkat(source.join(entry), &fd, entry.as_str())?;
+        }
+        fsync(&fd)?;
+        Ok::<_, std::io::Error>(())
+    })();
+    if let Err(error) = result {
+        let _ = remove_entry(parent, temporary.as_os_str());
+        return Err(error);
+    }
+    publish_directory(parent, name, temporary.as_os_str())?;
+    Ok(())
+}
+
+pub(super) fn source_links_match(
+    parent: &OwnedFd,
+    name: &OsStr,
+    source: &Path,
+    entries: &[String],
+) -> std::io::Result<bool> {
+    let fd = match openat(parent, name, DIRECTORY_FLAGS, Mode::empty()) {
+        Ok(fd) => fd,
+        Err(rustix::io::Errno::NOENT | rustix::io::Errno::NOTDIR | rustix::io::Errno::LOOP) => {
+            return Ok(false)
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let names = entry_names(&fd)?;
+    if names.len() != entries.len() {
+        return Ok(false);
+    }
+    for (actual, expected) in names.iter().zip(entries) {
+        if actual != OsStr::new(expected) {
+            return Ok(false);
+        }
+        let stat = statat(&fd, actual, AtFlags::SYMLINK_NOFOLLOW)?;
+        if FileType::from_raw_mode(stat.st_mode) != FileType::Symlink
+            || Path::new(&link_target(&fd, actual)?) != source.join(expected)
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 pub(super) fn write_directory_atomic(
+    parent: &OwnedFd,
+    name: &OsStr,
+    source: &Path,
+    exclude_agent_skill_projections: bool,
+) -> std::io::Result<()> {
+    write_directory_atomic_options(parent, name, source, exclude_agent_skill_projections)
+}
+
+pub(super) fn tracked_source_digest(source: &Path) -> std::io::Result<ContentDigest> {
+    super::execution_fs::directory_tree_digest_filtered(
+        source,
+        |path| Ok(!path.starts_with(".git")),
+    )
+}
+
+pub(super) fn write_tracked_source_atomic(
+    parent: &OwnedFd,
+    name: &OsStr,
+    source: &Path,
+    digest: &ContentDigest,
+) -> std::io::Result<()> {
+    // Preserve Source link text without traversing its destinations. Descriptor-based
+    // copying also prevents a replaced source directory from redirecting traversal.
+    let source = open(source, DIRECTORY_FLAGS, Mode::empty())?;
+    write_directory_atomic_from_options(parent, name, &source, true, Some(digest))
+}
+
+fn write_directory_atomic_options(
     parent: &OwnedFd,
     name: &OsStr,
     source: &Path,
@@ -73,6 +195,16 @@ pub(super) fn write_directory_atomic_from(
     name: &OsStr,
     source: &OwnedFd,
 ) -> std::io::Result<()> {
+    write_directory_atomic_from_options(parent, name, source, false, None)
+}
+
+fn write_directory_atomic_from_options(
+    parent: &OwnedFd,
+    name: &OsStr,
+    source: &OwnedFd,
+    exclude_root_git: bool,
+    digest: Option<&ContentDigest>,
+) -> std::io::Result<()> {
     let metadata = fstat(source)?;
     let temporary = sibling_name(name, "tmp");
     mkdirat(parent, temporary.as_os_str(), Mode::RWXU)?;
@@ -82,7 +214,15 @@ pub(super) fn write_directory_atomic_from(
         DIRECTORY_FLAGS,
         Mode::empty(),
     )?;
-    let populated = copy_fd_entries(source, &temporary_fd)
+    let populated = copy_fd_entries(source, &temporary_fd, exclude_root_git)
+        .and_then(|()| {
+            if let Some(expected) = digest {
+                if &directory_digest_fd(&temporary_fd)? != expected {
+                    return Err(invalid_data("Source changed while copying Plugin cache"));
+                }
+            }
+            Ok(())
+        })
         .and_then(|()| {
             fchmod(&temporary_fd, Mode::from_raw_mode(metadata.st_mode as _))
                 .map_err(std::io::Error::from)
@@ -143,7 +283,7 @@ pub(super) fn copy_directory_to(
         DIRECTORY_FLAGS,
         Mode::empty(),
     )?;
-    if let Err(error) = copy_fd_entries(&root, &destination) {
+    if let Err(error) = copy_fd_entries(&root, &destination, false) {
         let _ = remove_entry(destination_parent, destination_name);
         return Err(error);
     }
@@ -199,7 +339,7 @@ fn digest_entries(
         match FileType::from_raw_mode(stat.st_mode) {
             FileType::Symlink => {
                 let link = link_target(directory, name.as_os_str())?;
-                validate_contained_link(&child_relative, Path::new(&link))?;
+                // A target digest observes links; it never reads their destinations.
                 append_record(
                     encoded,
                     b'L',
@@ -279,8 +419,15 @@ fn copy_path_entries(
     fsync(destination).map_err(Into::into)
 }
 
-fn copy_fd_entries(source: &OwnedFd, destination: &OwnedFd) -> std::io::Result<()> {
+fn copy_fd_entries(
+    source: &OwnedFd,
+    destination: &OwnedFd,
+    exclude_root_git: bool,
+) -> std::io::Result<()> {
     for name in entry_names(source)? {
+        if exclude_root_git && name == ".git" {
+            continue;
+        }
         let stat = statat(source, name.as_os_str(), AtFlags::SYMLINK_NOFOLLOW)?;
         match FileType::from_raw_mode(stat.st_mode) {
             FileType::Symlink => {
@@ -300,7 +447,7 @@ fn copy_fd_entries(source: &OwnedFd, destination: &OwnedFd) -> std::io::Result<(
                     DIRECTORY_FLAGS,
                     Mode::empty(),
                 )?;
-                copy_fd_entries(&source_child, &destination_child)?;
+                copy_fd_entries(&source_child, &destination_child, false)?;
                 fchmod(&destination_child, Mode::from_raw_mode(stat.st_mode as _))?;
                 fsync(&destination_child)?;
             }
@@ -354,6 +501,8 @@ fn write_file(parent: &OwnedFd, name: &OsStr, bytes: &[u8], mode: u32) -> std::i
     )?;
     let mut file = File::from(fd);
     file.write_all(bytes)?;
+    // Creation applies the process umask; cache digests include the Source mode.
+    fchmod(&file, Mode::from_raw_mode(mode as _))?;
     file.sync_all()
 }
 

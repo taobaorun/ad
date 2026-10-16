@@ -121,6 +121,16 @@ export const SkillCatalogPlanViewSchema = z
           .strict(),
       )
       .default([]),
+    warnings: z
+      .array(
+        z
+          .object({
+            code: z.string().min(1),
+            count: z.number().int().positive(),
+          })
+          .strict(),
+      )
+      .default([]),
     affectedResources: z.array(ResourceRefSchema).default([]),
     affectedWorkspaces: z.array(WorkspaceKeySchema).default([]),
     confirmationRequired: z.boolean(),

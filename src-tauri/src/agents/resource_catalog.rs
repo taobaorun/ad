@@ -64,6 +64,9 @@ pub struct CatalogResource {
     pub display_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Read from the current descriptor for display, never cached in the catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
     pub subpath: String,
     pub descriptor_digest: ContentDigest,
     #[serde(default)]
@@ -83,6 +86,8 @@ pub struct ResourceCatalogSnapshot {
     pub revision: u64,
     pub sources: BTreeMap<String, CatalogSource>,
     pub resources: BTreeMap<String, CatalogResource>,
+    #[serde(default)]
+    pub missing_installations_by_source: BTreeMap<String, usize>,
     pub migrated_from_skill_catalog: bool,
 }
 
@@ -130,7 +135,46 @@ pub fn load_resource_catalog_snapshot() -> Result<ResourceCatalogSnapshot, Resou
         source,
     })?;
     let (document, migrated) = load_document_or_project(&state)?;
-    Ok(document.snapshot(migrated))
+    let mut snapshot = document.snapshot(migrated);
+    annotate_missing_installations(&mut snapshot)?;
+    Ok(snapshot)
+}
+
+fn annotate_missing_installations(
+    snapshot: &mut ResourceCatalogSnapshot,
+) -> Result<(), ResourceCatalogError> {
+    let missing_sources = snapshot
+        .resources
+        .values()
+        .filter(|resource| !resource.present && resource.lifecycle == ResourceLifecycle::Managed)
+        .map(|resource| (resource.id.as_str(), resource.source_id.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let mut counted = BTreeSet::new();
+    for installation in super::list_resource_installations()
+        .map_err(|error| ResourceCatalogError::Corrupt(error.to_string()))?
+    {
+        if let Some(source_id) = missing_sources.get(installation.resource_id.as_str()) {
+            if counted.insert(format!("installation:{}", installation.id)) {
+                *snapshot
+                    .missing_installations_by_source
+                    .entry((*source_id).to_owned())
+                    .or_default() += 1;
+            }
+        }
+    }
+    for record in super::list_all_user_plugin_management_records()
+        .map_err(|error| ResourceCatalogError::Corrupt(error.to_string()))?
+    {
+        if let Some(source_id) = missing_sources.get(record.resource_id.as_str()) {
+            if counted.insert(format!("user-plugin:{}", record.id)) {
+                *snapshot
+                    .missing_installations_by_source
+                    .entry((*source_id).to_owned())
+                    .or_default() += 1;
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn public_resource_catalog_snapshot(
@@ -393,6 +437,7 @@ fn project_skill_catalog(
                     install_id: item.install_id,
                     display_name: item.display_name,
                     description: item.description,
+                    version: None,
                     subpath: item.subpath,
                     descriptor_digest: item.descriptor_digest,
                     compatible_agents,
@@ -516,6 +561,20 @@ impl ResourceCatalogDocument {
             .collect();
         let mut resources = self.resources.clone();
         for resource in resources.values_mut() {
+            resource.version = None;
+            if resource.present && resource.lifecycle == ResourceLifecycle::Managed {
+                resource.version = self
+                    .sources
+                    .get(&resource.source_id)
+                    .and_then(|source| source.binding.as_ref())
+                    .and_then(|binding| {
+                        super::resource_version::read_resource_version(
+                            Path::new(&binding.physical_root),
+                            &resource.subpath,
+                            resource.kind,
+                        )
+                    });
+            }
             resource.compatible_agents = match resource.kind {
                 ResourceKind::Skills => BTreeSet::from(["claude-code".into(), "codex".into()]),
                 ResourceKind::Plugins => self
@@ -547,6 +606,7 @@ impl ResourceCatalogDocument {
             revision: self.revision,
             sources,
             resources,
+            missing_installations_by_source: BTreeMap::new(),
             migrated_from_skill_catalog,
         }
     }
@@ -623,6 +683,8 @@ fn safe_relative(value: &str) -> Result<PathBuf, ResourceCatalogError> {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+
     use chrono::Utc;
 
     use super::*;
@@ -630,6 +692,56 @@ mod tests {
 
     fn digest(value: &str) -> ContentDigest {
         ContentDigest::sha256(value.as_bytes())
+    }
+
+    struct HomeGuard(Option<OsString>);
+
+    impl HomeGuard {
+        fn set(root: &Path) -> Self {
+            let previous = std::env::var_os("AD_HOME");
+            std::env::set_var("AD_HOME", root);
+            Self(previous)
+        }
+    }
+
+    impl Drop for HomeGuard {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(value) => std::env::set_var("AD_HOME", value),
+                None => std::env::remove_var("AD_HOME"),
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial(home_env)]
+    fn missing_installation_counts_fail_closed_on_a_corrupt_ledger() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = HomeGuard::set(temp.path());
+        let state = ExecutionState::open().unwrap();
+        state
+            .resource_installations()
+            .write_atomic("corrupt.json", b"{")
+            .unwrap();
+        let mut snapshot = ResourceCatalogSnapshot {
+            schema_version: RESOURCE_CATALOG_SCHEMA_VERSION,
+            revision: 1,
+            sources: BTreeMap::new(),
+            resources: BTreeMap::new(),
+            missing_installations_by_source: BTreeMap::new(),
+            migrated_from_skill_catalog: false,
+        };
+
+        assert!(annotate_missing_installations(&mut snapshot).is_err());
+        state
+            .resource_installations()
+            .remove("corrupt.json")
+            .unwrap();
+        state
+            .user_plugin_management()
+            .write_atomic("corrupt.json", b"{")
+            .unwrap();
+        assert!(annotate_missing_installations(&mut snapshot).is_err());
     }
 
     #[test]
@@ -696,6 +808,78 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_refreshes_versions_without_persisting_them_or_changing_resource_identity() {
+        let temp = tempfile::tempdir().unwrap();
+        let source_id = "skill-source:00000000-0000-0000-0000-000000000001";
+        let resource_id = catalog_resource_id(source_id, ResourceKind::Skills, "review");
+        let root = temp.path().to_string_lossy();
+        // A pre-feature catalog has no version field and remains readable.
+        let mut document: ResourceCatalogDocument = serde_json::from_value(serde_json::json!({
+            "schemaVersion": RESOURCE_CATALOG_SCHEMA_VERSION,
+            "revision": 1,
+            "sources": {source_id: {
+                "id": source_id, "displayName": "Tools", "sourceType": "local",
+                "location": root, "health": "healthy",
+                "binding": {
+                    "bindingId": "binding", "sourceRevision": "local:revision",
+                    "stableRoot": root, "physicalRoot": root,
+                    "treeDigest": digest("tree"), "manifestDigest": digest("manifest")
+                }
+            }},
+            "resources": {&resource_id: {
+                "id": resource_id, "sourceId": source_id, "kind": "skills",
+                "installId": "review", "displayName": "Review", "subpath": "",
+                "descriptorDigest": digest("review"), "present": true, "lifecycle": "managed"
+            }}
+        }))
+        .unwrap();
+        let original = document.render().unwrap();
+        for (declaration, expected) in [
+            ("metadata: {version: '1.0.0'}", Some("1.0.0")),
+            ("metadata: {version: '2.0.0'}", Some("2.0.0")),
+            ("name: review", None),
+        ] {
+            std::fs::write(
+                temp.path().join("SKILL.md"),
+                format!("---\n{declaration}\n---\n"),
+            )
+            .unwrap();
+            let snapshot = public_resource_catalog_snapshot(document.snapshot(false));
+            assert_eq!(
+                snapshot.resources[&resource_id].version.as_deref(),
+                expected
+            );
+            assert_eq!(snapshot.resources[&resource_id].id, resource_id);
+            assert!(snapshot.sources[source_id].binding.is_none());
+            let json = serde_json::to_value(&snapshot).unwrap();
+            assert_eq!(
+                json["resources"][&resource_id]
+                    .get("version")
+                    .and_then(serde_json::Value::as_str),
+                expected
+            );
+            assert_eq!(document.render().unwrap(), original);
+        }
+        std::fs::write(temp.path().join("SKILL.md"), "---\nversion: '3.0.0'\n---\n").unwrap();
+        document.resources.get_mut(&resource_id).unwrap().present = false;
+        assert_eq!(
+            document.snapshot(false).resources[&resource_id].version,
+            None
+        );
+        document.resources.get_mut(&resource_id).unwrap().present = true;
+        document.resources.get_mut(&resource_id).unwrap().lifecycle = ResourceLifecycle::Suppressed;
+        document
+            .resources
+            .get_mut(&resource_id)
+            .unwrap()
+            .suppressed_at_revision = Some(1);
+        assert_eq!(
+            document.snapshot(false).resources[&resource_id].version,
+            None
+        );
+    }
+
+    #[test]
     fn public_snapshot_omits_internal_source_bindings() {
         let source_id = "skill-source:00000000-0000-0000-0000-000000000001";
         let mut sources = BTreeMap::new();
@@ -724,6 +908,7 @@ mod tests {
             revision: 1,
             sources,
             resources: BTreeMap::new(),
+            missing_installations_by_source: BTreeMap::new(),
             migrated_from_skill_catalog: false,
         };
 

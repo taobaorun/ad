@@ -97,27 +97,28 @@ fn catalog_plugin_observations(
     let mut diagnostics = Vec::new();
     for candidate in catalog.resources.values().filter(|resource| {
         resource.kind == ResourceKind::Plugins
-            && resource.present
             && resource.lifecycle == super::ResourceLifecycle::Managed
     }) {
         let source = catalog
             .sources
             .get(&candidate.source_id)
             .ok_or_else(|| inventory_error(workspace, "Catalog Plugin source is unavailable"))?;
+        let installation = installations.iter().find(|installation| {
+            installation.resource_id == candidate.id
+                && installation.effective_installation_id == workspace.effective_installation_id
+                && installation.canonical_project_path.as_deref()
+                    == Some(workspace.canonical_project_path.as_str())
+        });
+        if !candidate.present && installation.is_none() {
+            continue;
+        }
         let owned = ownership.iter().find(|record| {
             record.catalog_binding.as_ref().is_some_and(|binding| {
                 binding.resource_id == candidate.id
                     && record.resource.installation_id == workspace.effective_installation_id
             })
         });
-        let enabled = installations
-            .iter()
-            .find(|installation| {
-                installation.resource_id == candidate.id
-                    && installation.effective_installation_id == workspace.effective_installation_id
-                    && installation.canonical_project_path.as_deref()
-                        == Some(workspace.canonical_project_path.as_str())
-            })
+        let enabled = installation
             .map(super::installation_enabled)
             .transpose()
             .map_err(|error| inventory_error(workspace, error.to_string()))?
@@ -132,35 +133,56 @@ fn catalog_plugin_observations(
             },
             |record| record.resource.clone(),
         );
-        let (artifact_id, mut health) = match super::resolve_catalog_resource(&candidate.id) {
-            Ok(resolved) => (
-                Some(resolved.stable_path.to_string_lossy().into_owned()),
+        let source_missing = !candidate.present && installation.is_some();
+        let (artifact_id, mut health) = if source_missing {
+            let diagnostic = ItemDiagnostic {
+                code: "source_missing".into(),
+                message_key: "agents.inventory.sourceMissing".into(),
+                retryable: false,
+                resource_key: None,
+            };
+            diagnostics.push(diagnostic.clone());
+            (
+                owned.map(|record| record.artifact_id.clone()),
                 ResourceHealthView {
-                    status: ResourceHealthStatus::Healthy,
-                    diagnostic: None,
+                    status: ResourceHealthStatus::Degraded,
+                    diagnostic: Some(diagnostic),
                 },
-            ),
-            Err(_) => {
-                let diagnostic = ItemDiagnostic {
-                    code: "resource_catalog_binding_invalid".into(),
-                    message_key: "agents.inventory.pluginArtifactInvalid".into(),
-                    retryable: false,
-                    resource_key: None,
-                };
-                diagnostics.push(diagnostic.clone());
-                (
-                    None,
+            )
+        } else {
+            match super::resolve_catalog_resource(&candidate.id) {
+                Ok(resolved) => (
+                    Some(resolved.stable_path.to_string_lossy().into_owned()),
                     ResourceHealthView {
-                        status: ResourceHealthStatus::Error,
-                        diagnostic: Some(diagnostic),
+                        status: ResourceHealthStatus::Healthy,
+                        diagnostic: None,
                     },
-                )
+                ),
+                Err(_) => {
+                    let diagnostic = ItemDiagnostic {
+                        code: "resource_catalog_binding_invalid".into(),
+                        message_key: "agents.inventory.pluginArtifactInvalid".into(),
+                        retryable: false,
+                        resource_key: None,
+                    };
+                    diagnostics.push(diagnostic.clone());
+                    (
+                        None,
+                        ResourceHealthView {
+                            status: ResourceHealthStatus::Error,
+                            diagnostic: Some(diagnostic),
+                        },
+                    )
+                }
             }
         };
         let mut configured = false;
         let mut ownership_kind = ResourceOwnershipKind::AdManaged;
         let mut ownership_record = None;
-        if let Some(record) = owned {
+        if source_missing {
+            configured = true;
+            ownership_record = owned.cloned();
+        } else if let Some(record) = owned {
             if super::validate_ownership_target(record)
                 .and_then(|_| super::validate_ownership_artifact(record))
                 .is_ok()
@@ -241,10 +263,12 @@ fn managed_codex_plugin_ids(
         project_ownership_records_for(workspace, ResourceKind::Plugins)?
             .into_iter()
             .filter(|record| {
-                record
-                    .catalog_binding
-                    .as_ref()
-                    .is_some_and(|binding| binding.adapter_contract == "codex-plugin-store-v1")
+                record.catalog_binding.as_ref().is_some_and(|binding| {
+                    matches!(
+                        binding.adapter_contract.as_str(),
+                        "codex-plugin-store-v1" | "codex-plugin-link-v1"
+                    )
+                })
             })
             .filter_map(|record| {
                 let version = std::path::Path::new(&record.target_path).file_name()?;
@@ -362,6 +386,15 @@ fn plugin_observation(
     let managed = user_plugin_records
         .iter()
         .find(|record| record.native_id == logical_id);
+    let health = managed
+        .filter(|record| user_plugin_source_missing(record))
+        .map_or(
+            ResourceHealthView {
+                status: ResourceHealthStatus::Healthy,
+                diagnostic: None,
+            },
+            |_| source_missing_health(),
+        );
     CollectionObservation {
         resource,
         layer: layer.layer,
@@ -385,10 +418,7 @@ fn plugin_observation(
         agent_supported: true,
         ownership_record: None,
         management_record_id: managed.map(|record| record.id.clone()),
-        health: ResourceHealthView {
-            status: ResourceHealthStatus::Healthy,
-            diagnostic: None,
-        },
+        health,
         configured: true,
         artifact_id: None,
         resettable: layer.logical_id == "project-local",
@@ -416,6 +446,15 @@ fn runtime_plugin_observation(
     let managed = user_plugin_records
         .iter()
         .find(|record| record.native_id == logical_id);
+    let health = managed
+        .filter(|record| user_plugin_source_missing(record))
+        .map_or(
+            ResourceHealthView {
+                status: ResourceHealthStatus::Healthy,
+                diagnostic: None,
+            },
+            |_| source_missing_health(),
+        );
     CollectionObservation {
         resource,
         layer: ResourceLayer::Runtime,
@@ -439,14 +478,32 @@ fn runtime_plugin_observation(
         agent_supported: true,
         ownership_record: None,
         management_record_id: managed.map(|record| record.id.clone()),
-        health: ResourceHealthView {
-            status: ResourceHealthStatus::Healthy,
-            diagnostic: None,
-        },
+        health,
         configured: true,
         artifact_id: None,
         resettable: true,
         source: None,
+    }
+}
+
+fn user_plugin_source_missing(record: &super::UserPluginManagementRecord) -> bool {
+    super::load_resource_catalog_snapshot()
+        .ok()
+        .and_then(|catalog| catalog.resources.get(&record.resource_id).cloned())
+        .is_some_and(|resource| {
+            !resource.present && resource.lifecycle == super::ResourceLifecycle::Managed
+        })
+}
+
+fn source_missing_health() -> ResourceHealthView {
+    ResourceHealthView {
+        status: ResourceHealthStatus::Degraded,
+        diagnostic: Some(ItemDiagnostic {
+            code: "source_missing".into(),
+            message_key: "agents.inventory.sourceMissing".into(),
+            retryable: false,
+            resource_key: None,
+        }),
     }
 }
 
@@ -554,7 +611,16 @@ pub(super) fn collection_inventory(
             let ownership = configured_winner
                 .map(|declaration| declaration.ownership)
                 .unwrap_or(winner.ownership);
-            let effective_state = if conflict {
+            let source_missing = configured_winner.is_some_and(|winner| {
+                winner
+                    .health
+                    .diagnostic
+                    .as_ref()
+                    .is_some_and(|diagnostic| diagnostic.code == "source_missing")
+            });
+            let effective_state = if source_missing {
+                EffectiveResourceState::SourceMissing
+            } else if conflict {
                 EffectiveResourceState::Conflict
             } else if configured.is_empty() {
                 EffectiveResourceState::Unconfigured
@@ -587,6 +653,7 @@ pub(super) fn collection_inventory(
                     .and_then(|_| configured_winner.map(|winner| winner.resource.scope)),
             });
             Some(CollectionResourceView {
+                source_tracking: None,
                 key: resource_key,
                 kind,
                 logical_id,

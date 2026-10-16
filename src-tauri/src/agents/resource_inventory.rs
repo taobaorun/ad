@@ -45,6 +45,7 @@ pub enum EffectiveResourceState {
     Conflict,
     External,
     Unsupported,
+    SourceMissing,
     Unknown,
 }
 
@@ -213,6 +214,18 @@ pub struct CollectionResourceView {
     pub ownership: ResourceOwnershipView,
     pub health: ResourceHealthView,
     pub management: ResourceManagementView,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_tracking: Option<ResourceSourceTrackingView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceSourceTrackingView {
+    pub current: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

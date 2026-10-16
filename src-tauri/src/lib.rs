@@ -153,6 +153,23 @@ pub fn run() {
                 }
             }
 
+            match agents::migrate_legacy_source_tracking_ownership() {
+                Ok(0) => {}
+                Ok(count) => info!(count, "migrated legacy installations to source tracking"),
+                Err(error) => tracing::warn!(
+                    error = %error,
+                    "legacy source-tracking migration was deferred"
+                ),
+            }
+            match agents::migrate_legacy_user_plugin_source_tracking() {
+                Ok(0) => {}
+                Ok(count) => info!(count, "migrated legacy user Plugins to source tracking"),
+                Err(error) => tracing::warn!(
+                    error = %error,
+                    "legacy user Plugin source-tracking migration was deferred"
+                ),
+            }
+
             // Show the theme-backed main window as navigation starts so the
             // HTML spotlight represents the actual startup work from its first
             // available frame instead of appearing after loading has finished.

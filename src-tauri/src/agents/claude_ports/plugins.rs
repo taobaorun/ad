@@ -464,7 +464,10 @@ pub(crate) fn managed_claude_plugin_links(
             record.effective_installation_id == context.installation_id
                 && record.canonical_project_path.as_deref() == Some(project_path)
                 && record.resource_kind == ResourceKind::Plugins
-                && record.adapter_contract == "claude-plugin-dir-v1"
+                && matches!(
+                    record.adapter_contract.as_str(),
+                    "claude-plugin-dir-v1" | "claude-plugin-link-v1"
+                )
         })
         .filter_map(|record| match super::super::installation_enabled(&record) {
             Ok(true) => Some(Ok(record)),
