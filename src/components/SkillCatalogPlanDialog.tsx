@@ -102,6 +102,16 @@ export function SkillCatalogPlanDialog({
               </ul>
             </div>
           )}
+          {(plan.warnings ?? []).map((warning) => (
+            <div
+              key={warning.code}
+              className="rounded-md border border-warning/40 bg-warning/10 p-3 text-foreground"
+            >
+              {warning.code === 'source_update_missing_installations'
+                ? t('settings.skills.plan.missingInstallations', { count: warning.count })
+                : warning.code}
+            </div>
+          ))}
           {executableCount > 0 && (
             <div className="flex gap-2 rounded-md border border-warning/40 bg-warning/10 p-3">
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />

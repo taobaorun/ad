@@ -492,6 +492,7 @@ export function AgentCollectionPanel({
         {inventory && (
           <>
             <CollectionSection
+              scope={scope}
               title={t('agentCollections.skills')}
               inventory={inventory.skills}
               allResources={sourceSkills}
@@ -508,6 +509,7 @@ export function AgentCollectionPanel({
               onReload={load}
             />
             <CollectionSection
+              scope={scope}
               title={t('agentCollections.plugins')}
               inventory={inventory.plugins}
               allResources={sourcePlugins}
@@ -545,6 +547,7 @@ export function AgentCollectionPanel({
 }
 
 interface CollectionSectionProps {
+  scope?: 'project' | 'user';
   title: string;
   inventory: ProjectWorkspaceInventory['skills'] | UserResourceInventory['skills'];
   allResources?: CollectionResourceView[];
@@ -563,6 +566,7 @@ interface CollectionSectionProps {
 }
 
 function CollectionSection({
+  scope = 'project',
   title,
   inventory,
   allResources = inventory.resources,
@@ -634,7 +638,14 @@ function CollectionSection({
           onToggleSource={onToggleSource ?? (() => {})}
         />
       ) : resources.length > 0 ? (
-        <ResourceList resources={resources} busy={busy} t={t} onAction={onAction} showSource />
+        <ResourceList
+          scope={scope}
+          resources={resources}
+          busy={busy}
+          t={t}
+          onAction={onAction}
+          showSource
+        />
       ) : null}
       {showEmptyState && resources.length === 0 && !queryActive && allResources.length === 0 && (
         <div className="rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
@@ -646,6 +657,7 @@ function CollectionSection({
 }
 
 interface ResourceListProps {
+  scope?: 'project' | 'user';
   resources: CollectionResourceView[];
   busy: boolean;
   t: ReturnType<typeof useTranslation>['t'];
@@ -655,6 +667,7 @@ interface ResourceListProps {
 }
 
 function ResourceList({
+  scope = 'project',
   resources,
   busy,
   t,
@@ -678,6 +691,16 @@ function ResourceList({
               <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
                 {t(resourceStateMessageKey(resource))}
               </span>
+              {resource.sourceTracking?.version && (
+                <span className="text-xs text-muted-foreground">
+                  v{resource.sourceTracking.version}
+                </span>
+              )}
+              {resource.sourceTracking?.current && (
+                <span className="text-[10px] text-muted-foreground">
+                  {t('agentCollections.followingSource')}
+                </span>
+              )}
               {resource.health.status !== 'healthy' && (
                 <AlertTriangle
                   className="h-3.5 w-3.5 text-warning"
@@ -685,6 +708,21 @@ function ResourceList({
                 />
               )}
             </div>
+            {resource.sourceTracking &&
+              !resource.sourceTracking.current &&
+              resource.effectiveState !== 'source_missing' && (
+                <p role="status" className="mt-1 text-xs text-warning">
+                  {t(
+                    resource.management.actions.some(
+                      (action) => action.action === 'update' && action.intent === 'repair',
+                    )
+                      ? 'agents.inventory.userPluginBindingDrift'
+                      : 'agentCollections.pluginUpdateAvailable',
+                  )}
+                  {resource.sourceTracking.sourceVersion &&
+                    ` ${t('agentCollections.sourceVersion', { version: resource.sourceTracking.sourceVersion })}`}
+                </p>
+              )}
             {resource.description && (
               <div className="mt-0.5 truncate text-xs text-muted-foreground">
                 {resource.description}
@@ -708,7 +746,13 @@ function ResourceList({
               <span>{resourceEvidenceLabel(resource, t)}</span>
               <span>· {t(`agentCollections.management.${resource.management.status}`)}</span>
             </div>
-            <ResourceActions resource={resource} busy={busy} t={t} onAction={onAction} />
+            <ResourceActions
+              scope={scope}
+              resource={resource}
+              busy={busy}
+              t={t}
+              onAction={onAction}
+            />
           </div>
         </li>
       ))}
@@ -1160,6 +1204,7 @@ function conflictCandidates(
 }
 
 interface ResourceActionsProps {
+  scope?: 'project' | 'user';
   resource: CollectionResourceView;
   busy: boolean;
   t: ReturnType<typeof useTranslation>['t'];
@@ -1168,6 +1213,7 @@ interface ResourceActionsProps {
 }
 
 function ResourceActions({
+  scope = 'project',
   resource,
   busy,
   t,
@@ -1180,7 +1226,7 @@ function ResourceActions({
     <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
       {actions.map((action) => {
         const available = ['available', 'confirmation_required'].includes(action.availability);
-        const label = actionLabel(resource, action, t);
+        const label = actionLabel(resource, action, t, scope);
         return (
           <Button
             key={action.action}
@@ -1217,6 +1263,7 @@ function actionLabel(
   resource: CollectionResourceView,
   action: ResourceActionView,
   t: ReturnType<typeof useTranslation>['t'],
+  scope: 'project' | 'user',
 ): string {
   if (action.intent === 'relink') {
     return t('agentCollections.action.relink');
@@ -1225,7 +1272,11 @@ function actionLabel(
     return t('agentCollections.action.repair');
   }
   if (resource.kind === 'plugins' && action.action === 'remove') {
-    return t('agentCollections.action.resetPluginOverride');
+    return t(
+      scope === 'user'
+        ? 'agentCollections.action.uninstallPlugin'
+        : 'agentCollections.action.resetPluginOverride',
+    );
   }
   return t(`agentCollections.action.${action.action}`);
 }

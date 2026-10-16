@@ -28,6 +28,7 @@ export const EffectiveResourceStateSchema = z.enum([
   'conflict',
   'external',
   'unsupported',
+  'source_missing',
   'unknown',
 ]);
 export const ResourceLayerSchema = z.enum(['system', 'user', 'project', 'runtime']);
@@ -142,6 +143,14 @@ export const CollectionResourceViewSchema = z
     ownership: ResourceOwnershipViewSchema,
     health: ResourceHealthViewSchema,
     management: ResourceManagementViewSchema,
+    sourceTracking: z
+      .object({
+        current: z.boolean(),
+        version: z.string().min(1).optional(),
+        sourceVersion: z.string().min(1).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export const CollectionResourceInventorySchema = z

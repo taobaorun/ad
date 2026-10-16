@@ -34,6 +34,7 @@ export const CatalogResourceSchema = z
     installId: z.string().min(1),
     displayName: z.string().min(1),
     description: z.string().optional(),
+    version: z.string().optional(),
     subpath: z.string(),
     descriptorDigest: contentDigestSchema,
     compatibleAgents: z.array(z.enum(['claude-code', 'codex'])).default([]),
@@ -50,6 +51,7 @@ export const ResourceCatalogSnapshotSchema = z
     revision: z.number().int().nonnegative(),
     sources: z.record(z.string(), CatalogSourceSchema),
     resources: z.record(z.string(), CatalogResourceSchema),
+    missingInstallationsBySource: z.record(z.string(), z.number().int().positive()).default({}),
     migratedFromSkillCatalog: z.boolean(),
   })
   .strict();

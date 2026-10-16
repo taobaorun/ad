@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Boxes,
+  ChevronDown,
   Download,
   GitBranch,
   Link2,
@@ -21,6 +22,7 @@ import type {
   InstallationId,
 } from '@/lib/agentTypes';
 import type {
+  CatalogResource,
   CatalogSource,
   ResourceCatalogSnapshot,
   SourceRemovalPlan,
@@ -140,6 +142,27 @@ export function ResourceCenter() {
       return kindMatches && queryMatches;
     });
   }, [catalog, catalogSources, filter, query]);
+
+  const versionedResourcesBySource = useMemo(() => {
+    const grouped = new Map<string, CatalogResource[]>();
+    for (const resource of Object.values(catalog?.resources ?? {})) {
+      if (
+        !resource.present ||
+        resource.lifecycle !== 'managed' ||
+        !resource.version?.trim() ||
+        (filter !== 'all' && resource.kind !== filter)
+      ) {
+        continue;
+      }
+      const resources = grouped.get(resource.sourceId) ?? [];
+      resources.push(resource);
+      grouped.set(resource.sourceId, resources);
+    }
+    for (const resources of grouped.values()) {
+      resources.sort((left, right) => left.displayName.localeCompare(right.displayName));
+    }
+    return grouped;
+  }, [catalog, filter]);
 
   async function previewAdd(request: SkillSourceRequest) {
     const duplicate = catalogSources.find(
@@ -387,6 +410,8 @@ export function ResourceCenter() {
                 <SourceCard
                   key={source.id}
                   source={source}
+                  versionedResources={versionedResourcesBySource.get(source.id) ?? []}
+                  missingInstallationCount={catalog?.missingInstallationsBySource?.[source.id] ?? 0}
                   busy={sourceActionId !== null}
                   updating={sourceActionId === source.id}
                   installDisabled={baseInstallations.length === 0}
@@ -458,6 +483,8 @@ export function ResourceCenter() {
 
 function SourceCard({
   source,
+  versionedResources,
+  missingInstallationCount,
   busy,
   updating,
   installDisabled,
@@ -466,6 +493,8 @@ function SourceCard({
   onRemove,
 }: {
   source: CatalogSource;
+  versionedResources: CatalogResource[];
+  missingInstallationCount: number;
   busy: boolean;
   updating: boolean;
   installDisabled: boolean;
@@ -507,6 +536,35 @@ function SourceCard({
                 </span>
               )}
             </div>
+          )}
+          {missingInstallationCount > 0 && (
+            <p className="mt-2 text-xs text-warning">
+              {t('resourceCenter.missingInstallations', { count: missingInstallationCount })}
+            </p>
+          )}
+          {versionedResources.length > 0 && (
+            <ul
+              aria-label={t('resourceCenter.resourceVersions')}
+              className="mt-3 space-y-2 border-t border-border pt-3"
+            >
+              {versionedResources.map((resource) => (
+                <li
+                  key={resource.id}
+                  className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs"
+                >
+                  <span className="min-w-0 break-all font-medium">{resource.displayName}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {t(`resourceCenter.kind.${resource.kind}`)}
+                  </span>
+                  <span
+                    aria-label={t('resourceCenter.resourceVersion', { version: resource.version })}
+                    className="max-w-full break-all rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+                  >
+                    {resource.version}
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
           <div className="mt-4 flex justify-end gap-1">
             <Button
@@ -600,21 +658,29 @@ function UserSourceInstallationDialog({
           <span className="mb-1 block text-muted-foreground">
             {t('resourceCenter.installDialog.agentLabel')}
           </span>
-          <select
-            value={installation?.id ?? ''}
-            disabled={busy || installations.length === 0}
-            onChange={(event) => onSelectInstallation(event.target.value as InstallationId)}
-            className="h-9 w-full rounded-md border border-border bg-card px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {installations.map((candidate) => (
-              <option key={candidate.id} value={candidate.id}>
-                {agentNames[candidate.agentId] ?? candidate.agentId}
-                {installations.filter((item) => item.agentId === candidate.agentId).length > 1
-                  ? ` — ${candidate.rootPath}`
-                  : ''}
-              </option>
-            ))}
-          </select>
+          <span className="relative block">
+            <select
+              value={installation?.id ?? ''}
+              disabled={busy || installations.length === 0}
+              onChange={(event) => onSelectInstallation(event.target.value as InstallationId)}
+              className="h-9 w-full appearance-none rounded-md border border-border bg-card bg-none px-2 pr-8 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {installations.map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {agentNames[candidate.agentId] ?? candidate.agentId}
+                  {installations.filter((item) => item.agentId === candidate.agentId).length > 1
+                    ? ` — ${candidate.rootPath}`
+                    : ''}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              aria-hidden="true"
+              className={`pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground ${
+                busy || installations.length === 0 ? 'opacity-50' : ''
+              }`}
+            />
+          </span>
         </label>
         {installation && (
           <p className="max-w-full truncate font-mono text-[10px] text-muted-foreground">

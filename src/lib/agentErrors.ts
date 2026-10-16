@@ -4,6 +4,14 @@ import { AgentErrorSchema } from '@/lib/agentTypes';
 export function formatAgentError(error: unknown): string {
   const parsed = AgentErrorSchema.safeParse(error);
   if (parsed.success) {
+    if (parsed.data.message === "Linked Plugin cache no longer matches AD's installation record") {
+      return i18n.t('agentErrors.plugin_binding_drift');
+    }
+    if (
+      parsed.data.message === 'Plugin repair target is occupied; the existing cache was preserved'
+    ) {
+      return i18n.t('agentErrors.plugin_repair_target_occupied');
+    }
     if (hasConversionPreviewPhase(parsed.data.details)) {
       return i18n.t('agentErrors.conversion_preview', { message: parsed.data.message });
     }

@@ -9,7 +9,15 @@ use super::{
     ResourceKind, ResourceOwnershipChange, ResourceOwnershipChangeKind, ResourceRef, WorkspaceKey,
 };
 
-pub const RESOURCE_INSTALLATION_SCHEMA_VERSION: u32 = 1;
+pub const RESOURCE_INSTALLATION_SCHEMA_VERSION: u32 = 2;
+const LEGACY_RESOURCE_INSTALLATION_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceTrackingPolicy {
+    #[default]
+    Latest,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -35,6 +43,12 @@ pub struct ResourceInstallationRecord {
     pub adapter_contract: String,
     pub target_claim_id: PhysicalTargetId,
     pub state: ResourceInstallationState,
+    #[serde(default)]
+    pub tracking_policy: ResourceTrackingPolicy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_source_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_content_digest: Option<super::ContentDigest>,
     pub ownership_record_ids: Vec<OwnershipRecordId>,
     pub created_by_receipt_id: ReceiptId,
     pub updated_by_receipt_id: ReceiptId,
@@ -52,6 +66,50 @@ pub fn list_resource_installations(
 ) -> Result<Vec<ResourceInstallationRecord>, ResourceInstallationError> {
     let state = ExecutionState::open()?;
     load_installations(&state)
+}
+
+pub(super) fn refresh_latest_resource_installations(
+    source_id: &str,
+) -> Result<(), ResourceInstallationError> {
+    let state = ExecutionState::open()?;
+    let catalog = load_resource_catalog_snapshot()
+        .map_err(|error| ResourceInstallationError::Corrupt(error.to_string()))?;
+    let source_revision = catalog
+        .sources
+        .get(source_id)
+        .and_then(|source| source.binding.as_ref())
+        .map(|binding| binding.source_revision.clone());
+    for mut record in load_installations(&state)?.into_iter().filter(|record| {
+        record.source_id == source_id
+            && record.tracking_policy == ResourceTrackingPolicy::Latest
+            && record.adapter_contract.ends_with("-link-v1")
+    }) {
+        let Some(candidate) = catalog
+            .resources
+            .get(&record.resource_id)
+            .filter(|candidate| {
+                candidate.present && candidate.lifecycle == super::ResourceLifecycle::Managed
+            })
+        else {
+            continue;
+        };
+        let resolved = super::resolve_catalog_resource(&candidate.id)
+            .map_err(|error| ResourceInstallationError::Corrupt(error.to_string()))?;
+        let digest = resolved_resource_digest(
+            record.resource_kind,
+            &record.agent_id,
+            &resolved.physical_path,
+        )?;
+        record.schema_version = RESOURCE_INSTALLATION_SCHEMA_VERSION;
+        record.resolved_source_revision = source_revision.clone();
+        record.resolved_content_digest = Some(digest);
+        let bytes = serde_json::to_vec_pretty(&record)
+            .map_err(|error| ResourceInstallationError::Corrupt(error.to_string()))?;
+        state
+            .resource_installations()
+            .write_atomic(&installation_file_name(&record.id), &bytes)?;
+    }
+    Ok(())
 }
 
 pub(super) fn list_resource_installations_for_lifecycle(
@@ -106,6 +164,7 @@ pub(super) fn reconcile_installations(
     state: &ExecutionState,
     changes: &[ResourceOwnershipChange],
 ) -> Result<(), ResourceInstallationError> {
+    let catalog_snapshot = load_resource_catalog_snapshot().ok();
     for change in changes {
         let record = match change.kind {
             ResourceOwnershipChangeKind::Upsert => change.record.as_ref(),
@@ -119,8 +178,21 @@ pub(super) fn reconcile_installations(
         };
         let installation_id = resource_installation_id(&record.resource);
         let file_name = installation_file_name(&installation_id);
+        let source_binding = catalog_snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.sources.get(&catalog.source_id))
+            .and_then(|source| source.binding.as_ref());
         match change.kind {
             ResourceOwnershipChangeKind::Upsert => {
+                let resolved_content_digest = super::resolve_catalog_resource(&catalog.resource_id)
+                    .map_err(|error| ResourceInstallationError::Corrupt(error.to_string()))
+                    .and_then(|resolved| {
+                        resolved_resource_digest(
+                            record.resource.kind,
+                            &agent_id_for(&record.resource),
+                            &resolved.physical_path,
+                        )
+                    })?;
                 let existing = read_installation(state, &installation_id)?;
                 let installation = ResourceInstallationRecord {
                     schema_version: RESOURCE_INSTALLATION_SCHEMA_VERSION,
@@ -136,6 +208,10 @@ pub(super) fn reconcile_installations(
                     adapter_contract: catalog.adapter_contract.clone(),
                     target_claim_id: record.target_id.clone(),
                     state: ResourceInstallationState::Enabled,
+                    tracking_policy: ResourceTrackingPolicy::Latest,
+                    resolved_source_revision: source_binding
+                        .map(|binding| binding.source_revision.clone()),
+                    resolved_content_digest: Some(resolved_content_digest),
                     ownership_record_ids: vec![record.id.clone()],
                     created_by_receipt_id: existing
                         .as_ref()
@@ -247,6 +323,13 @@ fn project_legacy_skill_installations(
             adapter_contract: "project-skill-link-v1".into(),
             target_claim_id: ownership.target_id,
             state: ResourceInstallationState::Enabled,
+            tracking_policy: ResourceTrackingPolicy::Latest,
+            resolved_source_revision: catalog
+                .sources
+                .get(&resource.source_id)
+                .and_then(|source| source.binding.as_ref())
+                .map(|binding| binding.source_revision.clone()),
+            resolved_content_digest: Some(ownership.artifact_digest.clone()),
             ownership_record_ids: vec![ownership.id],
             created_by_receipt_id: ownership.creating_receipt_id,
             updated_by_receipt_id: ownership.updated_by_receipt_id,
@@ -278,14 +361,16 @@ fn read_installation(
 fn validate_installation(
     record: &ResourceInstallationRecord,
 ) -> Result<(), ResourceInstallationError> {
-    let valid = record.schema_version == RESOURCE_INSTALLATION_SCHEMA_VERSION
-        && record.id
-            == resource_installation_id_for(
-                &record.effective_installation_id,
-                record.canonical_project_path.as_deref().unwrap_or_default(),
-                record.resource_kind,
-                &record.install_id,
-            )
+    let valid = matches!(
+        record.schema_version,
+        LEGACY_RESOURCE_INSTALLATION_SCHEMA_VERSION | RESOURCE_INSTALLATION_SCHEMA_VERSION
+    ) && record.id
+        == resource_installation_id_for(
+            &record.effective_installation_id,
+            record.canonical_project_path.as_deref().unwrap_or_default(),
+            record.resource_kind,
+            &record.install_id,
+        )
         && record.target_claim_id.as_str().starts_with("target:")
         && !record.resource_id.is_empty()
         && !record.source_id.is_empty()
@@ -350,4 +435,19 @@ fn agent_id_for(resource: &ResourceRef) -> AgentId {
             .unwrap_or_default()
             .to_owned(),
     )
+}
+
+fn resolved_resource_digest(
+    kind: ResourceKind,
+    agent_id: &AgentId,
+    path: &std::path::Path,
+) -> Result<super::ContentDigest, ResourceInstallationError> {
+    let digest = if kind == ResourceKind::Plugins && agent_id.as_str() == "codex" {
+        super::execution_fs::directory_tree_digest_filtered(path, |entry| {
+            Ok(!super::resource_scanner::is_agent_skill_projection(entry))
+        })
+    } else {
+        super::directory_tree_digest(path)
+    };
+    digest.map_err(|error| ResourceInstallationError::Corrupt(error.to_string()))
 }

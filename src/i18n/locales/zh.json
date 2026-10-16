@@ -72,6 +72,8 @@
     "sectionSubtitle": "管理 Skill 与 Plugin 来源，并直接安装到当前 Agent 的用户级范围。",
     "addSource": "添加来源",
     "sources": "来源",
+    "resourceVersions": "资源版本",
+    "resourceVersion": "版本 {{version}}",
     "install": "安装",
     "installDialog": {
       "title": "安装来源「{{name}}」",
@@ -97,6 +99,7 @@
     "emptyHint": "添加 Git 仓库或本地目录后，可在这里统一管理。",
     "noManaged": "当前视图没有已纳管资源",
     "removedResources": "已移除资源（{{count}}）",
+    "missingInstallations": "{{count}} 个已安装资源缺失",
     "kind": {
       "skills": "Skill",
       "plugins": "Plugin"
@@ -492,6 +495,7 @@
         "executionDescription": "包含 {{count}} 项命令或可执行内容，安装后可能由 Agent 运行。请确认信任此来源。",
         "sharedImpact": "该 Source 当前被 {{count}} 个项目工作区链接。",
         "blocked": "当前操作已被阻止",
+        "missingInstallations": "更新后 {{count}} 个已安装资源将缺失。",
         "sharedSource": "Local 修改会立即可见；Git 更新会原子切换共享的受管 checkout，并同时影响所有已链接项目。",
         "removeReferences": "请先卸载此来源已安装的资源。",
         "applying": "正在应用…",
@@ -668,7 +672,9 @@
     "unsupported": "所选 Agent 不支持该操作。",
     "plan_expired": "预览已过期，请重新生成预览后再应用。",
     "partial_failure": "操作仅部分完成，请检查回执后再继续。",
-    "io": "AD 无法读取或写入 Agent 资源，请检查文件权限后重试。"
+    "io": "AD 无法读取或写入 Agent 资源，请检查文件权限后重试。",
+    "plugin_binding_drift": "安装状态异常，请修复后继续。",
+    "plugin_repair_target_occupied": "修复目标已被占用，现有缓存已保留。"
   },
   "agents": {
     "capabilities": {
@@ -677,12 +683,15 @@
     },
     "inventory": {
       "pluginArtifactInvalid": "该 Plugin 的受管来源不可用，或已与 Harness 记录不一致。",
-      "pluginOwnershipInvalid": "该 Plugin 的项目安装链接已缺失，或已与 AD 的安装记录不一致。"
+      "pluginOwnershipInvalid": "该 Plugin 的项目安装链接已缺失，或已与 AD 的安装记录不一致。",
+      "sourceMissing": "来源已缺失。",
+      "userPluginBindingDrift": "安装状态异常，请修复后继续。"
     },
     "resources": {
       "externalResource": "该资源不由 AD 持有，将保持只读。",
       "skillNotInstalled": "请先在当前项目安装此 Skill，再执行更新或移除。",
       "skillRevisionCurrent": "当前项目已使用目录中的最新版本。",
+      "linkedLocalCurrent": "该资源已链接本地来源，无需更新。",
       "skillSourceUnavailable": "Skill 来源已不在目录中，无法更新。",
       "skillOwnershipUnproven": "AD 无法证明该项目 Skill 的所有权，已阻止修改。",
       "codexRuntimeNotPrepared": "请先准备隔离的 Codex 项目 Runtime，再修改项目 Plugin。",
@@ -790,6 +799,7 @@
       "conflict": "存在冲突",
       "external": "外部资源",
       "unsupported": "不支持",
+      "source_missing": "来源已缺失",
       "unknown": "未知"
     },
     "conflictResolution": {
@@ -837,7 +847,8 @@
       "remove": "移除",
       "enable": "启用",
       "disable": "禁用",
-      "resetPluginOverride": "重置项目覆盖"
+      "resetPluginOverride": "重置项目覆盖",
+      "uninstallPlugin": "卸载"
     },
     "enable": "启用 {{name}}",
     "disable": "禁用 {{name}}",
@@ -857,7 +868,10 @@
     "rollback": "回滚",
     "rollbackConfirm": "回滚上一次集合变更？仅当应用后相关资源未再变化时才会继续。",
     "rollbackSuccess": "已回滚",
-    "availabilityDetails": "支持范围"
+    "availabilityDetails": "支持范围",
+    "followingSource": "已同步",
+    "pluginUpdateAvailable": "来源有更新，可手动同步。",
+    "sourceVersion": "来源 {{version}}"
   },
   "operationProgress": {
     "elapsed": "已用时 {{seconds}} 秒"

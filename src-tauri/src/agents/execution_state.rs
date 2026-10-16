@@ -38,6 +38,7 @@ pub(super) struct ExecutionState {
     legacy_project_skills: StateDirectory,
     skill_migration_archive: StateDirectory,
     skill_migration_journals: StateDirectory,
+    source_tracking_migration_journals: StateDirectory,
     skill_migration_history: StateDirectory,
 }
 
@@ -82,6 +83,8 @@ impl ExecutionState {
         let skill_migration_archive = archive_root.open_or_create_directory("skill-catalog")?;
         let skill_migration_journals =
             state.open_or_create_directory("skill-migration-journals")?;
+        let source_tracking_migration_journals =
+            state.open_or_create_directory("source-tracking-migration-journals")?;
         let skill_migration_history = history_root.open_or_create_directory("skill-migration")?;
         Ok(Self {
             state,
@@ -102,6 +105,7 @@ impl ExecutionState {
             legacy_project_skills,
             skill_migration_archive,
             skill_migration_journals,
+            source_tracking_migration_journals,
             skill_migration_history,
         })
     }
@@ -156,6 +160,10 @@ impl ExecutionState {
 
     pub(super) fn skill_catalog_journals(&self) -> &StateDirectory {
         &self.skill_catalog_journals
+    }
+
+    pub(super) fn source_tracking_migration_journals(&self) -> &StateDirectory {
+        &self.source_tracking_migration_journals
     }
 
     pub(super) fn skill_catalog_backups(&self) -> &StateDirectory {
@@ -346,7 +354,14 @@ impl StateDirectory {
         match self.open_directory(name) {
             Ok(directory) => Ok(directory),
             Err(error) if error.raw_os_error() == Some(rustix::io::Errno::NOENT.raw_os_error()) => {
-                self.create_directory(name)
+                match self.create_directory(name) {
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                        let directory = self.open_directory(name)?;
+                        fsync(&self.fd)?;
+                        Ok(directory)
+                    }
+                    result => result,
+                }
             }
             Err(error) => Err(error),
         }
@@ -391,9 +406,14 @@ fn open_or_create_directory(
     let fd = match openat(parent, name, DIRECTORY_FLAGS, Mode::empty()) {
         Ok(fd) => fd,
         Err(rustix::io::Errno::NOENT) => {
-            mkdirat(parent, name, Mode::RWXU)?;
+            match mkdirat(parent, name, Mode::RWXU) {
+                Ok(()) | Err(rustix::io::Errno::EXIST) => {}
+                Err(error) => return Err(error.into()),
+            }
+            let fd = openat(parent, name, DIRECTORY_FLAGS, Mode::empty())?;
+            validate_directory(&fd, display_path)?;
             fsync(parent)?;
-            openat(parent, name, DIRECTORY_FLAGS, Mode::empty())?
+            fd
         }
         Err(error) => return Err(error.into()),
     };

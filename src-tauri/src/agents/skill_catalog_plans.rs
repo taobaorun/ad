@@ -49,6 +49,13 @@ pub struct SkillCatalogBlockingIssue {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SkillCatalogWarning {
+    pub code: String,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillCatalogPlanView {
     pub schema_version: u32,
@@ -70,6 +77,8 @@ pub struct SkillCatalogPlanView {
     pub applicability: SkillCatalogPlanApplicability,
     #[serde(default)]
     pub blocking_issues: Vec<SkillCatalogBlockingIssue>,
+    #[serde(default)]
+    pub warnings: Vec<SkillCatalogWarning>,
     #[serde(default)]
     pub affected_resources: Vec<ResourceRef>,
     #[serde(default)]
@@ -438,6 +447,7 @@ fn plan_view(
             .or_else(|| binding.as_ref().map(|value| &value.activation_impact.digest)),
         "applicability": impact.applicability,
         "blockingIssues": impact.blocking_issues,
+        "warnings": impact.warnings,
         "affectedResources": impact.affected_resources,
         "affectedWorkspaces": impact.affected_workspaces,
     });
@@ -456,6 +466,7 @@ fn plan_view(
         rollback_of,
         applicability: impact.applicability,
         blocking_issues: impact.blocking_issues,
+        warnings: impact.warnings,
         affected_resources: impact.affected_resources,
         affected_workspaces: impact.affected_workspaces,
         confirmation_required: true,
@@ -479,6 +490,7 @@ struct SkillCatalogPlanPayload {
 struct ReferenceImpact {
     applicability: SkillCatalogPlanApplicability,
     blocking_issues: Vec<SkillCatalogBlockingIssue>,
+    warnings: Vec<SkillCatalogWarning>,
     affected_resources: Vec<ResourceRef>,
     affected_workspaces: Vec<WorkspaceKey>,
 }
@@ -493,6 +505,7 @@ fn reference_impact(
     })?;
     let mut impact = ReferenceImpact::default();
     let mut workspaces = BTreeSet::new();
+    let mut missing_installations = 0_usize;
     for name in state.ownership().entry_names().map_err(|error| {
         SkillCatalogError::Corrupt(format!("ownership index is unavailable: {error}"))
     })? {
@@ -568,11 +581,7 @@ fn reference_impact(
                 });
             legacy_skill_missing || catalog_resource_missing || catalog_resource_unsupported
         }) {
-            impact.blocking_issues.push(SkillCatalogBlockingIssue {
-                code: "source_update_breaks_installation".into(),
-                message: "The candidate source revision removes an installed resource".into(),
-                resource: Some(record.resource.clone()),
-            });
+            missing_installations += 1;
         }
     }
     for record in super::list_all_user_plugin_management_records()
@@ -602,21 +611,15 @@ fn reference_impact(
                 message: "Remove the user-level Plugins before removing this source".into(),
                 resource: Some(resource),
             });
-        } else if candidate.is_some() {
-            impact.blocking_issues.push(SkillCatalogBlockingIssue {
-                code: if candidate_breaks_installation {
-                    "source_update_breaks_installation".into()
-                } else {
-                    "source_update_requires_user_plugin_removal".into()
-                },
-                message: if candidate_breaks_installation {
-                    "The candidate source revision removes an installed resource".into()
-                } else {
-                    "Remove user-level Plugins before updating this source".into()
-                },
-                resource: Some(resource),
-            });
+        } else if candidate_breaks_installation {
+            missing_installations += 1;
         }
+    }
+    if missing_installations > 0 {
+        impact.warnings.push(SkillCatalogWarning {
+            code: "source_update_missing_installations".into(),
+            count: missing_installations,
+        });
     }
     impact.affected_workspaces = workspaces.into_iter().collect();
     impact.affected_resources.sort_by(|left, right| {
@@ -650,13 +653,19 @@ fn candidate_supports_agent(
         .unwrap_or_default();
     match item.kind {
         super::ResourceKind::Skills => true,
+        super::ResourceKind::Plugins if item.supported_agents.contains(agent_id) => true,
         super::ResourceKind::Plugins if agent_id == "claude-code" => {
-            item.supported_agents.contains(agent_id)
-                || (item.supported_agents.is_empty()
-                    && Path::new(&binding.physical_root)
-                        .join(&item.subpath)
-                        .join(".claude-plugin/plugin.json")
-                        .is_file())
+            Path::new(&binding.physical_root)
+                .join(&item.subpath)
+                .join(".claude-plugin/plugin.json")
+                .is_file()
+        }
+        super::ResourceKind::Plugins if agent_id == "codex" => {
+            super::codex_plugins::read_codex_catalog_plugin_metadata(
+                &Path::new(&binding.physical_root).join(&item.subpath),
+                &item.install_id,
+            )
+            .is_ok()
         }
         _ => false,
     }
@@ -677,6 +686,7 @@ pub(crate) fn skill_catalog_plan_references_are_current(
     )?;
     Ok(impact.applicability == view.applicability
         && impact.blocking_issues == view.blocking_issues
+        && impact.warnings == view.warnings
         && impact.affected_resources == view.affected_resources
         && impact.affected_workspaces == view.affected_workspaces)
 }

@@ -286,6 +286,35 @@ impl ConfinedTarget {
             .map_err(|error| self.io_error(error))
     }
 
+    pub(super) fn rename_to_sibling(&self, name: &str) -> Result<(), AgentError> {
+        if Path::new(name).components().count() != 1
+            || !matches!(
+                Path::new(name).components().next(),
+                Some(std::path::Component::Normal(_))
+            )
+        {
+            return Err(confinement_error(
+                &self.resource,
+                "Invalid retained cache name",
+            ));
+        }
+        let parent = self
+            .parent(false)?
+            .ok_or_else(|| confinement_error(&self.resource, "Cache parent is missing"))?;
+        match statat(&parent, name, AtFlags::SYMLINK_NOFOLLOW) {
+            Err(rustix::io::Errno::NOENT) => {}
+            _ => {
+                return Err(confinement_error(
+                    &self.resource,
+                    "Retained cache destination is occupied",
+                ))
+            }
+        }
+        renameat(&parent, self.name.as_os_str(), &parent, name)
+            .map_err(|error| self.io_error(error.into()))?;
+        fsync(&parent).map_err(|error| self.io_error(error.into()))
+    }
+
     pub(super) fn write_symlink_atomic(&self, source: &Path) -> Result<(), AgentError> {
         let parent = self
             .parent(true)?
@@ -314,6 +343,42 @@ impl ConfinedTarget {
             exclude_agent_skill_projections,
         )
         .map_err(|error| self.io_error(error))
+    }
+
+    pub(super) fn write_tracked_source_atomic(
+        &self,
+        source: &Path,
+        digest: &super::ContentDigest,
+    ) -> Result<(), AgentError> {
+        let parent = self.parent(true)?.expect("created parents");
+        super::execution_tree::write_tracked_source_atomic(
+            &parent,
+            self.name.as_os_str(),
+            source,
+            digest,
+        )
+        .map_err(|error| self.io_error(error))
+    }
+
+    pub(super) fn write_source_links_atomic(
+        &self,
+        source: &Path,
+    ) -> Result<Vec<String>, AgentError> {
+        let parent = self.parent(true)?.expect("created parents");
+        super::execution_tree::write_source_links_atomic(&parent, self.name.as_os_str(), source)
+            .map_err(|error| self.io_error(error))
+    }
+
+    pub(super) fn source_links_match(
+        &self,
+        source: &Path,
+        entries: &[String],
+    ) -> Result<bool, AgentError> {
+        let Some(parent) = self.parent(false)? else {
+            return Ok(false);
+        };
+        super::execution_tree::source_links_match(&parent, self.name.as_os_str(), source, entries)
+            .map_err(|error| self.io_error(error))
     }
 
     pub(super) fn write_directory_from(&self, source: &StateDirectory) -> Result<(), AgentError> {

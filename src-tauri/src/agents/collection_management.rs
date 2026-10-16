@@ -43,6 +43,19 @@ pub(super) fn resource_management(input: CollectionManagementInput<'_>) -> Resou
         && input.state != EffectiveResourceState::Unconfigured
         && input.owned_scope != Some(super::ResourceScope::Project)
     {
+        if input.state == EffectiveResourceState::SourceMissing {
+            return ResourceManagementView {
+                status: ResourceManagementStatus::ReadOnly,
+                actions: vec![
+                    inspect,
+                    unavailable_action(
+                        ResourceAction::Remove,
+                        "resource_inherited_from_user",
+                        "agents.resources.inheritedFromUser",
+                    ),
+                ],
+            };
+        }
         let toggle = if input.state == EffectiveResourceState::Enabled {
             ResourceAction::Disable
         } else {
@@ -79,6 +92,20 @@ pub(super) fn resource_management(input: CollectionManagementInput<'_>) -> Resou
                     "agents.resources.inheritedFromUser",
                 ),
             ],
+        };
+    }
+    if input.state == EffectiveResourceState::SourceMissing {
+        return ResourceManagementView {
+            status: if input.owned_artifact.is_some() {
+                ResourceManagementStatus::Managed
+            } else {
+                ResourceManagementStatus::ReadOnly
+            },
+            actions: if input.owned_artifact.is_some() {
+                vec![inspect, confirmation_action(ResourceAction::Remove)]
+            } else {
+                vec![inspect]
+            },
         };
     }
     if input.has_health_error || input.state == EffectiveResourceState::Conflict {

@@ -118,7 +118,7 @@ pub(super) fn plan_project_runtime_bootstrap(
     context: &AgentContext,
     inherit_base_config: bool,
     profile_id: Option<&str>,
-    _report: &PluginInstallProgressReporter<'_>,
+    report: &PluginInstallProgressReporter<'_>,
 ) -> Result<Option<ProjectRuntimeBootstrapPlan>, AgentError> {
     let Some(runtime) = project_runtime_for_context(context)? else {
         return Ok(None);
@@ -197,6 +197,17 @@ pub(super) fn plan_project_runtime_bootstrap(
     }
     let mut mutations = Vec::new();
     push_symlink_mutation(&mut mutations, auth_resource, &auth_state, &auth_source);
+    if inherit_base_config {
+        append_inherited_package_mutations(
+            context,
+            &runtime,
+            base_config.as_deref(),
+            String::new(),
+            report,
+            &mut mutations,
+            true,
+        )?;
+    }
     push_manifest_mutation(
         context,
         &mut mutations,
@@ -1067,14 +1078,7 @@ fn plan_catalog_plugin_install(
     let manifest_resource = project_resource(&context, "runtime-manifest");
     let manifest_state = observe_target(&ManagedResourceTarget::file(runtime.manifest_path()))?;
     validate_runtime_manifest_state(&context, &runtime, &manifest_resource, &manifest_state)?;
-    let package_digest = catalog_plugin_tree_digest(&resolved.stable_path).map_err(|error| {
-        agent_error(
-            AgentErrorCode::InvalidPlan,
-            &context,
-            Some(package_resource.clone()),
-            error.to_string(),
-        )
-    })?;
+    let package_digest = ContentDigest::sha256(resolved.stable_path.to_string_lossy().as_bytes());
 
     let mut read_set = Vec::new();
     if let Some(expected_digest) = base_config.as_deref().map(ContentDigest::sha256) {
@@ -1090,14 +1094,14 @@ fn plan_catalog_plugin_install(
         append_inherited_package_mutations(
             &context,
             &runtime,
-            &base_home,
             base_config.as_deref(),
             native_id,
             report,
             &mut mutations,
+            false,
         )?;
     }
-    push_catalog_plugin_directory_mutation(
+    push_catalog_plugin_symlink_mutation(
         &mut mutations,
         package_resource,
         &package_state,
@@ -1134,11 +1138,11 @@ fn plan_catalog_plugin_install(
 fn append_inherited_package_mutations(
     context: &AgentContext,
     runtime: &super::ProjectCodexRuntime,
-    base_home: &Path,
     base_config: Option<&[u8]>,
     excluded_plugin_id: String,
     report: &PluginInstallProgressReporter<'_>,
     mutations: &mut Vec<PlannedMutation>,
+    only_managed: bool,
 ) -> Result<(), AgentError> {
     let Some(base_config) = base_config else {
         return Ok(());
@@ -1164,10 +1168,17 @@ fn append_inherited_package_mutations(
     let Some(plugins) = value.get("plugins").and_then(toml::Value::as_table) else {
         return Ok(());
     };
+    let user_workspace = super::resolve_user_agent_workspace(&runtime.base_installation_id)?;
+    let base_home = Path::new(&user_workspace.root_path);
+    let managed = super::list_user_plugin_management_records(&user_workspace)?;
     let enabled = plugins
         .iter()
         .filter(|(plugin_id, config)| {
             plugin_id.as_str() != excluded_plugin_id
+                && (!only_managed
+                    || managed
+                        .iter()
+                        .any(|record| record.native_id == plugin_id.as_str()))
                 && config
                     .get("enabled")
                     .and_then(toml::Value::as_bool)
@@ -1260,6 +1271,103 @@ fn append_inherited_package_mutations(
             )
         })?;
         let source = source_base.join(&version);
+        if let Some(record) = managed
+            .iter()
+            .find(|record| record.native_id == plugin_id.as_str())
+        {
+            if !super::user_plugins::user_plugin_binding_owned(&user_workspace, record) {
+                return Err(agent_error(
+                    AgentErrorCode::ResourceChanged,
+                    context,
+                    None,
+                    format!("Global Plugin {plugin_id} needs repair before project inheritance"),
+                ));
+            }
+            let stable_source = Path::new(record.linked_install_path.as_deref().unwrap());
+            let digest = super::directory_tree_digest(stable_source).map_err(|error| {
+                agent_error(AgentErrorCode::Io, context, None, error.to_string())
+            })?;
+            let resource =
+                project_resource(context, format!("package:{marketplace}:{plugin}:{version}"));
+            let target = resolve_project_resource(context, &resource, runtime)?;
+            let state = observe_target(&target)?;
+            if state.digest().as_ref() != Some(&digest) {
+                if !matches!(state, TargetState::Missing) {
+                    let execution_state =
+                        super::execution_state::ExecutionState::open().map_err(|error| {
+                            agent_error(AgentErrorCode::Io, context, None, error.to_string())
+                        })?;
+                    let owned = super::load_ownership_record(&execution_state, &resource)?
+                        .ok_or_else(|| storage_conflict(context, &resource))?;
+                    super::validate_ownership_record(
+                        &owned,
+                        &resource,
+                        target.path(),
+                        state.kind(),
+                        state.digest().as_ref(),
+                    )?;
+                }
+                push_directory_mutation(mutations, resource, &state, stable_source, digest);
+            }
+            let execution_state =
+                super::execution_state::ExecutionState::open().map_err(|error| {
+                    agent_error(AgentErrorCode::Io, context, None, error.to_string())
+                })?;
+            if let Ok(entries) = std::fs::read_dir(target.path().parent().unwrap()) {
+                for entry in entries
+                    .flatten()
+                    .filter(|entry| entry.file_name().to_str() != Some(&version))
+                {
+                    let Some(old_version) = entry
+                        .file_name()
+                        .to_str()
+                        .filter(|name| !name.starts_with('.'))
+                        .map(str::to_owned)
+                    else {
+                        continue;
+                    };
+                    let higher = entry.file_type().is_ok_and(|kind| kind.is_dir())
+                        && (cache_version_is_newer(&old_version, &version)
+                            || (version != "local"
+                                && old_version != "local"
+                                && Version::parse(&old_version).is_err()));
+                    let old_resource = project_resource(
+                        context,
+                        format!("package:{marketplace}:{plugin}:{old_version}"),
+                    );
+                    let Some(owned) =
+                        super::load_ownership_record(&execution_state, &old_resource)?
+                    else {
+                        if higher {
+                            return Err(storage_conflict(context, &old_resource));
+                        }
+                        continue;
+                    };
+                    let old_target = resolve_project_resource(context, &old_resource, runtime)?;
+                    let old_state = observe_target(&old_target)?;
+                    if super::validate_ownership_record(
+                        &owned,
+                        &old_resource,
+                        old_target.path(),
+                        old_state.kind(),
+                        old_state.digest().as_ref(),
+                    )
+                    .is_ok()
+                    {
+                        mutations.push(PlannedMutation {
+                            resource: old_resource,
+                            kind: MutationKind::Delete,
+                            expected_digest: old_state.digest(),
+                            media_type: "application/vnd.ad.directory".into(),
+                            content: None,
+                        });
+                    } else if higher {
+                        return Err(storage_conflict(context, &old_resource));
+                    }
+                }
+            }
+            continue;
+        }
         let digest = super::directory_tree_digest(&source).map_err(|error| {
             agent_error(
                 AgentErrorCode::InvalidPlan,
@@ -1291,11 +1399,26 @@ fn append_inherited_package_mutations(
     Ok(())
 }
 
-fn active_plugin_version(package_base: &Path) -> Option<String> {
-    let mut versions = std::fs::read_dir(package_base)
+pub(super) fn active_plugin_version(package_base: &Path) -> Option<String> {
+    if std::fs::symlink_metadata(package_base.join("local")).is_ok_and(|metadata| metadata.is_dir())
+    {
+        return Some("local".into());
+    }
+    let entries = std::fs::read_dir(package_base)
         .ok()?
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().ok().is_some_and(|kind| kind.is_dir()))
+        .collect::<Vec<_>>();
+    // Native selection can prefer opaque version names. Keep ambiguous caches protected.
+    if entries.iter().any(|entry| {
+        entry.file_name().to_str().is_some_and(|name| {
+            !name.starts_with('.') && name != "local" && Version::parse(name).is_err()
+        })
+    }) {
+        return None;
+    }
+    let mut versions = entries
+        .into_iter()
         .filter_map(|entry| {
             let name = entry.file_name().to_str()?.to_owned();
             Version::parse(&name).ok().map(|version| (version, name))
@@ -1303,6 +1426,71 @@ fn active_plugin_version(package_base: &Path) -> Option<String> {
         .collect::<Vec<_>>();
     versions.sort_by(|left, right| left.0.cmp(&right.0));
     versions.pop().map(|(_, name)| name)
+}
+
+pub(super) fn cache_version_is_newer(candidate: &str, current: &str) -> bool {
+    if candidate == "local" || current == "local" {
+        return candidate == "local" && current != "local";
+    }
+    Version::parse(candidate)
+        .ok()
+        .zip(Version::parse(current).ok())
+        .is_some_and(|(candidate, current)| candidate > current)
+}
+
+pub(crate) fn synchronize_inherited_plugin_packages(
+    context: &AgentContext,
+) -> Result<(), AgentError> {
+    let Some(runtime) = project_runtime_for_context(context)? else {
+        return Ok(());
+    };
+    if !runtime.applied_inherit_base_config {
+        return Ok(());
+    }
+    let base_home = base_home(context, &runtime.base_installation_id)?;
+    let base_config = read_optional(&base_home.join("config.toml"), context, None)?;
+    let mut mutations = Vec::new();
+    append_inherited_package_mutations(
+        context,
+        &runtime,
+        base_config.as_deref(),
+        String::new(),
+        &|_| {},
+        &mut mutations,
+        true,
+    )?;
+    if mutations.is_empty() {
+        return Ok(());
+    }
+    let read_set = base_config
+        .as_deref()
+        .map(|bytes| ReadPrecondition {
+            resource: project_resource(context, "base-config"),
+            expected_digest: ContentDigest::sha256(bytes),
+            write_policy: WritePolicy::ReadOnly,
+        })
+        .into_iter()
+        .collect();
+    let plan = MutationPlan {
+        id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+        agent_id: AgentId::from("codex"),
+        context: context.clone(),
+        read_set,
+        mutations,
+        expires_at: Utc::now() + Duration::minutes(5),
+    };
+    let store = super::PlanStore::default();
+    let preview = store.insert(plan)?;
+    let receipt = super::ExecutionEngine.apply(&preview.id, &store)?;
+    if receipt.status != super::OperationStatus::Complete {
+        return Err(agent_error(
+            AgentErrorCode::ResourceChanged,
+            context,
+            None,
+            "Inherited Plugin synchronization failed; previous installation was preserved",
+        ));
+    }
+    Ok(())
 }
 
 struct InstalledCodexPlugin {
@@ -1338,7 +1526,10 @@ fn managed_codex_installation(
                         .map(|identity| identity.0)
                         .unwrap_or_default()
                 && record.install_id == install_id
-                && record.adapter_contract == "codex-plugin-store-v1"
+                && matches!(
+                    record.adapter_contract.as_str(),
+                    "codex-plugin-store-v1" | "codex-plugin-link-v1"
+                )
         })
         .ok_or_else(|| {
             agent_error(
@@ -1512,15 +1703,22 @@ fn plan_managed_plugin_change(
         });
     } else {
         let package_state =
-            observe_target(&ManagedResourceTarget::directory(installed.package_target))?;
-        if !matches!(package_state, TargetState::Directory(_)) {
+            observe_target(&ManagedResourceTarget::symlink(installed.package_target))?;
+        if !matches!(
+            package_state,
+            TargetState::Symlink(_) | TargetState::Directory(_)
+        ) {
             return Err(storage_conflict(context, resource));
         }
         mutations.push(PlannedMutation {
             resource: resource.clone(),
             kind: MutationKind::Delete,
             expected_digest: package_state.digest(),
-            media_type: "application/vnd.ad.directory".into(),
+            media_type: if matches!(package_state, TargetState::Symlink(_)) {
+                "application/vnd.ad.symlink".into()
+            } else {
+                "application/vnd.ad.directory".into()
+            },
             content: None,
         });
         if !matches!(control_state, TargetState::Missing) {
@@ -1934,7 +2132,7 @@ fn resolve_project_resource(
     }
     if managed_catalog_identity(logical_id).is_some() {
         return managed_codex_package_target(context, resource, runtime)
-            .map(ManagedResourceTarget::directory);
+            .map(ManagedResourceTarget::symlink);
     }
     if let Some(id) = logical_id.strip_prefix("plugin-control:") {
         return super::installation_control_path(&super::ResourceInstallationId::from(
@@ -1996,7 +2194,10 @@ fn managed_codex_package_target(
     let state = super::execution_state::ExecutionState::open()
         .map_err(|error| agent_error(AgentErrorCode::Io, context, None, error.to_string()))?;
     if let Some(record) = super::load_ownership_record(&state, resource)? {
-        if record.target_kind != ResourceStateKind::Directory {
+        if !matches!(
+            record.target_kind,
+            ResourceStateKind::Directory | ResourceStateKind::Symlink
+        ) {
             return Err(agent_error(
                 AgentErrorCode::PermissionDenied,
                 context,
@@ -2369,7 +2570,7 @@ fn push_directory_mutation(
     });
 }
 
-fn push_catalog_plugin_directory_mutation(
+fn push_catalog_plugin_symlink_mutation(
     mutations: &mut Vec<PlannedMutation>,
     resource: ResourceRef,
     state: &TargetState,
@@ -2380,19 +2581,13 @@ fn push_catalog_plugin_directory_mutation(
         resource,
         kind: mutation_kind(state),
         expected_digest: state.digest(),
-        media_type: "application/vnd.ad.directory".into(),
+        media_type: "application/vnd.ad.symlink".into(),
         content: Some(serde_json::json!({
             "path": source.to_string_lossy(),
             "digest": digest,
-            "excludeAgentSkillProjections": true,
+            "mutableSource": true,
         })),
     });
-}
-
-fn catalog_plugin_tree_digest(source: &Path) -> Result<ContentDigest, std::io::Error> {
-    super::execution_fs::directory_tree_digest_filtered(source, |path| {
-        Ok(!super::resource_scanner::is_agent_skill_projection(path))
-    })
 }
 
 fn storage_conflict(context: &AgentContext, resource: &ResourceRef) -> AgentError {

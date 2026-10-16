@@ -5,6 +5,7 @@
 // own file and exposes a single `launch` function consumed by `launch()` below.
 
 use std::collections::BTreeMap;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
@@ -136,21 +137,44 @@ pub(crate) fn resolve_bin(bin: &str) -> Option<String> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
     let out = std::process::Command::new(&shell)
         .args(["-lc", &format!("command -v {}", shell_quote(bin))])
-        .output()
-        .ok()?;
-    if !out.status.success() {
+        .output();
+    if let Ok(out) = out {
+        if out.status.success() {
+            if let Ok(stdout) = String::from_utf8(out.stdout) {
+                let path = stdout.trim().to_string();
+                if !path.is_empty() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+
+    // Finder-launched apps start with a system-only PATH. A non-interactive
+    // login shell may preserve that omission when ~/.local/bin is configured
+    // only by interactive shell startup files, which is where the standalone
+    // Codex installer places its launcher.
+    let home = std::env::var_os("HOME")?;
+    resolve_home_local_bin(Path::new(&home), bin)
+}
+
+fn resolve_home_local_bin(home: &Path, bin: &str) -> Option<String> {
+    if Path::new(bin).components().count() != 1 {
         return None;
     }
-    let path = String::from_utf8(out.stdout).ok()?.trim().to_string();
-    if path.is_empty() {
-        None
-    } else {
-        Some(path)
+    let candidate = home.join(".local/bin").join(bin);
+    let metadata = std::fs::metadata(&candidate).ok()?;
+    if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+        return None;
     }
+    candidate.to_str().map(str::to_owned)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use tempfile::TempDir;
+
     use super::*;
 
     #[test]
@@ -191,5 +215,24 @@ mod tests {
             render_launch_command("codex", &["--profile".into(), "work space".into()], &env),
             "env 'A_KEY=value with spaces' 'B_KEY=it'\\''s safe' 'codex' '--profile' 'work space'"
         );
+    }
+
+    #[test]
+    fn home_local_bin_fallback_requires_an_executable_file() {
+        let home = TempDir::new().expect("temp home");
+        let bin_dir = home.path().join(".local/bin");
+        std::fs::create_dir_all(&bin_dir).expect("create local bin");
+        let executable = bin_dir.join("codex");
+        std::fs::write(&executable, b"#!/bin/sh\n").expect("write executable");
+
+        assert_eq!(resolve_home_local_bin(home.path(), "codex"), None);
+
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755))
+            .expect("make executable");
+        assert_eq!(
+            resolve_home_local_bin(home.path(), "codex"),
+            Some(executable.to_string_lossy().into_owned())
+        );
+        assert_eq!(resolve_home_local_bin(home.path(), "../codex"), None);
     }
 }

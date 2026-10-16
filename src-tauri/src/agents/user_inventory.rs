@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
 use serde_json::Value;
@@ -71,9 +71,7 @@ fn inspect_user_skills(
     let mut diagnostics = Vec::new();
 
     for candidate in catalog.resources.values().filter(|resource| {
-        resource.kind == ResourceKind::Skills
-            && resource.present
-            && resource.lifecycle == ResourceLifecycle::Managed
+        resource.kind == ResourceKind::Skills && resource.lifecycle == ResourceLifecycle::Managed
     }) {
         let resource = ResourceRef {
             installation_id: workspace.installation_id.clone(),
@@ -90,18 +88,20 @@ fn inspect_user_skills(
         if snapshot.is_some() {
             matched_paths.insert(target_path.clone());
         }
-        let record = ownership
-            .iter()
-            .find(|record| {
-                record.target_path == target_path
-                    && record.catalog_binding.as_ref().is_some_and(|binding| {
-                        binding.resource_id == candidate.id
-                            && binding.source_id == candidate.source_id
-                            && binding.install_id == candidate.install_id
-                            && binding.resource_kind == ResourceKind::Skills
-                    })
-            })
-            .filter(|record| validate_skill_record(record).is_ok());
+        let candidate_record = ownership.iter().find(|record| {
+            record.target_path == target_path
+                && record.catalog_binding.as_ref().is_some_and(|binding| {
+                    binding.resource_id == candidate.id
+                        && binding.source_id == candidate.source_id
+                        && binding.install_id == candidate.install_id
+                        && binding.resource_kind == ResourceKind::Skills
+                })
+        });
+        if !candidate.present && candidate_record.is_none() {
+            continue;
+        }
+        let record = candidate_record
+            .filter(|record| !candidate.present || validate_skill_record(record).is_ok());
         let target_exists = std::fs::symlink_metadata(&target).is_ok();
         let configured = snapshot.is_some() || target_exists;
         let ownership_kind = if configured {
@@ -118,7 +118,14 @@ fn inspect_user_skills(
             .and_then(Value::as_bool)
             .unwrap_or(configured);
         let available_digest = current_user_skill_digest(&candidate.id).ok();
-        let health = if configured && snapshot.is_none() {
+        let health = if !candidate.present && record.is_some() {
+            let diagnostic = source_missing_diagnostic();
+            diagnostics.push(diagnostic.clone());
+            ResourceHealthView {
+                status: ResourceHealthStatus::Degraded,
+                diagnostic: Some(diagnostic),
+            }
+        } else if configured && snapshot.is_none() {
             let diagnostic = ItemDiagnostic {
                 code: "invalid_skill_directory".into(),
                 message_key: "agents.inventory.invalidSkillDirectory".into(),
@@ -147,7 +154,9 @@ fn inspect_user_skills(
             &candidate.install_id,
             &candidate.source_id,
         );
-        let effective_state = if !configured {
+        let effective_state = if !candidate.present && record.is_some() {
+            EffectiveResourceState::SourceMissing
+        } else if !configured {
             EffectiveResourceState::Unconfigured
         } else if enabled {
             EffectiveResourceState::Enabled
@@ -160,6 +169,7 @@ fn inspect_user_skills(
             logical_id: candidate.install_id.clone(),
             display_name: candidate.display_name.clone(),
             description: candidate.description.clone(),
+            source_tracking: None,
             effective_state,
             provenance: super::ResourceProvenanceView {
                 declarations: configured
@@ -231,14 +241,15 @@ fn inspect_user_plugins(
     let mut resources = Vec::new();
     let mut diagnostics = Vec::new();
     for candidate in catalog.resources.values().filter(|resource| {
-        resource.kind == ResourceKind::Plugins
-            && resource.present
-            && resource.lifecycle == ResourceLifecycle::Managed
+        resource.kind == ResourceKind::Plugins && resource.lifecycle == ResourceLifecycle::Managed
     }) {
         let proposed_native_id = inspect_user_plugin_native_id(workspace, &candidate.id);
         let record = records
             .iter()
             .find(|record| record.resource_id == candidate.id);
+        if !candidate.present && record.is_none() {
+            continue;
+        }
         let native_id = record
             .map(|record| record.native_id.clone())
             .or_else(|| proposed_native_id.as_ref().ok().cloned());
@@ -281,7 +292,58 @@ fn inspect_user_plugins(
             .and_then(Value::as_bool)
             .unwrap_or(configured);
         let agent_supported = proposed_native_id.is_ok();
-        let health = if managed_record.is_some() && !configured {
+        let source_tracking = managed_record
+            .filter(|record| record.linked_install_path.is_some())
+            .map(|record| super::ResourceSourceTrackingView {
+                current: super::user_plugins::user_plugin_binding_current(workspace, record),
+                version: record.linked_install_path.as_deref().and_then(|path| {
+                    if workspace.agent_id.as_str() == "codex" {
+                        super::codex_plugins::active_plugin_version(Path::new(path).parent()?)
+                    } else {
+                        super::resource_version::read_resource_version(
+                            Path::new(path),
+                            "",
+                            ResourceKind::Plugins,
+                        )
+                    }
+                }),
+                source_version: super::resolve_catalog_resource(&record.resource_id)
+                    .ok()
+                    .and_then(|resolved| {
+                        super::resource_version::read_resource_version(
+                            &resolved.physical_path,
+                            "",
+                            ResourceKind::Plugins,
+                        )
+                    }),
+            });
+        let binding_drifted = managed_record.is_some_and(|record| {
+            !super::user_plugins::user_plugin_binding_owned(workspace, record)
+        });
+        let update_available = !binding_drifted
+            && source_tracking
+                .as_ref()
+                .is_some_and(|tracking| !tracking.current);
+        let health = if !candidate.present && managed_record.is_some() {
+            let diagnostic = source_missing_diagnostic();
+            diagnostics.push(diagnostic.clone());
+            ResourceHealthView {
+                status: ResourceHealthStatus::Degraded,
+                diagnostic: Some(diagnostic),
+            }
+        } else if binding_drifted {
+            let diagnostic = ItemDiagnostic {
+                code: "user_plugin_binding_drift".into(),
+                message_key: "agents.inventory.userPluginBindingDrift".into(),
+                retryable: true,
+                resource_key: None,
+            };
+            diagnostics.push(diagnostic.clone());
+            ResourceHealthView {
+                status: ResourceHealthStatus::Degraded,
+                diagnostic: Some(diagnostic),
+            }
+        } else if managed_record.is_some() && !configured {
             let diagnostic = ItemDiagnostic {
                 code: "managed_user_plugin_unavailable".into(),
                 message_key: "agents.inventory.managedUserPluginUnavailable".into(),
@@ -311,7 +373,9 @@ fn inspect_user_plugins(
             &candidate.source_id,
         );
         let declaration_source = candidate.source_id.clone();
-        let effective_state = if !configured {
+        let effective_state = if !candidate.present && managed_record.is_some() {
+            EffectiveResourceState::SourceMissing
+        } else if !configured {
             EffectiveResourceState::Unconfigured
         } else if enabled {
             EffectiveResourceState::Enabled
@@ -333,6 +397,7 @@ fn inspect_user_plugins(
             logical_id: candidate.install_id.clone(),
             display_name: candidate.display_name.clone(),
             description: candidate.description.clone(),
+            source_tracking,
             effective_state,
             provenance: super::ResourceProvenanceView {
                 declarations: configured
@@ -364,6 +429,9 @@ fn inspect_user_plugins(
                 effective_state,
                 agent_supported,
                 managed_record.is_some(),
+                managed_record.is_some_and(|record| record.removal_phase.is_some()),
+                binding_drifted && workspace.agent_id.as_str() == "codex",
+                update_available && workspace.agent_id.as_str() == "codex",
             ),
         });
     }
@@ -393,11 +461,41 @@ fn user_plugin_management(
     state: EffectiveResourceState,
     agent_supported: bool,
     has_record: bool,
+    removal_in_progress: bool,
+    binding_drifted: bool,
+    update_available: bool,
 ) -> ResourceManagementView {
     if ownership == ResourceOwnershipKind::External {
         return external_management();
     }
+    if state == EffectiveResourceState::SourceMissing {
+        return ResourceManagementView {
+            status: ResourceManagementStatus::Managed,
+            actions: vec![
+                inspect_action(),
+                confirmation_action(ResourceAction::Remove),
+            ],
+        };
+    }
+    if removal_in_progress {
+        return ResourceManagementView {
+            status: ResourceManagementStatus::Managed,
+            actions: vec![
+                inspect_action(),
+                confirmation_action(ResourceAction::Remove),
+            ],
+        };
+    }
     if state == EffectiveResourceState::Unconfigured {
+        if has_record {
+            return ResourceManagementView {
+                status: ResourceManagementStatus::Managed,
+                actions: vec![
+                    inspect_action(),
+                    confirmation_action(ResourceAction::Remove),
+                ],
+            };
+        }
         let mut actions = vec![
             inspect_action(),
             if agent_supported {
@@ -421,22 +519,35 @@ fn user_plugin_management(
     if !has_record {
         return external_management();
     }
+    let mut actions = vec![
+        inspect_action(),
+        confirmation_action(if state == EffectiveResourceState::Enabled {
+            ResourceAction::Disable
+        } else {
+            ResourceAction::Enable
+        }),
+    ];
+    if binding_drifted {
+        actions.push(ResourceActionView {
+            action: ResourceAction::Update,
+            intent: ResourceActionIntent::Repair,
+            availability: ResourceActionAvailability::ConfirmationRequired,
+            limitation: None,
+        });
+        actions.push(unavailable_action(
+            ResourceAction::Remove,
+            "user_plugin_binding_drift",
+            "agents.inventory.userPluginBindingDrift",
+        ));
+    } else {
+        if update_available {
+            actions.push(confirmation_action(ResourceAction::Update));
+        }
+        actions.push(confirmation_action(ResourceAction::Remove));
+    }
     ResourceManagementView {
         status: ResourceManagementStatus::Managed,
-        actions: vec![
-            inspect_action(),
-            confirmation_action(if state == EffectiveResourceState::Enabled {
-                ResourceAction::Disable
-            } else {
-                ResourceAction::Enable
-            }),
-            unavailable_action(
-                ResourceAction::Update,
-                "unsupported_agent_capability",
-                "agents.resources.unsupportedAgentCapability",
-            ),
-            confirmation_action(ResourceAction::Remove),
-        ],
+        actions,
     }
 }
 
@@ -490,6 +601,7 @@ fn external_snapshot_view(
         .unwrap_or(true);
     let declaration = DeclarationKey::for_layer(&key, ResourceLayer::User, &source_id);
     CollectionResourceView {
+        source_tracking: None,
         key,
         kind: snapshot.resource.kind,
         logical_id: logical_id.clone(),
@@ -536,6 +648,15 @@ fn user_skill_management(
     if ownership == ResourceOwnershipKind::External {
         return external_management();
     }
+    if state == EffectiveResourceState::SourceMissing {
+        return ResourceManagementView {
+            status: ResourceManagementStatus::Managed,
+            actions: vec![
+                inspect_action(),
+                confirmation_action(ResourceAction::Remove),
+            ],
+        };
+    }
     if state == EffectiveResourceState::Unconfigured {
         return ResourceManagementView {
             status: ResourceManagementStatus::Managed,
@@ -545,7 +666,19 @@ fn user_skill_management(
             ],
         };
     }
-    let update = if record.is_some_and(|record| {
+    let linked_local = record.is_some_and(|record| {
+        record
+            .catalog_binding
+            .as_ref()
+            .is_some_and(|binding| binding.adapter_contract == "user-skill-link-v1")
+    });
+    let update = if linked_local {
+        unavailable_action(
+            ResourceAction::Update,
+            "linked_local_resource",
+            "agents.resources.linkedLocalCurrent",
+        )
+    } else if record.is_some_and(|record| {
         available_digest.is_some_and(|digest| record.artifact_digest != *digest)
     }) {
         confirmation_action(ResourceAction::Update)
@@ -568,6 +701,15 @@ fn user_skill_management(
             update,
             confirmation_action(ResourceAction::Remove),
         ],
+    }
+}
+
+fn source_missing_diagnostic() -> ItemDiagnostic {
+    ItemDiagnostic {
+        code: "source_missing".into(),
+        message_key: "agents.inventory.sourceMissing".into(),
+        retryable: false,
+        resource_key: None,
     }
 }
 
@@ -736,54 +878,6 @@ pub(super) fn current_user_skill_digest(resource_id: &str) -> Result<ContentDige
     super::directory_tree_digest(&resolved.physical_path).map_err(|error| error.to_string())
 }
 
-pub(super) fn publish_user_skill_artifact(resource_id: &str) -> Result<PathBuf, String> {
-    let catalog = load_resource_catalog_snapshot().map_err(|error| error.to_string())?;
-    let resource = catalog
-        .resources
-        .get(resource_id)
-        .filter(|resource| {
-            resource.kind == ResourceKind::Skills
-                && resource.present
-                && resource.lifecycle == ResourceLifecycle::Managed
-        })
-        .ok_or_else(|| "Catalog Skill is unavailable".to_string())?;
-    let skill_catalog = super::load_skill_catalog_snapshot().map_err(|error| error.to_string())?;
-    let entry = skill_catalog
-        .entries
-        .iter()
-        .find(|entry| entry.source_id == resource.source_id)
-        .ok_or_else(|| "Catalog Skill source is unavailable".to_string())?;
-    let physical_root = entry
-        .current_binding
-        .as_ref()
-        .map(|binding| binding.physical_root.clone())
-        .ok_or_else(|| "Catalog Skill source binding is unavailable".to_string())?;
-    let source = crate::models::SkillSource {
-        id: entry.source_id.clone(),
-        source_type: SkillSourceType::Local,
-        url: physical_root,
-        branch: None,
-        subdirectory: None,
-        auto_update: false,
-        added_at: entry.added_at,
-    };
-    let staged = super::stage_skill_source(&source).map_err(|error| error.to_string())?;
-    let artifact =
-        super::publish_staged_skill_artifact(staged).map_err(|error| error.to_string())?;
-    let item = artifact
-        .skills
-        .iter()
-        .find(|item| item.logical_id == resource.install_id)
-        .ok_or_else(|| "Catalog Skill artifact does not contain the resource".to_string())?;
-    let tree = super::verify_skill_artifact(&artifact).map_err(|error| error.to_string())?;
-    let path = tree.join(&item.subpath);
-    if path.is_dir() && path.join("SKILL.md").is_file() {
-        Ok(path)
-    } else {
-        Err("Catalog Skill artifact is invalid".into())
-    }
-}
-
 #[cfg(test)]
 mod user_plugin_management_tests {
     use super::*;
@@ -795,11 +889,18 @@ mod user_plugin_management_tests {
             EffectiveResourceState::Unconfigured,
             true,
             true,
+            true,
+            false,
+            false,
         );
 
         assert!(management.actions.iter().any(|action| {
             action.action == ResourceAction::Remove
                 && action.availability == ResourceActionAvailability::ConfirmationRequired
         }));
+        assert!(!management
+            .actions
+            .iter()
+            .any(|action| action.action == ResourceAction::Install));
     }
 }

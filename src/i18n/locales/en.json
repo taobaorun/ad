@@ -72,6 +72,8 @@
     "sectionSubtitle": "Manage Skill and Plugin sources and install them directly into the selected Agent's user scope.",
     "addSource": "Add source",
     "sources": "Sources",
+    "resourceVersions": "Resource versions",
+    "resourceVersion": "Version {{version}}",
     "install": "Install",
     "installDialog": {
       "title": "Install from “{{name}}”",
@@ -97,6 +99,7 @@
     "emptyHint": "Add a Git repository or local directory to manage it here.",
     "noManaged": "No managed resources match this view",
     "removedResources": "Removed resources ({{count}})",
+    "missingInstallations": "{{count}} installed resources missing",
     "kind": {
       "skills": "Skill",
       "plugins": "Plugin"
@@ -492,6 +495,7 @@
         "executionDescription": "Includes {{count}} commands or executable items that the Agent may run after installation. Only proceed if you trust this source.",
         "sharedImpact": "This source is linked from {{count}} project workspaces.",
         "blocked": "This operation is blocked",
+        "missingInstallations": "{{count}} installed resources will be missing from the source.",
         "sharedSource": "Local edits are visible immediately. Git updates atomically switch the shared managed checkout for every linked project.",
         "removeReferences": "Uninstall resources from this source first.",
         "applying": "Applying…",
@@ -668,7 +672,9 @@
     "unsupported": "This operation is not supported by the selected Agent.",
     "plan_expired": "The preview expired. Create a new preview before applying.",
     "partial_failure": "The operation only completed partially. Review the receipt before continuing.",
-    "io": "AD could not read or write an Agent resource. Check file permissions and try again."
+    "io": "AD could not read or write an Agent resource. Check file permissions and try again.",
+    "plugin_binding_drift": "Installation is out of sync. Repair it to continue.",
+    "plugin_repair_target_occupied": "The repair target is occupied. The existing cache was preserved."
   },
   "agents": {
     "capabilities": {
@@ -677,12 +683,15 @@
     },
     "inventory": {
       "pluginArtifactInvalid": "This Plugin's managed source is unavailable or no longer matches Harness.",
-      "pluginOwnershipInvalid": "This Plugin's managed project link is missing or no longer matches AD's installation record."
+      "pluginOwnershipInvalid": "This Plugin's managed project link is missing or no longer matches AD's installation record.",
+      "sourceMissing": "Source missing.",
+      "userPluginBindingDrift": "Installation is out of sync. Repair it to continue."
     },
     "resources": {
       "externalResource": "This resource is owned outside AD and remains read-only.",
       "skillNotInstalled": "Install this Skill in the project before updating or removing it.",
       "skillRevisionCurrent": "This project already uses the current catalog revision.",
+      "linkedLocalCurrent": "This resource is linked to its local source and does not need updating.",
       "skillSourceUnavailable": "The Skill source is no longer available in the catalog.",
       "skillOwnershipUnproven": "AD cannot prove ownership of this project Skill, so mutation is blocked.",
       "codexRuntimeNotPrepared": "Prepare the isolated Codex Project Runtime before changing project Plugins.",
@@ -790,6 +799,7 @@
       "conflict": "Conflict",
       "external": "External",
       "unsupported": "Unsupported",
+      "source_missing": "Source missing",
       "unknown": "Unknown"
     },
     "conflictResolution": {
@@ -837,7 +847,8 @@
       "remove": "Remove",
       "enable": "Enable",
       "disable": "Disable",
-      "resetPluginOverride": "Reset project override"
+      "resetPluginOverride": "Reset project override",
+      "uninstallPlugin": "Uninstall"
     },
     "enable": "Enable {{name}}",
     "disable": "Disable {{name}}",
@@ -857,7 +868,10 @@
     "rollback": "Rollback",
     "rollbackConfirm": "Rollback the last collection change? This will only proceed if its resources have not changed since Apply.",
     "rollbackSuccess": "Rolled back",
-    "availabilityDetails": "Supported features"
+    "availabilityDetails": "Supported features",
+    "followingSource": "Synced",
+    "pluginUpdateAvailable": "Source changed. Update to sync the installation.",
+    "sourceVersion": "Source {{version}}"
   },
   "operationProgress": {
     "elapsed": "{{seconds}}s elapsed"

@@ -45,6 +45,7 @@ const catalogPlan: SkillCatalogPlanView = {
   displayName: 'Team tools',
   applicability: 'applicable',
   blockingIssues: [],
+  warnings: [],
   affectedResources: [],
   affectedWorkspaces: [],
   confirmationRequired: true,
@@ -71,6 +72,33 @@ describe('resource Catalog Tauri refresh notifications', () => {
   beforeEach(() => {
     invoke.mockReset();
     vi.restoreAllMocks();
+  });
+
+  it('accepts declared versions and older catalog responses without versions at the IPC boundary', async () => {
+    const resource = {
+      id: 'catalog-resource:sha256:review',
+      sourceId: sourcePlan.sourceId,
+      kind: 'skills',
+      installId: 'review',
+      displayName: 'Review',
+      subpath: 'review',
+      descriptorDigest: 'sha256:review',
+      present: true,
+      lifecycle: 'managed',
+    };
+    for (const version of ['1.8.5', undefined]) {
+      invoke.mockResolvedValueOnce({
+        ...snapshot,
+        resources: { [resource.id]: { ...resource, ...(version ? { version } : {}) } },
+      });
+      const result = await tauri.listResourceCatalog();
+      expect(result.resources[resource.id]?.version).toBe(version);
+    }
+    invoke.mockResolvedValueOnce({
+      ...snapshot,
+      resources: { [resource.id]: { ...resource, version: { unexpected: 'object' } } },
+    });
+    await expect(tauri.listResourceCatalog()).rejects.toThrow();
   });
 
   it('notifies project inventories after every successful Catalog lifecycle mutation', async () => {

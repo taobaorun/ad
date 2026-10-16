@@ -194,15 +194,32 @@ pub fn apply_skill_catalog_plan(
         return Err(SkillCatalogPlanError::RiskChanged.into());
     }
     let claimed = store.claim(claim, now)?;
-    if is_no_change(&claimed) {
-        return Ok(SkillCatalogOperationReport {
+    let source_id = claimed.view.source_id.clone();
+    let sync_plugins = claimed.view.action == SkillCatalogAction::Update;
+    let mut report = if is_no_change(&claimed) {
+        SkillCatalogOperationReport {
             outcome: SkillCatalogOperationOutcome::NoChange,
             source: current.document.entry(&claimed.view.source_id).cloned(),
             receipt: None,
             issues: Vec::new(),
-        });
+        }
+    } else {
+        apply_claimed_plan(claimed, current, operation_id, &state)?
+    };
+    // Native cache synchronization takes its own lifecycle and project locks.
+    drop(_lock);
+    if sync_plugins
+        && matches!(
+            report.outcome,
+            SkillCatalogOperationOutcome::Changed | SkillCatalogOperationOutcome::NoChange
+        )
+    {
+        if let Err(error) = super::refresh_latest_user_plugin_resolutions(&source_id) {
+            report.outcome = SkillCatalogOperationOutcome::PartialFailure;
+            report.issues.push(error.to_string());
+        }
     }
-    apply_claimed_plan(claimed, current, operation_id, &state)
+    Ok(report)
 }
 
 fn catalog_plan_resource_ids(view: &SkillCatalogPlanView) -> std::collections::BTreeSet<String> {
@@ -425,6 +442,9 @@ fn apply_claimed_plan(
     if let Some(publication) = git_publication.take() {
         publication.commit();
     }
+    if let Err(error) = refresh_source_tracking_metadata(&plan.view.source_id) {
+        return Err(SkillCatalogExecutionError::ReceiptPending(error));
+    }
     if let Err(error) = persist_receipt(state, &journal.receipt) {
         return Err(SkillCatalogExecutionError::ReceiptPending(
             error.to_string(),
@@ -438,6 +458,10 @@ fn apply_claimed_plan(
         receipt: Some(journal.receipt),
         issues: Vec::new(),
     })
+}
+
+fn refresh_source_tracking_metadata(source_id: &str) -> Result<(), String> {
+    super::refresh_latest_resource_installations(source_id).map_err(|error| error.to_string())
 }
 
 fn mutate_document(
@@ -673,6 +697,22 @@ pub fn recover_skill_catalog_state(
                 ));
                 continue;
             }
+            let lifecycle_targets = catalog_receipt_resource_ids(&journal.receipt)
+                .into_iter()
+                .map(|resource_id| resource_lifecycle_lock_target(&state, &resource_id))
+                .collect::<Vec<_>>();
+            let _lifecycle_locks =
+                TargetLockSet::acquire_for_ad_states(&lifecycle_targets, &recovery_id, &state)
+                    .map_err(lock_error)?;
+            if let Err(error) = refresh_source_tracking_metadata(&journal.receipt.source_id) {
+                journal.state = CatalogJournalState::RepairRequired;
+                persist_journal(&state, name, &journal, true)?;
+                report.repair_required += 1;
+                report.diagnostics.push(format!(
+                    "catalog metadata cannot be recovered for journal {name}: {error}"
+                ));
+                continue;
+            }
             let mut receipt = journal.receipt.clone();
             receipt.status = SkillCatalogReceiptStatus::Recovered;
             persist_receipt(&state, &receipt)?;
@@ -717,6 +757,27 @@ pub fn recover_skill_catalog_state(
             cleanup_unpublished_skill_staging(&std::collections::BTreeSet::new())?;
     }
     Ok(report)
+}
+
+fn catalog_receipt_resource_ids(
+    receipt: &SkillCatalogReceipt,
+) -> std::collections::BTreeSet<String> {
+    let mut ids = std::collections::BTreeSet::new();
+    for binding in [receipt.binding.as_ref(), receipt.previous_binding.as_ref()]
+        .into_iter()
+        .flatten()
+    {
+        if binding.resources.is_empty() {
+            ids.extend(binding.skills.iter().map(|skill| {
+                catalog_resource_id(&receipt.source_id, ResourceKind::Skills, &skill.logical_id)
+            }));
+        } else {
+            ids.extend(binding.resources.iter().map(|resource| {
+                catalog_resource_id(&receipt.source_id, resource.kind, &resource.install_id)
+            }));
+        }
+    }
+    ids
 }
 
 fn ensure_recovery_writable(state: &ExecutionState) -> Result<(), SkillCatalogExecutionError> {
