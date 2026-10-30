@@ -3839,6 +3839,55 @@ fn claude_user_skill_has_managed_lifecycle_without_removing_on_disable() {
 
 #[test]
 #[serial(home_env)]
+fn uninstalled_legacy_skill_source_remains_available_for_user_installation() {
+    let (home, _guard, source, _project_a, _project_b) = setup();
+    let source_id = add_catalog_source(&source);
+    let legacy_source = SkillSource {
+        id: source_id,
+        source_type: SkillSourceType::Local,
+        url: source.to_string_lossy().into_owned(),
+        branch: None,
+        subdirectory: None,
+        auto_update: false,
+        added_at: Utc::now(),
+    };
+    std::fs::write(
+        crate::fs::paths::skill_sources_path().unwrap(),
+        serde_json::to_vec(&vec![legacy_source]).unwrap(),
+    )
+    .unwrap();
+    let target = home.path().join(".claude/skills/review");
+    assert!(!target.exists());
+
+    let inventory = inspect_user_resource_inventory(&claude_installation()).unwrap();
+    let candidate = user_skill(&inventory, "review");
+    assert_eq!(
+        candidate.effective_state,
+        EffectiveResourceState::Unconfigured
+    );
+    assert!(candidate.provenance.declarations.is_empty());
+    assert!(action_is_available(candidate, ResourceAction::Install));
+    assert_eq!(inventory.skills.resources.len(), 1);
+    assert_eq!(inventory.skills.coverage.observed, 0);
+
+    let plans = PlanStore::default();
+    apply_user_action(
+        &claude_installation(),
+        &inventory,
+        candidate,
+        ResourceAction::Install,
+        &plans,
+    );
+    assert!(target.is_symlink());
+    let installed = inspect_user_resource_inventory(&claude_installation()).unwrap();
+    let installed = user_skill(&installed, "review");
+    assert_eq!(installed.effective_state, EffectiveResourceState::Enabled);
+    assert_eq!(installed.ownership.kind, ResourceOwnershipKind::AdManaged);
+    assert!(action_is_available(installed, ResourceAction::Remove));
+}
+
+#[test]
+#[serial(home_env)]
 fn user_skill_target_without_ad_ownership_is_external_and_read_only() {
     let (home, _guard, source, project_a, _project_b) = setup();
     add_catalog_source(&source);

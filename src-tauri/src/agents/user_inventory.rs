@@ -56,7 +56,11 @@ fn inspect_user_skills(
 ) -> Result<CollectionResourceInventory, AgentError> {
     let snapshots = snapshots
         .into_iter()
-        .filter(|snapshot| snapshot.resource.scope == ResourceScope::User)
+        .filter(|snapshot| {
+            snapshot.resource.scope == ResourceScope::User
+                // Legacy discovery also lists available, uninstalled source entries.
+                && snapshot.content.get("scope").and_then(Value::as_str) != Some("none")
+        })
         .collect::<Vec<_>>();
     let ownership = user_ownership_records_for(workspace, ResourceKind::Skills)?;
     let catalog = load_resource_catalog_snapshot()
