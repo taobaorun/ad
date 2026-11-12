@@ -106,7 +106,7 @@ fn resolve_launch_recipe(context: &AgentContext) -> Result<LaunchRecipe, AgentEr
         )
     })?;
     if installation.agent_id.as_str() == "codex" {
-        crate::agents::synchronize_inherited_plugin_packages(&effective_context)?;
+        crate::agents::synchronize_inherited_plugin_packages(&effective_context, None)?;
     }
     launcher.recipe(&effective_context)
 }

@@ -297,7 +297,15 @@ fn recover_plugin_cache_repair(
                         "Plugin repair backup changed; backup retained",
                     ));
                 }
-                Some(backup)
+                if published
+                    && journal.before.cache_digest.is_some()
+                    && journal.original_digest != journal.before.cache_digest
+                {
+                    tracing::info!(path = %state.user_plugin_artifacts().display_path().join(backup).display(), "retained modified Plugin cache after manual source refresh");
+                    None
+                } else {
+                    Some(backup)
+                }
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
             Err(error) => return Err(global_plugin_error(error)),
@@ -1186,7 +1194,7 @@ pub(super) fn refresh_latest_user_plugin_resolutions(source_id: &str) -> Result<
             }
         };
         if workspace.agent_id.as_str() == "codex" {
-            match repair_user_plugin_binding(&workspace, &record, false) {
+            match repair_user_plugin_binding(&workspace, &record, false, true) {
                 Ok(()) => {
                     if !synchronized_installations.contains(&record.installation_id) {
                         synchronized_installations.push(record.installation_id.clone());
@@ -1226,7 +1234,7 @@ pub(super) fn refresh_latest_user_plugin_resolutions(source_id: &str) -> Result<
     }
     // Complete the global phase before a project reads any managed global Plugin.
     for installation in synchronized_installations {
-        if let Err(error) = synchronize_inheriting_projects(&installation) {
+        if let Err(error) = synchronize_inheriting_projects(&installation, source_id) {
             issues.push(error.to_string());
         }
     }
@@ -1279,7 +1287,10 @@ pub(super) fn user_plugin_binding_owned(
     }
 }
 
-fn synchronize_inheriting_projects(installation_id: &InstallationId) -> Result<(), AgentError> {
+fn synchronize_inheriting_projects(
+    installation_id: &InstallationId,
+    source_id: &str,
+) -> Result<(), AgentError> {
     for installation in super::builtin_registry()
         .discover()
         .into_iter()
@@ -1289,10 +1300,13 @@ fn synchronize_inheriting_projects(installation_id: &InstallationId) -> Result<(
                 && installation.project_path.is_some()
         })
     {
-        super::codex_plugins::synchronize_inherited_plugin_packages(&AgentContext {
-            installation_id: installation.id,
-            project_path: installation.project_path,
-        })?;
+        super::codex_plugins::synchronize_inherited_plugin_packages(
+            &AgentContext {
+                installation_id: installation.id,
+                project_path: installation.project_path,
+            },
+            Some(source_id),
+        )?;
     }
     Ok(())
 }
@@ -1309,7 +1323,7 @@ pub fn reconcile_user_plugin_source_tracking(
             && record.removal_phase.is_none()
             && resolve_catalog_resource(&record.resource_id).is_ok()
         {
-            repair_user_plugin_binding(&workspace, &record, false)?;
+            repair_user_plugin_binding(&workspace, &record, false, false)?;
         }
     }
     Ok(())
@@ -1337,11 +1351,13 @@ fn record_cache_target(
     ConfinedTarget::resolve_bound(&resource, installed, None)
 }
 
-/// Restore only proven bindings or a fresh version target; preserve replaced caches.
+/// Manual Local refreshes retain changed managed caches before replacing them.
+/// Background reconciliation and unrelated occupied targets remain protected.
 fn repair_user_plugin_binding(
     workspace: &UserWorkspaceDescriptor,
     record: &UserPluginManagementRecord,
     lifecycle_locked: bool,
+    manual_refresh: bool,
 ) -> Result<(), AgentError> {
     if workspace.agent_id.as_str() != "codex" {
         return Err(plugin_error(
@@ -1392,6 +1408,8 @@ fn repair_user_plugin_binding(
         ));
     }
     let resolved = resolve_user_plugin_candidate(workspace, &record.resource_id)?;
+    let catalog = load_resource_catalog_snapshot().map_err(global_plugin_error)?;
+    let source = catalog.sources.get(&record.source_id);
     if resolved
         .physical_path
         .starts_with(Path::new(&workspace.root_path))
@@ -1483,7 +1501,12 @@ fn repair_user_plugin_binding(
             (TargetState::Symlink(link), None, Some(source)) => link == Path::new(source),
             _ => false,
         };
-    if !matches!(original, TargetState::Missing) && !owned {
+    let retain_modified_cache = manual_refresh
+        && source.is_some_and(|source| source.source_type == super::SkillSourceType::Local)
+        && same_target
+        && record.cache_digest.is_some()
+        && matches!(original, TargetState::Directory(_));
+    if !matches!(original, TargetState::Missing) && !owned && !retain_modified_cache {
         return Err(plugin_error(
             workspace,
             AgentErrorCode::PermissionDenied,
@@ -1495,10 +1518,7 @@ fn repair_user_plugin_binding(
     next.artifact_digest =
         super::directory_tree_digest(&resolved.physical_path).map_err(global_plugin_error)?;
     next.resolved_content_digest = Some(next.artifact_digest.clone());
-    next.resolved_source_revision = load_resource_catalog_snapshot()
-        .map_err(global_plugin_error)?
-        .sources
-        .get(&record.source_id)
+    next.resolved_source_revision = source
         .and_then(|source| source.binding.as_ref())
         .map(|binding| binding.source_revision.clone());
     next.artifact_path = resolved.stable_path.to_string_lossy().into_owned();
@@ -1533,6 +1553,17 @@ fn repair_user_plugin_binding(
     }
     if backed_up {
         target.copy_directory_to(state.user_plugin_artifacts(), &backup_name)?;
+        if state
+            .user_plugin_artifacts()
+            .open_directory(&backup_name)
+            .and_then(|backup| backup.digest())
+            .map_err(global_plugin_error)?
+            != original.digest().unwrap()
+        {
+            return Err(global_plugin_error(
+                "Plugin cache changed while preserving it; backup retained",
+            ));
+        }
     }
     let journal = UserPluginCacheRepairJournal {
         before: record.clone(),
@@ -1703,7 +1734,9 @@ pub async fn apply_user_plugin_plan(
     drop(_lifecycle_lock);
     let mut issues = Vec::new();
     if plan.action == NativePluginAction::Repair {
-        if let Err(error) = synchronize_inheriting_projects(&plan.record.installation_id) {
+        if let Err(error) =
+            synchronize_inheriting_projects(&plan.record.installation_id, &plan.record.source_id)
+        {
             tracing::warn!(%error, "global Plugin updated; inherited project synchronization failed");
             issues.push(super::WorkspaceOperationIssue {
                 code: "inherited_plugin_sync_failed".into(),
@@ -1876,7 +1909,7 @@ async fn execute_plan<R: PluginCommandRunner>(
         }
         NativePluginAction::Repair => {
             let workspace = super::resolve_user_agent_workspace(&plan.record.installation_id)?;
-            repair_user_plugin_binding(&workspace, &plan.record, true)?;
+            repair_user_plugin_binding(&workspace, &plan.record, true, true)?;
         }
         NativePluginAction::Remove => {
             let mut removal_plan = plan.clone();

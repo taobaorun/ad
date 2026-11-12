@@ -1856,9 +1856,16 @@ fn validate_mutation_source(
                         super::resolve_catalog_resource(&resource.id)
                             .is_ok_and(|resolved| resolved.stable_path == Path::new(&source.path))
                     });
+                let known_cache = !known_source
+                    && super::codex_plugins::inherited_plugin_cache_is_owned(
+                        &plan.context,
+                        &mutation.resource,
+                        Path::new(&source.path),
+                        &source.digest,
+                    )?;
                 if mutation.resource.kind != ResourceKind::Plugins
                     || plan.agent_id.as_str() != "codex"
-                    || !known_source
+                    || !(known_source || known_cache)
                 {
                     return Err(ownership_plan_error(
                         plan,
