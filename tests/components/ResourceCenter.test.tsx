@@ -450,6 +450,7 @@ describe('ResourceCenter', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Update source Team tools' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Confirm & Apply' }));
       await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(message));
+      expect(screen.getByRole('alert')).toHaveTextContent('operation did not finish');
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
       expect(mocks.listResourceCatalog).toHaveBeenCalledTimes(2);
       expect(mocks.applySkillCatalogSourcePlan).toHaveBeenCalledTimes(1);

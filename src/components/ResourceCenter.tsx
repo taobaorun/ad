@@ -209,7 +209,9 @@ export function ResourceCenter() {
       await load();
       setResourceReloadKey((key) => key + 1);
       if (report.outcome === 'compensated' || report.outcome === 'partial_failure') {
-        setError(t(`resourceCenter.sourceOutcome.${report.outcome}`));
+        setError(
+          [t(`resourceCenter.sourceOutcome.${report.outcome}`), ...report.issues].join('\n'),
+        );
       }
     } catch (reason) {
       setError(formatAgentErrorMessage(reason));
@@ -389,7 +391,7 @@ export function ResourceCenter() {
           {error && !removingSource && !sourcePlan && (
             <div
               role="alert"
-              className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+              className="mt-4 whitespace-pre-line break-words rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
             >
               {error}
             </div>

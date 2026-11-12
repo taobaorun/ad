@@ -2420,7 +2420,7 @@ fn codex_user_plugin_repairs_drift_and_project_inheritance_follows_source() {
     .unwrap();
     // Startup and terminal inheritance retain the last manually synchronized bytes.
     migrate_legacy_user_plugin_source_tracking().unwrap();
-    super::codex_plugins::synchronize_inherited_plugin_packages(&context).unwrap();
+    super::codex_plugins::synchronize_inherited_plugin_packages(&context, None).unwrap();
     assert_ne!(
         std::fs::read_to_string(inherited.join("skills/demo/SKILL.md")).unwrap(),
         "changed in live Source"
@@ -2481,7 +2481,7 @@ fn codex_user_plugin_repairs_drift_and_project_inheritance_follows_source() {
         Some("1.8.8")
     );
     assert!(old.join("keep.txt").is_file());
-    super::codex_plugins::synchronize_inherited_plugin_packages(&context).unwrap();
+    super::codex_plugins::synchronize_inherited_plugin_packages(&context, None).unwrap();
     assert!(!inherited.exists());
     let updated = inherited.with_file_name("1.8.8");
     assert!(updated.join("skills").is_dir() && !updated.join("skills").is_symlink());
@@ -2569,7 +2569,7 @@ fn codex_user_plugin_repairs_drift_and_project_inheritance_follows_source() {
         update_catalog_source(&record.source_id).outcome,
         SkillCatalogOperationOutcome::PartialFailure
     );
-    assert!(super::codex_plugins::synchronize_inherited_plugin_packages(&context).is_err());
+    assert!(super::codex_plugins::synchronize_inherited_plugin_packages(&context, None).is_err());
     let skill = source.join("native-plugin/skills/demo/SKILL.md");
     let mut changed = std::fs::read(&skill).unwrap();
     changed.extend_from_slice(b"\nNew manual Source content.\n");
@@ -2644,6 +2644,116 @@ fn codex_user_plugin_repairs_drift_and_project_inheritance_follows_source() {
         std::fs::read_to_string(retained.join("1.8.5/keep.txt")).unwrap(),
         "preserve replaced cache"
     );
+}
+
+#[test]
+#[serial(home_env)]
+fn local_source_refresh_preserves_modified_cache_and_syncs_installed_plugin() {
+    for (version, interrupted) in [("1.9.0", false), ("1.9.1", false), ("1.9.0", true)] {
+        let (home, _guard, source, _, _) = setup();
+        write_codex_plugin_named(&source, "native-plugin", "team", "1.9.0");
+        let source_id = add_catalog_source(&source);
+        std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+        std::fs::write(home.path().join(".codex/config.toml"), "").unwrap();
+        let installation = codex_installation();
+        let workspace = resolve_user_agent_workspace(&installation).unwrap();
+        let catalog = load_resource_catalog_snapshot().unwrap();
+        let candidate = catalog
+            .resources
+            .values()
+            .find(|resource| resource.install_id == "native-plugin")
+            .unwrap();
+        let mut record =
+            super::user_plugins::proposed_user_plugin_record(&workspace, &candidate.id).unwrap();
+        let installed = Path::new(&workspace.root_path)
+            .join("plugins/cache")
+            .join(&record.marketplace_name)
+            .join(&record.install_id)
+            .join("1.9.0");
+        std::fs::create_dir_all(installed.parent().unwrap()).unwrap();
+        super::execution_fs::copy_directory_tree(
+            Path::new(record.linked_source_path.as_deref().unwrap()),
+            &installed,
+        )
+        .unwrap();
+        record.linked_install_path = Some(installed.to_string_lossy().into_owned());
+        record.cache_digest = Some(super::directory_tree_digest(&installed).unwrap());
+        super::user_plugins::persist_user_plugin_record_for_test(&record).unwrap();
+
+        std::fs::create_dir_all(installed.join("scripts/__pycache__")).unwrap();
+        std::fs::write(
+            installed.join("scripts/__pycache__/demo.pyc"),
+            "runtime cache",
+        )
+        .unwrap();
+        std::fs::write(installed.join("notes.txt"), "retain local cache changes").unwrap();
+        let modified_digest = super::directory_tree_digest(&installed).unwrap();
+        write_codex_plugin_named(&source, "native-plugin", "team", version);
+        std::fs::write(
+            source.join("native-plugin/skills/demo/SKILL.md"),
+            "updated local capability",
+        )
+        .unwrap();
+        let source_digest = super::directory_tree_digest(&source).unwrap();
+
+        // Startup recovery must not synchronize newly edited local Source bytes.
+        migrate_legacy_user_plugin_source_tracking().unwrap();
+        if version == "1.9.0" {
+            assert!(reconcile_user_plugin_source_tracking(&installation).is_err());
+        }
+        assert_eq!(
+            super::directory_tree_digest(&installed).unwrap(),
+            modified_digest
+        );
+        if interrupted {
+            super::user_plugins::simulate_cache_rename_interruption_for_test(&workspace, &record);
+            super::execution_fs::copy_directory_tree(&source.join("native-plugin"), &installed)
+                .unwrap();
+            migrate_legacy_user_plugin_source_tracking().unwrap();
+        }
+
+        let report = update_catalog_source(&source_id);
+        assert_eq!(
+            report.outcome,
+            SkillCatalogOperationOutcome::Changed,
+            "{report:?}"
+        );
+        let current = super::user_plugins::list_user_plugin_management_records(&workspace)
+            .unwrap()
+            .remove(0);
+        let active = Path::new(current.linked_install_path.as_deref().unwrap());
+        assert_eq!(active.file_name().unwrap(), version);
+        assert_eq!(
+            std::fs::read_to_string(active.join("skills/demo/SKILL.md")).unwrap(),
+            "updated local capability"
+        );
+        assert!(super::user_plugins::user_plugin_binding_current(
+            &workspace, &current
+        ));
+        assert_eq!(
+            super::directory_tree_digest(&source).unwrap(),
+            source_digest
+        );
+        if version == "1.9.0" {
+            let state = ExecutionState::open().unwrap();
+            let retained = state.user_plugin_artifacts().entry_names().unwrap();
+            assert_eq!(retained.len(), 1);
+            let backup = state
+                .user_plugin_artifacts()
+                .open_directory(retained[0].to_str().unwrap())
+                .unwrap();
+            assert_eq!(backup.digest().unwrap(), modified_digest);
+        } else {
+            assert_eq!(
+                super::directory_tree_digest(&installed).unwrap(),
+                modified_digest
+            );
+        }
+        assert_eq!(
+            update_catalog_source(&source_id).outcome,
+            SkillCatalogOperationOutcome::NoChange
+        );
+    }
 }
 
 #[test]
@@ -3192,7 +3302,9 @@ fn foreign_opaque_cache_blocks_semver_sync_and_preserves_global_and_project_data
             update_catalog_source(&record.source_id).outcome,
             SkillCatalogOperationOutcome::PartialFailure
         );
-        assert!(super::codex_plugins::synchronize_inherited_plugin_packages(&context).is_err());
+        assert!(
+            super::codex_plugins::synchronize_inherited_plugin_packages(&context, None).is_err()
+        );
         assert_eq!(
             super::directory_tree_digest(&foreign).unwrap(),
             foreign_digest
@@ -3373,6 +3485,211 @@ fn previous_codex_migration_recovers_old_cache_without_source_synchronization() 
                 .is_empty());
         }
     }
+}
+
+#[test]
+#[serial(home_env)]
+fn source_refresh_is_not_blocked_by_an_unrelated_global_plugin() {
+    let (home, _guard, source, project, _) = setup();
+    let unrelated_source = home.path().join("other-source");
+    write_codex_plugin_named(&source, "ad-wiki", "team", "1.9.0");
+    write_codex_plugin_named(&unrelated_source, "ad-harness", "team", "1.8.7");
+    let source_id = add_catalog_source_named(&source, "Wiki");
+    add_catalog_source_named(&unrelated_source, "Harness");
+    std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+    std::fs::write(home.path().join(".codex/config.toml"), "").unwrap();
+    std::fs::write(home.path().join(".codex/auth.json"), "{}").unwrap();
+    let installation = codex_installation();
+    let workspace = resolve_user_agent_workspace(&installation).unwrap();
+    let catalog = load_resource_catalog_snapshot().unwrap();
+    let mut records = Vec::new();
+    let mut config = String::new();
+    for candidate in catalog
+        .resources
+        .values()
+        .filter(|item| item.kind == ResourceKind::Plugins)
+    {
+        let mut record =
+            super::user_plugins::proposed_user_plugin_record(&workspace, &candidate.id).unwrap();
+        let version = if record.install_id == "ad-wiki" {
+            "1.9.0"
+        } else {
+            "1.8.7"
+        };
+        let cache = Path::new(&workspace.root_path)
+            .join("plugins/cache")
+            .join(&record.marketplace_name)
+            .join(&record.install_id)
+            .join(version);
+        std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
+        super::execution_fs::copy_directory_tree(
+            Path::new(record.linked_source_path.as_deref().unwrap()),
+            &cache,
+        )
+        .unwrap();
+        record.linked_install_path = Some(cache.to_string_lossy().into_owned());
+        record.cache_digest = Some(super::directory_tree_digest(&cache).unwrap());
+        config.push_str(&format!(
+            "[plugins.\"{}\"]\nenabled = true\n",
+            record.native_id
+        ));
+        super::user_plugins::persist_user_plugin_record_for_test(&record).unwrap();
+        records.push(record);
+    }
+    std::fs::write(home.path().join(".codex/config.toml"), config).unwrap();
+    let base = builtin_registry()
+        .discover()
+        .into_iter()
+        .find(|item| item.id == installation)
+        .unwrap();
+    let runtime = ProjectCodexRuntime::derive(&base, &project).unwrap();
+    std::fs::create_dir_all(&runtime.runtime_home).unwrap();
+    persist_project_codex_runtime(&runtime).unwrap();
+    let context = AgentContext {
+        installation_id: runtime.runtime_installation_id.clone(),
+        project_path: Some(runtime.project_path.clone()),
+    };
+    let bootstrap =
+        super::codex_plugins::plan_project_runtime_bootstrap(&context, true, None, &|_| {})
+            .unwrap()
+            .unwrap();
+    let plans = PlanStore::default();
+    let preview = plans.insert(bootstrap.plan).unwrap();
+    assert_eq!(
+        ExecutionEngine.apply(&preview.id, &plans).unwrap().status,
+        OperationStatus::Complete
+    );
+
+    let unrelated = records
+        .iter()
+        .find(|record| record.install_id == "ad-harness")
+        .unwrap();
+    let global_cache = Path::new(unrelated.linked_install_path.as_deref().unwrap());
+    std::fs::create_dir_all(global_cache.join("__pycache__")).unwrap();
+    std::fs::write(
+        global_cache.join("__pycache__/runtime.pyc"),
+        "runtime output",
+    )
+    .unwrap();
+    let unrelated_digest = super::directory_tree_digest(global_cache).unwrap();
+    let inherited_unrelated = runtime
+        .runtime_home
+        .join("plugins/cache")
+        .join(&unrelated.marketplace_name)
+        .join(&unrelated.install_id)
+        .join("1.8.7");
+    let inherited_unrelated_digest = super::directory_tree_digest(&inherited_unrelated).unwrap();
+    let unrelated_source_digest = super::directory_tree_digest(&unrelated_source).unwrap();
+    std::fs::write(
+        source.join("ad-wiki/skills/demo/SKILL.md"),
+        "updated Wiki capability",
+    )
+    .unwrap();
+    let external = home.path().join("external-dev-skill");
+    std::fs::create_dir_all(&external).unwrap();
+    std::fs::write(
+        external.join("sentinel.txt"),
+        "do not copy this destination",
+    )
+    .unwrap();
+    let projection = source.join("ad-wiki/.agents/skills/dev-skill");
+    std::fs::create_dir_all(projection.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&external, &projection).unwrap();
+
+    let report = update_catalog_source(&source_id);
+    assert_eq!(
+        report.outcome,
+        SkillCatalogOperationOutcome::Changed,
+        "{:?}",
+        report.issues
+    );
+    let wiki = records
+        .iter()
+        .find(|record| record.install_id == "ad-wiki")
+        .unwrap();
+    let inherited_wiki = runtime
+        .runtime_home
+        .join("plugins/cache")
+        .join(&wiki.marketplace_name)
+        .join(&wiki.install_id)
+        .join("1.9.0");
+    assert_eq!(
+        std::fs::read_to_string(inherited_wiki.join("skills/demo/SKILL.md")).unwrap(),
+        "updated Wiki capability"
+    );
+    assert_eq!(
+        std::fs::read_link(inherited_wiki.join(".agents/skills/dev-skill")).unwrap(),
+        external
+    );
+    assert_eq!(
+        std::fs::read_to_string(external.join("sentinel.txt")).unwrap(),
+        "do not copy this destination"
+    );
+    assert_eq!(
+        super::directory_tree_digest(global_cache).unwrap(),
+        unrelated_digest
+    );
+    assert_eq!(
+        super::directory_tree_digest(&inherited_unrelated).unwrap(),
+        inherited_unrelated_digest
+    );
+    assert_eq!(
+        super::directory_tree_digest(&unrelated_source).unwrap(),
+        unrelated_source_digest
+    );
+    let current = super::user_plugins::list_user_plugin_management_records(&workspace).unwrap();
+    assert_eq!(
+        current
+            .iter()
+            .find(|record| record.id == unrelated.id)
+            .unwrap(),
+        unrelated
+    );
+    // An owned cache still cannot be rebound to a different Plugin's package.
+    let wiki_record = current.iter().find(|record| record.id == wiki.id).unwrap();
+    let replacement = MutationPlan {
+        id: PlanId::from(uuid::Uuid::new_v4().to_string()),
+        agent_id: AgentId::from("codex"),
+        context: context.clone(),
+        read_set: Vec::new(),
+        mutations: vec![PlannedMutation {
+            resource: ResourceRef {
+                installation_id: context.installation_id.clone(),
+                project_path: context.project_path.clone(),
+                kind: ResourceKind::Plugins,
+                scope: ResourceScope::Project,
+                logical_id: format!(
+                    "package:{}:{}:1.8.7",
+                    unrelated.marketplace_name, unrelated.install_id
+                ),
+            },
+            kind: MutationKind::Replace,
+            expected_digest: Some(inherited_unrelated_digest.clone()),
+            media_type: "application/vnd.ad.directory".into(),
+            content: Some(serde_json::json!({
+                "path": wiki_record.linked_install_path.as_deref().unwrap(),
+                "digest": wiki_record.cache_digest,
+                "trackedSource": true,
+            })),
+        }],
+        expires_at: Utc::now() + chrono::Duration::minutes(5),
+    };
+    let rejected = plans.insert(replacement).unwrap();
+    assert!(ExecutionEngine.apply(&rejected.id, &plans).is_err());
+    assert_eq!(
+        super::directory_tree_digest(&inherited_unrelated).unwrap(),
+        inherited_unrelated_digest
+    );
+    assert_eq!(
+        update_catalog_source(&source_id).outcome,
+        SkillCatalogOperationOutcome::NoChange
+    );
+    assert!(
+        super::codex_plugins::synchronize_inherited_plugin_packages(&context, None)
+            .unwrap_err()
+            .message
+            .contains("ad-harness")
+    );
 }
 
 #[test]

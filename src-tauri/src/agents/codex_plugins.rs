@@ -205,7 +205,7 @@ pub(super) fn plan_project_runtime_bootstrap(
             String::new(),
             report,
             &mut mutations,
-            true,
+            InheritedPluginFilter::Managed,
         )?;
     }
     push_manifest_mutation(
@@ -1098,7 +1098,7 @@ fn plan_catalog_plugin_install(
             native_id,
             report,
             &mut mutations,
-            false,
+            InheritedPluginFilter::All,
         )?;
     }
     push_catalog_plugin_symlink_mutation(
@@ -1135,6 +1135,12 @@ fn plan_catalog_plugin_install(
     })
 }
 
+enum InheritedPluginFilter<'a> {
+    All,
+    Managed,
+    Source(&'a str),
+}
+
 fn append_inherited_package_mutations(
     context: &AgentContext,
     runtime: &super::ProjectCodexRuntime,
@@ -1142,7 +1148,7 @@ fn append_inherited_package_mutations(
     excluded_plugin_id: String,
     report: &PluginInstallProgressReporter<'_>,
     mutations: &mut Vec<PlannedMutation>,
-    only_managed: bool,
+    filter: InheritedPluginFilter<'_>,
 ) -> Result<(), AgentError> {
     let Some(base_config) = base_config else {
         return Ok(());
@@ -1175,10 +1181,15 @@ fn append_inherited_package_mutations(
         .iter()
         .filter(|(plugin_id, config)| {
             plugin_id.as_str() != excluded_plugin_id
-                && (!only_managed
-                    || managed
+                && match filter {
+                    InheritedPluginFilter::All => true,
+                    InheritedPluginFilter::Managed => managed
                         .iter()
-                        .any(|record| record.native_id == plugin_id.as_str()))
+                        .any(|record| record.native_id == plugin_id.as_str()),
+                    InheritedPluginFilter::Source(source_id) => managed.iter().any(|record| {
+                        record.native_id == plugin_id.as_str() && record.source_id == source_id
+                    }),
+                }
                 && config
                     .get("enabled")
                     .and_then(toml::Value::as_bool)
@@ -1218,7 +1229,7 @@ fn append_inherited_package_mutations(
                 let state = observe_target(&target)?;
                 match &state {
                     TargetState::Missing => {
-                        push_directory_mutation(mutations, resource, &state, &source, digest)
+                        push_directory_mutation(mutations, resource, &state, &source, digest, false)
                     }
                     TargetState::Directory(existing) if existing == &digest => {}
                     TargetState::Directory(_) => {
@@ -1307,7 +1318,7 @@ fn append_inherited_package_mutations(
                         state.digest().as_ref(),
                     )?;
                 }
-                push_directory_mutation(mutations, resource, &state, stable_source, digest);
+                push_directory_mutation(mutations, resource, &state, stable_source, digest, true);
             }
             let execution_state =
                 super::execution_state::ExecutionState::open().map_err(|error| {
@@ -1382,7 +1393,7 @@ fn append_inherited_package_mutations(
         let state = observe_target(&target)?;
         match &state {
             TargetState::Missing => {
-                push_directory_mutation(mutations, resource, &state, &source, digest)
+                push_directory_mutation(mutations, resource, &state, &source, digest, false)
             }
             TargetState::Directory(existing) if existing == &digest => {}
             TargetState::Directory(_) => {
@@ -1438,8 +1449,10 @@ pub(super) fn cache_version_is_newer(candidate: &str, current: &str) -> bool {
         .is_some_and(|(candidate, current)| candidate > current)
 }
 
+/// Source updates synchronize only that catalog Source; launch checks use all managed Plugins.
 pub(crate) fn synchronize_inherited_plugin_packages(
     context: &AgentContext,
+    source_id: Option<&str>,
 ) -> Result<(), AgentError> {
     let Some(runtime) = project_runtime_for_context(context)? else {
         return Ok(());
@@ -1457,7 +1470,10 @@ pub(crate) fn synchronize_inherited_plugin_packages(
         String::new(),
         &|_| {},
         &mut mutations,
-        true,
+        source_id.map_or(
+            InheritedPluginFilter::Managed,
+            InheritedPluginFilter::Source,
+        ),
     )?;
     if mutations.is_empty() {
         return Ok(());
@@ -1487,10 +1503,44 @@ pub(crate) fn synchronize_inherited_plugin_packages(
             AgentErrorCode::ResourceChanged,
             context,
             None,
-            "Inherited Plugin synchronization failed; previous installation was preserved",
+            receipt.message.unwrap_or_else(|| {
+                "Inherited Plugin synchronization failed; previous installation was preserved"
+                    .into()
+            }),
         ));
     }
     Ok(())
+}
+
+pub(super) fn inherited_plugin_cache_is_owned(
+    context: &AgentContext,
+    resource: &ResourceRef,
+    source: &Path,
+    digest: &ContentDigest,
+) -> Result<bool, AgentError> {
+    if validate_project_resource(context, resource).is_err() {
+        return Ok(false);
+    }
+    let Some(runtime) = project_runtime_for_context(context)? else {
+        return Ok(false);
+    };
+    let Some(version) = source.file_name().and_then(|name| name.to_str()) else {
+        return Ok(false);
+    };
+    let workspace = super::resolve_user_agent_workspace(&runtime.base_installation_id)?;
+    Ok(super::list_user_plugin_management_records(&workspace)?
+        .iter()
+        .any(|record| {
+            record.removal_phase.is_none()
+                && record.linked_install_path.as_deref().map(Path::new) == Some(source)
+                && record.cache_digest.as_ref() == Some(digest)
+                && resource.logical_id
+                    == format!(
+                        "package:{}:{}:{version}",
+                        record.marketplace_name, record.install_id
+                    )
+                && super::user_plugins::user_plugin_binding_owned(&workspace, record)
+        }))
 }
 
 struct InstalledCodexPlugin {
@@ -2557,6 +2607,7 @@ fn push_directory_mutation(
     state: &TargetState,
     source: &Path,
     digest: ContentDigest,
+    tracked_source: bool,
 ) {
     mutations.push(PlannedMutation {
         resource,
@@ -2566,6 +2617,7 @@ fn push_directory_mutation(
         content: Some(serde_json::json!({
             "path": source.to_string_lossy(),
             "digest": digest,
+            "trackedSource": tracked_source,
         })),
     });
 }
